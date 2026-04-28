@@ -41,7 +41,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* 2. 주요 기능(특징) 섹션 */}
+      {/* 2. 주요 기능 섹션 */}
       <section className="features-section">
         <h2 className="section-title fade-in-section">왜 MODU인가요?</h2>
         <div className="features-grid fade-in-section">
