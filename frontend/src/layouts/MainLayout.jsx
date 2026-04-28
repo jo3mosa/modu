@@ -18,7 +18,9 @@ export default function MainLayout() {
       {/* 1. 사이드바 */}
       <aside className="sidebar">
         <div className="sidebar-logo">
-          <h2>MODU</h2>
+          <Link to="/home" style={{ textDecoration: 'none', color: 'inherit' }}>
+            <h2>MODU</h2>
+          </Link>
         </div>
         <nav className="sidebar-nav">
           {menuItems.map((item) => (
