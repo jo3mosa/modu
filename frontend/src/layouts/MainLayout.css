@@ -1,9 +1,8 @@
 .main-layout {
   display: flex;
   min-height: 100vh;
-  background-color: #242424; /* 대시보드 배경색 */
+  background-color: #242424;
   color: #fff;
-  font-family: 'Pretendard', system-ui, sans-serif;
 }
 
 .sidebar {
@@ -55,13 +54,13 @@
 }
 
 .nav-item.active {
-  background-color: rgba(132, 204, 22, 0.1); /* 라임 그린 투명 배경 */
-  color: #84cc16; /* 라임 그린 텍스트 */
+  background-color: rgba(132, 204, 22, 0.1);
+  color: #84cc16;
 }
 
 .main-content {
   flex: 1;
-  margin-left: 250px; /* 사이드바 고정 너비만큼 여백 */
+  margin-left: 250px;
   padding: 2.5rem;
   background-color: #242424;
 }
