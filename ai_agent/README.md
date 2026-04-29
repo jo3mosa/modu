@@ -1,8 +1,8 @@
 ### 폴더 구조
 ```sh
 modu-ai-agent/
+├── main.py
 ├── app/
-│   ├── main.py
 │   │
 │   ├── graph/
 │   │   ├── builder.py
