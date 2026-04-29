@@ -80,11 +80,22 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* 4. 하단 가입 유도 섹션 */}
+      {/* 4. 투자 유의 사항 (면책 조항) */}
+      <section className="disclaimer-section">
+        <h2 className="section-title fade-in-section">투자 유의 사항</h2>
+        <div className="disclaimer-content fade-in-section">
+          <p>
+            MODU는 AI 및 데이터 기반의 투자 보조 도구를 제공하지만, <strong>투자의 최종 결정과 책임은 투자자 본인에게 있습니다.</strong><br />
+            자동매매 및 AI 분석 결과는 시장 상황에 따라 변동될 수 있으며, 어떠한 경우에도 수익을 보장하지 않습니다.
+          </p>
+        </div>
+      </section>
+
+      {/* 5. 하단 가입 유도 섹션 */}
       <section className="bottom-cta-section">
         <h2 className="bottom-cta-title fade-in-section">모두와 함께<br />모든 순간을 기회로 만드세요.</h2>
-        <button className="cta-button bottom-btn fade-in-section" onClick={() => navigate('/home')}>
-          무료로 시작하기
+        <button className="cta-button bottom-btn fade-in-section" onClick={() => navigate('/login')}>
+          시작하기
         </button>
       </section>
     </div>
