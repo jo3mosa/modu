@@ -37,8 +37,8 @@ export default function LoginPage() {
     }
     */
 
-    // 임시 -> 클릭 시 메인으로
-    navigate('/home');
+    // 임시 -> 테스트를 위해 온보딩으로 바로 이동
+    navigate('/onboarding');
   };
 
   const handleTestLogin = async (e) => {
@@ -68,8 +68,8 @@ export default function LoginPage() {
     }
     */
 
-    // 임시 -> 클릭 시 메인으로
-    navigate('/home');
+    // 임시 -> 테스트를 위해 온보딩으로 바로 이동
+    navigate('/onboarding');
   };
 
   return (
