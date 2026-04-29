@@ -17,14 +17,14 @@ const MOCK_BIDS = [
 ];
 
 export default function OrderBook() {
-  // [WebSocket 실시간 호가 연동 지점]
+  // 연동 시 주석 해제 필요 !!
   /*
   const [asks, setAsks] = useState(MOCK_ASKS);
   const [bids, setBids] = useState(MOCK_BIDS);
   const [currentPrice, setCurrentPrice] = useState('74,900');
 
   useEffect(() => {
-    const ws = new WebSocket('ws://api.modu.com/ws/stocks/005930/orderbook');
+    const ws = new WebSocket('ws://api.modu.com/ws/stocks/005930/orderbook'); // -> 종목코드 템플릿 -> 하드코딩 부분들 상태 변수로 변경 필요 !!
     
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
@@ -38,7 +38,7 @@ export default function OrderBook() {
   }, []);
   */
 
-  // [REST API 수동 주문 연동 지점]
+  // 연동 시 주석 해제 필요 !!
   /*
   const handleOrder = async (orderType) => {
     try {
@@ -46,9 +46,9 @@ export default function OrderBook() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          stockCode: '005930',
+          stockCode: '005930', // -> 종목코드 템플릿 -> 하드코딩 부분들 상태 변수로 변경 필요 !!
           orderType: orderType, // 'BUY' or 'SELL'
-          price: 74900,
+          price: 74900, // -> 현재가 템플릿 -> 하드코딩 부분들 상태 변수로 변경 필요 !!
           quantity: 1
         })
       });
@@ -62,37 +62,36 @@ export default function OrderBook() {
   return (
     <div className="orderbook-wrapper">
       <div className="orderbook-header">
-        <h3>호가/주문 탭</h3>
+        <h3>호가·주문 탭</h3>
       </div>
-      
+
       <div className="orderbook-table">
         <div className="table-head">
           <span>가격(원)</span>
           <span>수량</span>
         </div>
-        
+
         <div className="asks-list">
           {MOCK_ASKS.slice().reverse().map((ask, idx) => (
             <div key={idx} className="order-row ask">
               <span className="col-price">{ask.price}</span>
               <span className="col-amount">{ask.amount}</span>
-              {/* 바 배경 효과: 최대 25000 기준 퍼센트 */}
-              <div className="bg-bar" style={{ width: `${Math.min((parseInt(ask.amount.replace(/,/g,'')) / 25000) * 100, 100)}%` }} />
+              <div className="bg-bar" style={{ width: `${Math.min((parseInt(ask.amount.replace(/,/g, '')) / 25000) * 100, 100)}%` }} />
             </div>
           ))}
         </div>
-        
+
         <div className="current-price-divider">
           <span className="current-price">74,900</span>
           <span className="price-diff">-300 (-0.40%)</span>
         </div>
-        
+
         <div className="bids-list">
           {MOCK_BIDS.map((bid, idx) => (
             <div key={idx} className="order-row bid">
               <span className="col-price">{bid.price}</span>
               <span className="col-amount">{bid.amount}</span>
-              <div className="bg-bar" style={{ width: `${Math.min((parseInt(bid.amount.replace(/,/g,'')) / 25000) * 100, 100)}%` }} />
+              <div className="bg-bar" style={{ width: `${Math.min((parseInt(bid.amount.replace(/,/g, '')) / 25000) * 100, 100)}%` }} />
             </div>
           ))}
         </div>

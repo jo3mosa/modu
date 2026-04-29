@@ -116,7 +116,7 @@ export default function TradingChart() {
     const volumeSeries = chart.addHistogramSeries({
       color: '#26a69a',
       priceFormat: { type: 'volume' },
-      priceScaleId: '', // 오버레이 설정
+      priceScaleId: '',
     });
 
     // 거래량 차트 높이 제한
