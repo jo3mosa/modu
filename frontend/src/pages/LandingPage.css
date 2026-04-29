@@ -6,7 +6,7 @@
   scroll-snap-type: y proximity;
 }
 
-/* 1. 히어로(메인) 섹션 */
+/* 1. 메인 섹션 */
 .hero-section {
   position: relative;
   height: 100vh;
@@ -20,7 +20,7 @@
   scroll-snap-align: start;
 }
 
-/* Spline B번 꼼수 (밀어내기) */
+/* 3D 애니메이션 살리기 (추후 적용) */
 .spline-bg {
   position: absolute;
   top: 0;
@@ -31,7 +31,7 @@
   margin-top: -2.5%;
   z-index: 1;
   opacity: 0.7;
-  pointer-events: none; /* 클릭 방지 */
+  pointer-events: none;
 }
 
 .hero-content {
@@ -74,7 +74,7 @@
   box-shadow: 0 10px 25px var(--secondary-glow);
 }
 
-/* 2. 주요 기능(특징) 섹션 */
+/* 2. 주요 기능 섹션 */
 .features-section {
   padding: 8rem 2rem;
   max-width: 1200px;
@@ -130,7 +130,7 @@
   line-height: 1.6;
 }
 
-/* 3. 서비스 미리보기 섹션 */
+/* 3. 서비스 이미지 섹션 */
 .sneak-peek-section {
   padding: 8rem 2rem;
   background: linear-gradient(180deg, var(--bg-color) 0%, #111111 100%);
@@ -166,7 +166,7 @@
   object-fit: contain;
 }
 
-/* 4. 하단 가입 유도(CTA) 섹션 */
+/* 4. 하단 가입 유도 섹션 */
 .bottom-cta-section {
   padding: 8rem 2rem;
   text-align: center;
