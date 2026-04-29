@@ -1,0 +1,5 @@
+# 1. Analysis Server
+analysis_server/.venv/
+analysis_server/__pycache__/
+analysis_server/data/*.db
+analysis_server/data/*.csv
