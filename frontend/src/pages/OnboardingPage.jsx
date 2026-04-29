@@ -35,7 +35,7 @@ export default function OnboardingPage() {
     try {
       const token = sessionStorage.getItem('tempToken'); // 로그인 시 받은 임시 토큰
 
-      // 1. 투자 성향 및 룰셋 저장 API
+      // 1. 투자 성향 + 룰셋 저장 API
       const profileResponse = await fetch('/api/v1/strategies/me/profiles', {
         method: 'PUT',
         headers: {
@@ -71,7 +71,6 @@ export default function OnboardingPage() {
       if (!kisResponse.ok) throw new Error('계좌 연동에 실패했습니다.');
 
       // 3. 완료 시 메인 페이지로 이동
-      // localStorage.setItem('accessToken', '정식 토큰 저장');
       alert('설정이 완료되었습니다! 매매를 시작해 보세요.');
       navigate('/home');
       return;
@@ -175,7 +174,7 @@ function Step2Principle({ principle, setPrinciple, nextStep, prevStep }) {
 
       <textarea
         className="principle-textarea"
-        placeholder="예: 추격 매수를 하지 않습니다. 하락 시 3분할로 매수합니다."
+        placeholder="예: 추격 매수를 하지 않습니다. 하락 시 분할 매수합니다."
         value={principle}
         onChange={(e) => setPrinciple(e.target.value)}
       />
@@ -205,7 +204,7 @@ function Step3Rules({ rules, setRules, nextStep, prevStep }) {
       </div>
 
       <div className="rule-group">
-        <h3>목표 수익 / 허용 손실</h3>
+        <h3>목표 수익 · 허용 손실</h3>
         <div className="input-row">
           <div className="input-box">
             <label>익절 기준 (%)</label>
@@ -281,7 +280,7 @@ function Step4ApiKeys({ apiKeys, setApiKeys, handleComplete, prevStep }) {
 
       <div className="step-actions split">
         <button className="nav-btn secondary" onClick={prevStep}>
-          <ArrowLeft size={18} /> 이전
+          이전
         </button>
         <button className="nav-btn submit" disabled={!isComplete} onClick={handleComplete}>
           완료하고 시작하기

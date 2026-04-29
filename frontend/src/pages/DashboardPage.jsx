@@ -1,8 +1,28 @@
+import { useState, useEffect } from 'react';
 import { Search } from 'lucide-react';
+import TutorialOverlay from '../components/TutorialOverlay';
 
 export default function DashboardPage() {
+  const [showTutorial, setShowTutorial] = useState(false);
+
+  useEffect(() => {
+    // 연동 시 -> 최초 1회만
+    // const isCompleted = localStorage.getItem('tutorialCompleted');
+    // if (!isCompleted) setShowTutorial(true);
+
+    // 현재는 무조건 뜨도록 설정
+    setShowTutorial(true);
+  }, []);
+
+  const handleCloseTutorial = () => {
+    // localStorage.setItem('tutorialCompleted', 'true');
+    setShowTutorial(false);
+  };
+
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+
+      {showTutorial && <TutorialOverlay onClose={handleCloseTutorial} />}
 
       {/* 종목 검색 창 */}
       <div style={{
