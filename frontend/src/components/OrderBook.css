@@ -1,0 +1,122 @@
+.orderbook-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.orderbook-header {
+  padding: 1.2rem;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  text-align: center;
+}
+
+.orderbook-header h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.orderbook-table {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem 0;
+  overflow-y: auto;
+}
+
+.table-head {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.5rem 1.5rem;
+  color: #888;
+  font-size: 0.85rem;
+}
+
+.order-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.6rem 1.5rem;
+  position: relative;
+  font-size: 1rem;
+  font-family: 'Courier New', Courier, monospace;
+}
+
+/* 매도 호가 (파란색) */
+.order-row.ask .col-price { color: #3b82f6; }
+.order-row.ask .bg-bar {
+  background: rgba(59, 130, 246, 0.15);
+  right: 0;
+}
+
+/* 매수 호가 (빨간색) */
+.order-row.bid .col-price { color: #ef4444; }
+.order-row.bid .bg-bar {
+  background: rgba(239, 68, 68, 0.15);
+  right: 0; /* 우측 정렬로 통일하여 깔끔하게 보이도록 함 */
+}
+
+.bg-bar {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  z-index: 0;
+  border-radius: 4px;
+}
+
+.col-price, .col-amount {
+  z-index: 1;
+  font-weight: 600;
+}
+
+.col-amount {
+  color: #ddd;
+}
+
+.current-price-divider {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1rem 0;
+  border-top: 1px dashed rgba(255,255,255,0.1);
+  border-bottom: 1px dashed rgba(255,255,255,0.1);
+  margin: 0.5rem 0;
+  background: rgba(0,0,0,0.2);
+}
+
+.current-price {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: #fff;
+}
+
+.price-diff {
+  color: #ef4444;
+  font-size: 0.9rem;
+  margin-top: 0.2rem;
+}
+
+.order-actions {
+  display: flex;
+  gap: 0.8rem;
+  padding: 1.2rem;
+  border-top: 1px solid rgba(255,255,255,0.05);
+}
+
+.order-actions button {
+  flex: 1;
+  padding: 0.9rem;
+  border: none;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 1rem;
+  cursor: pointer;
+  color: #fff;
+  transition: transform 0.2s;
+}
+
+.order-actions button:hover {
+  transform: translateY(-2px);
+}
+
+.buy-btn { background: #ef4444; }
+.sell-btn { background: #3b82f6; }

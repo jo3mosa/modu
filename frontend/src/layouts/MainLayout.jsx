@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Activity, Newspaper, FileText, User } from 'lucide-react';
+import { LayoutDashboard, Activity, Newspaper, FileText, User, Search } from 'lucide-react';
 import './MainLayout.css';
 
 export default function MainLayout() {
@@ -38,7 +38,20 @@ export default function MainLayout() {
 
       {/* 2. 메인 */}
       <main className="main-content">
-        <Outlet />
+        {/* 상단 통합 검색바 */}
+        <header className="global-header">
+          <div className="global-search-bar">
+            <Search size={20} color="#888" />
+            <input
+              type="text"
+              placeholder="원하는 종목을 검색해보세요!"
+            />
+          </div>
+        </header>
+
+        <div className="page-content">
+          <Outlet />
+        </div>
       </main>
 
       {/* 3. AI 채팅 -> 나중에 */}
