@@ -5,7 +5,7 @@
 }
 
 .orderbook-header {
-  padding: 1.2rem;
+  padding: 0.8rem;
   border-bottom: 1px solid rgba(255,255,255,0.05);
   text-align: center;
 }
@@ -20,8 +20,8 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 0.5rem 0;
-  overflow-y: auto;
+  padding: 0;
+  overflow-y: hidden; /* 내부 스크롤 제거 */
 }
 
 .table-head {
@@ -35,9 +35,9 @@
 .order-row {
   display: flex;
   justify-content: space-between;
-  padding: 0.6rem 1.5rem;
+  padding: 0.35rem 1.2rem; /* 여백 대폭 감소 */
   position: relative;
-  font-size: 1rem;
+  font-size: 0.85rem;
   font-family: 'Pretendard', sans-serif;
 }
 
@@ -76,15 +76,15 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 1rem 0;
+  padding: 0.4rem 0;
   border-top: 1px dashed rgba(255,255,255,0.1);
   border-bottom: 1px dashed rgba(255,255,255,0.1);
-  margin: 0.5rem 0;
+  margin: 0.2rem 0;
   background: rgba(0,0,0,0.2);
 }
 
 .current-price {
-  font-size: 1.6rem;
+  font-size: 1.4rem;
   font-weight: 800;
   color: #fff;
 }
@@ -98,7 +98,7 @@
 .order-actions {
   display: flex;
   gap: 0.8rem;
-  padding: 1.2rem;
+  padding: 0.8rem 1.2rem;
   border-top: 1px solid rgba(255,255,255,0.05);
 }
 

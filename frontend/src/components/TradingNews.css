@@ -1,7 +1,6 @@
 .news-wrapper {
   display: flex;
   flex-direction: column;
-  height: 100%;
 }
 
 .news-tabs {
@@ -45,7 +44,7 @@
 
 .news-list {
   flex: 1;
-  overflow-y: auto;
+  overflow-y: visible; /* 내부 스크롤 제거, 자연스럽게 늘어남 */
   padding: 0.5rem 0;
 }
 

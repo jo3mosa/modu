@@ -10,7 +10,7 @@ export default function DashboardPage() {
     // const isCompleted = localStorage.getItem('tutorialCompleted');
     // if (!isCompleted) setShowTutorial(true);
 
-    // 현재는 무조건 뜨도록 설정
+    // 현재는 무조건 뜨도록 설정 ~
     setShowTutorial(true);
   }, []);
 
@@ -21,7 +21,7 @@ export default function DashboardPage() {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
-      
+
       {showTutorial && <TutorialOverlay onClose={handleCloseTutorial} />}
 
       <h1 style={{ fontSize: '2rem', marginBottom: '2rem' }}>

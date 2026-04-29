@@ -1,10 +1,16 @@
 .trading-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  color: #fff;
+}
+
+.trading-top {
   display: grid;
   grid-template-columns: 1fr 340px;
   gap: 1.5rem;
-  flex: 1;
-  min-height: 0;
-  color: #fff;
+  height: 520px;
+  /* 차트 - 호가창 높이 동시 고정 */
 }
 
 /* 스크롤바 커스텀 */
@@ -12,27 +18,23 @@
   width: 6px;
   height: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);
   border-radius: 4px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.2);
 }
 
-.trading-main {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-  height: 100%;
-  min-width: 0; /* flex 자식 넘침 방지 */
-}
-
 .trading-header {
   flex-shrink: 0;
+  margin-bottom: -0.5rem;
 }
 
 .trading-header h1 {
@@ -42,55 +44,35 @@
   margin: 0;
 }
 
-.chart-section {
-  flex: 5; /* 높이 비율 5 */
-  background: var(--card-bg, rgba(255,255,255,0.03));
-  border: 1px solid var(--glass-border, rgba(255,255,255,0.1));
+.chart-section,
+.order-section {
+  background: var(--card-bg, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1));
   border-radius: 12px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  min-height: 0;
+  height: 100%;
 }
 
 .news-section {
-  flex: 2; /* 높이 비율 2 */
-  background: var(--card-bg, rgba(255,255,255,0.03));
-  border: 1px solid var(--glass-border, rgba(255,255,255,0.1));
+  background: var(--card-bg, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1));
   border-radius: 12px;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  min-height: 0;
-}
-
-.order-section {
-  background: var(--card-bg, rgba(255,255,255,0.03));
-  border: 1px solid var(--glass-border, rgba(255,255,255,0.1));
-  border-radius: 12px;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  min-height: 300px;
 }
 
 /* 반응형 모바일 (세로 배치) */
 @media (max-width: 1024px) {
-  .trading-container {
+  .trading-top {
     grid-template-columns: 1fr;
-    height: auto; /* 고정 높이 해제 */
-  }
-
-  .trading-main {
     height: auto;
   }
 
   .chart-section {
-    height: 500px; /* 고정 높이 부여 */
-  }
-
-  .news-section {
-    height: 300px;
+    height: 500px;
   }
 
   .order-section {

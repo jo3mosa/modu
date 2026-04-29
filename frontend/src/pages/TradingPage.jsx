@@ -6,22 +6,21 @@ import './TradingPage.css';
 export default function TradingPage() {
   return (
     <div className="trading-container">
-      <div className="trading-main">
-        <div className="trading-header">
-          <h1>트레이딩 룸</h1>
-        </div>
-        
+      <div className="trading-header">
+        <h1>트레이딩 룸</h1>
+      </div>
+      
+      <div className="trading-top">
         <div className="chart-section">
           <TradingChart />
         </div>
-
-        <div className="news-section">
-          <TradingNews />
+        <div className="order-section">
+          <OrderBook />
         </div>
       </div>
 
-      <div className="order-section">
-        <OrderBook />
+      <div className="news-section">
+        <TradingNews />
       </div>
     </div>
   );
