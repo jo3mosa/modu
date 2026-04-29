@@ -38,7 +38,7 @@
   padding: 0.6rem 1.5rem;
   position: relative;
   font-size: 1rem;
-  font-family: 'Courier New', Courier, monospace;
+  font-family: 'Pretendard', sans-serif;
 }
 
 /* 매도 호가 (파란색) */
@@ -111,11 +111,10 @@
   font-size: 1rem;
   cursor: pointer;
   color: #fff;
-  transition: transform 0.2s;
 }
 
 .order-actions button:hover {
-  transform: translateY(-2px);
+  opacity: 0.9;
 }
 
 .buy-btn { background: #ef4444; }

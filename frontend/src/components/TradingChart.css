@@ -8,9 +8,15 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.8rem 1.2rem;
+  padding: 0.6rem 1rem;
   background: rgba(0,0,0,0.2);
   border-bottom: 1px solid rgba(255,255,255,0.05);
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+
+.chart-toolbar::-webkit-scrollbar {
+  display: none;
 }
 
 .toolbar-left, .toolbar-right {
@@ -23,11 +29,12 @@
   background: transparent;
   border: none;
   color: #888;
-  font-size: 0.85rem;
+  font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
-  padding: 0.4rem 0.6rem;
+  padding: 0.3rem 0.5rem;
   border-radius: 6px;
+  white-space: nowrap;
   transition: all 0.2s;
 }
 

@@ -28,17 +28,49 @@ const generateDummyData = () => {
   return data;
 };
 
-// 더미 거래량 데이터 생성 함수
+// 현재 차트 -> 랜덤 더미 데이터
 const generateVolumeData = (candleData) => {
   return candleData.map(d => ({
     time: d.time,
     value: Math.random() * 500000 + 100000,
-    color: d.close >= d.open ? 'rgba(239, 68, 68, 0.4)' : 'rgba(59, 130, 246, 0.4)' // 상승: 빨강, 하락: 파랑
+    color: d.close >= d.open ? 'rgba(239, 68, 68, 0.4)' : 'rgba(59, 130, 246, 0.4)' // 상승 -> 빨강, 하락 -> 파랑
   }));
 };
 
 export default function TradingChart() {
   const chartContainerRef = useRef(null);
+
+  // 연동 시 주석 해제 필요 !!
+  // 1. 과거 데이터 불러오기 (REST API)
+  /*
+  useEffect(() => {
+    const fetchHistoricalData = async () => {
+      try {
+        const response = await fetch('/api/v1/markets/stocks/005930/candles?timeframe=1D'); // ex) 삼성전자 일봉
+        const data = await response.json();
+        // data 형식: [{ time: '2023-10-01', open: 75000, high: 76000, low: 74500, close: 75500 }, ...]
+        candlestickSeries.current.setData(data);
+      } catch (error) {
+        console.error("차트 데이터 로드 실패:", error);
+      }
+    };
+    // fetchHistoricalData();
+  }, []);
+
+  // 2. 실시간 현재가 업데이트 (WebSocket)
+  /*
+  useEffect(() => {
+    const ws = new WebSocket('ws://api.modu.com/ws/stocks/005930/price');
+    
+    ws.onmessage = (event) => {
+      const liveData = JSON.parse(event.data);
+      // liveData 형식: { time: '2023-10-01', open: 75000, high: 76000, low: 74500, close: 75500 }
+      candlestickSeries.current.update(liveData);
+    };
+
+    return () => ws.close();
+  }, []);
+  */
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
@@ -61,7 +93,7 @@ export default function TradingChart() {
       },
     });
 
-    // 캔들 시리즈 추가 (국내 증권사 표준: 빨강 & 파랑)
+    // 캔들 색상
     const candlestickSeries = chart.addCandlestickSeries({
       upColor: '#ef4444',
       downColor: '#3b82f6',
@@ -73,21 +105,21 @@ export default function TradingChart() {
     const data = generateDummyData();
     candlestickSeries.setData(data);
 
-    // AI 및 수동 매매 마커 추가
+    // AI + 수동 매매 마커
     candlestickSeries.setMarkers([
       { time: data[data.length - 25].time, position: 'belowBar', color: '#ef4444', shape: 'arrowUp', text: '매수' }, // 수동 매수
       { time: data[data.length - 15].time, position: 'aboveBar', color: '#3b82f6', shape: 'arrowDown', text: '매도' }, // 수동 매도
       { time: data[data.length - 5].time, position: 'belowBar', color: '#ef4444', shape: 'arrowUp', text: 'AI 매수' }, // AI 매수
     ]);
 
-    // 거래량 시리즈 추가 (오버레이)
+    // 거래량
     const volumeSeries = chart.addHistogramSeries({
       color: '#26a69a',
       priceFormat: { type: 'volume' },
       priceScaleId: '', // 오버레이 설정
     });
 
-    // 거래량 차트 높이 제한 (하단 20%)
+    // 거래량 차트 높이 제한
     chart.priceScale('').applyOptions({
       scaleMargins: {
         top: 0.8,
@@ -97,7 +129,6 @@ export default function TradingChart() {
 
     volumeSeries.setData(generateVolumeData(data));
 
-    // 리사이즈 핸들러
     const handleResize = () => {
       chart.applyOptions({ width: chartContainerRef.current.clientWidth, height: chartContainerRef.current.clientHeight });
     };

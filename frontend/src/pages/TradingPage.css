@@ -1,9 +1,9 @@
 .trading-container {
   display: grid;
-  grid-template-columns: 1fr 340px; /* 좌측 메인 영역 1fr, 우측 호가창 고정 340px */
+  grid-template-columns: 1fr 340px;
   gap: 1.5rem;
-  height: calc(100vh - 4rem); /* 상단 패딩 등 여백 고려 */
-  padding: 1.5rem 2rem;
+  flex: 1;
+  min-height: 0;
   color: #fff;
 }
 
@@ -36,9 +36,10 @@
 }
 
 .trading-header h1 {
-  font-size: 2.2rem;
+  font-size: 1.6rem;
   font-weight: 800;
   letter-spacing: -1px;
+  margin: 0;
 }
 
 .chart-section {
@@ -49,7 +50,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  min-height: 400px;
+  min-height: 0;
 }
 
 .news-section {
@@ -60,7 +61,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  min-height: 200px;
+  min-height: 0;
 }
 
 .order-section {

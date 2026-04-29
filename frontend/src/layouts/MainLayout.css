@@ -1,6 +1,7 @@
 .main-layout {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   background-color: #242424;
   color: #fff;
 }
@@ -61,10 +62,11 @@
 .main-content {
   flex: 1;
   margin-left: 250px;
-  padding: 2.5rem;
+  padding: 1.5rem 2rem; /* 상하 여백 줄여서 공간 확보 */
   background-color: #242424;
   display: flex;
   flex-direction: column;
+  height: 100vh;
 }
 
 .global-header {
@@ -102,4 +104,5 @@
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-height: 0; /* 스크롤 없이 하위 요소들이 꽉 차게 하기 위한 핵심 설정 */
 }

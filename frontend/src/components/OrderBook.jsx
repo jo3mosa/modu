@@ -17,6 +17,48 @@ const MOCK_BIDS = [
 ];
 
 export default function OrderBook() {
+  // [WebSocket 실시간 호가 연동 지점]
+  /*
+  const [asks, setAsks] = useState(MOCK_ASKS);
+  const [bids, setBids] = useState(MOCK_BIDS);
+  const [currentPrice, setCurrentPrice] = useState('74,900');
+
+  useEffect(() => {
+    const ws = new WebSocket('ws://api.modu.com/ws/stocks/005930/orderbook');
+    
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      // data: { asks: [...], bids: [...], currentPrice: '75,000' }
+      setAsks(data.asks);
+      setBids(data.bids);
+      setCurrentPrice(data.currentPrice);
+    };
+
+    return () => ws.close();
+  }, []);
+  */
+
+  // [REST API 수동 주문 연동 지점]
+  /*
+  const handleOrder = async (orderType) => {
+    try {
+      const response = await fetch('/api/v1/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stockCode: '005930',
+          orderType: orderType, // 'BUY' or 'SELL'
+          price: 74900,
+          quantity: 1
+        })
+      });
+      if(response.ok) alert('주문이 접수되었습니다.');
+    } catch (e) {
+      console.error("주문 실패:", e);
+    }
+  };
+  */
+
   return (
     <div className="orderbook-wrapper">
       <div className="orderbook-header">
@@ -54,11 +96,11 @@ export default function OrderBook() {
             </div>
           ))}
         </div>
-      </div>
-      
-      <div className="order-actions">
-        <button className="buy-btn">매수</button>
-        <button className="sell-btn">매도</button>
+
+        <div className="order-actions">
+          <button className="buy-btn" /* onClick={() => handleOrder('BUY')} */>매수</button>
+          <button className="sell-btn" /* onClick={() => handleOrder('SELL')} */>매도</button>
+        </div>
       </div>
     </div>
   );
