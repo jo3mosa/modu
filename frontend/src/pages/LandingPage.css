@@ -166,7 +166,34 @@
   object-fit: contain;
 }
 
-/* 4. 하단 가입 유도 섹션 */
+/* 4. 투자 유의 사항 (면책 조항) 섹션 */
+.disclaimer-section {
+  padding: 8rem 2rem;
+  max-width: 1000px;
+  margin: 0 auto;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  scroll-snap-align: start;
+}
+
+.disclaimer-content {
+  background: rgba(255, 60, 60, 0.05); /* 경고성 옅은 붉은 배경 */
+  border: 1px solid rgba(255, 60, 60, 0.2);
+  border-radius: 20px;
+  padding: 3rem 2rem;
+  text-align: center;
+  line-height: 1.8;
+  color: #ccc;
+  font-size: 1.2rem;
+}
+
+.disclaimer-content strong {
+  color: #ff6b6b; /* 강조 텍스트 */
+}
+
+/* 5. 하단 가입 유도 섹션 */
 .bottom-cta-section {
   padding: 8rem 2rem;
   text-align: center;
