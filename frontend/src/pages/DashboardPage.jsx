@@ -1,8 +1,20 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
+import Highcharts from 'highcharts';
+import HighchartsReactPkg from 'highcharts-react-official';
+const HighchartsReact = HighchartsReactPkg.default || HighchartsReactPkg;
+import highcharts3d from 'highcharts/highcharts-3d';
 import TutorialOverlay from '../components/TutorialOverlay';
 import './DashboardPage.css';
+
+// Initialize 3D module (Vite ESM compatibility)
+if (typeof Highcharts === 'object') {
+  if (typeof highcharts3d === 'function') {
+    highcharts3d(Highcharts);
+  } else if (highcharts3d && typeof highcharts3d.default === 'function') {
+    highcharts3d.default(Highcharts);
+  }
+}
 
 const MOCK_SUMMARY = {
   totalAssets: 600000,
@@ -40,9 +52,6 @@ export default function DashboardPage() {
   const [holdings] = useState(MOCK_HOLDINGS);
   const [aiStatus, setAiStatus] = useState(MOCK_AI_STATUS);
   const [logs] = useState(MOCK_LOGS);
-  
-  // 마우스 커서 추적용 상태
-  const [tooltipPos, setTooltipPos] = useState(null);
 
   useEffect(() => {
     setShowTutorial(true);
@@ -61,32 +70,78 @@ export default function DashboardPage() {
     return '';
   };
 
-  // 파이 차트 데이터 (종목 평가금액 + 예수금)
-  const pieData = holdings.map(h => ({
+  // Highcharts 3D 도넛 차트 데이터 포맷팅
+  const chartData = holdings.map((h, i) => ({
     name: h.name,
-    value: h.quantity * h.currentPrice,
+    y: h.quantity * h.currentPrice,
+    color: CHART_COLORS[i % CHART_COLORS.length],
     quantity: h.quantity
   }));
-  pieData.push({ name: '예수금(현금)', value: summary.availableCash, quantity: null });
+  chartData.push({ name: '예수금', y: summary.availableCash, color: '#84cc16', quantity: null });
 
   // 비중 내림차순 정렬
-  pieData.sort((a, b) => b.value - a.value);
+  chartData.sort((a, b) => b.y - a.y);
 
-  // 도넛 차트 커스텀 툴팁
-  const CustomTooltip = ({ active, payload }) => {
-    if (active && payload && payload.length) {
-      const data = payload[0].payload;
-      return (
-        <div style={{ background: 'rgba(0,0,0,0.85)', padding: '10px 15px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.15)', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}>
-          <div style={{ color: payload[0].fill, fontWeight: 700, marginBottom: '6px', fontSize: '1.05rem' }}>{data.name}</div>
-          <div style={{ color: '#fff', fontSize: '0.95rem', fontWeight: 600 }}>
-            {data.quantity !== null ? `${formatNumber(data.quantity)}주 · ` : ''}
-            {formatNumber(data.value)}원
+  // Highcharts 3D 옵션 설정
+  const chartOptions = {
+    chart: {
+      type: 'pie',
+      options3d: {
+        enabled: true,
+        alpha: 45, // 45도 기울기 (입체감)
+        beta: 0
+      },
+      backgroundColor: 'transparent',
+      style: { fontFamily: "'Pretendard', sans-serif" },
+      margin: [0, 0, 0, 0]
+    },
+    title: { text: null },
+    credits: { enabled: false },
+    tooltip: {
+      useHTML: true,
+      backgroundColor: 'transparent',
+      borderColor: 'transparent',
+      borderWidth: 0,
+      shadow: false,
+      padding: 0,
+      style: { pointerEvents: 'none', zIndex: 1000 },
+      formatter: function () {
+        const data = this.point;
+        const quantityHtml = data.quantity !== null 
+          ? `<span style="font-weight:600;">${data.quantity.toLocaleString()}주</span> · ` 
+          : '';
+        const valueHtml = `${data.y.toLocaleString()}원`;
+        
+        return `
+          <div style="background: rgba(0,0,0,0.85); border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 4px 12px rgba(0,0,0,0.3); padding: 10px 15px; border-radius: 8px;">
+            <div style="color:${data.color}; font-weight:700; margin-bottom:6px; font-size:1.05rem;">
+              ${data.name}
+            </div>
+            <div style="color:#fff; font-size:0.95rem; font-weight:600;">
+              ${quantityHtml}${valueHtml}
+            </div>
           </div>
-        </div>
-      );
-    }
-    return null;
+        `;
+      }
+    },
+    plotOptions: {
+      pie: {
+        innerSize: 130, // 도넛 안쪽 구멍 크기
+        depth: 45,      // 3D 두께
+        size: '80%',    // 차트 크기를 줄여서 하단 잘림 방지
+        center: ['50%', '45%'], // 차트 중심을 살짝 위로 올려 아래쪽 3D 두께 공간 확보 및 텍스트 중앙 정렬
+        dataLabels: { enabled: false },
+        borderWidth: 0,
+        showInLegend: false,
+        states: {
+          hover: { halo: { size: 0 }, brightness: 0.1 } // 호버 시 밝아지는 효과만
+        }
+      }
+    },
+    series: [{
+      name: '자산 비중',
+      data: chartData
+    }]
   };
 
   return (
@@ -132,52 +187,12 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <div 
-              className="overview-chart"
-              onMouseMove={(e) => {
-                const rect = e.currentTarget.getBoundingClientRect();
-                setTooltipPos({ 
-                  x: e.clientX - rect.left + 15, 
-                  y: e.clientY - rect.top + 15 
-                });
-              }}
-              onMouseLeave={() => setTooltipPos(null)}
-            >
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={pieData}
-                    innerRadius="65%"
-                    outerRadius="90%"
-                    paddingAngle={4}
-                    dataKey="value"
-                    stroke="none"
-                    animationBegin={0}
-                    animationDuration={1500}
-                    isAnimationActive={true}
-                  >
-                    {pieData.map((entry, index) => (
-                      <Cell
-                        key={`cell-${index}`}
-                        fill={entry.name.includes('예수금') ? '#84cc16' : CHART_COLORS[index % CHART_COLORS.length]}
-                      />
-                    ))}
-                  </Pie>
-                  <Tooltip 
-                    content={<CustomTooltip />} 
-                    position={tooltipPos || undefined}
-                    isAnimationActive={false}
-                    wrapperStyle={{ zIndex: 1000, pointerEvents: 'none', transition: 'none' }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-              {/* 차트 중앙 텍스트 */}
-              <div className="chart-center-text">
-                <span className="chart-center-label">총 자산</span>
-                <span className="chart-center-value">
-                  {formatNumber(summary.totalAssets / 10000)}만<span style={{ fontSize: '1.1rem', marginLeft: '2px', color: '#aaa', fontWeight: 600 }}>원</span>
-                </span>
-              </div>
+            <div className="overview-chart">
+              <HighchartsReact
+                highcharts={Highcharts}
+                options={chartOptions}
+                containerProps={{ style: { width: '100%', height: '100%' } }}
+              />
             </div>
           </div>
 
@@ -220,7 +235,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 우측: AI 관제 사이드바 (30%) */}
+        {/* 우측: AI on/off */}
         <div className="dashboard-side">
           {/* AI 미니 컨트롤 */}
           <div className="panel ai-mini-panel">
@@ -256,7 +271,7 @@ export default function DashboardPage() {
 
           {/* 최근 거래 로그 */}
           <div className="panel logs-panel">
-            <h2>최근 시스템 로그</h2>
+            <h2>최근 매매 로그</h2>
             <div className="logs-list">
               {logs.map((log) => (
                 <div key={log.id} className="log-item">
