@@ -40,6 +40,9 @@ export default function DashboardPage() {
   const [holdings] = useState(MOCK_HOLDINGS);
   const [aiStatus, setAiStatus] = useState(MOCK_AI_STATUS);
   const [logs] = useState(MOCK_LOGS);
+  
+  // 마우스 커서 추적용 상태
+  const [tooltipPos, setTooltipPos] = useState(null);
 
   useEffect(() => {
     setShowTutorial(true);
@@ -58,14 +61,14 @@ export default function DashboardPage() {
     return '';
   };
 
-  // 파이 차트 데이터 생성 (종목 평가금액 + 예수금)
+  // 파이 차트 데이터 (종목 평가금액 + 예수금)
   const pieData = holdings.map(h => ({
     name: h.name,
     value: h.quantity * h.currentPrice,
     quantity: h.quantity
   }));
   pieData.push({ name: '예수금(현금)', value: summary.availableCash, quantity: null });
-  
+
   // 비중 내림차순 정렬
   pieData.sort((a, b) => b.value - a.value);
 
@@ -109,7 +112,7 @@ export default function DashboardPage() {
                   <span className="unit">원</span>
                 </div>
               </div>
-              
+
               <div className="asset-details">
                 <div className="detail-item">
                   <span className="detail-label">총 평가 손익</span>
@@ -128,8 +131,18 @@ export default function DashboardPage() {
                 </div>
               </div>
             </div>
-            
-            <div className="overview-chart">
+
+            <div 
+              className="overview-chart"
+              onMouseMove={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                setTooltipPos({ 
+                  x: e.clientX - rect.left + 15, 
+                  y: e.clientY - rect.top + 15 
+                });
+              }}
+              onMouseLeave={() => setTooltipPos(null)}
+            >
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
@@ -144,20 +157,25 @@ export default function DashboardPage() {
                     isAnimationActive={true}
                   >
                     {pieData.map((entry, index) => (
-                      <Cell 
-                        key={`cell-${index}`} 
-                        fill={entry.name.includes('예수금') ? '#84cc16' : CHART_COLORS[index % CHART_COLORS.length]} 
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={entry.name.includes('예수금') ? '#84cc16' : CHART_COLORS[index % CHART_COLORS.length]}
                       />
                     ))}
                   </Pie>
-                  <Tooltip content={<CustomTooltip />} />
+                  <Tooltip 
+                    content={<CustomTooltip />} 
+                    position={tooltipPos || undefined}
+                    isAnimationActive={false}
+                    wrapperStyle={{ zIndex: 1000, pointerEvents: 'none', transition: 'none' }}
+                  />
                 </PieChart>
               </ResponsiveContainer>
               {/* 차트 중앙 텍스트 */}
               <div className="chart-center-text">
                 <span className="chart-center-label">총 자산</span>
                 <span className="chart-center-value">
-                  {formatNumber(summary.totalAssets / 10000)}만<span style={{fontSize:'1.1rem', marginLeft:'2px', color:'#aaa', fontWeight:600}}>원</span>
+                  {formatNumber(summary.totalAssets / 10000)}만<span style={{ fontSize: '1.1rem', marginLeft: '2px', color: '#aaa', fontWeight: 600 }}>원</span>
                 </span>
               </div>
             </div>
@@ -206,23 +224,23 @@ export default function DashboardPage() {
         <div className="dashboard-side">
           {/* AI 미니 컨트롤 */}
           <div className="panel ai-mini-panel">
-            <h2>AI 자동매매 관제</h2>
+            <h2>AI 자동매매</h2>
             <div className="ai-mini-content">
               <div className="ai-status-row">
                 <div className="ai-status-text">
                   <span className={`status-badge ${aiStatus.isActive ? 'active' : 'inactive'}`}>
-                    {aiStatus.isActive ? '가동 중' : '중단됨'}
+                    {aiStatus.isActive ? 'ON' : 'OFF'}
                   </span>
                 </div>
                 {/* 커스텀 iOS 스타일 토글 스위치 */}
-                <div 
-                  className={`toggle-switch ${aiStatus.isActive ? 'on' : 'off'}`} 
+                <div
+                  className={`toggle-switch ${aiStatus.isActive ? 'on' : 'off'}`}
                   onClick={toggleAiStatus}
                 >
                   <div className="toggle-knob"></div>
                 </div>
               </div>
-              
+
               <div className="ai-info-box">
                 <div className="info-row">
                   <span className="info-label">전략</span>
