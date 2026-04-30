@@ -3,3 +3,9 @@ analysis_server/.venv/
 analysis_server/__pycache__/
 analysis_server/data/*.db
 analysis_server/data/*.csv
+
+# KIS API 토큰 캐시 파일 (절대 공유 금지)
+kis_token.json
+**/kis_token.json
+
+.env
