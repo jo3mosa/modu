@@ -21,18 +21,18 @@ export default function KakaoCallbackPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ code }),
         });
-        
+
         const data = await response.json();
 
-        // 명세서에 따르면 성공 시 success: true 반환
+        // success -> true 반환
         if (response.ok && data.success) {
           // data.onboarding 구조: { isSurveyCompleted: true, isRuleSetCompleted: false }
           const { isSurveyCompleted, isRuleSetCompleted } = data.data.onboarding;
 
           if (isSurveyCompleted && isRuleSetCompleted) {
-            navigate('/home'); // 둘 다 true일 경우
+            navigate('/home'); // 둘 다 true -> 메인으로 이동
           } else {
-            navigate('/onboarding'); // 하나라도 false일 경우
+            navigate('/onboarding'); // 하나라도 false -> 온보딩
           }
         } else {
           setStatusText(`로그인 실패: ${data.message || '알 수 없는 에러'}`);
@@ -49,11 +49,11 @@ export default function KakaoCallbackPage() {
   }, [code, navigate]);
 
   return (
-    <div style={{ 
-      height: '100vh', 
-      display: 'flex', 
-      justifyContent: 'center', 
-      alignItems: 'center', 
+    <div style={{
+      height: '100vh',
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'center',
       color: '#fff',
       flexDirection: 'column',
       gap: '1rem',

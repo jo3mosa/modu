@@ -7,7 +7,6 @@ import highcharts3d from 'highcharts/highcharts-3d';
 import TutorialOverlay from '../components/TutorialOverlay';
 import './DashboardPage.css';
 
-// Initialize 3D module (Vite ESM compatibility)
 if (typeof Highcharts === 'object') {
   if (typeof highcharts3d === 'function') {
     highcharts3d(Highcharts);
@@ -70,7 +69,7 @@ export default function DashboardPage() {
     return '';
   };
 
-  // Highcharts 3D 도넛 차트 데이터 포맷팅
+  // 도넛 차트 데이터 포맷팅
   const chartData = holdings.map((h, i) => ({
     name: h.name,
     y: h.quantity * h.currentPrice,
@@ -82,13 +81,13 @@ export default function DashboardPage() {
   // 비중 내림차순 정렬
   chartData.sort((a, b) => b.y - a.y);
 
-  // Highcharts 3D 옵션 설정
+  // Highcharts 3D 옵션
   const chartOptions = {
     chart: {
       type: 'pie',
       options3d: {
         enabled: true,
-        alpha: 45, // 45도 기울기 (입체감)
+        alpha: 30,
         beta: 0
       },
       backgroundColor: 'transparent',
@@ -107,11 +106,11 @@ export default function DashboardPage() {
       style: { pointerEvents: 'none', zIndex: 1000 },
       formatter: function () {
         const data = this.point;
-        const quantityHtml = data.quantity !== null 
-          ? `<span style="font-weight:600;">${data.quantity.toLocaleString()}주</span> · ` 
+        const quantityHtml = data.quantity !== null
+          ? `<span style="font-weight:600;">${data.quantity.toLocaleString()}주</span> · `
           : '';
         const valueHtml = `${data.y.toLocaleString()}원`;
-        
+
         return `
           <div style="background: rgba(0,0,0,0.85); border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 4px 12px rgba(0,0,0,0.3); padding: 10px 15px; border-radius: 8px;">
             <div style="color:${data.color}; font-weight:700; margin-bottom:6px; font-size:1.05rem;">
@@ -126,15 +125,15 @@ export default function DashboardPage() {
     },
     plotOptions: {
       pie: {
-        innerSize: 130, // 도넛 안쪽 구멍 크기
-        depth: 45,      // 3D 두께
-        size: '80%',    // 차트 크기를 줄여서 하단 잘림 방지
-        center: ['50%', '45%'], // 차트 중심을 살짝 위로 올려 아래쪽 3D 두께 공간 확보 및 텍스트 중앙 정렬
+        innerSize: 130,
+        depth: 45,
+        size: '80%',
+        center: ['50%', '35%'], // 카드 섹션 중앙에 위치
         dataLabels: { enabled: false },
         borderWidth: 0,
         showInLegend: false,
         states: {
-          hover: { halo: { size: 0 }, brightness: 0.1 } // 호버 시 밝아지는 효과만
+          hover: { halo: { size: 0 }, brightness: 0.1 }
         }
       }
     },
@@ -235,7 +234,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 우측: AI on/off */}
+        {/* 우측 -> AI on/off */}
         <div className="dashboard-side">
           {/* AI 미니 컨트롤 */}
           <div className="panel ai-mini-panel">
@@ -247,7 +246,7 @@ export default function DashboardPage() {
                     {aiStatus.isActive ? 'ON' : 'OFF'}
                   </span>
                 </div>
-                {/* 커스텀 iOS 스타일 토글 스위치 */}
+                {/* 토글 스위치 */}
                 <div
                   className={`toggle-switch ${aiStatus.isActive ? 'on' : 'off'}`}
                   onClick={toggleAiStatus}
@@ -269,7 +268,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* 최근 거래 로그 */}
+          {/* 최근 매매 로그 */}
           <div className="panel logs-panel">
             <h2>최근 매매 로그</h2>
             <div className="logs-list">
