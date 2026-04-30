@@ -63,6 +63,18 @@ kis:
     cano: ${KIS_CANO:}           # 계좌번호 앞 8자리 (미설정 시 빈값, 실거래 전 필수 입력)
     acnt-prdt-cd: ${KIS_ACNT_PRDT_CD:01}  # 계좌 상품 코드 (일반 주식: 01)
 
+# JWT 설정
+jwt:
+  secret: ${JWT_SECRET}
+  access-token-expiration: ${JWT_ACCESS_TOKEN_EXPIRATION:3600000}
+  refresh-token-expiration: ${JWT_REFRESH_TOKEN_EXPIRATION:1209600000}
+
+# 카카오 OAuth 설정
+kakao:
+  client-id: ${KAKAO_CLIENT_ID}
+  client-secret: ${KAKAO_CLIENT_SECRET}
+  redirect-uri: ${KAKAO_REDIRECT_URI}
+
 # ================================================================
 # 운영 환경 설정 시 주의사항 (application-prod.yml 작성 시 반영)
 # - ddl-auto: validate
