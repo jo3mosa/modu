@@ -1,27 +1,22 @@
 pipeline {
-    // 모든 가용 에이전트(Worker Node)에서 실행되도록 설정합니다.
+    // SSAFY 인프라 환경의 모든 가용 에이전트에서 실행합니다.
     agent any
 
-    // 전역 변수 설정: 설정값 중앙화를 통해 관리 효율성을 높이고 휴먼 에러를 방지합니다.
+    // 전역 변수 설정: 설정값 중앙화를 통해 관리 효율성을 높입니다.
     environment {
         // 1. 인프라 공통 설정
         AWS_REGION           = 'ap-northeast-2'
-        ECR_BACKEND_NAME     = 'modu-backend'
-        ECR_FRONTEND_NAME    = 'modu-frontend'
         
-        // 2. 젠킨스 Credentials ID (자격 증명)
-        AWS_CRED_ID          = 'aws-credentials' // 'AWS Credentials' 타입 필수
-        GITHUB_CRED_ID       = 'github-token'
-        
-        // 3. 쿠버네티스 설정 ID (Kubeconfig Secret File)
-        K3S_CONFIG_ID        = 'k3s-config.yaml' // SSAFY 교육용 K3s 서버용
-        EKS_CONFIG_ID        = 'aws-eks-config'  // AWS EKS 운영 서버용
-        
-        // 4. ECR 레지스트리 엔드포인트 ID (Secret Text)
-        REGISTRY_BE_ID       = 'ecr-registry-backend'
+        // 2. 젠킨스 자격 증명 ID
+        AWS_CRED_ID          = 'aws-credentials'
+        REGISTRY_BE_ID       = 'ecr-registry-backend' // https://.../modu-backend 저장됨
         REGISTRY_FE_ID       = 'ecr-registry-frontend'
         
-        // 5. 매니페스트(.yaml) 파일들이 위치한 프로젝트 내 경로
+        // 3. 쿠버네티스 설정 ID
+        K3S_CONFIG_ID        = 'k3s-config.yaml'
+        EKS_CONFIG_ID        = 'aws-eks-config'
+        
+        // 4. K8s 매니페스트 경로
         K8S_DIR              = 'infra/k8s'
     }
 
@@ -33,29 +28,34 @@ pipeline {
             }
         }
 
-        // 2단계: 컨테이너 빌드 및 AWS ECR 푸시 (CI 프로세스)
+        // 2단계: 컨테이너 빌드 및 AWS ECR 푸시 (CI)
         stage('2. 빌드: 컨테이너 이미지 생성 및 푸시') {
             steps {
                 script {
                     withCredentials([
-                        string(credentialsId: "${REGISTRY_BE_ID}", variable: 'URL_BE'),
-                        string(credentialsId: "${REGISTRY_FE_ID}", variable: 'URL_FE')
+                        string(credentialsId: "${REGISTRY_BE_ID}", variable: 'FULL_URI_BE'),
+                        string(credentialsId: "${REGISTRY_FE_ID}", variable: 'FULL_URI_FE')
                     ]) {
                         /**
-                         * [인증 최적화: docker.withRegistry]
-                         * 'ecr:리전:크리덴셜ID' 형식을 사용하면 플러그인이 인증을 대행합니다.
-                         * 이 블록 내부의 모든 docker push는 자동으로 인증 세션을 공유합니다.
+                         * [설계 포인트: 동적 도메인 파싱]
+                         * FULL_URI_BE에 이미 리포지토리 이름이 포함되어 있으므로(예: https://.../modu-backend),
+                         * split을 통해 인증에 필요한 도메인 부분만 자동으로 추출합니다.
                          */
-                        docker.withRegistry("https://${URL_BE}", "ecr:${AWS_REGION}:${AWS_CRED_ID}") {
+                        def registryDomain = FULL_URI_BE.split('/')[0..2].join('/')
+                        echo ">>> 인증 도메인: ${registryDomain}"
+
+                        // Docker Pipeline 및 Amazon ECR 플러그인을 사용하여 인증 세션을 관리합니다.
+                        docker.withRegistry("${registryDomain}", "ecr:${AWS_REGION}:${AWS_CRED_ID}") {
                             
                             echo ">>> [Backend] 이미지 빌드 및 푸시 시작"
-                            // 보안을 위해 작은따옴표('')를 사용하고, 변수는 쉘 환경 변수($)로 참조합니다.
-                            sh 'cd backend && docker build -t $URL_BE/$ECR_BACKEND_NAME:$BUILD_NUMBER .'
-                            sh 'docker push $URL_BE/$ECR_BACKEND_NAME:$BUILD_NUMBER'
+                            // FULL_URI_BE에 리포지토리명이 있으므로 변수를 중복해서 붙이지 않습니다.
+                            // 보안을 위해 작은따옴표('')를 사용하고 변수는 쉘 환경 변수($)로 참조합니다.
+                            sh 'cd backend && docker build -t $FULL_URI_BE:$BUILD_NUMBER .'
+                            sh 'docker push $FULL_URI_BE:$BUILD_NUMBER'
 
                             echo ">>> [Frontend] 이미지 빌드 및 푸시 시작"
-                            sh 'cd frontend && docker build -t $URL_FE/$ECR_FRONTEND_NAME:$BUILD_NUMBER .'
-                            sh 'docker push $URL_FE/$ECR_FRONTEND_NAME:$BUILD_NUMBER'
+                            sh 'cd frontend && docker build -t $FULL_URI_FE:$BUILD_NUMBER .'
+                            sh 'docker push $FULL_URI_FE:$BUILD_NUMBER'
                         }
                     }
                 }
@@ -82,7 +82,7 @@ pipeline {
     // 파이프라인 종료 후 정리 작업
     post {
         always {
-            // 호스트 서버의 디스크 용량 관리를 위해 빌드 과정에서 생성된 임시 이미지를 삭제합니다.
+            // 빌드 과정에서 생성된 임시 이미지를 삭제하여 디스크 용량을 관리합니다.
             sh "docker image prune -f"
         }
     }
@@ -90,29 +90,24 @@ pipeline {
 
 /**
  * [문서화] 쿠버네티스 클러스터 배포 공통 로직 함수
- * @param configId Kubeconfig 파일 ID
- * @param clusterName 로그 표시용 클러스터 이름
+ * 설계 중심의 협업을 위해 중복 코드를 제거하고 모듈화했습니다.
  */
 def deployToCluster(String configId, String clusterName) {
     script {
-        echo ">>> ${clusterName} 배포 프로세스 시작 (Namespace: modu-apps)"
+        echo ">>> ${clusterName} 배포 프로세스 시작"
         withCredentials([
             file(credentialsId: configId, variable: 'KUBECONFIG'),
-            string(credentialsId: "${REGISTRY_BE_ID}", variable: 'URL_BE'),
-            string(credentialsId: "${REGISTRY_FE_ID}", variable: 'URL_FE')
+            string(credentialsId: "${REGISTRY_BE_ID}", variable: 'FULL_URI_BE'),
+            string(credentialsId: "${REGISTRY_FE_ID}", variable: 'FULL_URI_FE')
         ]) {
-            /**
-             * [배포 보안 최적화]
-             * 비밀 정보(URL_BE 등)를 쉘 환경 변수($URL_BE)로 참조하여 보안 경고를 방지했습니다.
-             * 작은따옴표 3개(''') 블록을 사용하여 Groovy Interpolation이 발생하지 않도록 설계했습니다.
-             */
             sh '''
             # 1. 네임스페이스 보장
             kubectl --kubeconfig=$KUBECONFIG apply -f $K8S_DIR/00_namespace.yaml
             
             # 2. 이미지 주소 동적 치환 (sed)
-            sed -i "s|BACKEND_IMAGE|$URL_BE/$ECR_BACKEND_NAME:$BUILD_NUMBER|g" $K8S_DIR/backend.yaml
-            sed -i "s|FRONTEND_IMAGE|$URL_FE/$ECR_FRONTEND_NAME:$BUILD_NUMBER|g" $K8S_DIR/frontend.yaml
+            # FULL_URI_BE를 그대로 사용하여 중복 경로 문제를 해결합니다.
+            sed -i "s|BACKEND_IMAGE|$FULL_URI_BE:$BUILD_NUMBER|g" $K8S_DIR/backend.yaml
+            sed -i "s|FRONTEND_IMAGE|$FULL_URI_FE:$BUILD_NUMBER|g" $K8S_DIR/frontend.yaml
             
             # 3. 전체 매니페스트 적용
             kubectl --kubeconfig=$KUBECONFIG apply -f $K8S_DIR/
