@@ -29,7 +29,6 @@ pipeline {
         // 1단계: 소스 코드 체크아웃
         stage('1. 준비: 코드 가져오기') {
             steps {
-                // Git에 설정된 현재 브랜치의 최신 소스 코드를 가져옵니다.
                 checkout scm
             }
         }
@@ -48,48 +47,45 @@ pipeline {
                         )
                     ]) {
                         /**
-                         * [설계 최적화: 계정 ID 동적 추출]
-                         * ECR 주소에서 계정 ID를 자동으로 뽑아내어 하드코딩을 방지합니다.
+                         * [설계 포인트: 계정 ID 동적 추출]
+                         * URL_BE에서 계정 ID를 추출하여 ecrLogin 시 명시적으로 사용합니다.
                          */
                         def accountId = URL_BE.split('\\.')[0]
                         echo ">>> 추출된 AWS 계정 ID: ${accountId}"
 
                         /**
                          * [인증 최적화: ecrLogin]
-                         * registryIds를 명시하여 'no basic auth credentials' 에러를 방지합니다.
-                         * 이 단계에서 도커 인증 토큰이 갱신됩니다.
+                         * registryIds를 명시하여 인증 범위를 해당 계정으로 고정합니다.
                          */
                         ecrLogin(region: "${AWS_REGION}", registryIds: [accountId])
 
                         /**
-                         * [수정 포인트: sh 인용구 변경]
-                         * 'sh' 명령어에서 변수가 쉘 환경변수가 아닌 Groovy 변수(withCredentials로 정의된 것)일 경우,
-                         * 큰따옴표("")를 사용해야 쉘로 값이 올바르게 전달됩니다.
+                         * [보안 해결: Single Quotes 사용]
+                         * sh 내부에서 ${} 대신 $변수명 형식을 사용하고 작은따옴표('')로 감쌉니다.
+                         * 이렇게 하면 젠킨스가 보안 경고를 띄우지 않고 값을 안전하게 마스킹합니다.
                          */
                         echo ">>> [Backend] 이미지 빌드 및 푸시 시작"
-                        sh "cd backend && docker build -t ${URL_BE}/${ECR_BACKEND_NAME}:${BUILD_NUMBER} ."
-                        sh "docker push ${URL_BE}/${ECR_BACKEND_NAME}:${BUILD_NUMBER}"
+                        sh 'cd backend && docker build -t $URL_BE/$ECR_BACKEND_NAME:$BUILD_NUMBER .'
+                        sh 'docker push $URL_BE/$ECR_BACKEND_NAME:$BUILD_NUMBER'
 
                         echo ">>> [Frontend] 이미지 빌드 및 푸시 시작"
-                        sh "cd frontend && docker build -t ${URL_FE}/${ECR_FRONTEND_NAME}:${BUILD_NUMBER} ."
-                        sh "docker push ${URL_FE}/${ECR_FRONTEND_NAME}:${BUILD_NUMBER}"
+                        sh 'cd frontend && docker build -t $URL_FE/$ECR_FRONTEND_NAME:$BUILD_NUMBER .'
+                        sh 'docker push $URL_FE/$ECR_FRONTEND_NAME:$BUILD_NUMBER'
                     }
                 }
             }
         }
 
-        // 3단계: SSAFY 교육용 K3s 서버 배포 (Develop CD)
+        // 3단계: SSAFY 교육용 K3s 서버 배포 (CD - Develop)
         stage('3. 배포: SSAFY K3s (Develop)') {
-            // develop 브랜치에 코드가 반영되었을 때만 실행됩니다.
             when { branch 'develop' } 
             steps {
                 deployToCluster("${K3S_CONFIG_ID}", "SSAFY K3s")
             }
         }
 
-        // 4단계: AWS EKS 운영 서버 배포 (Main CD)
+        // 4단계: AWS EKS 운영 서버 배포 (CD - Main)
         stage('4. 배포: AWS EKS (Main)') {
-            // main 브랜치에 코드가 머지되었을 때만 운영 서버 배포를 실행합니다.
             when { branch 'main' }
             steps {
                 deployToCluster("${EKS_CONFIG_ID}", "AWS EKS")
@@ -97,10 +93,8 @@ pipeline {
         }
     }
 
-    // 파이프라인 종료 후 정리 작업
     post {
         always {
-            // 에이전트 노드의 디스크 용량 관리를 위해 임시 이미지를 정리합니다.
             sh "docker image prune -f"
         }
     }
@@ -120,21 +114,21 @@ def deployToCluster(String configId, String clusterName) {
             string(credentialsId: "${REGISTRY_FE_ID}", variable: 'URL_FE')
         ]) {
             /**
-             * [핵심: 문법 오류 방지]
-             * Groovy의 큰따옴표 3개(""") 안에서는 ${VAR} 형식을 사용하여 
-             * Groovy가 실행 전에 변수를 미리 치환(Interpolation)하도록 설계했습니다.
+             * [배포 보안 최적화]
+             * 비밀 정보(URL_BE, URL_FE)를 쉘 환경 변수($URL_BE)로 참조하여 보안 경고를 제거했습니다.
+             * sed 명령어의 구분자를 '|'로 사용하여 주소 내 '/'와의 충돌을 방지했습니다.
              */
-            sh """
-            # 1. 네임스페이스 확인 및 생성
-            kubectl --kubeconfig=${KUBECONFIG} apply -f ${K8S_DIR}/00_namespace.yaml
+            sh '''
+            # 1. 네임스페이스 보장
+            kubectl --kubeconfig=$KUBECONFIG apply -f $K8S_DIR/00_namespace.yaml
             
-            # 2. 동적 이미지 태깅 (sed 명령어로 주소 치환)
-            sed -i "s|BACKEND_IMAGE|${URL_BE}/${ECR_BACKEND_NAME}:${BUILD_NUMBER}|g" ${K8S_DIR}/backend.yaml
-            sed -i "s|FRONTEND_IMAGE|${URL_FE}/${ECR_FRONTEND_NAME}:${BUILD_NUMBER}|g" ${K8S_DIR}/frontend.yaml
+            # 2. 이미지 주소 동적 치환
+            sed -i "s|BACKEND_IMAGE|$URL_BE/$ECR_BACKEND_NAME:$BUILD_NUMBER|g" $K8S_DIR/backend.yaml
+            sed -i "s|FRONTEND_IMAGE|$URL_FE/$ECR_FRONTEND_NAME:$BUILD_NUMBER|g" $K8S_DIR/frontend.yaml
             
             # 3. 전체 매니페스트 적용
-            kubectl --kubeconfig=${KUBECONFIG} apply -f ${K8S_DIR}/
-            """
+            kubectl --kubeconfig=$KUBECONFIG apply -f $K8S_DIR/
+            '''
         }
     }
 }
