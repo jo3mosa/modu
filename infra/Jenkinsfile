@@ -1,43 +1,44 @@
 pipeline {
-    // 모든 가용 에이전트 노드에서 실행합니다.
+    // 모든 가용 에이전트(Worker Node)에서 실행되도록 설정합니다.
     agent any
 
-    // 전역 변수 설정: 설정값 중앙화를 통해 관리 효율성을 높입니다.
+    // 전역 변수 설정: 중복되는 문자열을 상수로 관리하여 휴먼 에러를 방지합니다.
     environment {
-        // 1. 인프라 공통 설정 (AWS 리전 및 리포지토리 명칭)
+        // 1. 인프라 공통 설정
         AWS_REGION           = 'ap-northeast-2'
         ECR_BACKEND_NAME     = 'modu-backend'
         ECR_FRONTEND_NAME    = 'modu-frontend'
         
-        // 2. 젠킨스 자격 증명 ID
-        // 자격 증명 타입이 'AWS Credentials'이므로 aws() 심볼 활용이 가능합니다.
-        AWS_CRED_ID          = 'aws-credentials'
+        // 2. 젠킨스 Credentials ID
+        AWS_CRED_ID          = 'aws-credentials' // 'AWS Credentials' 타입 필수
         GITHUB_CRED_ID       = 'github-token'
         
-        // 3. 환경별 쿠버네티스 설정 ID
-        K3S_CONFIG_ID        = 'k3s-config.yaml'
-        EKS_CONFIG_ID        = 'aws-eks-config'
+        // 3. 쿠버네티스 설정 ID (Kubeconfig Secret File)
+        K3S_CONFIG_ID        = 'k3s-config.yaml' // SSAFY 교육용 서버용
+        EKS_CONFIG_ID        = 'aws-eks-config'  // AWS 운영 서버용
         
-        // 4. ECR 레지스트리 주소 (Secret Text)
+        // 4. ECR 레지스트리 엔드포인트 ID (Secret Text)
         REGISTRY_BE_ID       = 'ecr-registry-backend'
         REGISTRY_FE_ID       = 'ecr-registry-frontend'
         
-        // 5. K8s 매니페스트 경로
+        // 5. 매니페스트(.yaml) 파일들이 위치한 프로젝트 내 경로
         K8S_DIR              = 'infra/k8s'
     }
 
     stages {
-        // 1단계: 최신 소스 코드 체크아웃
+        // 1단계: 소스 코드 체크아웃
         stage('1. 준비: 코드 가져오기') {
             steps {
+                // Git에 설정된 현재 브랜치의 최신 소스 코드를 작업 디렉토리로 가져옵니다.
                 checkout scm
             }
         }
 
-        // 2단계: 컨테이너 빌드 및 AWS ECR 푸시 (CI)
+        // 2단계: 컨테이너 빌드 및 AWS ECR 푸시 (CI 프로세스)
         stage('2. 빌드: 컨테이너 이미지 생성 및 푸시') {
             steps {
                 script {
+                    // 보안 자격 증명을 환경 변수로 바인딩합니다.
                     withCredentials([
                         string(credentialsId: "${REGISTRY_BE_ID}", variable: 'URL_BE'),
                         string(credentialsId: "${REGISTRY_FE_ID}", variable: 'URL_FE'),
@@ -48,19 +49,29 @@ pipeline {
                         )
                     ]) {
                         /**
-                         * [해결 포인트]
-                         * 1. AWS CLI 미설치 대응: 'sh aws ecr ...' 대신 플러그인의 'ecrLogin'을 사용합니다.
-                         * 2. 경로 안정성: 각 폴더로 이동(cd)하여 빌드함으로써 Dockerfile 탐색 에러를 방지합니다.
+                         * [설계 최적화: 계정 ID 동적 추출]
+                         * ECR 주소(예: 338330655332.dkr.ecr...)에서 첫 번째 마침표 앞의 계정 ID를 자동으로 뽑아냅니다.
+                         * 하드코딩을 배제하여 AWS 계정이 바뀌어도 코드를 수정할 필요가 없는 구조입니다.
                          */
-                        echo ">>> AWS ECR 로그인 시작 (Plug-in 방식)"
-                        ecrLogin(region: "${AWS_REGION}")
+                        def accountId = URL_BE.split('\\.')[0]
+                        echo ">>> 추출된 AWS 계정 ID: ${accountId}"
 
-                        echo ">>> [Backend] 이미지 빌드 및 ECR 푸시"
-                        // 작은따옴표를 사용하여 Groovy 변수 간섭 방지 및 보안 강화
+                        /**
+                         * [인증 최적화: ecrLogin]
+                         * aws cli가 설치되지 않은 환경에서도 젠킨스 플러그인이 직접 인증을 수행합니다.
+                         * registryIds를 명시하여 'no basic auth credentials' 에러를 원천 차단합니다.
+                         */
+                        echo ">>> AWS ECR 로그인 시작"
+                        ecrLogin(region: "${AWS_REGION}", registryIds: [accountId])
+
+                        // 백엔드 빌드 및 푸시
+                        // 작은따옴표('')를 사용하여 보안 경고를 방지하고, cd 명령어로 경로 안정성을 확보합니다.
+                        echo ">>> [Backend] 이미지 빌드 및 ECR 푸시 시작"
                         sh 'cd backend && docker build -t ${URL_BE}/${ECR_BACKEND_NAME}:${BUILD_NUMBER} .'
                         sh 'docker push ${URL_BE}/${ECR_BACKEND_NAME}:${BUILD_NUMBER}'
 
-                        echo ">>> [Frontend] 이미지 빌드 및 ECR 푸시"
+                        // 프론트엔드 빌드 및 푸시
+                        echo ">>> [Frontend] 이미지 빌드 및 ECR 푸시 시작"
                         sh 'cd frontend && docker build -t ${URL_FE}/${ECR_FRONTEND_NAME}:${BUILD_NUMBER} .'
                         sh 'docker push ${URL_FE}/${ECR_FRONTEND_NAME}:${BUILD_NUMBER}'
                     }
@@ -68,16 +79,18 @@ pipeline {
             }
         }
 
-        // 3단계: SSAFY 교육 환경 배포 (CD - Develop)
+        // 3단계: SSAFY 교육용 K3s 서버 배포 (Develop CD)
         stage('3. 배포: SSAFY K3s (Develop)') {
+            // develop 브랜치에 코드가 반영되었을 때만 실행됩니다.
             when { branch 'develop' } 
             steps {
                 deployToCluster("${K3S_CONFIG_ID}", "SSAFY K3s")
             }
         }
 
-        // 4단계: AWS 운영 환경 배포 (CD - Main)
+        // 4단계: AWS EKS 운영 서버 배포 (Main CD)
         stage('4. 배포: AWS EKS (Main)') {
+            // main 브랜치에 코드가 머지되었을 때만 운영 서버 배포를 실행합니다.
             when { branch 'main' }
             steps {
                 deployToCluster("${EKS_CONFIG_ID}", "AWS EKS")
@@ -85,36 +98,39 @@ pipeline {
         }
     }
 
-    // 파이프라인 종료 후 정리 작업
+    // 파이프라인 종료 후(성공/실패 상관없이) 실행되는 정리 블록
     post {
         always {
-            // 호스트 서버의 디스크 용량 관리를 위해 빌드 과정의 임시 이미지 삭제
+            // 에이전트의 디스크 공간 확보를 위해 빌드 과정에서 생성된 임시 이미지를 정리합니다.
             sh "docker image prune -f"
         }
     }
 }
 
 /**
- * [문서화] 클러스터 배포 공통 로직 함수
- * 중복 코드를 제거하고 협업 시 가시성을 높이기 위해 별도 함수로 관리합니다.
- * @param configId Kubeconfig 파일 ID
- * @param clusterName 로그용 명칭
+ * [문서화] 쿠버네티스 클러스터 배포 공통 로직 함수
+ * 중복되는 배포 프로세스를 모듈화하여 관리 효율성을 높였습니다.
+ * @param configId 젠킨스에 등록된 Kubeconfig(Secret File) ID
+ * @param clusterName 로그 식별용 명칭
  */
 def deployToCluster(String configId, String clusterName) {
     script {
-        echo ">>> ${clusterName} 배포 프로세스 시작"
+        echo ">>> ${clusterName} 배포 프로세스 시작 (Namespace: modu-apps)"
         withCredentials([
             file(credentialsId: configId, variable: 'KUBECONFIG'),
             string(credentialsId: "${REGISTRY_BE_ID}", variable: 'URL_BE'),
             string(credentialsId: "${REGISTRY_FE_ID}", variable: 'URL_FE')
         ]) {
-            // 쉘 내부 변수 처리를 위해 작은따옴표와 백슬래시 이스케이프를 적절히 활용합니다.
             sh """
+            # 1. 네임스페이스 확인: 애플리케이션 운영 공간인 modu-apps가 없다면 생성합니다.
             kubectl --kubeconfig=${KUBECONFIG} apply -f ${K8S_DIR}/00_namespace.yaml
             
+            # 2. 동적 이미지 태깅: YAML 내 Placeholder를 현재 빌드된 실제 ECR 주소와 태그로 치환합니다.
+            # 쉘 변수($) 간섭 방지를 위해 URL_BE 앞에 백슬래시(\)를 사용합니다.
             sed -i "s|BACKEND_IMAGE|\${URL_BE}/${ECR_BACKEND_NAME}:${BUILD_NUMBER}|g" ${K8S_DIR}/backend.yaml
             sed -i "s|FRONTEND_IMAGE|\${URL_FE}/${ECR_FRONTEND_NAME}:${BUILD_NUMBER}|g" ${K8S_DIR}/frontend.yaml
             
+            # 3. 전체 매니페스트 적용: K8S_DIR 폴더 내의 모든 설정을 클러스터에 반영합니다.
             kubectl --kubeconfig=${KUBECONFIG} apply -f ${K8S_DIR}/
             """
         }
