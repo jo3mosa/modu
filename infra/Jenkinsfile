@@ -19,7 +19,7 @@ pipeline {
         REGISTRY_BE_ID       = 'ecr-registry-backend'
         REGISTRY_FE_ID       = 'ecr-registry-frontend'
         
-        // YAML 파일 경로 정의 (유지보수 용이)
+        // YAML 파일 경로 정의
         K8S_DIR              = 'infra/k8s'
     }
 
@@ -33,10 +33,11 @@ pipeline {
         stage('2. 빌드: 컨테이너 이미지 생성 및 푸시') {
             steps {
                 script {
+                    // 수정 포인트: [$class: ...] 대신 aws(...) 심볼 사용
                     withCredentials([
                         string(credentialsId: "${REGISTRY_BE_ID}", variable: 'URL_BE'),
                         string(credentialsId: "${REGISTRY_FE_ID}", variable: 'URL_FE'),
-                        [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CRED_ID}"]
+                        aws(credentialsId: "${AWS_CRED_ID}", accessKeyVariable: 'AWS_ACCESS_KEY_ID', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')
                     ]) {
                         // 백엔드 빌드 및 푸시
                         sh "docker build -t ${URL_BE}/${ECR_BACKEND_NAME}:${BUILD_NUMBER} ./backend"
@@ -52,7 +53,8 @@ pipeline {
         }
 
         stage('3. 배포: SSAFY K3s (Develop)') {
-            when { branch 'develop' }
+            // 현재 작업 브랜치에서 테스트하려면 branch 'feat/infra/S14P31B106-189_jenkinsSettings'로 잠시 수정하세요.
+            when { branch 'develop' } 
             steps {
                 deployToCluster("${K3S_CONFIG_ID}", "SSAFY K3s")
             }
@@ -73,7 +75,6 @@ pipeline {
     }
 }
 
-// 배포 로직 공통 함수화 (Namespace 및 경로 최적화)
 def deployToCluster(String configId, String clusterName) {
     script {
         echo ">>> ${clusterName} 배포 시작 (Namespace: modu-apps)"
@@ -86,7 +87,7 @@ def deployToCluster(String configId, String clusterName) {
             # 1. 네임스페이스 생성/확인
             kubectl --kubeconfig=${KUBECONFIG} apply -f ${K8S_DIR}/00_namespace.yaml
             
-            # 2. 이미지 태그 치환 (infra/k8s 경로 반영)
+            # 2. 이미지 태그 치환 (인프라 폴더 경로 반영)
             sed -i 's|BACKEND_IMAGE|${URL_BE}/${ECR_BACKEND_NAME}:${BUILD_NUMBER}|g' ${K8S_DIR}/backend.yaml
             sed -i 's|FRONTEND_IMAGE|${URL_FE}/${ECR_FRONTEND_NAME}:${BUILD_NUMBER}|g' ${K8S_DIR}/frontend.yaml
             
