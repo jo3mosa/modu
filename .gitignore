@@ -65,4 +65,12 @@ analysis_server/data/*.csv
 kis_token.json
 **/kis_token.json
 
+# 2. ai-agent
+__pycache__/
+*.pyc
+modu-ai/
+venv/
+.venv/
+.vscode/
+.idea/
 .env
