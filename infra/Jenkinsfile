@@ -56,19 +56,23 @@ pipeline {
 
                         /**
                          * [인증 최적화: ecrLogin]
-                         * 시스템에 aws cli가 없어도 플러그인을 통해 안전하게 로그인합니다.
+                         * registryIds를 명시하여 'no basic auth credentials' 에러를 방지합니다.
+                         * 이 단계에서 도커 인증 토큰이 갱신됩니다.
                          */
                         ecrLogin(region: "${AWS_REGION}", registryIds: [accountId])
 
-                        // 백엔드 및 프론트엔드 빌드/푸시
-                        // 작은따옴표('')를 사용하여 쉘이 변수를 직접 해석하게 함으로써 보안 경고를 제거합니다.
+                        /**
+                         * [수정 포인트: sh 인용구 변경]
+                         * 'sh' 명령어에서 변수가 쉘 환경변수가 아닌 Groovy 변수(withCredentials로 정의된 것)일 경우,
+                         * 큰따옴표("")를 사용해야 쉘로 값이 올바르게 전달됩니다.
+                         */
                         echo ">>> [Backend] 이미지 빌드 및 푸시 시작"
-                        sh 'cd backend && docker build -t ${URL_BE}/${ECR_BACKEND_NAME}:${BUILD_NUMBER} .'
-                        sh 'docker push ${URL_BE}/${ECR_BACKEND_NAME}:${BUILD_NUMBER}'
+                        sh "cd backend && docker build -t ${URL_BE}/${ECR_BACKEND_NAME}:${BUILD_NUMBER} ."
+                        sh "docker push ${URL_BE}/${ECR_BACKEND_NAME}:${BUILD_NUMBER}"
 
                         echo ">>> [Frontend] 이미지 빌드 및 푸시 시작"
-                        sh 'cd frontend && docker build -t ${URL_FE}/${ECR_FRONTEND_NAME}:${BUILD_NUMBER} .'
-                        sh 'docker push ${URL_FE}/${ECR_FRONTEND_NAME}:${BUILD_NUMBER}'
+                        sh "cd frontend && docker build -t ${URL_FE}/${ECR_FRONTEND_NAME}:${BUILD_NUMBER} ."
+                        sh "docker push ${URL_FE}/${ECR_FRONTEND_NAME}:${BUILD_NUMBER}"
                     }
                 }
             }
@@ -76,6 +80,7 @@ pipeline {
 
         // 3단계: SSAFY 교육용 K3s 서버 배포 (Develop CD)
         stage('3. 배포: SSAFY K3s (Develop)') {
+            // develop 브랜치에 코드가 반영되었을 때만 실행됩니다.
             when { branch 'develop' } 
             steps {
                 deployToCluster("${K3S_CONFIG_ID}", "SSAFY K3s")
@@ -84,6 +89,7 @@ pipeline {
 
         // 4단계: AWS EKS 운영 서버 배포 (Main CD)
         stage('4. 배포: AWS EKS (Main)') {
+            // main 브랜치에 코드가 머지되었을 때만 운영 서버 배포를 실행합니다.
             when { branch 'main' }
             steps {
                 deployToCluster("${EKS_CONFIG_ID}", "AWS EKS")
@@ -91,6 +97,7 @@ pipeline {
         }
     }
 
+    // 파이프라인 종료 후 정리 작업
     post {
         always {
             // 에이전트 노드의 디스크 용량 관리를 위해 임시 이미지를 정리합니다.
@@ -113,16 +120,15 @@ def deployToCluster(String configId, String clusterName) {
             string(credentialsId: "${REGISTRY_FE_ID}", variable: 'URL_FE')
         ]) {
             /**
-             * [수정 포인트]
-             * Groovy의 큰따옴표 3개(""") 안에서 변수를 사용할 때는 ${VAR} 형식을 엄격히 지켜야 합니다.
-             * 쉘 변수와 섞이지 않도록 Groovy가 미리 해석하여 값을 채워넣도록 설계했습니다.
+             * [핵심: 문법 오류 방지]
+             * Groovy의 큰따옴표 3개(""") 안에서는 ${VAR} 형식을 사용하여 
+             * Groovy가 실행 전에 변수를 미리 치환(Interpolation)하도록 설계했습니다.
              */
             sh """
             # 1. 네임스페이스 확인 및 생성
             kubectl --kubeconfig=${KUBECONFIG} apply -f ${K8S_DIR}/00_namespace.yaml
             
             # 2. 동적 이미지 태깅 (sed 명령어로 주소 치환)
-            # URL 내 '/' 기호와의 충돌을 막기 위해 구분자로 '|'를 사용합니다.
             sed -i "s|BACKEND_IMAGE|${URL_BE}/${ECR_BACKEND_NAME}:${BUILD_NUMBER}|g" ${K8S_DIR}/backend.yaml
             sed -i "s|FRONTEND_IMAGE|${URL_FE}/${ECR_FRONTEND_NAME}:${BUILD_NUMBER}|g" ${K8S_DIR}/frontend.yaml
             
