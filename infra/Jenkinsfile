@@ -4,13 +4,13 @@ pipeline {
 
     // 전역 변수 설정: 설정값 중앙화를 통해 관리 효율성을 높입니다.
     environment {
-        // 1. 인프라 공통 설정
+        // 1. 인프라 공통 설정 (AWS 리전 및 리포지토리 명칭)
         AWS_REGION           = 'ap-northeast-2'
         ECR_BACKEND_NAME     = 'modu-backend'
         ECR_FRONTEND_NAME    = 'modu-frontend'
         
         // 2. 젠킨스 자격 증명 ID
-        // 'AWS Credentials' 타입을 사용하므로 aws() 심볼 활용이 가능합니다.
+        // 자격 증명 타입이 'AWS Credentials'이므로 aws() 심볼 활용이 가능합니다.
         AWS_CRED_ID          = 'aws-credentials'
         GITHUB_CRED_ID       = 'github-token'
         
@@ -34,11 +34,10 @@ pipeline {
             }
         }
 
-        // 2단계: 컨테이너 빌드 및 AWS ECR 푸시
+        // 2단계: 컨테이너 빌드 및 AWS ECR 푸시 (CI)
         stage('2. 빌드: 컨테이너 이미지 생성 및 푸시') {
             steps {
                 script {
-                    // 보안 강화를 위해 withCredentials 내에서 변수를 선언합니다.
                     withCredentials([
                         string(credentialsId: "${REGISTRY_BE_ID}", variable: 'URL_BE'),
                         string(credentialsId: "${REGISTRY_FE_ID}", variable: 'URL_FE'),
@@ -49,24 +48,27 @@ pipeline {
                         )
                     ]) {
                         /**
-                         * [수정 포인트]
-                         * 1. 보안: 큰따옴표 대신 작은따옴표('')를 사용하여 Groovy Interpolation 경고를 제거합니다.
-                         * 2. 경로: -f 옵션을 통해 Dockerfile의 위치를 명시적으로 지정합니다.
+                         * [해결 포인트]
+                         * 1. AWS CLI 미설치 대응: 'sh aws ecr ...' 대신 플러그인의 'ecrLogin'을 사용합니다.
+                         * 2. 경로 안정성: 각 폴더로 이동(cd)하여 빌드함으로써 Dockerfile 탐색 에러를 방지합니다.
                          */
-                        echo ">>> [Backend] 이미지 빌드 및 ECR 푸시 시작"
-                        sh 'docker build -f ./backend/Dockerfile -t ${URL_BE}/${ECR_BACKEND_NAME}:${BUILD_NUMBER} ./backend'
-                        sh 'aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${URL_BE}'
+                        echo ">>> AWS ECR 로그인 시작 (Plug-in 방식)"
+                        ecrLogin(region: "${AWS_REGION}")
+
+                        echo ">>> [Backend] 이미지 빌드 및 ECR 푸시"
+                        // 작은따옴표를 사용하여 Groovy 변수 간섭 방지 및 보안 강화
+                        sh 'cd backend && docker build -t ${URL_BE}/${ECR_BACKEND_NAME}:${BUILD_NUMBER} .'
                         sh 'docker push ${URL_BE}/${ECR_BACKEND_NAME}:${BUILD_NUMBER}'
 
-                        echo ">>> [Frontend] 이미지 빌드 및 ECR 푸시 시작"
-                        sh 'docker build -f ./frontend/Dockerfile -t ${URL_FE}/${ECR_FRONTEND_NAME}:${BUILD_NUMBER} ./frontend'
+                        echo ">>> [Frontend] 이미지 빌드 및 ECR 푸시"
+                        sh 'cd frontend && docker build -t ${URL_FE}/${ECR_FRONTEND_NAME}:${BUILD_NUMBER} .'
                         sh 'docker push ${URL_FE}/${ECR_FRONTEND_NAME}:${BUILD_NUMBER}'
                     }
                 }
             }
         }
 
-        // 3단계: SSAFY 교육 환경 배포 (Develop)
+        // 3단계: SSAFY 교육 환경 배포 (CD - Develop)
         stage('3. 배포: SSAFY K3s (Develop)') {
             when { branch 'develop' } 
             steps {
@@ -74,7 +76,7 @@ pipeline {
             }
         }
 
-        // 4단계: AWS 운영 환경 배포 (Main)
+        // 4단계: AWS 운영 환경 배포 (CD - Main)
         stage('4. 배포: AWS EKS (Main)') {
             when { branch 'main' }
             steps {
@@ -94,6 +96,7 @@ pipeline {
 
 /**
  * [문서화] 클러스터 배포 공통 로직 함수
+ * 중복 코드를 제거하고 협업 시 가시성을 높이기 위해 별도 함수로 관리합니다.
  * @param configId Kubeconfig 파일 ID
  * @param clusterName 로그용 명칭
  */
@@ -105,7 +108,7 @@ def deployToCluster(String configId, String clusterName) {
             string(credentialsId: "${REGISTRY_BE_ID}", variable: 'URL_BE'),
             string(credentialsId: "${REGISTRY_FE_ID}", variable: 'URL_FE')
         ]) {
-            // 보안을 위해 쉘 내부 변수(${}) 처리를 위해 작은따옴표와 이스케이프를 활용합니다.
+            // 쉘 내부 변수 처리를 위해 작은따옴표와 백슬래시 이스케이프를 적절히 활용합니다.
             sh """
             kubectl --kubeconfig=${KUBECONFIG} apply -f ${K8S_DIR}/00_namespace.yaml
             
