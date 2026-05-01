@@ -1,34 +1,28 @@
+import { useState, useEffect } from 'react';
 import { Search } from 'lucide-react';
+import TutorialOverlay from '../components/TutorialOverlay';
 
 export default function DashboardPage() {
-  return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+  const [showTutorial, setShowTutorial] = useState(false);
 
-      {/* 종목 검색 창 */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        background: 'rgba(255,255,255,0.05)',
-        borderRadius: '12px',
-        padding: '0.8rem 1.5rem',
-        marginBottom: '3rem',
-        border: '1px solid var(--glass-border, rgba(255,255,255,0.1))'
-      }}>
-        <Search size={20} color="#888" style={{ marginRight: '1rem' }} />
-        <input
-          type="text"
-          placeholder="원하는 종목을 검색해보세요!"
-          style={{
-            flex: 1,
-            background: 'transparent',
-            border: 'none',
-            color: '#fff',
-            fontSize: '1.1rem',
-            outline: 'none',
-            fontFamily: 'inherit'
-          }}
-        />
-      </div>
+  useEffect(() => {
+    // 연동 시 -> 최초 1회만
+    // const isCompleted = localStorage.getItem('tutorialCompleted');
+    // if (!isCompleted) setShowTutorial(true);
+
+    // 현재는 무조건 뜨도록 설정 ~
+    setShowTutorial(true);
+  }, []);
+
+  const handleCloseTutorial = () => {
+    // localStorage.setItem('tutorialCompleted', 'true');
+    setShowTutorial(false);
+  };
+
+  return (
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+
+      {showTutorial && <TutorialOverlay onClose={handleCloseTutorial} />}
 
       <h1 style={{ fontSize: '2rem', marginBottom: '2rem' }}>
         총 자산 <br />
