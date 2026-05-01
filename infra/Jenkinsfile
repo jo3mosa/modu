@@ -1,50 +1,62 @@
 pipeline {
+    // 실행 가능한 모든 에이전트에서 파이프라인을 실행합니다.
     agent any
 
+    // 전역 변수 설정: 중복되는 문자열을 상수로 관리하여 휴먼 에러를 방지합니다.
     environment {
         // 인프라 공통 설정
         AWS_REGION           = 'ap-northeast-2'
         ECR_BACKEND_NAME     = 'modu-backend'
         ECR_FRONTEND_NAME    = 'modu-frontend'
         
-        // 젠킨스 자격 증명 ID
+        // 젠킨스 Credentials ID (Jenkins 관리 > Credentials에 등록된 ID)
         AWS_CRED_ID          = 'aws-credentials'
         GITHUB_CRED_ID       = 'github-token'
         
-        // 환경별 배포 설정 ID
-        K3S_CONFIG_ID        = 'k3s-config.yaml' // SSAFY용
-        EKS_CONFIG_ID        = 'aws-eks-config'  // AWS용
+        // 환경별 쿠버네티스 설정 파일 ID (Secret File로 등록 필요)
+        K3S_CONFIG_ID        = 'k3s-config.yaml' // SSAFY 제공 서버용
+        EKS_CONFIG_ID        = 'aws-eks-config'  // AWS 운영 서버용 (현재 미등록 상태)
         
-        // ECR 주소 Secret Text ID
+        // AWS ECR 레지스트리 주소 (Secret Text로 등록 필요)
         REGISTRY_BE_ID       = 'ecr-registry-backend'
         REGISTRY_FE_ID       = 'ecr-registry-frontend'
         
-        // YAML 파일 경로 정의
+        // 쿠버네티스 매니페스트 파일이 위치한 경로
         K8S_DIR              = 'infra/k8s'
     }
 
     stages {
+        // 1단계: 소스 코드 체크아웃
         stage('1. 준비: 코드 가져오기') {
             steps {
+                // SCM(Git)에 설정된 현재 브랜치의 최신 코드를 가져옵니다.
                 checkout scm
             }
         }
 
+        // 2단계: Docker 이미지 빌드 및 ECR 푸시 (CI)
         stage('2. 빌드: 컨테이너 이미지 생성 및 푸시') {
             steps {
                 script {
-                    // 수정 포인트: [$class: ...] 대신 aws(...) 심볼 사용
+                    // 보안 자격 증명을 환경 변수로 바인딩합니다.
                     withCredentials([
                         string(credentialsId: "${REGISTRY_BE_ID}", variable: 'URL_BE'),
                         string(credentialsId: "${REGISTRY_FE_ID}", variable: 'URL_FE'),
-                        aws(credentialsId: "${AWS_CRED_ID}", accessKeyVariable: 'AWS_ACCESS_KEY_ID', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')
+                        // [수정] aws() 대신 amazonWebServicesCredentials 심볼을 사용하여 안정성을 높였습니다.
+                        amazonWebServicesCredentials(
+                            credentialsId: "${AWS_CRED_ID}", 
+                            accessKeyVariable: 'AWS_ACCESS_KEY_ID', 
+                            secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                        )
                     ]) {
-                        // 백엔드 빌드 및 푸시
+                        // 백엔드 이미지 빌드 및 AWS ECR 로그인/푸시
+                        echo ">>> 백엔드 빌드 시작: ${ECR_BACKEND_NAME}:${BUILD_NUMBER}"
                         sh "docker build -t ${URL_BE}/${ECR_BACKEND_NAME}:${BUILD_NUMBER} ./backend"
                         sh "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${URL_BE}"
                         sh "docker push ${URL_BE}/${ECR_BACKEND_NAME}:${BUILD_NUMBER}"
 
-                        // 프론트엔드 빌드 및 푸시
+                        // 프론트엔드 이미지 빌드 및 푸시
+                        echo ">>> 프론트엔드 빌드 시작: ${ECR_FRONTEND_NAME}:${BUILD_NUMBER}"
                         sh "docker build -t ${URL_FE}/${ECR_FRONTEND_NAME}:${BUILD_NUMBER} ./frontend"
                         sh "docker push ${URL_FE}/${ECR_FRONTEND_NAME}:${BUILD_NUMBER}"
                     }
@@ -52,15 +64,20 @@ pipeline {
             }
         }
 
+        // 3단계: SSAFY 서버 배포 (Develop CD)
         stage('3. 배포: SSAFY K3s (Develop)') {
-            // 현재 작업 브랜치에서 테스트하려면 branch 'feat/infra/S14P31B106-189_jenkinsSettings'로 잠시 수정하세요.
+            // develop 브랜치에 코드가 반영되었을 때만 배포를 진행합니다.
+            // 테스트 시에는 branch 'feat/infra/S14P31B106-189_jenkinsSettings'로 수정하여 확인 가능합니다.
             when { branch 'develop' } 
             steps {
+                // 하단에 정의된 공통 배포 함수 호출
                 deployToCluster("${K3S_CONFIG_ID}", "SSAFY K3s")
             }
         }
 
+        // 4단계: AWS 운영 서버 배포 (Main CD)
         stage('4. 배포: AWS EKS (Main)') {
+            // main 브랜치에 Merge 되었을 때만 실행됩니다.
             when { branch 'main' }
             steps {
                 deployToCluster("${EKS_CONFIG_ID}", "AWS EKS")
@@ -68,30 +85,38 @@ pipeline {
         }
     }
 
+    // 빌드 종료 후 항상 실행되는 블록
     post {
         always {
+            // 젠킨스 에이전트의 디스크 용량 관리를 위해 사용하지 않는 이미지를 정리합니다.
             sh "docker image prune -f"
         }
     }
 }
 
+/**
+ * 특정 쿠버네티스 클러스터로 배포를 수행하는 공통 함수
+ * @param configId 젠킨스에 등록된 Kubeconfig 파일 ID
+ * @param clusterName 로그 표시용 클러스터 이름
+ */
 def deployToCluster(String configId, String clusterName) {
     script {
-        echo ">>> ${clusterName} 배포 시작 (Namespace: modu-apps)"
+        echo ">>> ${clusterName} 배포 프로세스 시작 (Namespace: modu-apps)"
         withCredentials([
             file(credentialsId: configId, variable: 'KUBECONFIG'),
             string(credentialsId: "${REGISTRY_BE_ID}", variable: 'URL_BE'),
             string(credentialsId: "${REGISTRY_FE_ID}", variable: 'URL_FE')
         ]) {
             sh """
-            # 1. 네임스페이스 생성/확인
+            # 1. 네임스페이스 선언: 애플리케이션 격리를 위해 modu-apps 공간을 먼저 확인/생성합니다.
             kubectl --kubeconfig=${KUBECONFIG} apply -f ${K8S_DIR}/00_namespace.yaml
             
-            # 2. 이미지 태그 치환 (인프라 폴더 경로 반영)
+            # 2. 동적 태깅: YAML 파일 내의 Placeholder를 현재 빌드된 이미지 주소로 치환합니다.
+            # 이 과정을 통해 매번 최신 이미지가 배포됨을 보장합니다.
             sed -i 's|BACKEND_IMAGE|${URL_BE}/${ECR_BACKEND_NAME}:${BUILD_NUMBER}|g' ${K8S_DIR}/backend.yaml
             sed -i 's|FRONTEND_IMAGE|${URL_FE}/${ECR_FRONTEND_NAME}:${BUILD_NUMBER}|g' ${K8S_DIR}/frontend.yaml
             
-            # 3. 전체 매니페스트 적용
+            # 3. 배포 실행: 수정한 모든 쿠버네티스 매니페스트를 적용합니다.
             kubectl --kubeconfig=${KUBECONFIG} apply -f ${K8S_DIR}/
             """
         }
