@@ -1,0 +1,119 @@
+pipeline {
+    // SSAFY 인프라 환경의 모든 가용 에이전트에서 실행합니다.
+    agent any
+
+    // 전역 변수 설정: 설정값 중앙화를 통해 관리 효율성을 높입니다.
+    environment {
+        // 1. 인프라 공통 설정
+        AWS_REGION           = 'ap-northeast-2'
+        
+        // 2. 젠킨스 자격 증명 ID
+        AWS_CRED_ID          = 'aws-credentials'
+        REGISTRY_BE_ID       = 'ecr-registry-backend' // https://.../modu-backend
+        REGISTRY_FE_ID       = 'ecr-registry-frontend'
+        
+        // 3. 쿠버네티스 설정 ID
+        K3S_CONFIG_ID        = 'k3s-config.yaml'
+        EKS_CONFIG_ID        = 'aws-eks-config'
+        
+        // 4. K8s 매니페스트 경로
+        K8S_DIR              = 'infra/k8s'
+    }
+
+    stages {
+        // 1단계: 최신 소스 코드 체크아웃
+        stage('1. 준비: 코드 가져오기') {
+            steps {
+                checkout scm
+            }
+        }
+
+        // 2단계: 컨테이너 빌드 및 AWS ECR 푸시 (CI)
+        stage('2. 빌드: 컨테이너 이미지 생성 및 푸시') {
+            steps {
+                script {
+                    withCredentials([
+                        string(credentialsId: "${REGISTRY_BE_ID}", variable: 'FULL_URI_BE'),
+                        string(credentialsId: "${REGISTRY_FE_ID}", variable: 'FULL_URI_FE')
+                    ]) {
+                        /**
+                         * [방어적 설계: 프로토콜 및 도메인 정렬]
+                         * 1. 마지막 슬래시(/)를 기준으로 리포지토리 이름을 제거합니다.
+                         * 2. 추출된 도메인에 'https://'가 없다면 강제로 붙여 MalformedURLException을 방어합니다.
+                         */
+                        def domainPart = FULL_URI_BE.substring(0, FULL_URI_BE.lastIndexOf('/'))
+                        def registryDomain = domainPart.startsWith('http') ? domainPart : "https://${domainPart}"
+                        
+                        echo ">>> 인증 도메인 확정: ${registryDomain}"
+
+                        // Docker Pipeline 플러그인을 사용하여 인증 컨텍스트를 유지합니다.
+                        docker.withRegistry("${registryDomain}", "ecr:${AWS_REGION}:${AWS_CRED_ID}") {
+                            
+                            echo ">>> [Backend] 이미지 빌드 및 푸시 시작"
+                            // $FULL_URI_BE 변수에 이미 리포지토리명이 포함되어 있으므로 그대로 사용합니다.
+                            sh 'cd backend && docker build -t $FULL_URI_BE:$BUILD_NUMBER .'
+                            sh 'docker push $FULL_URI_BE:$BUILD_NUMBER'
+
+                            echo ">>> [Frontend] 이미지 빌드 및 푸시 시작"
+                            sh 'cd frontend && docker build -t $FULL_URI_FE:$BUILD_NUMBER .'
+                            sh 'docker push $FULL_URI_FE:$BUILD_NUMBER'
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3단계: SSAFY 교육용 K3s 서버 배포 (CD - Develop)
+        stage('3. 배포: SSAFY K3s (Develop)') {
+            when { branch 'develop' } 
+            steps {
+                deployToCluster("${K3S_CONFIG_ID}", "SSAFY K3s")
+            }
+        }
+
+        // 4단계: AWS EKS 운영 서버 배포 (CD - Main)
+        stage('4. 배포: AWS EKS (Main)') {
+            when { branch 'main' }
+            steps {
+                deployToCluster("${EKS_CONFIG_ID}", "AWS EKS")
+            }
+        }
+    }
+
+    // 파이프라인 종료 후 정리 작업
+    post {
+        always {
+            // 호스트 서버의 디스크 용량 관리를 위해 빌드 과정에서 생성된 임시 이미지를 삭제합니다.
+            sh "docker image prune -f"
+        }
+    }
+}
+
+/**
+ * [문서화] 쿠버네티스 클러스터 배포 공통 로직 함수
+ * 데이터 기반 인프라 관리를 위해 배포 프로세스를 표준화했습니다.
+ */
+def deployToCluster(String configId, String clusterName) {
+    script {
+        echo ">>> ${clusterName} 배포 프로세스 시작"
+        withCredentials([
+            file(credentialsId: configId, variable: 'KUBECONFIG'),
+            string(credentialsId: "${REGISTRY_BE_ID}", variable: 'FULL_URI_BE'),
+            string(credentialsId: "${REGISTRY_FE_ID}", variable: 'FULL_URI_FE')
+        ]) {
+            // 쉘 스크립트 블록 내에서 변수 충돌 방지 및 가독성을 위해 작은따옴표 3개를 사용합니다.
+            sh '''
+            # 1. 네임스페이스 보장
+            kubectl --kubeconfig=$KUBECONFIG apply -f $K8S_DIR/00_namespace.yaml
+            
+            # 2. 이미지 주소 동적 치환 (sed)
+            # URL 내 슬래시(/)와의 충돌을 막기 위해 구분자로 '|'를 사용합니다.
+            sed -i "s|BACKEND_IMAGE|$FULL_URI_BE:$BUILD_NUMBER|g" $K8S_DIR/backend.yaml
+            sed -i "s|FRONTEND_IMAGE|$FULL_URI_FE:$BUILD_NUMBER|g" $K8S_DIR/frontend.yaml
+            
+            # 3. 전체 매니페스트 적용
+            kubectl --kubeconfig=$KUBECONFIG apply -f $K8S_DIR/
+            '''
+        }
+    }
+}
