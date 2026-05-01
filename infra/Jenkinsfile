@@ -1,0 +1,98 @@
+pipeline {
+    agent any
+
+    environment {
+        // 인프라 공통 설정
+        AWS_REGION           = 'ap-northeast-2'
+        ECR_BACKEND_NAME     = 'modu-backend'
+        ECR_FRONTEND_NAME    = 'modu-frontend'
+        
+        // 젠킨스 자격 증명 ID
+        AWS_CRED_ID          = 'aws-credentials'
+        GITHUB_CRED_ID       = 'github-token'
+        
+        // 환경별 배포 설정 ID
+        K3S_CONFIG_ID        = 'k3s-config.yaml' // SSAFY용
+        EKS_CONFIG_ID        = 'aws-eks-config'  // AWS용
+        
+        // ECR 주소 Secret Text ID
+        REGISTRY_BE_ID       = 'ecr-registry-backend'
+        REGISTRY_FE_ID       = 'ecr-registry-frontend'
+        
+        // YAML 파일 경로 정의 (유지보수 용이)
+        K8S_DIR              = 'infra/k8s'
+    }
+
+    stages {
+        stage('1. 준비: 코드 가져오기') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('2. 빌드: 컨테이너 이미지 생성 및 푸시') {
+            steps {
+                script {
+                    withCredentials([
+                        string(credentialsId: "${REGISTRY_BE_ID}", variable: 'URL_BE'),
+                        string(credentialsId: "${REGISTRY_FE_ID}", variable: 'URL_FE'),
+                        [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CRED_ID}"]
+                    ]) {
+                        // 백엔드 빌드 및 푸시
+                        sh "docker build -t ${URL_BE}/${ECR_BACKEND_NAME}:${BUILD_NUMBER} ./backend"
+                        sh "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${URL_BE}"
+                        sh "docker push ${URL_BE}/${ECR_BACKEND_NAME}:${BUILD_NUMBER}"
+
+                        // 프론트엔드 빌드 및 푸시
+                        sh "docker build -t ${URL_FE}/${ECR_FRONTEND_NAME}:${BUILD_NUMBER} ./frontend"
+                        sh "docker push ${URL_FE}/${ECR_FRONTEND_NAME}:${BUILD_NUMBER}"
+                    }
+                }
+            }
+        }
+
+        stage('3. 배포: SSAFY K3s (Develop)') {
+            when { branch 'develop' }
+            steps {
+                deployToCluster("${K3S_CONFIG_ID}", "SSAFY K3s")
+            }
+        }
+
+        stage('4. 배포: AWS EKS (Main)') {
+            when { branch 'main' }
+            steps {
+                deployToCluster("${EKS_CONFIG_ID}", "AWS EKS")
+            }
+        }
+    }
+
+    post {
+        always {
+            sh "docker image prune -f"
+        }
+    }
+}
+
+// 배포 로직 공통 함수화 (Namespace 및 경로 최적화)
+def deployToCluster(String configId, String clusterName) {
+    script {
+        echo ">>> ${clusterName} 배포 시작 (Namespace: modu-apps)"
+        withCredentials([
+            file(credentialsId: configId, variable: 'KUBECONFIG'),
+            string(credentialsId: "${REGISTRY_BE_ID}", variable: 'URL_BE'),
+            string(credentialsId: "${REGISTRY_FE_ID}", variable: 'URL_FE')
+        ]) {
+            sh """
+            # 1. 네임스페이스 생성/확인
+            kubectl --kubeconfig=${KUBECONFIG} apply -f ${K8S_DIR}/00_namespace.yaml
+            
+            # 2. 이미지 태그 치환 (infra/k8s 경로 반영)
+            sed -i 's|BACKEND_IMAGE|${URL_BE}/${ECR_BACKEND_NAME}:${BUILD_NUMBER}|g' ${K8S_DIR}/backend.yaml
+            sed -i 's|FRONTEND_IMAGE|${URL_FE}/${ECR_FRONTEND_NAME}:${BUILD_NUMBER}|g' ${K8S_DIR}/frontend.yaml
+            
+            # 3. 전체 매니페스트 적용
+            kubectl --kubeconfig=${KUBECONFIG} apply -f ${K8S_DIR}/
+            """
+        }
+    }
+}
