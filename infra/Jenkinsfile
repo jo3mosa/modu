@@ -1,25 +1,23 @@
 pipeline {
-    // SSAFY 인프라 환경의 모든 가용 에이전트에서 실행합니다.
     agent any
 
-    // 전역 변수 설정: 설정값 중앙화를 통해 관리 효율성을 높입니다.
     environment {
         // 1. 인프라 공통 설정
         AWS_REGION           = 'ap-northeast-2'
         
         // 2. 젠킨스 자격 증명 ID
         AWS_CRED_ID          = 'aws-credentials'
-        REGISTRY_BE_ID       = 'ecr-registry-backend' // https://.../modu-backend
+        REGISTRY_BE_ID       = 'ecr-registry-backend'
         REGISTRY_FE_ID       = 'ecr-registry-frontend'
         
-        // 3. 쿠버네티스 설정 ID (Kubeconfig Secret File)
+        // 3. 쿠버네티스 설정 ID
         K3S_CONFIG_ID        = 'k3s-config.yaml'
         EKS_CONFIG_ID        = 'aws-eks-config'
         
         // 4. K8s 매니페스트 경로
         K8S_DIR              = 'infra/k8s'
         
-        // 5. 알림용 상태 추적 변수 (어디서, 왜 실패했는지 저장)
+        // 5. 알림용 상태 추적 변수
         FAILED_STAGE         = ""
         ERROR_DETAILS        = ""
     }
@@ -39,19 +37,13 @@ pipeline {
                         string(credentialsId: "${REGISTRY_BE_ID}", variable: 'FULL_URI_BE'),
                         string(credentialsId: "${REGISTRY_FE_ID}", variable: 'FULL_URI_FE')
                     ]) {
-                        // [방어적 설계] 프로토콜 및 도메인 정렬
                         def domainPart = FULL_URI_BE.substring(0, FULL_URI_BE.lastIndexOf('/'))
                         def registryDomain = domainPart.startsWith('http') ? domainPart : "https://${domainPart}"
                         
-                        echo ">>> 인증 도메인 확정: ${registryDomain}"
-
                         docker.withRegistry("${registryDomain}", "ecr:${AWS_REGION}:${AWS_CRED_ID}") {
-                            
-                            // [Backend 파트] 에러 발생 시 로그 캡처 및 알림 전송을 위한 try-catch 분리
+                            // [Backend 빌드]
                             try {
-                                env.FAILED_STAGE = "2-1. 백엔드 빌드 및 푸시"
-                                echo ">>> [Backend] 이미지 빌드 및 푸시 시작"
-                                // 에러 발생 시 로그를 남기기 위해 2> 로 캡처합니다.
+                                env.FAILED_STAGE = "2-1. 백엔드 빌드"
                                 sh 'cd backend && docker build -t $FULL_URI_BE:$BUILD_NUMBER . 2> be_err.log'
                                 sh 'docker push $FULL_URI_BE:$BUILD_NUMBER'
                             } catch (Exception e) {
@@ -59,10 +51,9 @@ pipeline {
                                 error "Backend Build Failed"
                             }
 
-                            // [Frontend 파트]
+                            // [Frontend 빌드]
                             try {
-                                env.FAILED_STAGE = "2-2. 프론트엔드 빌드 및 푸시"
-                                echo ">>> [Frontend] 이미지 빌드 및 푸시 시작"
+                                env.FAILED_STAGE = "2-2. 프론트엔드 빌드"
                                 sh 'cd frontend && docker build -t $FULL_URI_FE:$BUILD_NUMBER . 2> fe_err.log'
                                 sh 'docker push $FULL_URI_FE:$BUILD_NUMBER'
                             } catch (Exception e) {
@@ -75,56 +66,57 @@ pipeline {
             }
         }
 
-        // 3단계: SSAFY 교육용 K3s 서버 배포 (CD - Develop)
         stage('3. 배포: SSAFY K3s (Develop)') {
             when { branch 'develop' } 
             steps {
                 script { 
-                    env.FAILED_STAGE = "3. SSAFY K3s 배포 (Develop)"
+                    env.FAILED_STAGE = "3. SSAFY K3s 배포"
                     deployToCluster("${K3S_CONFIG_ID}", "SSAFY K3s") 
                 }
             }
         }
 
-        // 4단계: AWS EKS 운영 서버 배포 (CD - Main)
         stage('4. 배포: AWS EKS (Main)') {
             when { branch 'main' }
             steps {
                 script { 
-                    env.FAILED_STAGE = "4. AWS EKS 배포 (Main)"
+                    env.FAILED_STAGE = "4. AWS EKS 배포"
                     deployToCluster("${EKS_CONFIG_ID}", "AWS EKS") 
                 }
             }
         }
     }
 
-    // 파이프라인 종료 후 정리 및 알림 전송 작업
     post {
         success {
-            // 성공 시 초록색 알림
-            sendMattermostNotification("SUCCESS", "#00FF00", "✅ 빌드 및 배포가 성공적으로 완료되었습니다.")
+            script {
+                // [개선 포인트] 브랜치에 따라 성공 메시지를 세분화합니다.
+                def successMsg = "✅ 모든 이미지 빌드 및 푸시가 완료되었습니다."
+                if (env.BRANCH_NAME == 'develop') {
+                    successMsg = "🚀 SSAFY K3s(Develop) 환경 배포에 성공했습니다!"
+                } else if (env.BRANCH_NAME == 'main') {
+                    successMsg = "🌟 AWS EKS(Main) 운영 환경 배포에 성공했습니다!"
+                }
+                
+                // 성공 시에는 실패 단계가 없으므로 FAILED_STAGE를 명시적으로 초기화
+                env.FAILED_STAGE = ""
+                sendMattermostNotification("SUCCESS", "#00FF00", successMsg)
+            }
         }
         failure {
-            // 실패 시 빨간색 바탕에 구체적인 에러 로그 전송
-            sendMattermostNotification("FAILURE", "#FF0000", "🚨 원인 분석: ${env.ERROR_DETAILS}")
+            sendMattermostNotification("FAILURE", "#FF0000", "🚨 상세 원인: ${env.ERROR_DETAILS}")
         }
         always {
-            // 호스트 서버의 디스크 용량 관리를 위해 임시 이미지를 삭제합니다.
             sh "docker image prune -f"
         }
     }
 }
 
 /**
- * [실무 표준] 쿠버네티스 클러스터 배포 공통 로직 함수
- * 호스트 환경에 의존하지 않기 위해 사이드카를 사용하되, 네트워크 타임아웃 방지를 위해 호스트 네트워크를 공유합니다.
+ * 쿠버네티스 배포 로직 (Host Network 공유로 타임아웃 해결)
  */
 def deployToCluster(String configId, String clusterName) {
     try {
-        echo ">>> ${clusterName} 배포 프로세스 시작 (사이드카 + 호스트 네트워크)"
-        
-        // [오류 해결 포인트] --network host 옵션을 추가하여 젠킨스 컨테이너의 네트워크 격리를 해제합니다.
-        // 이를 통해 SSAFY 내부 프라이빗 망(172.26.x.x)에 있는 K3s API 서버와 정상적으로 통신할 수 있습니다.
         docker.image('bitnami/kubectl:latest').inside('--network host --entrypoint=""') {
             withCredentials([
                 file(credentialsId: configId, variable: 'KUBECONFIG'),
@@ -132,55 +124,47 @@ def deployToCluster(String configId, String clusterName) {
                 string(credentialsId: "${REGISTRY_FE_ID}", variable: 'FULL_URI_FE')
             ]) {
                 sh '''
-                # 1. 네임스페이스 보장
                 kubectl --kubeconfig=$KUBECONFIG apply -f $K8S_DIR/00_namespace.yaml
-                
-                # 2. 이미지 주소 동적 치환 (sed)
                 sed -i "s|BACKEND_IMAGE|$FULL_URI_BE:$BUILD_NUMBER|g" $K8S_DIR/backend.yaml
                 sed -i "s|FRONTEND_IMAGE|$FULL_URI_FE:$BUILD_NUMBER|g" $K8S_DIR/frontend.yaml
-                
-                # 3. 전체 매니페스트 적용
                 kubectl --kubeconfig=$KUBECONFIG apply -f $K8S_DIR/
                 '''
             }
         }
     } catch (Exception e) {
-        // 배포 중 에러 발생 시 상세 메시지 저장
-        env.ERROR_DETAILS = "배포 명령 실패 또는 타임아웃. Kubeconfig 설정 및 네트워크 연결을 확인하세요."
+        env.ERROR_DETAILS = "${clusterName} 접속 실패 또는 매니페스트 오류"
         error "Deployment Failed"
     }
 }
 
 /**
- * [모듈화] Mattermost 상세 알림 전송 함수
- * URL 디코딩을 적용하여 브랜치 이름(%2F)을 읽기 쉽게 변환하고 null 값을 방지합니다.
+ * Mattermost 상세 알림 전송 함수
  */
 def sendMattermostNotification(String status, String color, String message) {
-    // 1. [UI 개선] %2F 로 인코딩된 브랜치/작업 이름을 원래의 슬래시(/) 형태로 디코딩합니다.
     def decodedJobName = java.net.URLDecoder.decode(env.JOB_NAME, "UTF-8")
     
-    // 2. [UI 개선] FAILED_STAGE가 비어있거나 "null" 문자열일 경우 깔끔하게 "전체 공정"으로 표시합니다.
-    def displayStage = (env.FAILED_STAGE && env.FAILED_STAGE != "null") ? env.FAILED_STAGE : "전체 공정"
+    // [개선 포인트] 실패 단계가 없으면 "실패 없음"으로 표시합니다.
+    def displayStage = (env.FAILED_STAGE && env.FAILED_STAGE != "null" && env.FAILED_STAGE != "") ? env.FAILED_STAGE : "실패 없음"
 
     withCredentials([string(credentialsId: 'MATTERMOST_WEBHOOK_URL', variable: 'WEBHOOK_URL')]) {
-        def title = (status == "SUCCESS") ? "✅ 파이프라인 성공" : "🚨 파이프라인 실패 발생"
+        def title = (status == "SUCCESS") ? "✅ 파이프라인 공정 성공" : "🚨 파이프라인 공정 실패"
         def payload = """
         {
             "attachments": [
                 {
                     "color": "${color}",
                     "title": "${title}",
-                    "text": "**프로젝트:** ${decodedJobName} (#${env.BUILD_NUMBER})\\n**진행/실패 단계:** ${displayStage}",
+                    "text": "**프로젝트:** ${decodedJobName} (#${env.BUILD_NUMBER})\\n**상태:** ${displayStage}",
                     "fields": [
                         {
                             "short": false,
-                            "title": "상세 메시지 (로그)",
+                            "title": "결과 리포트",
                             "value": "```\\n${message}\\n```"
                         },
                         {
                             "short": false,
-                            "title": "젠킨스에서 확인하기",
-                            "value": "[👉 콘솔 로그 열기](${env.BUILD_URL}console)"
+                            "title": "워크플로우 확인",
+                            "value": "[👉 젠킨스 콘솔 로그 보기](${env.BUILD_URL}console)"
                         }
                     ]
                 }
