@@ -3,6 +3,15 @@ from app.state.investment_state import InvestmentAgentState
 
 
 def main() -> None:
+    """
+    LangGraph skeleton 실행 진입점
+
+    역할:
+    - 초기 InvestmentAgentState 생성
+    - 그래프 빌드
+    - graph.invoke() 실행
+    - 최종 결과 출력
+    """
     graph = build_investment_graph()
 
     initial_state = InvestmentAgentState(
@@ -11,14 +20,16 @@ def main() -> None:
             "market_status": "open",
             "volatility": "normal",
         },
-        signals=[
-            {
-                "symbol": "005930",
-                "signal": "golden_cross",
-                "rsi": 48,
-                "sentiment_score": 0.67,
-            }
-        ],
+        analysis_snapshot={
+            "stock_code": "005930",
+            "timestamp": "2026-05-02T08:00:00Z",
+            "signals": {
+                "technical": {"golden_cross": True, "rsi": 48},
+                "fundamental": {},
+                "event": {},
+                "sentiment": {"score": 0.67},
+            },
+        },
         candidate_assets=[
             {
                 "symbol": "005930",
@@ -33,6 +44,7 @@ def main() -> None:
         },
     )
 
+    # LangGraph 실행
     result = graph.invoke(initial_state)
 
     print("=== FINAL DECISION ===")
