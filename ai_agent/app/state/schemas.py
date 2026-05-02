@@ -9,7 +9,7 @@ class StrategyDraft(BaseModel):
 
     이 객체는 이후 Critic Agent의 피드백과 Supervisor Agent의 최종 판단에 활용
       - asset: 투자 대상 종목 코드 (예: "AAPL", "BTC-USD")
-      - side: 주문 방향 ("buy" 또는 "sell")
+      - side: 주문 방향 ("buy", "sell", "hold") — hold는 전략 보류 권고
       - order_amount: 주문 금액
       - target_price: 목표 매수가격 (선택)
       - stop_loss_price: 손절 가격 (선택)
@@ -17,7 +17,7 @@ class StrategyDraft(BaseModel):
       - confidence: 전략 신뢰도 점수
     """
     asset: str
-    side: Literal["buy", "sell"]
+    side: Literal["buy", "sell", "hold"]
     order_amount: int
     target_price: float | None = None
     stop_loss_price: float | None = None

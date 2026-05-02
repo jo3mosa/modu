@@ -1,2 +1,4 @@
 langgraph
 pydantic
+langchain-core
+langchain-openai

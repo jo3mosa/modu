@@ -2,6 +2,7 @@ import json
 import os
 from typing import Any
 
+from langchain_core.exceptions import OutputParserException
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
@@ -93,18 +94,31 @@ def strategy_agent(state: InvestmentAgentState) -> dict[str, Any]:
 
     chain = prompt | llm | parser
 
-    strategy_draft = chain.invoke(
-        {
-            "candidate_assets": _to_json(state.candidate_assets),
-            "analysis_snapshot": _to_json(state.analysis_snapshot),
-            "portfolio_snapshot": _to_json(state.portfolio_snapshot),
-            "user_context": _to_json(state.user_context),
-            "policy_context": _to_json(state.policy_context),
-            "memory_context": _to_json(state.memory_context),
-            "history_context": _to_json(state.history_context),
-            "format_instructions": parser.get_format_instructions(),
-        }
-    )
+    inputs = {
+        "candidate_assets": _to_json(state.candidate_assets),
+        "analysis_snapshot": _to_json(state.analysis_snapshot),
+        "portfolio_snapshot": _to_json(state.portfolio_snapshot),
+        "user_context": _to_json(state.user_context),
+        "policy_context": _to_json(state.policy_context),
+        "memory_context": _to_json(state.memory_context),
+        "history_context": _to_json(state.history_context),
+        "format_instructions": parser.get_format_instructions(),
+    }
+
+    try:
+        strategy_draft = chain.invoke(inputs)
+    except OutputParserException:
+        try:
+            strategy_draft = chain.invoke(inputs)
+        except OutputParserException as exc:
+            return {
+                "flow_status": "hold",
+                "error_context": {
+                    "agent": "strategy_agent",
+                    "reason": "LLM 출력 파싱 2회 실패",
+                    "detail": str(exc),
+                },
+            }
 
     return {
         "strategy_draft": strategy_draft
