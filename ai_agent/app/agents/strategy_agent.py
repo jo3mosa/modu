@@ -1,12 +1,11 @@
 import json
-import os
 from typing import Any
 
 from langchain_core.exceptions import OutputParserException
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI
 
+from app.config.llm import strategy_llm
 from app.state.investment_state import InvestmentAgentState
 from app.state.schemas import StrategyDraft
 
@@ -33,11 +32,6 @@ def strategy_agent(state: InvestmentAgentState) -> dict[str, Any]:
     """
 
     parser = PydanticOutputParser(pydantic_object=StrategyDraft)
-
-    llm = ChatOpenAI(
-        model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-        temperature=0.2,
-    )
 
     prompt = ChatPromptTemplate.from_messages(
         [
@@ -92,7 +86,7 @@ def strategy_agent(state: InvestmentAgentState) -> dict[str, Any]:
         ]
     )
 
-    chain = prompt | llm | parser
+    chain = prompt | strategy_llm | parser
 
     inputs = {
         "candidate_assets": _to_json(state.candidate_assets),
