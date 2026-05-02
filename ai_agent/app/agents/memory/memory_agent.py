@@ -109,8 +109,25 @@ def _extract_sectors(candidate_assets: list[dict[str, Any]]) -> list[str]:
 
 
 def _extract_key_signals(analysis_snapshot: dict[str, Any]) -> list[str]:
-    signals = analysis_snapshot.get("key_signals", [])
-    return signals if isinstance(signals, list) else []
+    signals = analysis_snapshot.get("signals", {})
+
+    key_signals: set[str] = set()
+
+    if signals.get("technical"):
+        key_signals.add("technical_signal")
+
+    if signals.get("fundamental"):
+        key_signals.add("fundamental_signal")
+
+    event = signals.get("event", {})
+    if event.get("has_urgent_issue"):
+        key_signals.add("event_signal")
+
+    sentiment = signals.get("sentiment", {})
+    if sentiment.get("daily_score") is not None:
+        key_signals.add("sentiment_signal")
+
+    return sorted(key_signals)
 
 
 def _build_user_context(investment_profile: dict[str, Any]) -> dict[str, Any]:
@@ -209,23 +226,24 @@ def _summarize_trade_memory(
 
 def _filter_llm_wiki(llm_wiki: str, key_signals: list[str]) -> dict[str, str]:
     signal_to_keywords = {
-        "golden_cross": ["Golden Cross", "골든크로스"],
-        "rsi_oversold": ["RSI"],
-        "rsi_rebound": ["RSI"],
-        "ma_breakout": ["Moving Average", "이동평균"],
+        "technical_signal": ["RSI", "Moving Average", "이동평균"],
+        "fundamental_signal": ["PER", "PBR", "Valuation", "저평가"],
+        "event_signal": [],
+        "sentiment_signal": [],
     }
 
     result: dict[str, str] = {}
 
     for signal in key_signals:
-        keywords = signal_to_keywords.get(signal, [])
+        sections: list[str] = []
 
-        for keyword in keywords:
+        for keyword in signal_to_keywords.get(signal, []):
             section = _extract_markdown_section(llm_wiki, keyword)
-
             if section:
-                result[signal] = section
-                break
+                sections.append(section)
+
+        if sections:
+            result[signal] = "\n\n".join(sections)
 
     return result
 
