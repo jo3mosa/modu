@@ -1,0 +1,81 @@
+.trading-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  color: #fff;
+}
+
+.trading-top {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 1.5rem;
+  height: 520px;
+  /* 차트 - 호가창 높이 동시 고정 */
+}
+
+/* 스크롤바 커스텀 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.trading-header {
+  flex-shrink: 0;
+  margin-bottom: -0.5rem;
+}
+
+.trading-header h1 {
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: -1px;
+  margin: 0;
+}
+
+.chart-section,
+.order-section {
+  background: var(--card-bg, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1));
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: 100%;
+}
+
+.news-section {
+  background: var(--card-bg, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1));
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  min-height: 300px;
+}
+
+/* 반응형 모바일 (세로 배치) */
+@media (max-width: 1024px) {
+  .trading-top {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .chart-section {
+    height: 500px;
+  }
+
+  .order-section {
+    height: 600px;
+  }
+}

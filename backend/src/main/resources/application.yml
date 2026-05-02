@@ -1,0 +1,72 @@
+spring:
+  application:
+    name: modu-backend
+  profiles:
+    active: local
+  threads:
+    virtual:
+      enabled: true  # Java 21 가상 스레드 활성화 - 다수 봇의 동시 매매 처리를 위해 사용
+  jpa:
+    open-in-view: false  # HTTP 요청 전체 수명 동안 DB 커넥션을 점유하는 문제 방지
+
+# Actuator: K8s 헬스체크(/health, /readiness) 및 메트릭 수집용
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+# ================================================================
+# 로컬 개발 환경 (spring.profiles.active: local)
+# ================================================================
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:modu_db}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 20      # 추후 동시 사용자 수 확정 후 재산정 예정
+      minimum-idle: 5
+      connection-timeout: 3000   # 3초 초과 시 빠른 실패 처리
+      idle-timeout: 600000       # 10분 이상 미사용 커넥션 반환
+      max-lifetime: 1800000      # 30분마다 커넥션 재생성 (DB 타임아웃 방지)
+      keepalive-time: 60000      # 60초마다 연결 유지 쿼리 전송
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        highlight_sql: true
+        default_batch_fetch_size: 1000  # N+1 쿼리 방지용 배치 사이즈
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+# 한국투자증권 실전투자 API
+kis:
+  api:
+    url: ${KIS_API_URL}
+    app-key: ${KIS_APP_KEY}
+    app-secret: ${KIS_APP_SECRET}
+    cano: ${KIS_CANO:}           # 계좌번호 앞 8자리 (미설정 시 빈값, 실거래 전 필수 입력)
+    acnt-prdt-cd: ${KIS_ACNT_PRDT_CD:01}  # 계좌 상품 코드 (일반 주식: 01)
+
+# ================================================================
+# 운영 환경 설정 시 주의사항 (application-prod.yml 작성 시 반영)
+# - ddl-auto: validate
+# - flyway.enabled: true
+# - show-sql: false
+# - hikari.maximum-pool-size: 동시 사용자 수 기반으로 재산정
+# ================================================================

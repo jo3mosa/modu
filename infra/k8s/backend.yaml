@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: modu-backend
+  namespace: modu-apps
+  labels:
+    app: backend
+spec:
+  replicas: 2 # 가용성을 위해 2개 이상 권장
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+      - name: backend
+        # [중요] Jenkinsfile의 sed 명령어가 이 부분을 실제 이미지 주소로 바꿉니다.
+        image: BACKEND_IMAGE_PLACEHOLDER
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+  namespace: modu-apps
+spec:
+  selector:
+    app: backend
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8080
+  type: ClusterIP
