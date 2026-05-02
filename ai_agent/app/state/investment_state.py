@@ -13,8 +13,12 @@ class InvestmentAgentState(BaseModel):
     """
 
     # Analysis Layer output
+    # 시장 전체 상태 요약 (KOSPI/KOSDAQ 지수, 장 상태, 변동성 등)
     market_snapshot: dict[str, Any] = Field(default_factory=dict)
-    signals: list[dict[str, Any]] = Field(default_factory=list)
+    # 분석 서버에서 전달받은 종목 단위 분석 결과 (Kafka 메시지 포맷을 그대로 담는다)
+    # {"stock_code": "005930", "timestamp": "...", "signals": {"technical": {...}, ...}}
+    analysis_snapshot: dict[str, Any] = Field(default_factory=dict)
+    # 판단 대상 후보 종목 목록
     candidate_assets: list[dict[str, Any]] = Field(default_factory=list)
 
     # Portfolio / account snapshot (Risk Guard도 이 값을 사용한다, MVP 정책: API 직접 조회 없음)

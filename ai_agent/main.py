@@ -11,14 +11,16 @@ def main() -> None:
             "market_status": "open",
             "volatility": "normal",
         },
-        signals=[
-            {
-                "symbol": "005930",
-                "signal": "golden_cross",
-                "rsi": 48,
-                "sentiment_score": 0.67,
-            }
-        ],
+        analysis_snapshot={
+            "stock_code": "005930",
+            "timestamp": "2026-05-02T08:00:00Z",
+            "signals": {
+                "technical": {"golden_cross": True, "rsi": 48},
+                "fundamental": {},
+                "event": {},
+                "sentiment": {"score": 0.67},
+            },
+        },
         candidate_assets=[
             {
                 "symbol": "005930",
