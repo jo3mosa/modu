@@ -5,6 +5,24 @@ from app.state.schemas import CriticFeedback
 
 
 def critic_agent(state: InvestmentAgentState) -> dict[str, Any]:
+    """
+    Critic Agent
+
+    역할:
+    - Strategy Agent가 만든 strategy_draft를 검토한다.
+    - 변동성, 과열, 사용자 리스크 성향, 과도한 집중 투자 여부를 점검한다.
+    - 현재는 mock 피드백을 반환한다.
+
+    입력:
+    - strategy_draft
+    - user_context
+    - policy_context
+    - history_context
+
+    출력:
+    - critic_feedback
+    """
+
     return {
         "critic_feedback": CriticFeedback(
             approved=True,

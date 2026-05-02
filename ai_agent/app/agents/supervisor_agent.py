@@ -5,9 +5,29 @@ from app.state.schemas import ExpectedScenario, FinalDecision
 
 
 def supervisor_agent(state: InvestmentAgentState) -> dict[str, Any]:
+    """
+    Supervisor Agent.
+
+    역할:
+    - Strategy Agent의 전략 초안과 Critic Agent의 피드백을 종합한다.
+    - 최종적으로 거래할지, 보류할지 결정한다.
+    - 사용자에게 보여줄 판단 사유도 함께 생성한다.
+
+    입력:
+    - strategy_draft
+    - critic_feedback
+    - memory_context
+    - history_context
+
+    출력:
+    - final_decision
+    - flow_status
+    """
+
     draft = state.strategy_draft
     feedback = state.critic_feedback
 
+    # 선행 Agent 결과가 누락된 경우 안전하게 보류 처리
     if draft is None or feedback is None:
         return {
             "final_decision": FinalDecision(
@@ -20,6 +40,7 @@ def supervisor_agent(state: InvestmentAgentState) -> dict[str, Any]:
             "flow_status": "hold",
         }
 
+    # Critic Agent가 승인하지 않은 경우 거래하지 않고 보류
     if not feedback.approved:
         return {
             "final_decision": FinalDecision(
@@ -36,6 +57,7 @@ def supervisor_agent(state: InvestmentAgentState) -> dict[str, Any]:
             "flow_status": "hold",
         }
 
+    # Strategy가 승인된 경우 최종 거래 결정을 생성
     return {
         "final_decision": FinalDecision(
             action="trade",

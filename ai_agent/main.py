@@ -3,6 +3,15 @@ from app.state.investment_state import InvestmentAgentState
 
 
 def main() -> None:
+    """
+    LangGraph skeleton 실행 진입점
+
+    역할:
+    - 초기 InvestmentAgentState 생성
+    - 그래프 빌드
+    - graph.invoke() 실행
+    - 최종 결과 출력
+    """
     graph = build_investment_graph()
 
     initial_state = InvestmentAgentState(
@@ -35,6 +44,7 @@ def main() -> None:
         },
     )
 
+    # LangGraph 실행
     result = graph.invoke(initial_state)
 
     print("=== FINAL DECISION ===")
