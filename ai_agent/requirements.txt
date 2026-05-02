@@ -1,2 +1,6 @@
-langgraph
-pydantic
+langgraph==1.1.10
+langchain-core==1.3.2
+pydantic==2.13.3
+PyYAML==6.0.3
+SQLAlchemy==2.0.49
+psycopg2-binary==2.9.12
