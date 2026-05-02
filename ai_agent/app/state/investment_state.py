@@ -2,6 +2,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app.state.schemas import CriticFeedback, FinalDecision, StrategyDraft
+
 
 class InvestmentAgentState(BaseModel):
     """
@@ -15,7 +17,7 @@ class InvestmentAgentState(BaseModel):
     signals: list[dict[str, Any]] = Field(default_factory=list)
     candidate_assets: list[dict[str, Any]] = Field(default_factory=list)
 
-    # Portfolio / account snapshot
+    # Portfolio / account snapshot (Risk Guard도 이 값을 사용한다, MVP 정책: API 직접 조회 없음)
     portfolio_snapshot: dict[str, Any] = Field(default_factory=dict)
 
     # Memory Agent output
@@ -25,9 +27,9 @@ class InvestmentAgentState(BaseModel):
     history_context: str = ""
 
     # Reasoning Layer output
-    strategy_draft: dict[str, Any] = Field(default_factory=dict)
-    critic_feedback: dict[str, Any] = Field(default_factory=dict)
-    final_decision: dict[str, Any] = Field(default_factory=dict)
+    strategy_draft: StrategyDraft | None = None
+    critic_feedback: CriticFeedback | None = None
+    final_decision: FinalDecision | None = None
 
     # Risk Guard output
     risk_check_result: dict[str, Any] = Field(default_factory=dict)
@@ -38,6 +40,7 @@ class InvestmentAgentState(BaseModel):
     execution_retry_count: int = 0
 
     # Feedback Layer output
+    # 매도 체결 후 별도 스케줄러가 주입, Post Mortem 실행 전까지는 빈 dict
     later_market_data: dict[str, Any] = Field(default_factory=dict)
     postmortem_report: dict[str, Any] = Field(default_factory=dict)
 

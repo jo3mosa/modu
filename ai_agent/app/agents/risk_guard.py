@@ -8,7 +8,7 @@ def risk_guard(state: InvestmentAgentState) -> dict[str, Any]:
     user_context = state.user_context
     policy_context = state.policy_context
 
-    if decision.get("action") != "trade":
+    if decision is None or decision.action != "trade":
         return {
             "risk_cleared": False,
             "risk_check_result": {
@@ -28,7 +28,7 @@ def risk_guard(state: InvestmentAgentState) -> dict[str, Any]:
             "flow_status": "blocked",
         }
 
-    if decision.get("order_amount", 0) > user_context.get("max_order_amount", 0):
+    if (decision.order_amount or 0) > user_context.get("max_order_amount", 0):
         return {
             "risk_cleared": False,
             "risk_check_result": {

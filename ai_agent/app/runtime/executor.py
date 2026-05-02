@@ -29,14 +29,16 @@ def executor(state: InvestmentAgentState) -> dict[str, Any]:
             "flow_status": "failed",
         }
 
+    decision = state.final_decision
+
     try:
         # TODO: 실제 broker_service.place_order()로 교체 예정
         execution_result = {
             "status": "success",
             "order_id": "MOCK-ORDER-001",
-            "asset": state.final_decision.get("asset"),
-            "side": state.final_decision.get("side"),
-            "amount": state.final_decision.get("order_amount"),
+            "asset": decision.asset,
+            "side": decision.side,
+            "amount": decision.order_amount,
         }
 
         return {
