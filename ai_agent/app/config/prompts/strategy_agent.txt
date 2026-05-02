@@ -16,6 +16,10 @@
 7. 반드시 JSON만 출력하세요.
 8. markdown 코드블록(```json)을 사용하지 마세요.
 9. JSON 앞뒤에 설명 문장을 붙이지 마세요.
+10. side가 "buy" 또는 "sell"인 경우 target_price와 stop_loss_price는 반드시 숫자로 채우세요.
+11. side가 "hold"인 경우 order_amount는 0으로 설정하고 target_price, stop_loss_price는 null로 설정하세요.
+12. 가격은 소수점 없이 정수로 출력하세요.
+
 
 {format_instructions}
 
