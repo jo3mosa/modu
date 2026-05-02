@@ -19,8 +19,8 @@ class StrategyDraft(BaseModel):
     asset: str
     side: Literal["buy", "sell", "hold"]
     order_amount: int
-    target_price: float | None = None
-    stop_loss_price: float | None = None
+    target_price: int | None = None
+    stop_loss_price: int | None = None
     reason: str = ""
     confidence: float = 0.0
 
