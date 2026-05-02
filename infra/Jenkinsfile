@@ -18,17 +18,20 @@ pipeline {
         
         // 4. K8s 매니페스트 경로
         K8S_DIR              = 'infra/k8s'
+        
+        // 5. 알림용 상태 추적 변수 (어디서, 왜 실패했는지 저장)
+        FAILED_STAGE         = ""
+        ERROR_DETAILS        = ""
     }
 
     stages {
-        // 1단계: 최신 소스 코드 체크아웃
         stage('1. 준비: 코드 가져오기') {
             steps {
+                script { env.FAILED_STAGE = "1. 코드 체크아웃" }
                 checkout scm
             }
         }
 
-        // 2단계: 컨테이너 빌드 및 AWS ECR 푸시 (CI)
         stage('2. 빌드: 컨테이너 이미지 생성 및 푸시') {
             steps {
                 script {
@@ -36,23 +39,36 @@ pipeline {
                         string(credentialsId: "${REGISTRY_BE_ID}", variable: 'FULL_URI_BE'),
                         string(credentialsId: "${REGISTRY_FE_ID}", variable: 'FULL_URI_FE')
                     ]) {
-                        /**
-                         * [방어적 설계: 프로토콜 및 도메인 정렬]
-                         * URL 형식에 관계없이 도메인을 추출하고 https:// 프로토콜을 보장합니다.
-                         */
+                        // [방어적 설계] 프로토콜 및 도메인 정렬
                         def domainPart = FULL_URI_BE.substring(0, FULL_URI_BE.lastIndexOf('/'))
                         def registryDomain = domainPart.startsWith('http') ? domainPart : "https://${domainPart}"
                         
                         echo ">>> 인증 도메인 확정: ${registryDomain}"
 
                         docker.withRegistry("${registryDomain}", "ecr:${AWS_REGION}:${AWS_CRED_ID}") {
-                            echo ">>> [Backend] 이미지 빌드 및 푸시 시작"
-                            sh 'cd backend && docker build -t $FULL_URI_BE:$BUILD_NUMBER .'
-                            sh 'docker push $FULL_URI_BE:$BUILD_NUMBER'
+                            
+                            // [Backend 파트] 에러 발생 시 로그 캡처 및 알림 전송을 위한 try-catch 분리
+                            try {
+                                env.FAILED_STAGE = "2-1. 백엔드 빌드 및 푸시"
+                                echo ">>> [Backend] 이미지 빌드 및 푸시 시작"
+                                // 에러 발생 시 로그를 남기기 위해 2> 로 캡처합니다.
+                                sh 'cd backend && docker build -t $FULL_URI_BE:$BUILD_NUMBER . 2> be_err.log'
+                                sh 'docker push $FULL_URI_BE:$BUILD_NUMBER'
+                            } catch (Exception e) {
+                                env.ERROR_DETAILS = sh(script: '[ -f backend/be_err.log ] && tail -n 10 backend/be_err.log || echo "백엔드 빌드 실패"', returnStdout: true).trim()
+                                error "Backend Build Failed"
+                            }
 
-                            echo ">>> [Frontend] 이미지 빌드 및 푸시 시작"
-                            sh 'cd frontend && docker build -t $FULL_URI_FE:$BUILD_NUMBER .'
-                            sh 'docker push $FULL_URI_FE:$BUILD_NUMBER'
+                            // [Frontend 파트]
+                            try {
+                                env.FAILED_STAGE = "2-2. 프론트엔드 빌드 및 푸시"
+                                echo ">>> [Frontend] 이미지 빌드 및 푸시 시작"
+                                sh 'cd frontend && docker build -t $FULL_URI_FE:$BUILD_NUMBER . 2> fe_err.log'
+                                sh 'docker push $FULL_URI_FE:$BUILD_NUMBER'
+                            } catch (Exception e) {
+                                env.ERROR_DETAILS = sh(script: '[ -f frontend/fe_err.log ] && tail -n 10 frontend/fe_err.log || echo "프론트 빌드 실패"', returnStdout: true).trim()
+                                error "Frontend Build Failed"
+                            }
                         }
                     }
                 }
@@ -63,7 +79,10 @@ pipeline {
         stage('3. 배포: SSAFY K3s (Develop)') {
             when { branch 'develop' } 
             steps {
-                deployToCluster("${K3S_CONFIG_ID}", "SSAFY K3s")
+                script { 
+                    env.FAILED_STAGE = "3. SSAFY K3s 배포 (Develop)"
+                    deployToCluster("${K3S_CONFIG_ID}", "SSAFY K3s") 
+                }
             }
         }
 
@@ -71,15 +90,26 @@ pipeline {
         stage('4. 배포: AWS EKS (Main)') {
             when { branch 'main' }
             steps {
-                deployToCluster("${EKS_CONFIG_ID}", "AWS EKS")
+                script { 
+                    env.FAILED_STAGE = "4. AWS EKS 배포 (Main)"
+                    deployToCluster("${EKS_CONFIG_ID}", "AWS EKS") 
+                }
             }
         }
     }
 
-    // 파이프라인 종료 후 정리 작업
+    // 파이프라인 종료 후 정리 및 알림 전송 작업
     post {
+        success {
+            // 성공 시 초록색 알림
+            sendMattermostNotification("SUCCESS", "#00FF00", "✅ 빌드 및 배포가 성공적으로 완료되었습니다.")
+        }
+        failure {
+            // 실패 시 빨간색 바탕에 구체적인 에러 로그 전송
+            sendMattermostNotification("FAILURE", "#FF0000", "🚨 원인 분석: ${env.ERROR_DETAILS}")
+        }
         always {
-            // 호스트 서버의 디스크 용량 관리를 위해 빌드 과정에서 생성된 임시 이미지를 삭제합니다.
+            // 호스트 서버의 디스크 용량 관리를 위해 임시 이미지를 삭제합니다.
             sh "docker image prune -f"
         }
     }
@@ -87,15 +117,15 @@ pipeline {
 
 /**
  * [실무 표준] 쿠버네티스 클러스터 배포 공통 로직 함수
- * 호스트 환경에 의존하지 않기 위해 kubectl 전용 컨테이너(사이드카)를 실행합니다.
+ * 호스트 환경에 의존하지 않기 위해 사이드카를 사용하되, 네트워크 타임아웃 방지를 위해 호스트 네트워크를 공유합니다.
  */
 def deployToCluster(String configId, String clusterName) {
-    script {
-        echo ">>> ${clusterName} 배포 프로세스 시작 (사이드카 환경)"
+    try {
+        echo ">>> ${clusterName} 배포 프로세스 시작 (사이드카 + 호스트 네트워크)"
         
-        // [핵심] kubectl이 설치된 이미지를 일회용 컨테이너로 실행하여 젠킨스 내부의 'not found' 에러를 해결합니다.
-        // --entrypoint="" 설정을 통해 젠킨스가 내부 명령어를 제어할 수 있도록 합니다.
-        docker.image('bitnami/kubectl:latest').inside('--entrypoint=""') {
+        // [오류 해결 포인트] --network host 옵션을 추가하여 젠킨스 컨테이너의 네트워크 격리를 해제합니다.
+        // 이를 통해 SSAFY 내부 프라이빗 망(172.26.x.x)에 있는 K3s API 서버와 정상적으로 통신할 수 있습니다.
+        docker.image('bitnami/kubectl:latest').inside('--network host --entrypoint=""') {
             withCredentials([
                 file(credentialsId: configId, variable: 'KUBECONFIG'),
                 string(credentialsId: "${REGISTRY_BE_ID}", variable: 'FULL_URI_BE'),
@@ -106,14 +136,51 @@ def deployToCluster(String configId, String clusterName) {
                 kubectl --kubeconfig=$KUBECONFIG apply -f $K8S_DIR/00_namespace.yaml
                 
                 # 2. 이미지 주소 동적 치환 (sed)
-                # 변수에 슬래시(/)가 포함되어 있으므로 구분자로 '|'를 사용하여 충돌을 방지합니다.
                 sed -i "s|BACKEND_IMAGE|$FULL_URI_BE:$BUILD_NUMBER|g" $K8S_DIR/backend.yaml
                 sed -i "s|FRONTEND_IMAGE|$FULL_URI_FE:$BUILD_NUMBER|g" $K8S_DIR/frontend.yaml
                 
-                # 3. 전체 매니페스트 적용 (모듈화된 설계 반영)
+                # 3. 전체 매니페스트 적용
                 kubectl --kubeconfig=$KUBECONFIG apply -f $K8S_DIR/
                 '''
             }
         }
+    } catch (Exception e) {
+        // 배포 중 에러 발생 시 상세 메시지 저장
+        env.ERROR_DETAILS = "배포 명령 실패 또는 타임아웃. Kubeconfig 설정 및 네트워크 연결을 확인하세요."
+        error "Deployment Failed"
+    }
+}
+
+/**
+ * [모듈화] Mattermost 상세 알림 전송 함수
+ * 실패한 스테이지와 원인을 팀원들이 즉시 파악할 수 있도록 JSON 페이로드를 구성합니다.
+ */
+def sendMattermostNotification(String status, String color, String message) {
+    withCredentials([string(credentialsId: 'MATTERMOST_WEBHOOK_URL', variable: 'WEBHOOK_URL')]) {
+        def title = (status == "SUCCESS") ? "✅ 파이프라인 성공" : "🚨 파이프라인 실패 발생"
+        def payload = """
+        {
+            "attachments": [
+                {
+                    "color": "${color}",
+                    "title": "${title}",
+                    "text": "**프로젝트:** ${env.JOB_NAME} (#${env.BUILD_NUMBER})\\n**실패/종료 단계:** ${env.FAILED_STAGE}",
+                    "fields": [
+                        {
+                            "short": false,
+                            "title": "상세 메시지 (로그)",
+                            "value": "```\\n${message}\\n```"
+                        },
+                        {
+                            "short": false,
+                            "title": "젠킨스에서 확인하기",
+                            "value": "[👉 콘솔 로그 열기](${env.BUILD_URL}console)"
+                        }
+                    ]
+                }
+            ]
+        }
+        """
+        sh "curl -i -X POST -H 'Content-Type: application/json' -d '${payload}' ${WEBHOOK_URL}"
     }
 }
