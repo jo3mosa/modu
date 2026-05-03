@@ -81,6 +81,15 @@ public class AuthService {
      *
      * 쿠키의 Refresh Token 원문 → 해시값으로 DB 조회 → 유효성 확인 → Access Token 재발급
      */
+    /**
+     * Refresh Token으로 새 Access/Refresh Token 발급 (토큰 로테이션)
+     *
+     * 쿠키의 Refresh Token 원문 → 해시값으로 DB 조회 → 유효성 확인
+     * → 기존 토큰 삭제 → 새 Access/Refresh Token 발급
+     *
+     * 로테이션 이유: 기존 Refresh Token을 삭제하고 새로 발급해
+     * 탈취된 토큰의 재사용을 방지
+     */
     public void refresh(HttpServletRequest request, HttpServletResponse response) {
         String rawToken = extractRefreshTokenFromCookie(request);
         String tokenHash = jwtProvider.hashToken(rawToken);
@@ -92,8 +101,26 @@ public class AuthService {
             throw new ApiException(AuthErrorCode.REFRESH_TOKEN_NOT_FOUND);
         }
 
-        String newAccessToken = jwtProvider.generateAccessToken(refreshToken.getUserId());
+        Long userId = refreshToken.getUserId();
+
+        // 기존 Refresh Token 삭제 (로테이션)
+        refreshTokenRepository.delete(refreshToken);
+
+        // 새 Access Token 발급
+        String newAccessToken = jwtProvider.generateAccessToken(userId);
+
+        // 새 Refresh Token 발급 및 저장
+        String newRefreshToken = jwtProvider.generateRefreshToken();
+        OffsetDateTime now = OffsetDateTime.now();
+        refreshTokenRepository.save(RefreshToken.builder()
+                .userId(userId)
+                .tokenHash(jwtProvider.hashToken(newRefreshToken))
+                .issuedAt(now)
+                .expiresAt(now.plusSeconds(jwtProperties.getRefreshTokenExpiration() / 1000))
+                .build());
+
         response.addHeader("Set-Cookie", jwtProvider.createAccessTokenCookie(newAccessToken).toString());
+        response.addHeader("Set-Cookie", jwtProvider.createRefreshTokenCookie(newRefreshToken).toString());
     }
 
     // ── 로그아웃 ───────────────────────────────────────────────────────────────

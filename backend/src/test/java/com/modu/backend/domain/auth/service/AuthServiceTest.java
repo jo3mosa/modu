@@ -149,8 +149,8 @@ class AuthServiceTest {
     // ── 토큰 재발급 ────────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("유효한 Refresh Token으로 Access Token 재발급 성공")
-    void 유효한_Refresh_Token으로_Access_Token_재발급_성공() {
+    @DisplayName("유효한 Refresh Token으로 Access/Refresh Token 재발급 성공 (토큰 로테이션)")
+    void 유효한_Refresh_Token으로_토큰_로테이션_성공() {
         // given
         Cookie cookie = new Cookie("refreshToken", "raw-refresh-token");
         when(request.getCookies()).thenReturn(new Cookie[]{cookie});
@@ -164,14 +164,21 @@ class AuthServiceTest {
                 .build();
         when(refreshTokenRepository.findByTokenHash("hashed-token")).thenReturn(Optional.of(refreshToken));
         when(jwtProvider.generateAccessToken(1L)).thenReturn("new-access-token");
+        when(jwtProvider.generateRefreshToken()).thenReturn("new-refresh-token");
+        when(jwtProvider.hashToken("new-refresh-token")).thenReturn("new-hashed-token");
+        when(jwtProperties.getRefreshTokenExpiration()).thenReturn(1209600000L);
         when(jwtProvider.createAccessTokenCookie("new-access-token"))
                 .thenReturn(ResponseCookie.from("accessToken", "new-access-token").build());
+        when(jwtProvider.createRefreshTokenCookie("new-refresh-token"))
+                .thenReturn(ResponseCookie.from("refreshToken", "new-refresh-token").build());
 
         // when
         authService.refresh(request, response);
 
         // then
-        verify(response).addHeader(anyString(), anyString());
+        verify(refreshTokenRepository).delete(refreshToken);                          // 기존 토큰 삭제 확인
+        verify(refreshTokenRepository).save(any(RefreshToken.class));                 // 새 토큰 저장 확인
+        verify(response, org.mockito.Mockito.times(2)).addHeader(anyString(), anyString()); // Access + Refresh 쿠키 세팅
     }
 
     @Test
