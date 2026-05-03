@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: modu-frontend
+  namespace: modu-apps
+  labels:
+    app: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+      - name: frontend
+        # [중요] Jenkinsfile의 sed 명령어가 이 부분을 실제 이미지 주소로 바꿉니다.
+        image: FRONTEND_IMAGE_PLACEHOLDER
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  namespace: modu-apps
+spec:
+  selector:
+    app: frontend
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 80
+    nodePort: 30080 # 외부에서 접속할 포트 (SSAFY 허용 범위 확인 필요)
+  type: NodePort
