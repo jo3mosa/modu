@@ -75,6 +75,10 @@ kakao:
   client-secret: ${KAKAO_CLIENT_SECRET}
   redirect-uri: ${KAKAO_REDIRECT_URI}
 
+# AES-256-GCM 암호화 설정 (KIS API 키 암호화용)
+encryption:
+  kis-key: ${KIS_ENCRYPTION_KEY}
+
 # ================================================================
 # 운영 환경 설정 시 주의사항 (application-prod.yml 작성 시 반영)
 # - ddl-auto: validate
