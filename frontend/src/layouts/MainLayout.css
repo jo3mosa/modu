@@ -115,3 +115,28 @@
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* 글로벌 페이지 헤더 (리스크 관리 기준) */
+.page-header-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 1rem;
+  margin-bottom: 2rem;
+  flex-shrink: 0;
+}
+
+.page-title-group h1 {
+  font-size: 2.2rem;
+  font-weight: 800;
+  margin: 0 0 0.5rem 0;
+  letter-spacing: -1px;
+  color: #fff;
+}
+
+.page-title-group p {
+  color: #888;
+  margin: 0;
+  font-size: 1rem;
+}

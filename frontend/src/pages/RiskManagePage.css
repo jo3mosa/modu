@@ -9,16 +9,23 @@
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-/* 상단 헤더 & 컨트롤 */
+/* 상단 헤더 */
 .risk-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   padding-bottom: 1rem;
 }
 
@@ -39,10 +46,10 @@
   display: flex;
   align-items: center;
   gap: 1.5rem;
-  background: rgba(0,0,0,0.3);
+  background: rgba(0, 0, 0, 0.3);
   padding: 0.8rem 1.5rem;
   border-radius: 12px;
-  border: 1px solid rgba(255,255,255,0.05);
+  border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .control-item {
@@ -56,7 +63,7 @@
   font-size: 1.05rem;
 }
 
-/* 토글 스위치 (대시보드와 공통 스타일) */
+/* 토글 스위치 */
 .toggle-switch {
   width: 56px;
   height: 32px;
@@ -67,7 +74,9 @@
   transition: background 0.3s;
 }
 
-.toggle-switch.on { background: #84cc16; }
+.toggle-switch.on {
+  background: #84cc16;
+}
 
 .toggle-knob {
   width: 24px;
@@ -78,10 +87,12 @@
   top: 4px;
   left: 4px;
   transition: transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
-  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
 }
 
-.toggle-switch.on .toggle-knob { transform: translateX(24px); }
+.toggle-switch.on .toggle-knob {
+  transform: translateX(24px);
+}
 
 /* 패널 공통 */
 .risk-panel {
@@ -89,7 +100,7 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 16px;
   padding: 2rem;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.2);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
 }
 
 .risk-panel h2 {
@@ -112,17 +123,26 @@
 }
 
 .profile-card {
-  background: rgba(0,0,0,0.3);
+  background: rgba(0, 0, 0, 0.3);
   padding: 1.5rem;
   border-radius: 12px;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  border: 1px solid rgba(255,255,255,0.02);
+  border: 1px solid rgba(255, 255, 255, 0.02);
 }
 
-.profile-label { color: #888; font-size: 0.95rem; font-weight: 600; }
-.profile-value { color: #84cc16; font-size: 1.15rem; font-weight: 700; }
+.profile-label {
+  color: #888;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.profile-value {
+  color: #84cc16;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
 
 .principle-box {
   background: rgba(132, 204, 22, 0.05);
@@ -145,7 +165,7 @@
 }
 
 .edit-btn {
-  background: rgba(255,255,255,0.1);
+  background: rgba(255, 255, 255, 0.1);
   border: none;
   color: #fff;
   padding: 0.6rem 1.2rem;
@@ -156,7 +176,9 @@
   transition: all 0.2s;
 }
 
-.edit-btn:hover { background: rgba(255,255,255,0.2); }
+.edit-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
 
 /* 룰셋 설정 폼 */
 .rules-grid {
@@ -185,8 +207,8 @@
 
 .input-with-unit input {
   width: 100%;
-  background: rgba(0,0,0,0.3);
-  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   color: #fff;
   padding: 1rem;
   padding-right: 2.5rem;
@@ -196,7 +218,9 @@
   transition: border-color 0.2s;
 }
 
-.input-with-unit input:focus { border-color: #84cc16; }
+.input-with-unit input:focus {
+  border-color: #84cc16;
+}
 
 .unit {
   position: absolute;
@@ -234,8 +258,11 @@
 /* 모달 팝업 */
 .modal-overlay {
   position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0,0,0,0.7);
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
   backdrop-filter: blur(5px);
   display: flex;
   align-items: center;
@@ -246,14 +273,14 @@
 
 .modal-content {
   background: #111;
-  border: 1px solid rgba(255,255,255,0.1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 16px;
   width: 600px;
   max-width: 90vw;
   max-height: 85vh;
   overflow-y: auto;
   padding: 2.5rem;
-  box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
   gap: 2rem;
@@ -263,11 +290,14 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   padding-bottom: 1rem;
 }
 
-.modal-header h2 { margin: 0; font-size: 1.5rem; }
+.modal-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+}
 
 .close-btn {
   background: transparent;
@@ -277,7 +307,10 @@
   cursor: pointer;
   padding: 0.5rem;
 }
-.close-btn:hover { color: #fff; }
+
+.close-btn:hover {
+  color: #fff;
+}
 
 .survey-section h3 {
   font-size: 1.1rem;
@@ -292,8 +325,8 @@
 }
 
 .option-btn {
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   color: #aaa;
   padding: 1rem;
   border-radius: 8px;
@@ -303,7 +336,10 @@
   transition: all 0.2s;
 }
 
-.option-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
+.option-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
 
 .option-btn.selected {
   background: rgba(132, 204, 22, 0.15);
@@ -314,8 +350,8 @@
 .principle-textarea {
   width: 100%;
   height: 100px;
-  background: rgba(0,0,0,0.3);
-  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   color: #fff;
   padding: 1rem;
   border-radius: 8px;
@@ -324,14 +360,17 @@
   resize: vertical;
   outline: none;
 }
-.principle-textarea:focus { border-color: #84cc16; }
+
+.principle-textarea:focus {
+  border-color: #84cc16;
+}
 
 .modal-footer {
   display: flex;
   justify-content: flex-end;
   gap: 1rem;
   padding-top: 1rem;
-  border-top: 1px solid rgba(255,255,255,0.1);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .modal-btn {
@@ -343,7 +382,20 @@
   border: none;
 }
 
-.modal-btn.cancel { background: rgba(255,255,255,0.1); color: #fff; }
-.modal-btn.cancel:hover { background: rgba(255,255,255,0.2); }
-.modal-btn.confirm { background: #84cc16; color: #000; }
-.modal-btn.confirm:hover { background: #9add36; }
+.modal-btn.cancel {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.modal-btn.cancel:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.modal-btn.confirm {
+  background: #84cc16;
+  color: #000;
+}
+
+.modal-btn.confirm:hover {
+  background: #9add36;
+}

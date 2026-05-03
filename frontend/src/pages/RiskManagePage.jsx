@@ -58,8 +58,8 @@ export default function RiskManagePage() {
   return (
     <div className="risk-container">
       {/* 1. 헤더 */}
-      <div className="risk-header">
-        <div className="risk-title">
+      <div className="page-header-container">
+        <div className="page-title-group">
           <h1>리스크 관리</h1>
           <p>내 투자 성향을 확인하고 매매 전략을 조정해보세요!</p>
         </div>

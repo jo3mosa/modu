@@ -147,9 +147,11 @@ export default function DashboardPage() {
     <div className="dashboard-container">
       {showTutorial && <TutorialOverlay onClose={handleCloseTutorial} />}
 
-      <div className="dashboard-header">
-        <h1>대시보드</h1>
-        <p>전체 자산 현황과 AI 매매 상태를 실시간으로 모니터링하세요.</p>
+      <div className="page-header-container">
+        <div className="page-title-group">
+          <h1>대시보드</h1>
+          <p>전체 자산 현황과 AI 매매 상태를 실시간으로 모니터링하세요.</p>
+        </div>
       </div>
 
       <div className="dashboard-layout">
