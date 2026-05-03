@@ -1,66 +1,68 @@
 pipeline {
     agent any
 
-    // 전역 환경 변수 설정
     environment {
+        // [인프라 공통 설정]
         AWS_REGION           = 'ap-northeast-2'
-        AWS_CRED_ID          = 'aws-credentials' // 젠킨스에 저장된 AWS AccessKey/SecretKey ID
-        REGISTRY_BE_ID       = 'ecr-registry-backend' // 백엔드 ECR URI 보관용 Credentials ID
-        REGISTRY_FE_ID       = 'ecr-registry-frontend' // 프론트엔드 ECR URI 보관용 Credentials ID
-        K3S_CONFIG_ID        = 'k3s-config.yaml' // SSAFY 내부 K3s 설정 파일 ID
-        EKS_CONFIG_ID        = 'aws-eks-config' // AWS 운영 환경 EKS 설정 파일 ID
-        K8S_DIR              = 'infra/k8s' // 쿠버네티스 매니페스트 파일 경로
-        FAILED_STAGE         = "" // 실패한 스테이지 이름을 저장하기 위한 변수
-        ERROR_DETAILS        = "" // 실패 시 상세 에러 로그를 저장하기 위한 변수
+        AWS_CRED_ID          = 'aws-credentials' 
+        REGISTRY_BE_ID       = 'ecr-registry-backend'
+        REGISTRY_FE_ID       = 'ecr-registry-frontend'
+        K3S_CONFIG_ID        = 'k3s-config.yaml'
+        EKS_CONFIG_ID        = 'aws-eks-config'
+        K8S_DIR              = 'infra/k8s'
+        
+        // [상태 관리 변수] 알림의 정밀도를 결정합니다.
+        FAILED_STAGE         = "" 
+        ERROR_DETAILS        = "" 
     }
 
     stages {
-        // 1단계: 소스 코드 체크아웃
         stage('1. 준비: 코드 가져오기') {
             steps {
-                script { env.FAILED_STAGE = "1. 코드 체크아웃" }
+                script { env.FAILED_STAGE = "1. 소스 코드 체크아웃" }
                 checkout scm
             }
         }
 
-        // 2단계: 도커 이미지 빌드 및 AWS ECR 푸시
         stage('2. 빌드: 컨테이너 이미지 생성 및 푸시') {
             steps {
                 script {
-                    // ECR URI를 환경 변수로 로드
                     withCredentials([
                         string(credentialsId: "${REGISTRY_BE_ID}", variable: 'FULL_URI_BE'),
                         string(credentialsId: "${REGISTRY_FE_ID}", variable: 'FULL_URI_FE')
                     ]) {
-                        // 백엔드와 프론트엔드가 동일한 계정/리전의 ECR을 사용하는지 사전 검증
+                        // 레지스트리 호스트 일치 여부 검증 (설계적 무결성 체크)
                         def beRegistry = FULL_URI_BE.substring(0, FULL_URI_BE.lastIndexOf('/'))
                         def feRegistry = FULL_URI_FE.substring(0, FULL_URI_FE.lastIndexOf('/'))
                         
                         if (beRegistry != feRegistry) {
-                            error "Registry Mismatch: 백엔드와 프론트엔드의 레지스트리 호스트가 다릅니다."
+                            error "ECR 호스트 불일치: BE(${beRegistry}) vs FE(${feRegistry})"
                         }
                         
                         def registryDomain = beRegistry.startsWith('http') ? beRegistry : "https://${beRegistry}"
                         
-                        // ECR 로그인 세션 유지 내에서 이미지 빌드 및 푸시 수행
                         docker.withRegistry("${registryDomain}", "ecr:${AWS_REGION}:${AWS_CRED_ID}") {
-                            // [Backend 빌드] 실패 시 로그의 마지막 10줄을 캡처하여 알림에 포함
+                            // [Backend 빌드]
                             try {
-                                env.FAILED_STAGE = "2-1. 백엔드 빌드"
+                                env.FAILED_STAGE = "2-1. 백엔드 빌드 및 푸시"
                                 sh 'cd backend && docker build -t $FULL_URI_BE:$BUILD_NUMBER . 2> be_err.log'
                                 sh 'docker push $FULL_URI_BE:$BUILD_NUMBER'
                             } catch (Exception e) {
-                                env.ERROR_DETAILS = sh(script: '[ -f backend/be_err.log ] && tail -n 10 backend/be_err.log || echo "BE 빌드 로그 없음"', returnStdout: true).trim()
+                                // 도커 빌드 실패 시 stderr 내용을 캡처
+                                def log = sh(script: '[ -f backend/be_err.log ] && tail -n 15 backend/be_err.log || echo "로그 없음"', returnStdout: true).trim()
+                                env.ERROR_DETAILS = "📦 **Docker Build Fail (Backend)**\n
+```\n${log}\n```"
                                 error "Backend Build Failed"
                             }
 
                             // [Frontend 빌드]
                             try {
-                                env.FAILED_STAGE = "2-2. 프론트엔드 빌드"
+                                env.FAILED_STAGE = "2-2. 프론트엔드 빌드 및 푸시"
                                 sh 'cd frontend && docker build -t $FULL_URI_FE:$BUILD_NUMBER . 2> fe_err.log'
                                 sh 'docker push $FULL_URI_FE:$BUILD_NUMBER'
                             } catch (Exception e) {
-                                env.ERROR_DETAILS = sh(script: '[ -f frontend/fe_err.log ] && tail -n 10 frontend/fe_err.log || echo "FE 빌드 로그 없음"', returnStdout: true).trim()
+                                def log = sh(script: '[ -f frontend/fe_err.log ] && tail -n 15 frontend/fe_err.log || echo "로그 없음"', returnStdout: true).trim()
+                                env.ERROR_DETAILS = "📦 **Docker Build Fail (Frontend)**\n```\n${log}\n```"
                                 error "Frontend Build Failed"
                             }
                         }
@@ -69,75 +71,69 @@ pipeline {
             }
         }
 
-        // 3단계: Develop 브랜치일 경우 SSAFY 내부 K3s 클러스터에 배포
         stage('3. 배포: SSAFY K3s (Develop)') {
             when { branch 'develop' } 
             steps {
                 script { 
-                    env.FAILED_STAGE = "3. SSAFY K3s 배포"
+                    env.FAILED_STAGE = "3. SSAFY K3s 클러스터 배포"
                     deployToCluster("${K3S_CONFIG_ID}", "SSAFY K3s") 
                 }
             }
         }
 
-        // 4단계: Main 브랜치일 경우 AWS EKS 운영 환경에 배포
         stage('4. 배포: AWS EKS (Main)') {
             when { branch 'main' }
             steps {
                 script { 
-                    env.FAILED_STAGE = "4. AWS EKS 배포"
+                    env.FAILED_STAGE = "4. AWS EKS 운영 환경 배포"
                     deployToCluster("${EKS_CONFIG_ID}", "AWS EKS") 
                 }
             }
         }
     }
 
-    // 결과 알림 처리
     post {
         success {
             script {
-                // 브랜치에 따라 성공 메시지 최적화 (오탐 방지)
-                def successMsg = "✅ 빌드 및 검증 성공 (배포 미대상 브랜치)"
-                if (env.BRANCH_NAME == 'develop') {
-                    successMsg = "🚀 SSAFY K3s(Develop) 배포 성공!"
-                } else if (env.BRANCH_NAME == 'main') {
-                    successMsg = "🌟 AWS EKS(Main) 배포 성공!"
-                }
+                def successMsg = "✅ 빌드/검증 성공 (배포 미대상 브랜치)"
+                if (env.BRANCH_NAME == 'develop') successMsg = "🚀 **SSAFY K3s** 배포 성공!"
+                if (env.BRANCH_NAME == 'main') successMsg = "🌟 **AWS EKS** 운영 환경 배포 성공!"
                 
                 env.FAILED_STAGE = "" 
                 sendMattermostNotification("SUCCESS", "#00FF00", successMsg)
             }
         }
         failure {
-            // 실패 시 캡처해둔 ERROR_DETAILS를 Mattermost로 전송
-            sendMattermostNotification("FAILURE", "#FF0000", "🚨 상세 원인: ${env.ERROR_DETAILS}")
+            // 실패 시 가장 구체적인 정보를 알림으로 전송
+            sendMattermostNotification("FAILURE", "#FF0000", "🚨 **공정 실패 리포트**\n\n**실패 지점:** `${env.FAILED_STAGE}`\n\n**상세 원인:**\n${env.ERROR_DETAILS}")
         }
         always {
-            // Jenkins 노드의 디스크 관리를 위해 사용하지 않는 도커 이미지 정리
             sh "docker image prune -f"
         }
     }
 }
 
 /**
- * [배포 전용 함수] AWS CLI와 kubectl을 사용한 클러스터 배포 로직
+ * [배포 전용 함수] 클러스터 제어 및 리소스 반영
  */
 def deployToCluster(String configId, String clusterName) {
     try {
-        // AWS 명령어를 즉시 사용할 수 있도록 공식 AWS-CLI 이미지 내에서 실행
         docker.image('amazon/aws-cli:latest').inside('--network host --entrypoint=""') {
             withCredentials([
                 file(credentialsId: configId, variable: 'KUBECONFIG'),
                 string(credentialsId: "${REGISTRY_BE_ID}", variable: 'FULL_URI_BE'),
                 string(credentialsId: "${REGISTRY_FE_ID}", variable: 'FULL_URI_FE'),
-                usernamePassword(credentialsId: "${AWS_CRED_ID}", usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')
+                amazonWebServicesCredentials(
+                    credentialsId: "${AWS_CRED_ID}", 
+                    accessKeyVariable: 'AWS_ACCESS_KEY_ID', 
+                    secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                )
             ]) {
-                // 쉘 스크립트 실행 (에러 발생 시 deploy.err 파일에 기록)
                 sh '''
                 {
-                    set -o pipefail # 파이프라인 중간 명령어 실패 시 즉시 중단 처리
-
-                    # 1. kubectl 설치 및 보안 검증 (공급망 공격 방지용 체크섬 확인)
+                    set -e -o pipefail # 명령어 하나라도 실패 시 즉시 중단
+                    
+                    # 1. 도구 설치 (kubectl) 및 무결성 검증
                     KUBECTL_VERSION="$(curl -L -s https://dl.k8s.io/release/stable.txt)"
                     curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
                     curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl.sha256"
@@ -146,14 +142,11 @@ def deployToCluster(String configId, String clusterName) {
                     chmod +x kubectl
                     mv kubectl /usr/local/bin/
 
-                    # 2. 이미지 URI에서 레지스트리 서버 주소 자동 추출 (하드코딩 방지)
+                    # 2. 인프라 정보 추출 및 네임스페이스 준비
                     ECR_SERVER="${FULL_URI_BE%%/*}"
-
-                    # 3. 공통 네임스페이스 및 리소스 적용
                     kubectl --kubeconfig=$KUBECONFIG apply -f $K8S_DIR/00_namespace.yaml
                     
-                    # 4. [Atomic Update] ECR 인증용 시크릿(regcred) 갱신
-                    # delete-create 방식이 아닌 apply 방식을 사용하여 교체 순간의 인증 공백을 제거함
+                    # 3. ECR 인증 시크릿(regcred) 원자적 갱신
                     kubectl --kubeconfig=$KUBECONFIG create secret docker-registry regcred \
                       --docker-server="$ECR_SERVER" \
                       --docker-username=AWS \
@@ -161,39 +154,42 @@ def deployToCluster(String configId, String clusterName) {
                       -n modu-apps \
                       --dry-run=client -o yaml | kubectl --kubeconfig=$KUBECONFIG apply -f -
                     
-                    # 5. 매니페스트 내의 이미지 태그(:$BUILD_NUMBER) 치환 및 최종 배포
+                    # 4. 이미지 태그 치환 및 최종 리소스 반영
                     sed -i "s|BACKEND_IMAGE|$FULL_URI_BE:$BUILD_NUMBER|g" $K8S_DIR/backend.yaml
                     sed -i "s|FRONTEND_IMAGE|$FULL_URI_FE:$BUILD_NUMBER|g" $K8S_DIR/frontend.yaml
                     kubectl --kubeconfig=$KUBECONFIG apply -f $K8S_DIR/
-                } 2> deploy.err
+                } 2> deploy.err # 모든 stderr를 파일로 기록
                 '''
             }
         }
     } catch (Exception e) {
-        // 배포 중 에러 발생 시 deploy.err 파일에서 원인을 읽어와 ERROR_DETAILS에 저장
-        env.ERROR_DETAILS = sh(
-            script: "[ -f deploy.err ] && tail -n 20 deploy.err || printf '%s' '${clusterName} 배포 실패: ${e.message}'",
-            returnStdout: true
-        ).trim()
+        // [고도화] 에러의 출처에 따라 메시지를 분류합니다.
+        def shellLog = sh(script: "[ -f deploy.err ] && tail -n 15 deploy.err || echo ''", returnStdout: true).trim()
+        
+        if (shellLog) {
+            env.ERROR_DETAILS = "🛠️ **Infrastructure Script Error**\n```bash\n${shellLog}\n```"
+        } else {
+            // 쉘 실행 전(자격 증명 바인딩 등) 단계의 에러 처리
+            env.ERROR_DETAILS = "⚙️ **Jenkins Pipeline Engine Error**\n> ${e.toString()}"
+        }
         error "Deployment Failed"
     }
 }
 
 /**
- * Mattermost 웹훅을 통한 상세 알림 전송 함수
+ * Mattermost 알림 전송 (마크다운 최적화)
  */
 def sendMattermostNotification(String status, String color, String message) {
-    // 젠킨스 작업 이름의 URL 인코딩을 디코딩하여 가독성 확보
     def decodedJobName = java.net.URLDecoder.decode(env.JOB_NAME, "UTF-8")
     withCredentials([string(credentialsId: 'MATTERMOST_WEBHOOK_URL', variable: 'WEBHOOK_URL')]) {
-        def title = (status == "SUCCESS") ? "✅ 배포 공정 성공" : "🚨 배포 공정 실패"
+        def title = (status == "SUCCESS") ? "✅ 파이프라인 공정 성공" : "🚨 파이프라인 공정 실패"
         def payload = """
         {
             "attachments": [
                 {
                     "color": "${color}",
                     "title": "${title}",
-                    "text": "**프로젝트:** ${decodedJobName} (#${env.BUILD_NUMBER})\\n**결과:** ${message}"
+                    "text": "### **Project:** ${decodedJobName} (#${env.BUILD_NUMBER})\\n${message}\\n\\n---\\n[🔍 젠킨스 상세 로그 확인](${env.BUILD_URL}console)"
                 }
             ]
         }
