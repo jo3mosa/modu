@@ -105,7 +105,16 @@ def critic_agent(state: InvestmentAgentState) -> dict[str, Any]:
         }
 
     # 코드 레벨에서 먼저 확인 가능한 하드 리스크를 점검한다.
-    deterministic_comments = _run_deterministic_checks(state)
+    deterministic_comments, has_blocking_risk = _run_deterministic_checks(state)
+
+    if has_blocking_risk:
+        return {
+            "critic_feedback": CriticFeedback(
+                approved=False,
+                risk_level="high",
+                comments=deterministic_comments,
+            )
+        }
 
     chain = _prompt | get_strategy_llm() | _parser
 
