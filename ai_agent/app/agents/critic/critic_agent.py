@@ -138,14 +138,12 @@ def critic_agent(state: InvestmentAgentState) -> dict[str, Any]:
         except OutputParserException as exc:
             return _fallback_feedback(
                 reason="LLM 출력 파싱 2회 실패",
-                detail=str(exc),
                 comments=deterministic_comments,
             )
 
     except Exception as exc:
         return _fallback_feedback(
             reason="LLM 호출 실패",
-            detail=str(exc),
             comments=deterministic_comments,
         )
 
@@ -238,7 +236,6 @@ def _run_deterministic_checks(state: InvestmentAgentState) -> tuple[list[str], b
 
 def _fallback_feedback(
     reason: str,
-    detail: str,
     comments: list[str],
 ) -> dict[str, Any]:
     """
@@ -251,7 +248,6 @@ def _fallback_feedback(
             risk_level="high",
             comments=[
                 f"Critic Agent 검토 실패: {reason}",
-                detail,
                 *comments,
                 "리스크 검토가 정상 완료되지 않았으므로 최종 투자 결정은 보류하는 것이 안전합니다.",
             ],
