@@ -72,7 +72,22 @@ const MOCK_TRADE_LOGS = [
   }
 ];
 
+const PERIOD_OPTIONS = [
+  { value: '1W', label: '1주일' },
+  { value: '1M', label: '1개월' },
+  { value: '3M', label: '3개월' },
+  { value: '1Y', label: '1년' }
+];
+
+const MOCK_HABIT_SUMMARY = {
+  pnl: 540000,
+  pnlRate: 5.4,
+  title: "안정적인 수익 창출 중이나, 간헐적 과매매 주의",
+  desc: "이번 달은 손절 원칙을 잘 지켜 전반적으로 안정적인 수익을 누적했습니다. 다만 지난주 급락장에서 하루 10회 이상 매매하는 등 일시적인 뇌동매매 징후가 포착되었습니다. 규칙적인 매매 빈도를 유지하세요."
+};
+
 export default function ReportPage() {
+  const [period, setPeriod] = useState('1M');
   const [briefing] = useState(MOCK_MARKET_BRIEFING);
   const [logs] = useState(MOCK_TRADE_LOGS);
   const [expandedLogId, setExpandedLogId] = useState(null);
@@ -162,6 +177,17 @@ export default function ReportPage() {
           <h1>리포트</h1>
           <p>내 포트폴리오 분석 결과와 매매 기록을 확인하세요.</p>
         </div>
+        <div className="period-filter">
+          {PERIOD_OPTIONS.map(opt => (
+            <button 
+              key={opt.value} 
+              className={`period-btn ${period === opt.value ? 'active' : ''}`}
+              onClick={() => setPeriod(opt.value)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* 1. 시장 브리핑 */}
@@ -207,6 +233,22 @@ export default function ReportPage() {
       {/* 3. 매매 로그 + 근거 */}
       <div className="report-panel">
         <h2>매매 로그 · AI 결정 근거</h2>
+
+        {/* AI 매매 습관 종합 요약 */}
+        <div className="habit-summary-box">
+          <div className="habit-pnl">
+            <span className="pnl-label">기간 내 실현 손익</span>
+            <span className="pnl-value">
+              +{MOCK_HABIT_SUMMARY.pnl.toLocaleString()}원 
+              <span className="pnl-rate">(+{MOCK_HABIT_SUMMARY.pnlRate}%)</span>
+            </span>
+          </div>
+          <div className="habit-text">
+            <h4>{MOCK_HABIT_SUMMARY.title}</h4>
+            <p>{MOCK_HABIT_SUMMARY.desc}</p>
+          </div>
+        </div>
+
         <div className="trade-log-list">
           {logs.map((log) => {
             const isExpanded = expandedLogId === log.id;

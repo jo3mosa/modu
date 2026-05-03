@@ -209,8 +209,121 @@
   font-size: 1.05rem;
 }
 
+/* 기간 필터 */
+.period-filter {
+  display: flex;
+  gap: 0.5rem;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 0.4rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.period-btn {
+  background: transparent;
+  border: none;
+  color: #888;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.period-btn:hover {
+  color: #ddd;
+}
+
+.period-btn.active {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+/* 매매 습관 요약 박스 */
+.habit-summary-box {
+  background: linear-gradient(to right, rgba(0,0,0,0.4), rgba(0,0,0,0.2));
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+  display: flex;
+  gap: 2rem;
+  align-items: center;
+}
+
+.habit-pnl {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-right: 2rem;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  min-width: 200px;
+}
+
+.pnl-label {
+  color: #888;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.pnl-value {
+  color: #84cc16;
+  font-size: 1.5rem;
+  font-weight: 800;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.pnl-rate {
+  font-size: 1rem;
+  opacity: 0.8;
+}
+
+.habit-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.habit-text h4 {
+  margin: 0;
+  color: #fff;
+  font-size: 1.1rem;
+}
+
+.habit-text p {
+  margin: 0;
+  color: #aaa;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
 @media (max-width: 1024px) {
   .chart-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .habit-summary-box {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+  .habit-pnl {
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-right: 0;
+    padding-bottom: 1rem;
+    width: 100%;
+  }
+  .page-header-container {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
   }
 }
