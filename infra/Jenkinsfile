@@ -186,6 +186,10 @@ ${env.ERROR_DETAILS}""")
 // ============================================================
 def deployToCluster(String configId, String clusterName) {
     try {
+        // 이전 빌드의 deploy.err가 잔존할 경우 stale 로그가 오인될 수 있으므로
+        // 배포 시작 전에 파일을 빈 상태로 초기화 (없으면 새로 생성)
+        writeFile file: 'deploy.err', text: ''
+
         // AWS CLI가 포함된 공식 이미지를 사용하여 격리된 환경에서 배포 실행
         // --network host : 클러스터 API 서버 접근을 위해 호스트 네트워크 사용
         // --entrypoint="" : 이미지 기본 ENTRYPOINT를 비활성화
