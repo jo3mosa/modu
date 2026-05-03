@@ -2,16 +2,16 @@ pipeline {
     agent any
 
     environment {
-        // [인프라 공통 설정]
+        // [1. 인프라 공통 설정]
         AWS_REGION           = 'ap-northeast-2'
-        AWS_CRED_ID          = 'aws-credentials' 
+        AWS_CRED_ID          = 'aws-credentials' // Jenkins에 등록된 AWS Credentials ID
         REGISTRY_BE_ID       = 'ecr-registry-backend'
         REGISTRY_FE_ID       = 'ecr-registry-frontend'
-        K3S_CONFIG_ID        = 'k3s-config.yaml'
-        EKS_CONFIG_ID        = 'aws-eks-config'
+        K3S_CONFIG_ID        = 'k3s-config.yaml' // SSAFY K3s 설정 파일
+        EKS_CONFIG_ID        = 'aws-eks-config' // AWS EKS 설정 파일
         K8S_DIR              = 'infra/k8s'
         
-        // [상태 관리 변수] 알림의 정밀도를 결정합니다.
+        // [2. 상태 관리 변수] 실패 지점과 상세 에러 내용을 추적합니다.
         FAILED_STAGE         = "" 
         ERROR_DETAILS        = "" 
     }
@@ -48,10 +48,10 @@ pipeline {
                                 sh 'cd backend && docker build -t $FULL_URI_BE:$BUILD_NUMBER . 2> be_err.log'
                                 sh 'docker push $FULL_URI_BE:$BUILD_NUMBER'
                             } catch (Exception e) {
-                                // 도커 빌드 실패 시 stderr 내용을 캡처
                                 def log = sh(script: '[ -f backend/be_err.log ] && tail -n 15 backend/be_err.log || echo "로그 없음"', returnStdout: true).trim()
-                                env.ERROR_DETAILS = "📦 **Docker Build Fail (Backend)**\n
-```\n${log}\n```"
+                                env.ERROR_DETAILS = """📦 **Docker Build Fail (Backend)**
+${log}
+"""
                                 error "Backend Build Failed"
                             }
 
@@ -62,7 +62,9 @@ pipeline {
                                 sh 'docker push $FULL_URI_FE:$BUILD_NUMBER'
                             } catch (Exception e) {
                                 def log = sh(script: '[ -f frontend/fe_err.log ] && tail -n 15 frontend/fe_err.log || echo "로그 없음"', returnStdout: true).trim()
-                                env.ERROR_DETAILS = "📦 **Docker Build Fail (Frontend)**\n```\n${log}\n```"
+                                env.ERROR_DETAILS = """📦 **Docker Build Fail (Frontend)**
+${log}
+"""
                                 error "Frontend Build Failed"
                             }
                         }
@@ -104,8 +106,12 @@ pipeline {
             }
         }
         failure {
-            // 실패 시 가장 구체적인 정보를 알림으로 전송
-            sendMattermostNotification("FAILURE", "#FF0000", "🚨 **공정 실패 리포트**\n\n**실패 지점:** `${env.FAILED_STAGE}`\n\n**상세 원인:**\n${env.ERROR_DETAILS}")
+            sendMattermostNotification("FAILURE", "#FF0000", """🚨 **공정 실패 리포트**
+
+**실패 지점:** `${env.FAILED_STAGE}`
+
+**상세 원인:**
+${env.ERROR_DETAILS}""")
         }
         always {
             sh "docker image prune -f"
@@ -114,7 +120,8 @@ pipeline {
 }
 
 /**
- * [배포 전용 함수] 클러스터 제어 및 리소스 반영
+ * [배포 함수] 클러스터 제어 및 리소스 반영
+ * AWS Credentials 타입을 사용하여 ECR 및 K8s 클러스터에 안전하게 접근합니다.
  */
 def deployToCluster(String configId, String clusterName) {
     try {
@@ -123,6 +130,7 @@ def deployToCluster(String configId, String clusterName) {
                 file(credentialsId: configId, variable: 'KUBECONFIG'),
                 string(credentialsId: "${REGISTRY_BE_ID}", variable: 'FULL_URI_BE'),
                 string(credentialsId: "${REGISTRY_FE_ID}", variable: 'FULL_URI_FE'),
+                // AWS Credentials 타입에 최적화된 바인딩 함수를 사용합니다.
                 amazonWebServicesCredentials(
                     credentialsId: "${AWS_CRED_ID}", 
                     accessKeyVariable: 'AWS_ACCESS_KEY_ID', 
@@ -131,9 +139,9 @@ def deployToCluster(String configId, String clusterName) {
             ]) {
                 sh '''
                 {
-                    set -e -o pipefail # 명령어 하나라도 실패 시 즉시 중단
+                    set -e -o pipefail # 명령어 실패 시 즉시 중단
                     
-                    # 1. 도구 설치 (kubectl) 및 무결성 검증
+                    # 1. kubectl 설치 및 무결성 검증 (보안 강화)
                     KUBECTL_VERSION="$(curl -L -s https://dl.k8s.io/release/stable.txt)"
                     curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
                     curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl.sha256"
@@ -146,7 +154,7 @@ def deployToCluster(String configId, String clusterName) {
                     ECR_SERVER="${FULL_URI_BE%%/*}"
                     kubectl --kubeconfig=$KUBECONFIG apply -f $K8S_DIR/00_namespace.yaml
                     
-                    # 3. ECR 인증 시크릿(regcred) 원자적 갱신
+                    # 3. ECR 인증 시크릿(regcred) 원자적 갱신 (무중단 배포 보장)
                     kubectl --kubeconfig=$KUBECONFIG create secret docker-registry regcred \
                       --docker-server="$ECR_SERVER" \
                       --docker-username=AWS \
@@ -154,22 +162,20 @@ def deployToCluster(String configId, String clusterName) {
                       -n modu-apps \
                       --dry-run=client -o yaml | kubectl --kubeconfig=$KUBECONFIG apply -f -
                     
-                    # 4. 이미지 태그 치환 및 최종 리소스 반영
+                    # 4. 이미지 태그 치환 및 최종 배포 (Idempotency 확보)
                     sed -i "s|BACKEND_IMAGE|$FULL_URI_BE:$BUILD_NUMBER|g" $K8S_DIR/backend.yaml
                     sed -i "s|FRONTEND_IMAGE|$FULL_URI_FE:$BUILD_NUMBER|g" $K8S_DIR/frontend.yaml
                     kubectl --kubeconfig=$KUBECONFIG apply -f $K8S_DIR/
-                } 2> deploy.err # 모든 stderr를 파일로 기록
+                } 2> deploy.err 
                 '''
             }
         }
     } catch (Exception e) {
-        // [고도화] 에러의 출처에 따라 메시지를 분류합니다.
         def shellLog = sh(script: "[ -f deploy.err ] && tail -n 15 deploy.err || echo ''", returnStdout: true).trim()
         
         if (shellLog) {
             env.ERROR_DETAILS = "🛠️ **Infrastructure Script Error**\n```bash\n${shellLog}\n```"
         } else {
-            // 쉘 실행 전(자격 증명 바인딩 등) 단계의 에러 처리
             env.ERROR_DETAILS = "⚙️ **Jenkins Pipeline Engine Error**\n> ${e.toString()}"
         }
         error "Deployment Failed"
@@ -177,7 +183,7 @@ def deployToCluster(String configId, String clusterName) {
 }
 
 /**
- * Mattermost 알림 전송 (마크다운 최적화)
+ * Mattermost 알림 전송 함수
  */
 def sendMattermostNotification(String status, String color, String message) {
     def decodedJobName = java.net.URLDecoder.decode(env.JOB_NAME, "UTF-8")
