@@ -243,11 +243,17 @@ def deployToCluster(String configId, String clusterName) {
                       --dry-run=client -o yaml | kubectl --kubeconfig=$KUBECONFIG apply -f -
 
                     # ── Step 4. 이미지 태그 치환 및 배포 ─────────────────
-                    # yaml 파일의 플레이스홀더를 실제 이미지 URI:빌드번호 로 치환
-                    sed -i "s|BACKEND_IMAGE|$FULL_URI_BE:$BUILD_NUMBER|g"   $K8S_DIR/backend.yaml
-                    sed -i "s|FRONTEND_IMAGE|$FULL_URI_FE:$BUILD_NUMBER|g"  $K8S_DIR/frontend.yaml
-                    # k8s 디렉토리 내 모든 매니페스트 일괄 적용
-                    kubectl --kubeconfig=$KUBECONFIG apply -f $K8S_DIR/
+                    # 원본 yaml을 직접 수정하면 재빌드 시 플레이스홀더가 없어
+                    # sed가 동작하지 않고 이전 이미지 태그로 배포되는 버그 발생
+                    # → 임시 디렉토리에 복사 후 치환하여 원본 파일 보존
+                    DEPLOY_DIR=$(mktemp -d)
+                    cp $K8S_DIR/*.yaml "$DEPLOY_DIR/"
+                    sed -i "s|BACKEND_IMAGE|$FULL_URI_BE:$BUILD_NUMBER|g"   "$DEPLOY_DIR/backend.yaml"
+                    sed -i "s|FRONTEND_IMAGE|$FULL_URI_FE:$BUILD_NUMBER|g"  "$DEPLOY_DIR/frontend.yaml"
+                    # 임시 디렉토리 기준으로 배포
+                    kubectl --kubeconfig=$KUBECONFIG apply -f "$DEPLOY_DIR/"
+                    # 임시 파일 정리
+                    rm -rf "$DEPLOY_DIR"
 
                 # 모든 stderr를 deploy.err 파일로 리다이렉트 (에러 원인 추적용)
                 } 2> deploy.err
