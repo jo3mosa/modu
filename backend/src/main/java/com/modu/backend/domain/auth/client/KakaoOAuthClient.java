@@ -84,7 +84,7 @@ public class KakaoOAuthClient {
                     .retrieve()
                     .body(UserInfoResponse.class);
 
-            if (response == null || response.id() == null) {
+            if (response == null || response.id() == null || response.nickname() == null) {
                 throw new ApiException(AuthErrorCode.KAKAO_USER_INFO_FAILED);
             }
 
