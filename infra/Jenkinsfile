@@ -72,39 +72,47 @@ pipeline {
                             // ── 2-1. 백엔드 이미지 빌드 및 푸시 ─────────────
                             try {
                                 env.FAILED_STAGE = "2-1. 백엔드 빌드 및 푸시"
-                                // stderr를 be_err.log로 리다이렉트하여 빌드 에러 로그 저장
-                                sh 'cd backend && docker build -t $FULL_URI_BE:$BUILD_NUMBER . 2> be_err.log'
-                                // 빌드된 이미지를 ECR에 푸시 (태그: Jenkins 빌드 번호)
-                                sh 'docker push $FULL_URI_BE:$BUILD_NUMBER'
+                                // 빌드와 푸시를 하나의 블록으로 묶어 stderr를 be_err.log로 통합 저장
+                                // (push만 실패해도 로그가 남도록 처리)
+                                sh '''
+                                {
+                                  docker build -t "$FULL_URI_BE:$BUILD_NUMBER" backend
+                                  docker push "$FULL_URI_BE:$BUILD_NUMBER"
+                                } 2> backend/be_err.log
+                                '''
                             } catch (Exception e) {
-                                // 빌드 실패 시 에러 로그 마지막 15줄을 읽어 알림 메시지에 포함
+                                // 빌드/푸시 실패 시 에러 로그 마지막 15줄을 읽어 알림 메시지에 포함
                                 def log = sh(
                                     script: '[ -f backend/be_err.log ] && tail -n 15 backend/be_err.log || echo "로그 없음"',
                                     returnStdout: true
                                 ).trim()
-                                env.ERROR_DETAILS = """📦 **Docker Build Fail (Backend)**
+                                env.ERROR_DETAILS = """📦 **Docker Build/Push Fail (Backend)**
 ${log}
 """
-                                error "Backend Build Failed"
+                                error "Backend Build/Push Failed"
                             }
 
                             // ── 2-2. 프론트엔드 이미지 빌드 및 푸시 ─────────
                             try {
                                 env.FAILED_STAGE = "2-2. 프론트엔드 빌드 및 푸시"
-                                // stderr를 fe_err.log로 리다이렉트하여 빌드 에러 로그 저장
-                                sh 'cd frontend && docker build -t $FULL_URI_FE:$BUILD_NUMBER . 2> fe_err.log'
-                                // 빌드된 이미지를 ECR에 푸시 (태그: Jenkins 빌드 번호)
-                                sh 'docker push $FULL_URI_FE:$BUILD_NUMBER'
+                                // 빌드와 푸시를 하나의 블록으로 묶어 stderr를 fe_err.log로 통합 저장
+                                // (push만 실패해도 로그가 남도록 처리)
+                                sh '''
+                                {
+                                  docker build -t "$FULL_URI_FE:$BUILD_NUMBER" frontend
+                                  docker push "$FULL_URI_FE:$BUILD_NUMBER"
+                                } 2> frontend/fe_err.log
+                                '''
                             } catch (Exception e) {
-                                // 빌드 실패 시 에러 로그 마지막 15줄을 읽어 알림 메시지에 포함
+                                // 빌드/푸시 실패 시 에러 로그 마지막 15줄을 읽어 알림 메시지에 포함
                                 def log = sh(
                                     script: '[ -f frontend/fe_err.log ] && tail -n 15 frontend/fe_err.log || echo "로그 없음"',
                                     returnStdout: true
                                 ).trim()
-                                env.ERROR_DETAILS = """📦 **Docker Build Fail (Frontend)**
+                                env.ERROR_DETAILS = """📦 **Docker Build/Push Fail (Frontend)**
 ${log}
 """
-                                error "Frontend Build Failed"
+                                error "Frontend Build/Push Failed"
                             }
                         }
                     }
