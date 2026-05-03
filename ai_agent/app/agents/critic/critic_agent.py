@@ -164,7 +164,7 @@ def critic_agent(state: InvestmentAgentState) -> dict[str, Any]:
     }
 
 
-def _run_deterministic_checks(state: InvestmentAgentState) -> list[str]:
+def _run_deterministic_checks(state: InvestmentAgentState) -> tuple[list[str], bool]:
     """
     LLM 호출 전 코드로 먼저 검증할 수 있는 리스크를 점검한다.
 
@@ -174,6 +174,7 @@ def _run_deterministic_checks(state: InvestmentAgentState) -> list[str]:
     """
 
     comments: list[str] = []
+    has_blocking_risk = False
 
     strategy_draft = state.strategy_draft
     policy_context = state.policy_context or {}
@@ -199,15 +200,22 @@ def _run_deterministic_checks(state: InvestmentAgentState) -> list[str]:
 
     if side == "buy" and order_amount <= 0:
         comments.append("매수 전략인데 주문 금액이 0 이하입니다.")
+        has_blocking_risk = True
 
-    if side == "buy" and max_single_stock_ratio and total_value:
-        order_ratio = order_amount / total_value
-
-        if order_ratio > max_single_stock_ratio:
-            comments.append(
-                f"주문 비중이 사용자 성향 기준 단일 종목 최대 비중을 초과합니다. "
-                f"order_ratio={order_ratio:.2%}, limit={max_single_stock_ratio:.2%}"
-            )
+    if side == "buy" and max_single_stock_ratio is not None and total_value:
+        try:
+            order_ratio = float(order_amount) / float(total_value)
+            limit_ratio = float(max_single_stock_ratio)
+        except (TypeError, ValueError):
+            comments.append("단일 종목 비중 검증에 필요한 수치 형식이 잘못되었습니다.")
+            has_blocking_risk = True
+        else:
+            if order_ratio > limit_ratio:
+                comments.append(
+                    f"주문 비중이 사용자 성향 기준 단일 종목 최대 비중을 초과합니다. "
+                    f"order_ratio={order_ratio:.2%}, limit={limit_ratio:.2%}"
+                )
+                has_blocking_risk = True
 
     risk_rules = user_context.get("risk_rules", {})
     stop_loss_price = _get_value(strategy_draft, "stop_loss_price")
@@ -225,7 +233,7 @@ def _run_deterministic_checks(state: InvestmentAgentState) -> list[str]:
     if not comments:
         comments.append("코드 레벨 사전 검증에서 즉시 차단할 하드 리스크는 발견되지 않았습니다.")
 
-    return comments
+    return comments, has_blocking_risk
 
 
 def _fallback_feedback(
