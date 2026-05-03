@@ -79,8 +79,6 @@ def critic_agent(state: InvestmentAgentState) -> dict[str, Any]:
             )
         }
 
-    chain = load_prompt(str(_PROMPT_PATH)) | get_strategy_llm() | _parser
-
     inputs = {
         "strategy_draft": to_json(strategy_draft),
         "analysis_snapshot": to_json(state.analysis_snapshot),
@@ -93,7 +91,11 @@ def critic_agent(state: InvestmentAgentState) -> dict[str, Any]:
     }
 
     try:
-        critic_feedback = chain.invoke(inputs)
+        chain = load_prompt(str(_PROMPT_PATH)) | get_strategy_llm() | _parser
+        try:
+            critic_feedback = chain.invoke(inputs)
+        except OutputParserException:
+            critic_feedback = chain.invoke(inputs)
 
     except OutputParserException:
         try:
@@ -101,6 +103,11 @@ def critic_agent(state: InvestmentAgentState) -> dict[str, Any]:
         except OutputParserException:
             return _fallback_feedback(
                 reason="LLM 출력 파싱 2회 실패",
+                comments=deterministic_comments,
+            )
+        except Exception:
+            return _fallback_feedback(
+                reason="LLM 호출 실패",
                 comments=deterministic_comments,
             )
 
@@ -146,7 +153,7 @@ def _run_deterministic_checks(state: InvestmentAgentState) -> tuple[list[str], b
     asset = _get_value(strategy_draft, "asset")
     order_amount = _get_value(strategy_draft, "order_amount") or 0
 
-    system_constraints = policy_context.get("system_trading_constraints", {})
+    system_constraints = policy_context.get("system_trading_constraints") or {}
     max_single_stock_ratio = system_constraints.get("resolved_max_single_stock_ratio")
 
     total_value = (
