@@ -91,7 +91,7 @@ def strategy_agent(state: InvestmentAgentState) -> dict[str, Any]:
             for asset in state.candidate_assets
             if asset.get("stock_code") or asset.get("ticker")
         }
-        if valid_codes and strategy_draft.asset not in valid_codes:
+        if not valid_codes or strategy_draft.asset not in valid_codes:
             return _hold(
                 "후보 외 종목 선택",
                 f"LLM이 후보 목록에 없는 종목을 선택했습니다: {strategy_draft.asset}",

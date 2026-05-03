@@ -19,4 +19,5 @@ def get_strategy_llm() -> ChatOpenAI:
         temperature=0.2,
         base_url="https://gms.ssafy.io/gmsapi/api.openai.com/v1",
         api_key=gms_key,
+        request_timeout=30.0,
     )
