@@ -25,6 +25,12 @@ export default function RiskManagePage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalData, setModalData] = useState({ ...profile });
 
+  const getRiskColor = (risk) => {
+    if (risk.includes('안정')) return '#84cc16';
+    if (risk.includes('중립')) return '#eab308';
+    return '#ef4444';
+  };
+
   // 2. 핸들러
   const handleToggleAi = () => setIsActive(!isActive);
 
@@ -88,7 +94,7 @@ export default function RiskManagePage() {
           </div>
           <div className="profile-card">
             <span className="profile-label">위험 감수도</span>
-            <span className="profile-value" style={{ color: '#ef4444' }}>{profile.risk}</span>
+            <span className="profile-value" style={{ color: getRiskColor(profile.risk) }}>{profile.risk}</span>
           </div>
         </div>
 
@@ -183,9 +189,24 @@ export default function RiskManagePage() {
               </div>
 
               <div className="survey-section" style={{ marginTop: '2rem' }}>
+                <h3>투자 목표</h3>
+                <div className="options-grid">
+                  {['단기 수익 실현', '장기 자산 증식', '노후/연금 준비'].map(opt => (
+                    <button
+                      key={opt}
+                      className={`option-btn ${modalData.goal === opt ? 'selected' : ''}`}
+                      onClick={() => setModalData({ ...modalData, goal: opt })}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="survey-section" style={{ marginTop: '2rem' }}>
                 <h3>위험 감수도</h3>
                 <div className="options-grid">
-                  {['안정 추구 (원금 보존)', '위험 중립 (적당한 변동성)', '적극 투자 (고위험 고수익)'].map(opt => (
+                  {['안정 추구', '위험 중립', '적극 투자'].map(opt => (
                     <button
                       key={opt}
                       className={`option-btn ${modalData.risk === opt ? 'selected' : ''}`}
