@@ -44,7 +44,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 Long userId = jwtProvider.getUserIdFromToken(token);
                 setAuthentication(userId);
             } catch (ApiException e) {
-                // 유효하지 않은 토큰이면 인증 없이 통과, 이후 Security가 접근 제어
+                // 만료/위조 여부를 authenticationEntryPoint에서 구분할 수 있도록 request attribute에 에러코드 저장
+                request.setAttribute("authErrorCode", e.getErrorCode());
                 log.debug("유효하지 않은 Access Token: {}", e.getMessage());
             }
         }
