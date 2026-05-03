@@ -158,25 +158,33 @@ def _run_deterministic_checks(state: InvestmentAgentState) -> tuple[list[str], b
 
     if side in {"buy", "sell"} and not asset:
         comments.append("매수/매도 전략인데 대상 종목 asset이 비어 있습니다.")
+        has_blocking_risk = True
 
     if side == "buy" and order_amount <= 0:
         comments.append("매수 전략인데 주문 금액이 0 이하입니다.")
         has_blocking_risk = True
 
-    if side == "buy" and max_single_stock_ratio is not None and total_value:
+    if side == "buy" and max_single_stock_ratio is not None:
         try:
-            order_ratio = float(order_amount) / float(total_value)
+            total_value_num = float(total_value)
             limit_ratio = float(max_single_stock_ratio)
+            order_amount_num = float(order_amount)
         except (TypeError, ValueError):
             comments.append("단일 종목 비중 검증에 필요한 수치 형식이 잘못되었습니다.")
             has_blocking_risk = True
         else:
-            if order_ratio > limit_ratio:
-                comments.append(
-                    f"주문 비중이 사용자 성향 기준 단일 종목 최대 비중을 초과합니다. "
-                    f"order_ratio={order_ratio:.2%}, limit={limit_ratio:.2%}"
-                )
+            if total_value_num <= 0:
+                comments.append("단일 종목 비중 검증을 위해 total_value는 0보다 커야 합니다.")
                 has_blocking_risk = True
+            else:
+                order_ratio = order_amount_num / total_value_num
+
+                if order_ratio > limit_ratio:
+                    comments.append(
+                        f"주문 비중이 사용자 성향 기준 단일 종목 최대 비중을 초과합니다. "
+                        f"order_ratio={order_ratio:.2%}, limit={limit_ratio:.2%}"
+                    )
+                    has_blocking_risk = True
 
     risk_rules = user_context.get("risk_rules", {})
     stop_loss_price = _get_value(strategy_draft, "stop_loss_price")
@@ -184,9 +192,10 @@ def _run_deterministic_checks(state: InvestmentAgentState) -> tuple[list[str], b
 
     if side == "buy" and stop_loss_price is None:
         comments.append("매수 전략인데 손절가가 설정되지 않았습니다.")
-
+        has_blocking_risk = True
     if side == "buy" and target_price is None:
         comments.append("매수 전략인데 목표가가 설정되지 않았습니다.")
+        has_blocking_risk = True
 
     if risk_rules:
         comments.append("사용자 risk_rules 기준과 전략의 손절/익절 구조를 추가 검토해야 합니다.")
