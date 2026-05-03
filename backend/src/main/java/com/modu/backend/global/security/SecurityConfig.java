@@ -62,7 +62,9 @@ public class SecurityConfig {
                                 "/api/v1/auth/social/**",  // 소셜 로그인
                                 "/api/v1/auth/refresh",    // 토큰 재발급
                                 "/api/v1/auth/test/login", // 개발용 우회 로그인
-                                "/actuator/**"             // 헬스체크
+                                "/actuator/**",            // 헬스체크
+                                "/swagger-ui/**",          // Swagger UI
+                                "/v3/api-docs/**"          // Swagger API 문서
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
