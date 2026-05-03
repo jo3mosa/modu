@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +8,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from app.config.llm import get_strategy_llm
 from app.state.investment_state import InvestmentAgentState
 from app.state.schemas import CriticFeedback
+from app.utils.json_utils import to_json
 
 
 _PROMPT_PATH = Path(__file__).resolve().parents[2] / "config" / "prompts" / "critic_agent.txt"
@@ -119,13 +119,13 @@ def critic_agent(state: InvestmentAgentState) -> dict[str, Any]:
     chain = _prompt | get_strategy_llm() | _parser
 
     inputs = {
-        "strategy_draft": _to_json(strategy_draft),
-        "analysis_snapshot": _to_json(state.analysis_snapshot),
-        "portfolio_snapshot": _to_json(state.portfolio_snapshot),
-        "user_context": _to_json(state.user_context),
-        "policy_context": _to_json(state.policy_context),
-        "memory_context": _to_json(state.memory_context),
-        "deterministic_comments": _to_json(deterministic_comments),
+        "strategy_draft": to_json(strategy_draft),
+        "analysis_snapshot": to_json(state.analysis_snapshot),
+        "portfolio_snapshot": to_json(state.portfolio_snapshot),
+        "user_context": to_json(state.user_context),
+        "policy_context": to_json(state.policy_context),
+        "memory_context": to_json(state.memory_context),
+        "deterministic_comments": to_json(deterministic_comments),
         "format_instructions": _parser.get_format_instructions(),
     }
 
@@ -263,11 +263,3 @@ def _get_value(obj: Any, key: str) -> Any:
         return obj.get(key)
 
     return getattr(obj, key, None)
-
-
-def _to_json(value: Any) -> str:
-    """
-    LLM prompt에 넣기 위한 JSON 직렬화 함수.
-    """
-
-    return json.dumps(value, ensure_ascii=False, indent=2, default=str)
