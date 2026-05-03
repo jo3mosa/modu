@@ -13,7 +13,7 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 16px;
   padding: 1.8rem;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.2);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
   display: flex;
   flex-direction: column;
 }
@@ -29,9 +29,9 @@
   gap: 0.5rem;
 }
 
-/* 1. 상단: 시장 브리핑 */
+/* 1. 시장 브리핑 */
 .market-briefing {
-  background: linear-gradient(135deg, rgba(132, 204, 22, 0.1) 0%, rgba(0,0,0,0.2) 100%);
+  background: linear-gradient(135deg, rgba(132, 204, 22, 0.1) 0%, rgba(0, 0, 0, 0.2) 100%);
   border-color: rgba(132, 204, 22, 0.2);
 }
 
@@ -55,19 +55,29 @@
 }
 
 .market-tag {
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   padding: 0.4rem 0.8rem;
   border-radius: 20px;
   font-size: 0.9rem;
   font-weight: 600;
   color: #aaa;
 }
-.market-tag.positive { color: #84cc16; border-color: rgba(132, 204, 22, 0.3); background: rgba(132, 204, 22, 0.05); }
-.market-tag.negative { color: #ef4444; border-color: rgba(239, 68, 68, 0.3); background: rgba(239, 68, 68, 0.05); }
+
+.market-tag.positive {
+  color: #84cc16;
+  border-color: rgba(132, 204, 22, 0.3);
+  background: rgba(132, 204, 22, 0.05);
+}
+
+.market-tag.negative {
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.05);
+}
 
 
-/* 2. 중단: 포트폴리오 차트 영역 */
+/* 2. 포트폴리오 차트 영역 */
 .chart-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -75,8 +85,8 @@
 }
 
 .chart-box {
-  background: rgba(0,0,0,0.2);
-  border: 1px solid rgba(255,255,255,0.05);
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 12px;
   padding: 1.5rem;
   display: flex;
@@ -102,7 +112,7 @@
 }
 
 
-/* 3. 하단: 매매 로그 및 근거 */
+/* 3. 매매 로그 + 근거 */
 .trade-log-list {
   display: flex;
   flex-direction: column;
@@ -110,20 +120,20 @@
 }
 
 .trade-log-item {
-  background: rgba(0,0,0,0.2);
-  border: 1px solid rgba(255,255,255,0.05);
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 12px;
   overflow: hidden;
   transition: all 0.2s;
 }
 
 .trade-log-item:hover {
-  background: rgba(255,255,255,0.02);
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .trade-log-item.expanded {
-  background: rgba(255,255,255,0.03);
-  border-color: rgba(255,255,255,0.1);
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .log-header {
@@ -147,8 +157,16 @@
   padding: 0.3rem 0.6rem;
   border-radius: 6px;
 }
-.log-badge.buy { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
-.log-badge.sell { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+
+.log-badge.buy {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.log-badge.sell {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+}
 
 .log-stock {
   font-weight: 700;
@@ -173,9 +191,9 @@
 }
 
 .log-reason-box {
-  background: rgba(0,0,0,0.3);
+  background: rgba(0, 0, 0, 0.3);
   padding: 1.5rem;
-  border-top: 1px solid rgba(255,255,255,0.05);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .log-reason-box h4 {
@@ -191,7 +209,6 @@
   font-size: 1.05rem;
 }
 
-/* 모바일 반응형 */
 @media (max-width: 1024px) {
   .chart-grid {
     grid-template-columns: 1fr;

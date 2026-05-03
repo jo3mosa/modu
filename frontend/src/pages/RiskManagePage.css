@@ -222,9 +222,11 @@
   border-color: #84cc16;
 }
 
-.unit {
+.input-with-unit .unit {
   position: absolute;
   right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
   color: #888;
   font-weight: 600;
   pointer-events: none;
