@@ -1,28 +1,21 @@
 pipeline {
     agent any
 
+    // 전역 환경 변수 설정
     environment {
-        // 1. 인프라 공통 설정
         AWS_REGION           = 'ap-northeast-2'
-        
-        // 2. 젠킨스 자격 증명 ID 관리
-        AWS_CRED_ID          = 'aws-credentials'
-        REGISTRY_BE_ID       = 'ecr-registry-backend'
-        REGISTRY_FE_ID       = 'ecr-registry-frontend'
-        
-        // 3. 쿠버네티스 접근 설정 ID (kubeconfig)
-        K3S_CONFIG_ID        = 'k3s-config.yaml'
-        EKS_CONFIG_ID        = 'aws-eks-config'
-        
-        // 4. K8s 매니페스트 경로
-        K8S_DIR              = 'infra/k8s'
-        
-        // 5. 알림 및 트러블슈팅용 상태 추적 변수
-        FAILED_STAGE         = ""
-        ERROR_DETAILS        = ""
+        AWS_CRED_ID          = 'aws-credentials' // 젠킨스에 저장된 AWS AccessKey/SecretKey ID
+        REGISTRY_BE_ID       = 'ecr-registry-backend' // 백엔드 ECR URI 보관용 Credentials ID
+        REGISTRY_FE_ID       = 'ecr-registry-frontend' // 프론트엔드 ECR URI 보관용 Credentials ID
+        K3S_CONFIG_ID        = 'k3s-config.yaml' // SSAFY 내부 K3s 설정 파일 ID
+        EKS_CONFIG_ID        = 'aws-eks-config' // AWS 운영 환경 EKS 설정 파일 ID
+        K8S_DIR              = 'infra/k8s' // 쿠버네티스 매니페스트 파일 경로
+        FAILED_STAGE         = "" // 실패한 스테이지 이름을 저장하기 위한 변수
+        ERROR_DETAILS        = "" // 실패 시 상세 에러 로그를 저장하기 위한 변수
     }
 
     stages {
+        // 1단계: 소스 코드 체크아웃
         stage('1. 준비: 코드 가져오기') {
             steps {
                 script { env.FAILED_STAGE = "1. 코드 체크아웃" }
@@ -30,41 +23,44 @@ pipeline {
             }
         }
 
+        // 2단계: 도커 이미지 빌드 및 AWS ECR 푸시
         stage('2. 빌드: 컨테이너 이미지 생성 및 푸시') {
             steps {
                 script {
+                    // ECR URI를 환경 변수로 로드
                     withCredentials([
                         string(credentialsId: "${REGISTRY_BE_ID}", variable: 'FULL_URI_BE'),
                         string(credentialsId: "${REGISTRY_FE_ID}", variable: 'FULL_URI_FE')
                     ]) {
-                        // [검증] BE와 FE의 레지스트리 호스트가 다르면 인증이 꼬일 수 있으므로 사전 체크합니다.
+                        // 백엔드와 프론트엔드가 동일한 계정/리전의 ECR을 사용하는지 사전 검증
                         def beRegistry = FULL_URI_BE.substring(0, FULL_URI_BE.lastIndexOf('/'))
                         def feRegistry = FULL_URI_FE.substring(0, FULL_URI_FE.lastIndexOf('/'))
                         
                         if (beRegistry != feRegistry) {
-                            error "Backend/Frontend 레지스트리 불일치: ${beRegistry} vs ${feRegistry}"
+                            error "Registry Mismatch: 백엔드와 프론트엔드의 레지스트리 호스트가 다릅니다."
                         }
                         
                         def registryDomain = beRegistry.startsWith('http') ? beRegistry : "https://${beRegistry}"
                         
+                        // ECR 로그인 세션 유지 내에서 이미지 빌드 및 푸시 수행
                         docker.withRegistry("${registryDomain}", "ecr:${AWS_REGION}:${AWS_CRED_ID}") {
-                            // [Backend] 빌드 로그를 캡처하여 실패 시 Mattermost로 전송합니다.
+                            // [Backend 빌드] 실패 시 로그의 마지막 10줄을 캡처하여 알림에 포함
                             try {
                                 env.FAILED_STAGE = "2-1. 백엔드 빌드"
                                 sh 'cd backend && docker build -t $FULL_URI_BE:$BUILD_NUMBER . 2> be_err.log'
                                 sh 'docker push $FULL_URI_BE:$BUILD_NUMBER'
                             } catch (Exception e) {
-                                env.ERROR_DETAILS = sh(script: '[ -f backend/be_err.log ] && tail -n 10 backend/be_err.log || echo "백엔드 빌드 실패"', returnStdout: true).trim()
+                                env.ERROR_DETAILS = sh(script: '[ -f backend/be_err.log ] && tail -n 10 backend/be_err.log || echo "BE 빌드 로그 없음"', returnStdout: true).trim()
                                 error "Backend Build Failed"
                             }
 
-                            // [Frontend]
+                            // [Frontend 빌드]
                             try {
                                 env.FAILED_STAGE = "2-2. 프론트엔드 빌드"
                                 sh 'cd frontend && docker build -t $FULL_URI_FE:$BUILD_NUMBER . 2> fe_err.log'
                                 sh 'docker push $FULL_URI_FE:$BUILD_NUMBER'
                             } catch (Exception e) {
-                                env.ERROR_DETAILS = sh(script: '[ -f frontend/fe_err.log ] && tail -n 10 frontend/fe_err.log || echo "프론트 빌드 실패"', returnStdout: true).trim()
+                                env.ERROR_DETAILS = sh(script: '[ -f frontend/fe_err.log ] && tail -n 10 frontend/fe_err.log || echo "FE 빌드 로그 없음"', returnStdout: true).trim()
                                 error "Frontend Build Failed"
                             }
                         }
@@ -73,6 +69,7 @@ pipeline {
             }
         }
 
+        // 3단계: Develop 브랜치일 경우 SSAFY 내부 K3s 클러스터에 배포
         stage('3. 배포: SSAFY K3s (Develop)') {
             when { branch 'develop' } 
             steps {
@@ -83,6 +80,7 @@ pipeline {
             }
         }
 
+        // 4단계: Main 브랜치일 경우 AWS EKS 운영 환경에 배포
         stage('4. 배포: AWS EKS (Main)') {
             when { branch 'main' }
             steps {
@@ -94,15 +92,16 @@ pipeline {
         }
     }
 
+    // 결과 알림 처리
     post {
         success {
             script {
-                // [개선] 배포 대상 브랜치가 아닐 경우 오탐을 방지하기 위한 메시지 분기
+                // 브랜치에 따라 성공 메시지 최적화 (오탐 방지)
                 def successMsg = "✅ 빌드 및 검증 성공 (배포 미대상 브랜치)"
                 if (env.BRANCH_NAME == 'develop') {
-                    successMsg = "🚀 SSAFY K3s(Develop) 환경 배포에 성공했습니다!"
+                    successMsg = "🚀 SSAFY K3s(Develop) 배포 성공!"
                 } else if (env.BRANCH_NAME == 'main') {
-                    successMsg = "🌟 AWS EKS(Main) 운영 환경 배포에 성공했습니다!"
+                    successMsg = "🌟 AWS EKS(Main) 배포 성공!"
                 }
                 
                 env.FAILED_STAGE = "" 
@@ -110,20 +109,22 @@ pipeline {
             }
         }
         failure {
+            // 실패 시 캡처해둔 ERROR_DETAILS를 Mattermost로 전송
             sendMattermostNotification("FAILURE", "#FF0000", "🚨 상세 원인: ${env.ERROR_DETAILS}")
         }
         always {
+            // Jenkins 노드의 디스크 관리를 위해 사용하지 않는 도커 이미지 정리
             sh "docker image prune -f"
         }
     }
 }
 
 /**
- * [배포 함수] 하이브리드 도구 접근법 및 원자적 시크릿 갱신 적용
+ * [배포 전용 함수] AWS CLI와 kubectl을 사용한 클러스터 배포 로직
  */
 def deployToCluster(String configId, String clusterName) {
     try {
-        // AWS CLI 공식 이미지를 사용하여 별도 설치 없이 ECR 토큰을 발급받습니다.
+        // AWS 명령어를 즉시 사용할 수 있도록 공식 AWS-CLI 이미지 내에서 실행
         docker.image('amazon/aws-cli:latest').inside('--network host --entrypoint=""') {
             withCredentials([
                 file(credentialsId: configId, variable: 'KUBECONFIG'),
@@ -131,38 +132,45 @@ def deployToCluster(String configId, String clusterName) {
                 string(credentialsId: "${REGISTRY_FE_ID}", variable: 'FULL_URI_FE'),
                 usernamePassword(credentialsId: "${AWS_CRED_ID}", usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')
             ]) {
+                // 쉘 스크립트 실행 (에러 발생 시 deploy.err 파일에 기록)
                 sh '''
-                set -o pipefail # 파이프 중간 에러도 감지하도록 설정
-                
-                # 1. kubectl 바이너리 설치 (속도와 의존성 문제 해결)
-                curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-                chmod +x kubectl
-                mv kubectl /usr/local/bin/
+                {
+                    set -o pipefail # 파이프라인 중간 명령어 실패 시 즉시 중단 처리
 
-                # 2. ECR 서버 주소 동적 추출 (하드코딩 제거로 드리프트 방지)
-                ECR_SERVER="${FULL_URI_BE%%/*}"
+                    # 1. kubectl 설치 및 보안 검증 (공급망 공격 방지용 체크섬 확인)
+                    KUBECTL_VERSION="$(curl -L -s https://dl.k8s.io/release/stable.txt)"
+                    curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+                    curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl.sha256"
+                    echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check
+                    
+                    chmod +x kubectl
+                    mv kubectl /usr/local/bin/
 
-                # 3. 네임스페이스 배포
-                kubectl --kubeconfig=$KUBECONFIG apply -f $K8S_DIR/00_namespace.yaml
-                
-                # 4. [원자적 업데이트] regcred 시크릿 갱신
-                # delete -> create 방식의 인증 공백(Zero-window)을 없애기 위해 apply 방식을 사용합니다.
-                kubectl --kubeconfig=$KUBECONFIG create secret docker-registry regcred \
-                  --docker-server="$ECR_SERVER" \
-                  --docker-username=AWS \
-                  --docker-password="$(aws ecr get-login-password --region ${AWS_REGION})" \
-                  -n modu-apps \
-                  --dry-run=client -o yaml | kubectl --kubeconfig=$KUBECONFIG apply -f -
-                
-                # 5. 매니페스트 이미지 태그 치환 및 최종 배포
-                sed -i "s|BACKEND_IMAGE|$FULL_URI_BE:$BUILD_NUMBER|g" $K8S_DIR/backend.yaml
-                sed -i "s|FRONTEND_IMAGE|$FULL_URI_FE:$BUILD_NUMBER|g" $K8S_DIR/frontend.yaml
-                kubectl --kubeconfig=$KUBECONFIG apply -f $K8S_DIR/
-                ''' 2> deploy.err # 에러 발생 시 상세 로그 파일 생성
+                    # 2. 이미지 URI에서 레지스트리 서버 주소 자동 추출 (하드코딩 방지)
+                    ECR_SERVER="${FULL_URI_BE%%/*}"
+
+                    # 3. 공통 네임스페이스 및 리소스 적용
+                    kubectl --kubeconfig=$KUBECONFIG apply -f $K8S_DIR/00_namespace.yaml
+                    
+                    # 4. [Atomic Update] ECR 인증용 시크릿(regcred) 갱신
+                    # delete-create 방식이 아닌 apply 방식을 사용하여 교체 순간의 인증 공백을 제거함
+                    kubectl --kubeconfig=$KUBECONFIG create secret docker-registry regcred \
+                      --docker-server="$ECR_SERVER" \
+                      --docker-username=AWS \
+                      --docker-password="$(aws ecr get-login-password --region ${AWS_REGION})" \
+                      -n modu-apps \
+                      --dry-run=client -o yaml | kubectl --kubeconfig=$KUBECONFIG apply -f -
+                    
+                    # 5. 매니페스트 내의 이미지 태그(:$BUILD_NUMBER) 치환 및 최종 배포
+                    sed -i "s|BACKEND_IMAGE|$FULL_URI_BE:$BUILD_NUMBER|g" $K8S_DIR/backend.yaml
+                    sed -i "s|FRONTEND_IMAGE|$FULL_URI_FE:$BUILD_NUMBER|g" $K8S_DIR/frontend.yaml
+                    kubectl --kubeconfig=$KUBECONFIG apply -f $K8S_DIR/
+                } 2> deploy.err
+                '''
             }
         }
     } catch (Exception e) {
-        // [트러블슈팅] 에러 파일이 있으면 마지막 20줄을 가져오고, 없으면 일반 메시지 사용
+        // 배포 중 에러 발생 시 deploy.err 파일에서 원인을 읽어와 ERROR_DETAILS에 저장
         env.ERROR_DETAILS = sh(
             script: "[ -f deploy.err ] && tail -n 20 deploy.err || printf '%s' '${clusterName} 배포 실패: ${e.message}'",
             returnStdout: true
@@ -172,25 +180,20 @@ def deployToCluster(String configId, String clusterName) {
 }
 
 /**
- * Mattermost 상세 알림 전송 함수
+ * Mattermost 웹훅을 통한 상세 알림 전송 함수
  */
 def sendMattermostNotification(String status, String color, String message) {
+    // 젠킨스 작업 이름의 URL 인코딩을 디코딩하여 가독성 확보
     def decodedJobName = java.net.URLDecoder.decode(env.JOB_NAME, "UTF-8")
-    def displayStage = (env.FAILED_STAGE && env.FAILED_STAGE != "null") ? env.FAILED_STAGE : "성공"
-
     withCredentials([string(credentialsId: 'MATTERMOST_WEBHOOK_URL', variable: 'WEBHOOK_URL')]) {
-        def title = (status == "SUCCESS") ? "✅ 파이프라인 공정 성공" : "🚨 파이프라인 공정 실패"
+        def title = (status == "SUCCESS") ? "✅ 배포 공정 성공" : "🚨 배포 공정 실패"
         def payload = """
         {
             "attachments": [
                 {
                     "color": "${color}",
                     "title": "${title}",
-                    "text": "**프로젝트:** ${decodedJobName} (#${env.BUILD_NUMBER})\\n**상태:** ${displayStage}",
-                    "fields": [
-                        { "short": false, "title": "결과 리포트", "value": "```\\n${message}\\n```" },
-                        { "short": false, "title": "워크플로우 확인", "value": "[👉 젠킨스 콘솔 로그 보기](${env.BUILD_URL}console)" }
-                    ]
+                    "text": "**프로젝트:** ${decodedJobName} (#${env.BUILD_NUMBER})\\n**결과:** ${message}"
                 }
             ]
         }
