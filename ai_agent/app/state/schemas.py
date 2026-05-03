@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class StrategyDraft(BaseModel):
@@ -8,11 +8,11 @@ class StrategyDraft(BaseModel):
     Strategy Agent가 생성하는 투자 전략 초안
 
     이 객체는 이후 Critic Agent의 피드백과 Supervisor Agent의 최종 판단에 활용
-      - asset: 투자 대상 종목 코드 (예: "AAPL", "BTC-USD")
+      - asset: 투자 대상 종목 코드 (예: "005930") — 반드시 후보 종목 중 하나
       - side: 주문 방향 ("buy", "sell", "hold") — hold는 전략 보류 권고
-      - order_amount: 주문 금액
-      - target_price: 목표 매수가격 (선택)
-      - stop_loss_price: 손절 가격 (선택)
+      - order_amount: 주문 금액 — hold일 때는 반드시 0
+      - target_price: 목표 매수가격 — buy/sell 필수, hold는 None
+      - stop_loss_price: 손절 가격 — buy/sell 필수, hold는 None
       - reason: 전략 생성 근거
       - confidence: 전략 신뢰도 점수
     """
@@ -23,6 +23,22 @@ class StrategyDraft(BaseModel):
     stop_loss_price: int | None = None
     reason: str = ""
     confidence: float = 0.0
+
+    @model_validator(mode="after")
+    def validate_side_constraints(self) -> "StrategyDraft":
+        if self.side == "hold":
+            if self.order_amount != 0:
+                raise ValueError("side가 hold일 때 order_amount는 0이어야 합니다.")
+            if self.target_price is not None:
+                raise ValueError("side가 hold일 때 target_price는 None이어야 합니다.")
+            if self.stop_loss_price is not None:
+                raise ValueError("side가 hold일 때 stop_loss_price는 None이어야 합니다.")
+        else:
+            if self.target_price is None:
+                raise ValueError(f"side가 {self.side}일 때 target_price는 필수입니다.")
+            if self.stop_loss_price is None:
+                raise ValueError(f"side가 {self.side}일 때 stop_loss_price는 필수입니다.")
+        return self
 
 
 class CriticFeedback(BaseModel):

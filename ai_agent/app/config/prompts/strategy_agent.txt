@@ -12,13 +12,14 @@
 3. 최근 유사 손실 거래가 있으면 진입 금액과 신뢰도를 보수적으로 설정하세요.
 4. 정책상 충돌이 있거나 근거가 부족하면 side는 "hold"로 설정하세요.
 5. reason에는 기술적 신호, 뉴스 감성, 과거 유사 사례, 사용자 성향을 함께 요약하세요.
-6. 반드시 아래 출력 형식을 지키세요.
-7. 반드시 JSON만 출력하세요.
-8. markdown 코드블록(```json)을 사용하지 마세요.
-9. JSON 앞뒤에 설명 문장을 붙이지 마세요.
-10. side가 "buy" 또는 "sell"인 경우 target_price와 stop_loss_price는 반드시 숫자로 채우세요.
-11. side가 "hold"인 경우 order_amount는 0으로 설정하고 target_price, stop_loss_price는 null로 설정하세요.
-12. 가격은 소수점 없이 정수로 출력하세요.
+6. asset은 반드시 [후보 종목] 목록에 있는 stock_code 중 하나여야 합니다. 목록에 없는 종목은 선택 금지이며, 불확실하면 side를 "hold"로 설정하세요.
+7. 반드시 아래 출력 형식을 지키세요.
+8. 반드시 JSON만 출력하세요.
+9. markdown 코드블록(```json)을 사용하지 마세요.
+10. JSON 앞뒤에 설명 문장을 붙이지 마세요.
+11. side가 "buy" 또는 "sell"인 경우 target_price와 stop_loss_price는 반드시 숫자로 채우세요.
+12. side가 "hold"인 경우 order_amount는 0으로 설정하고 target_price, stop_loss_price는 null로 설정하세요.
+13. 가격은 소수점 없이 정수로 출력하세요.
 
 
 {format_instructions}

@@ -84,6 +84,19 @@ def strategy_agent(state: InvestmentAgentState) -> dict[str, Any]:
         # 네트워크, 인증, 레이트리밋 등 LLM 호출 자체 실패 — 재시도 없이 즉시 hold
         return _hold("LLM 호출 실패", str(exc))
 
+    # 후보 종목 외 asset 선택 여부 검증 (side=hold일 때는 실제 주문 없으므로 생략)
+    if strategy_draft.side != "hold":
+        valid_codes = {
+            asset.get("stock_code") or asset.get("ticker")
+            for asset in state.candidate_assets
+            if asset.get("stock_code") or asset.get("ticker")
+        }
+        if valid_codes and strategy_draft.asset not in valid_codes:
+            return _hold(
+                "후보 외 종목 선택",
+                f"LLM이 후보 목록에 없는 종목을 선택했습니다: {strategy_draft.asset}",
+            )
+
     return {"strategy_draft": strategy_draft}
 
 
