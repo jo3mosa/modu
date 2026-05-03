@@ -3,54 +3,17 @@ from typing import Any
 
 from langchain_core.exceptions import OutputParserException
 from langchain_core.output_parsers import PydanticOutputParser
-from langchain_core.prompts import ChatPromptTemplate
 
 from app.config.llm import get_strategy_llm
 from app.state.investment_state import InvestmentAgentState
 from app.state.schemas import CriticFeedback
 from app.utils.json_utils import to_json
+from app.utils.prompt_loader import load_prompt
 
 
 _PROMPT_PATH = Path(__file__).resolve().parents[2] / "config" / "prompts" / "critic_agent.txt"
 
 _parser = PydanticOutputParser(pydantic_object=CriticFeedback)
-
-
-def _load_prompt() -> ChatPromptTemplate:
-    """
-    critic_agent.txt 파일을 읽어 LangChain ChatPromptTemplate으로 변환한다.
-
-    프롬프트 파일은 아래 형식을 따른다.
-
-    [SYSTEM]
-    Critic Agent의 역할, 검증 기준, 출력 규칙
-
-    [HUMAN]
-    실제 state 값이 주입되는 입력 템플릿
-    """
-
-    try:
-        text = _PROMPT_PATH.read_text(encoding="utf-8")
-    except FileNotFoundError as exc:
-        raise FileNotFoundError(
-            f"프롬프트 파일을 찾을 수 없습니다: {_PROMPT_PATH}"
-        ) from exc
-
-    if "[HUMAN]" not in text:
-        raise ValueError(
-            f"프롬프트 파일에 [HUMAN] 구분자가 없습니다: {_PROMPT_PATH}"
-        )
-
-    system_text, human_text = text.split("[HUMAN]", 1)
-    system_text = system_text.replace("[SYSTEM]", "").strip()
-
-    return ChatPromptTemplate.from_messages([
-        ("system", system_text),
-        ("human", human_text.strip()),
-    ])
-
-
-_prompt = _load_prompt()
 
 
 def critic_agent(state: InvestmentAgentState) -> dict[str, Any]:
@@ -116,7 +79,7 @@ def critic_agent(state: InvestmentAgentState) -> dict[str, Any]:
             )
         }
 
-    chain = _prompt | get_strategy_llm() | _parser
+    chain = load_prompt(str(_PROMPT_PATH)) | get_strategy_llm() | _parser
 
     inputs = {
         "strategy_draft": to_json(strategy_draft),
