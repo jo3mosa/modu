@@ -1,14 +1,16 @@
 package com.modu.backend.global.util;
 
-import com.modu.backend.global.config.EncryptionProperties;
-import org.springframework.stereotype.Component;
+import java.security.SecureRandom;
+import java.util.Base64;
 
 import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
-import java.security.SecureRandom;
-import java.util.Base64;
+
+import org.springframework.stereotype.Component;
+
+import com.modu.backend.global.config.EncryptionProperties;
 
 /**
  * AES-256-GCM 암호화/복호화 유틸리티
