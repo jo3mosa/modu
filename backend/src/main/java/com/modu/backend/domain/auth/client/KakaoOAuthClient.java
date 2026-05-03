@@ -31,9 +31,9 @@ public class KakaoOAuthClient {
     private final RestClient restClient;
     private final KakaoProperties kakaoProperties;
 
-    public KakaoOAuthClient(KakaoProperties kakaoProperties) {
+    public KakaoOAuthClient(KakaoProperties kakaoProperties, RestClient kakaoRestClient) {
         this.kakaoProperties = kakaoProperties;
-        this.restClient = RestClient.create();
+        this.restClient = kakaoRestClient;
     }
 
     /**
@@ -84,12 +84,12 @@ public class KakaoOAuthClient {
                     .retrieve()
                     .body(UserInfoResponse.class);
 
-            if (response == null) {
+            if (response == null || response.id() == null) {
                 throw new ApiException(AuthErrorCode.KAKAO_USER_INFO_FAILED);
             }
 
             return new KakaoUserInfo(
-                    String.valueOf(response.id()),
+                    response.id().toString(),
                     response.nickname(),
                     response.email()
             );
