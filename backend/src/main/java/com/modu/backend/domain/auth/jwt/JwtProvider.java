@@ -67,10 +67,15 @@ public class JwtProvider {
     /**
      * 토큰을 파싱해 userId를 반환
      * 만료 또는 유효하지 않은 토큰이면 ApiException을 던짐
+     * subject가 숫자가 아니면 NumberFormatException → INVALID_TOKEN으로 변환
      */
     public Long getUserIdFromToken(String token) {
         Claims claims = parseClaims(token);
-        return Long.parseLong(claims.getSubject());
+        try {
+            return Long.parseLong(claims.getSubject());
+        } catch (NumberFormatException e) {
+            throw new ApiException(AuthErrorCode.INVALID_TOKEN);
+        }
     }
 
     /**
