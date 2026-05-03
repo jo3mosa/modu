@@ -98,13 +98,13 @@ def critic_agent(state: InvestmentAgentState) -> dict[str, Any]:
     except OutputParserException:
         try:
             critic_feedback = chain.invoke(inputs)
-        except OutputParserException as exc:
+        except OutputParserException:
             return _fallback_feedback(
                 reason="LLM 출력 파싱 2회 실패",
                 comments=deterministic_comments,
             )
 
-    except Exception as exc:
+    except Exception:
         return _fallback_feedback(
             reason="LLM 호출 실패",
             comments=deterministic_comments,
