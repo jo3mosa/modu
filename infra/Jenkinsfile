@@ -2,22 +2,22 @@ pipeline {
     agent any
 
     environment {
-        // 1. 인프라 공통 설정
+        // 1. 인프라 및 지역 설정
         AWS_REGION           = 'ap-northeast-2'
         
-        // 2. 젠킨스 자격 증명 ID
+        // 2. 젠킨스 자격 증명 ID 관리
         AWS_CRED_ID          = 'aws-credentials'
         REGISTRY_BE_ID       = 'ecr-registry-backend'
         REGISTRY_FE_ID       = 'ecr-registry-frontend'
         
-        // 3. 쿠버네티스 접근 설정 ID
+        // 3. 쿠버네티스 클러스터 설정 (KUBECONFIG)
         K3S_CONFIG_ID        = 'k3s-config.yaml'
         EKS_CONFIG_ID        = 'aws-eks-config'
         
-        // 4. K8s 매니페스트 파일 경로
+        // 4. 배포 매니페스트 경로
         K8S_DIR              = 'infra/k8s'
         
-        // 5. 알림 및 트러블슈팅용 변수
+        // 5. 실시간 상태 추적 및 트러블슈팅 변수
         FAILED_STAGE         = ""
         ERROR_DETAILS        = ""
     }
@@ -37,11 +37,12 @@ pipeline {
                         string(credentialsId: "${REGISTRY_BE_ID}", variable: 'FULL_URI_BE'),
                         string(credentialsId: "${REGISTRY_FE_ID}", variable: 'FULL_URI_FE')
                     ]) {
+                        // 레지스트리 도메인 동적 추출
                         def domainPart = FULL_URI_BE.substring(0, FULL_URI_BE.lastIndexOf('/'))
                         def registryDomain = domainPart.startsWith('http') ? domainPart : "https://${domainPart}"
                         
                         docker.withRegistry("${registryDomain}", "ecr:${AWS_REGION}:${AWS_CRED_ID}") {
-                            // [Backend 빌드 및 푸시]
+                            // [Backend 빌드] 빌드 로그를 캡처하여 알림 가시성 확보
                             try {
                                 env.FAILED_STAGE = "2-1. 백엔드 빌드"
                                 sh 'cd backend && docker build -t $FULL_URI_BE:$BUILD_NUMBER . 2> be_err.log'
@@ -51,7 +52,7 @@ pipeline {
                                 error "Backend Build Failed"
                             }
 
-                            // [Frontend 빌드 및 푸시]
+                            // [Frontend 빌드]
                             try {
                                 env.FAILED_STAGE = "2-2. 프론트엔드 빌드"
                                 sh 'cd frontend && docker build -t $FULL_URI_FE:$BUILD_NUMBER . 2> fe_err.log'
@@ -90,14 +91,20 @@ pipeline {
     post {
         success {
             script {
-                def successMsg = (env.BRANCH_NAME == 'develop') ? 
-                    "🚀 SSAFY K3s(Develop) 환경 배포에 성공했습니다!" : 
-                    "🌟 AWS EKS(Main) 운영 환경 배포에 성공했습니다!"
+                // [리뷰 반영] 브랜치에 따른 정확한 성공 메시지 분기 (오탐 방지)
+                def successMsg = "✅ 빌드 및 검증이 완료되었습니다. (배포 대상 브랜치 아님)"
+                if (env.BRANCH_NAME == 'develop') {
+                    successMsg = "🚀 SSAFY K3s(Develop) 환경 배포에 성공했습니다!"
+                } else if (env.BRANCH_NAME == 'main') {
+                    successMsg = "🌟 AWS EKS(Main) 운영 환경 배포에 성공했습니다!"
+                }
+                
                 env.FAILED_STAGE = "" 
                 sendMattermostNotification("SUCCESS", "#00FF00", successMsg)
             }
         }
         failure {
+            // 실패 시 캡처된 ERROR_DETAILS를 포함하여 즉각적인 원인 파악 지원
             sendMattermostNotification("FAILURE", "#FF0000", "🚨 상세 원인: ${env.ERROR_DETAILS}")
         }
         always {
@@ -107,56 +114,55 @@ pipeline {
 }
 
 /**
- * [핵심 수정] 하이브리드 도구 접근법을 이용한 배포 함수
- * amazon/aws-cli 이미지를 베이스로 사용하고, kubectl을 실시간으로 설치하여 의존성 문제를 해결합니다.
+ * [고도화] 원자적 시크릿 갱신 및 동적 호스트 추출이 적용된 배포 함수
  */
 def deployToCluster(String configId, String clusterName) {
     try {
-        // [수정] AWS CLI가 내장된 공식 이미지를 배포 환경으로 선택
+        // AWS CLI 공식 이미지를 사용하여 별도 설치 없이 명령어 즉시 사용 가능
         docker.image('amazon/aws-cli:latest').inside('--network host --entrypoint=""') {
             withCredentials([
                 file(credentialsId: configId, variable: 'KUBECONFIG'),
                 string(credentialsId: "${REGISTRY_BE_ID}", variable: 'FULL_URI_BE'),
                 string(credentialsId: "${REGISTRY_FE_ID}", variable: 'FULL_URI_FE'),
-                // AWS 명령 실행을 위한 IAM 자격 증명 주입
                 usernamePassword(credentialsId: "${AWS_CRED_ID}", usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')
             ]) {
                 sh '''
-                # 1. kubectl 바이너리 동적 설치 (Amazon Linux 환경)
-                # 단일 바이너리라 다운로드 속도가 매우 빠르며, 의존성 충돌이 없습니다.
+                # 1. kubectl 바이너리 동적 설치 (속도와 의존성 문제 동시 해결)
                 curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
                 chmod +x kubectl
                 mv kubectl /usr/local/bin/
 
-                # 2. 네임스페이스 생성 및 ECR 인증 시크릿(regcred) 자동 갱신
-                # 배포 시마다 12시간 유효한 새 토큰을 발급받아 주입하므로 '인증 실패'를 영구적으로 방지합니다.
+                # 2. [리뷰 반영] ECR 레지스트리 호스트 동적 추출 (하드코딩 제거)
+                ECR_SERVER="${FULL_URI_BE%%/*}"
+
+                # 3. 네임스페이스 배포
                 kubectl --kubeconfig=$KUBECONFIG apply -f $K8S_DIR/00_namespace.yaml
                 
-                kubectl --kubeconfig=$KUBECONFIG delete secret regcred -n modu-apps --ignore-not-found
+                # 4. [리뷰 반영] 원자적 시크릿(regcred) 갱신 (Atomic Update)
+                # delete -> create 방식의 인증 공백을 제거하기 위해 dry-run과 apply 조합 사용
                 kubectl --kubeconfig=$KUBECONFIG create secret docker-registry regcred \
-                  --docker-server=338330655332.dkr.ecr.ap-northeast-2.amazonaws.com \
+                  --docker-server="$ECR_SERVER" \
                   --docker-username=AWS \
-                  --docker-password=$(aws ecr get-login-password --region ap-northeast-2) \
-                  -n modu-apps
+                  --docker-password="$(aws ecr get-login-password --region ${AWS_REGION})" \
+                  -n modu-apps \
+                  --dry-run=client -o yaml | kubectl --kubeconfig=$KUBECONFIG apply -f -
                 
-                # 3. 매니페스트 이미지 태그 치환 (idempotency 보장)
-                # sed 명령어가 BACKEND_IMAGE 문자열을 빌드 태그가 포함된 실제 주소로 바꿉니다.
+                # 5. 매니페스트 이미지 태그 치환 및 최종 배포 (Idempotency 보장)
                 sed -i "s|BACKEND_IMAGE|$FULL_URI_BE:$BUILD_NUMBER|g" $K8S_DIR/backend.yaml
                 sed -i "s|FRONTEND_IMAGE|$FULL_URI_FE:$BUILD_NUMBER|g" $K8S_DIR/frontend.yaml
-                
-                # 4. 최종 배포 실행
                 kubectl --kubeconfig=$KUBECONFIG apply -f $K8S_DIR/
                 '''
             }
         }
     } catch (Exception e) {
-        env.ERROR_DETAILS = "${clusterName} 배포 실패: AWS/K8s 도구 연동 또는 권한 오류"
+        // [리뷰 반영] 실제 예외 메시지를 캡처하여 트러블슈팅 효율 극대화
+        env.ERROR_DETAILS = "${clusterName} 배포 실패: ${e.message}"
         error "Deployment Failed"
     }
 }
 
 /**
- * Mattermost 상세 알림 전송 함수 (기존 로직 유지)
+ * Mattermost 상세 알림 전송 함수
  */
 def sendMattermostNotification(String status, String color, String message) {
     def decodedJobName = java.net.URLDecoder.decode(env.JOB_NAME, "UTF-8")
