@@ -32,9 +32,9 @@ public class AesGcmEncryptor {
     public AesGcmEncryptor(EncryptionProperties properties) {
         // HEX 인코딩 키 사용 (Base64와 달리 특수문자 없어 .env 파싱 안전)
         String hexKey = properties.getKisKey().trim().toLowerCase();
-        if (hexKey.length() != 64) {
+        if (!hexKey.matches("^[0-9a-f]{64}$")) {
             throw new IllegalStateException(
-                    "KIS_ENCRYPTION_KEY는 정확히 64자리 HEX 문자열이어야 합니다 (현재: " + hexKey.length() + "자). " +
+                    "KIS_ENCRYPTION_KEY는 64자리 HEX 문자열(0-9, a-f)이어야 합니다 (현재: " + hexKey.length() + "자). " +
                     "터미널에서 'openssl rand -hex 32' 명령어로 생성해주세요."
             );
         }
