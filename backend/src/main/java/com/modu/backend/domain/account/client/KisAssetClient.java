@@ -110,7 +110,7 @@ public class KisAssetClient {
             @JsonProperty("rt_cd") String rtCd,
             @JsonProperty("msg_cd") String msgCd,
             @JsonProperty("msg1") String msg1,
-            @JsonProperty("Output2") Output2 output2
+            @JsonProperty("output2") Output2 output2
     ) {}
 
     private record Output2(
