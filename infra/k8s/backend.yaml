@@ -1,3 +1,4 @@
+# 1. 백엔드 애플리케이션 배포 설정 (Deployment)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -6,7 +7,8 @@ metadata:
   labels:
     app: backend
 spec:
-  replicas: 2 # 가용성을 위해 2개 이상 권장
+  # [고가용성] 서버 부하 분산 및 무중단 운영을 위해 2개의 포드를 유지합니다.
+  replicas: 2 
   selector:
     matchLabels:
       app: backend
@@ -15,13 +17,19 @@ spec:
       labels:
         app: backend
     spec:
+      # [인증] ECR 프라이빗 리포지토리 접근 권한을 위해 생성한 'regcred' 시크릿을 사용합니다.
+      # 이 설정이 누락되면 'ImagePullBackOff' 에러가 발생합니다.
+      imagePullSecrets:
+      - name: regcred
       containers:
       - name: backend
-        # [중요] Jenkinsfile의 sed 명령어가 이 부분을 실제 이미지 주소로 바꿉니다.
-        image: BACKEND_IMAGE_PLACEHOLDER
+        # [자동화] Jenkinsfile의 sed 명령어(s|BACKEND_IMAGE|...)가 이 자리에 실제 이미지 주소와 태그를 주입합니다.
+        # 태그가 꼬이지 않도록 '_PLACEHOLDER'를 제거한 순수 키워드만 남겨두었습니다.
+        image: BACKEND_IMAGE
         ports:
-        - containerPort: 8080
+        - containerPort: 8080 # 애플리케이션(Spring Boot 등)이 내부에서 사용하는 포트
         resources:
+          # [자원 관리] SSAFY 공유 인프라의 안정성을 위해 최소(Requests) 및 최대(Limits) 자원을 할당합니다.
           requests:
             memory: "256Mi"
             cpu: "200m"
@@ -30,6 +38,8 @@ spec:
             cpu: "500m"
 
 ---
+
+# 2. 백엔드 내부 통신을 위한 서비스 설정 (Service)
 apiVersion: v1
 kind: Service
 metadata:
@@ -37,9 +47,10 @@ metadata:
   namespace: modu-apps
 spec:
   selector:
-    app: backend
+    app: backend # 위의 Deployment 라벨과 일치하여 트래픽을 전달합니다.
   ports:
   - protocol: TCP
-    port: 80
-    targetPort: 8080
+    port: 80       # 서비스가 클러스터 내부에서 노출할 포트
+    targetPort: 8080 # 실제 컨테이너 내부로 전달할 포트
+  # [보안/설계] 백엔드는 외부 노출 없이 클러스터 내부(프론트엔드 -> 백엔드) 통신만 허용하는 ClusterIP 타입을 사용합니다.
   type: ClusterIP
