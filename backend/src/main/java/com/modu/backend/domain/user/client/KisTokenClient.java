@@ -1,13 +1,15 @@
 package com.modu.backend.domain.user.client;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
-import com.modu.backend.domain.user.exception.UserErrorCode;
-import com.modu.backend.global.error.ApiException;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.modu.backend.domain.user.exception.UserErrorCode;
+import com.modu.backend.global.error.ApiException;
+
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * KIS OAuth 액세스 토큰 발급 클라이언트
@@ -67,9 +69,9 @@ public class KisTokenClient {
     public String issueWebSocketKey(String appKey, String appSecret) {
         try {
             WebSocketKeyResponse response = kisRestClient.post()
-                    .uri("/oauth2/approval")
+                    .uri("/oauth2/Approval")
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(new TokenRequest("client_credentials", appKey, appSecret))
+                    .body(new WebSocketKeyRequest("client_credentials", appKey, appSecret))
                     .retrieve()
                     .body(WebSocketKeyResponse.class);
 
@@ -95,6 +97,16 @@ public class KisTokenClient {
             @JsonProperty("access_token") String accessToken,
             @JsonProperty("token_type") String tokenType,
             @JsonProperty("expires_in") Long expiresIn
+    ) {}
+
+    /**
+     * POST /oauth2/Approval 요청 바디
+     * appsecret와 동일한 값이지만 필드명이 secretkey로 다름 (KIS API 스펙)
+     */
+    private record WebSocketKeyRequest(
+            @JsonProperty("grant_type") String grantType,
+            String appkey,
+            String secretkey
     ) {}
 
     private record WebSocketKeyResponse(
