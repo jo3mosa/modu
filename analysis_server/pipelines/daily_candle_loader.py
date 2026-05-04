@@ -18,24 +18,21 @@ def update_daily_candles(db_path="../data/stock_master.db"):
         return
 
     # 2. DB에서 가장 최근에 저장된 날짜 조회
-    cursor.execute("SELECT MAX(date) FROM daily_ohlcv")
-    last_date_result = cursor.fetchone()[0]
-    
     today_str = datetime.today().strftime("%Y%m%d")
     
-    if last_date_result:
-        # DB에 데이터가 있다면, 마지막 저장일부터 오늘까지 가져옴 (예: 2026-04-30 -> 20260430)
-        start_date_str = last_date_result.replace("-", "")
-    else:
-        # DB가 아예 비어있다면 에러 방지용으로 오늘만 가져옴
-        start_date_str = today_str
-
     total = len(stock_codes)
-    print(f"[START] 빈 구간 자동 채우기 업데이트 시작 ({start_date_str} ~ {today_str})")
+    print(f"[START] 빈 구간 자동 채우기 업데이트 시작 (종목별 개별 날짜 ~ {today_str})")
     
     updated_count = 0
     for idx, code in enumerate(stock_codes):
         try:
+            cursor.execute(
+                "SELECT MAX(date) FROM daily_ohlcv WHERE stock_code = ?",
+                (code,),
+            )
+            last_date_result = cursor.fetchone()[0]
+            start_date_str = last_date_result.replace("-", "") if last_date_result else today_str
+
             # 마지막 저장일부터 오늘까지의 캔들 뭉텅이로 가져오기
             df = stock.get_market_ohlcv(start_date_str, today_str, code)
             

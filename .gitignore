@@ -65,6 +65,8 @@ analysis_server/data/*.csv
 kis_token.json
 **/kis_token.json
 
+.env
+
 # 2. ai-agent
 __pycache__/
 *.pyc
