@@ -1,41 +1,18 @@
-import json
 from pathlib import Path
 from typing import Any
 
 from langchain_core.exceptions import OutputParserException
 from langchain_core.output_parsers import PydanticOutputParser
-from langchain_core.prompts import ChatPromptTemplate
 
 from app.config.llm import get_strategy_llm
 from app.state.investment_state import InvestmentAgentState
 from app.state.schemas import StrategyDraft
+from app.utils.json_utils import to_json
+from app.utils.prompt_loader import load_prompt
 
 _PROMPT_PATH = Path(__file__).resolve().parents[2] / "config" / "prompts" / "strategy_agent.txt"
 
-
-def _load_prompt() -> ChatPromptTemplate:
-    try:
-        text = _PROMPT_PATH.read_text(encoding="utf-8")
-    except FileNotFoundError as exc:
-        raise FileNotFoundError(
-            f"프롬프트 파일을 찾을 수 없습니다: {_PROMPT_PATH}"
-        ) from exc
-
-    if "[HUMAN]" not in text:
-        raise ValueError(
-            f"프롬프트 파일에 [HUMAN] 구분자가 없습니다: {_PROMPT_PATH}"
-        )
-
-    system_text, human_text = text.split("[HUMAN]", 1)
-    system_text = system_text.replace("[SYSTEM]", "").strip()
-    return ChatPromptTemplate.from_messages([
-        ("system", system_text),
-        ("human", human_text.strip()),
-    ])
-
-
 _parser = PydanticOutputParser(pydantic_object=StrategyDraft)
-_prompt = _load_prompt()
 
 
 def strategy_agent(state: InvestmentAgentState) -> dict[str, Any]:
@@ -59,16 +36,16 @@ def strategy_agent(state: InvestmentAgentState) -> dict[str, Any]:
     - strategy_draft
     """
 
-    chain = _prompt | get_strategy_llm() | _parser
+    chain = load_prompt(str(_PROMPT_PATH)) | get_strategy_llm() | _parser
 
     inputs = {
-        "candidate_assets": _to_json(state.candidate_assets),
-        "analysis_snapshot": _to_json(state.analysis_snapshot),
-        "portfolio_snapshot": _to_json(state.portfolio_snapshot),
-        "user_context": _to_json(state.user_context),
-        "policy_context": _to_json(state.policy_context),
-        "memory_context": _to_json(state.memory_context),
-        "history_context": _to_json(state.history_context),
+        "candidate_assets": to_json(state.candidate_assets),
+        "analysis_snapshot": to_json(state.analysis_snapshot),
+        "portfolio_snapshot": to_json(state.portfolio_snapshot),
+        "user_context": to_json(state.user_context),
+        "policy_context": to_json(state.policy_context),
+        "memory_context": to_json(state.memory_context),
+        "history_context": to_json(state.history_context),
         "format_instructions": _parser.get_format_instructions(),
     }
 
@@ -109,8 +86,3 @@ def _hold(reason: str, detail: str) -> dict[str, Any]:
             "detail": detail,
         },
     }
-
-
-def _to_json(value: Any) -> str:
-    """LLM 프롬프트 주입용 직렬화. 한글 보존을 위해 ensure_ascii=False 사용."""
-    return json.dumps(value, ensure_ascii=False, indent=2, default=str)
