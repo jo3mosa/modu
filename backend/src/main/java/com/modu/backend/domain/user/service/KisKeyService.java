@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class KisKeyService {
 
     private final KisCredentialRepository kisCredentialRepository;
+    private final KisTokenService kisTokenService;
     private final AesGcmEncryptor encryptor;
 
     // ── 연동 ──────────────────────────────────────────────────────────────────
@@ -31,8 +32,11 @@ public class KisKeyService {
     /**
      * KIS API 연동 등록
      *
-     * 이미 연동된 경우 KIS_ALREADY_CONNECTED 예외
-     * accountNo 형식 검증 후 분리 저장
+     * 1. 중복 연동 검사
+     * 2. 토큰 즉시 발급 (appKey/appSecret 유효성 검증 겸용)
+     * 3. 자격증명 암호화 후 저장
+     *
+     * 토큰 발급을 먼저 수행해 잘못된 자격증명을 등록 시점에 즉시 감지
      */
     public void registerKisKey(Long userId, KisKeyRegisterRequest request) {
         if (kisCredentialRepository.existsByUserId(userId)) {
@@ -40,6 +44,9 @@ public class KisKeyService {
         }
 
         String[] accountParts = parseAccountNo(request.accountNo());
+
+        // 토큰 발급으로 자격증명 유효성 검증 (실패 시 KIS_TOKEN_ISSUANCE_FAILED 예외)
+        kisTokenService.issueAndSaveToken(userId, request.appKey(), request.appSecret());
 
         try {
             kisCredentialRepository.save(KisCredential.builder()
