@@ -9,7 +9,7 @@ from app.state.investment_state import InvestmentAgentState
 from app.state.schemas import CriticFeedback
 from app.utils.json_utils import to_json
 from app.utils.prompt_loader import load_prompt
-
+from app.utils.object_utils import get_value
 
 _PROMPT_PATH = Path(__file__).resolve().parents[2] / "config" / "prompts" / "critic_agent.txt"
 
@@ -55,7 +55,7 @@ def critic_agent(state: InvestmentAgentState) -> dict[str, Any]:
 
     # side == hold이면 실제 주문이 발생하지 않으므로 승인하되,
     # Supervisor가 보수적 판단으로 이어갈 수 있게 low risk로 반환한다.
-    if _get_value(strategy_draft, "side") == "hold":
+    if get_value(strategy_draft, "side") == "hold":
         return {
             "critic_feedback": CriticFeedback(
                 approved=True,
@@ -144,9 +144,9 @@ def _run_deterministic_checks(state: InvestmentAgentState) -> tuple[list[str], b
     portfolio_snapshot = state.portfolio_snapshot or {}
     user_context = state.user_context or {}
 
-    side = _get_value(strategy_draft, "side")
-    asset = _get_value(strategy_draft, "asset")
-    order_amount = _get_value(strategy_draft, "order_amount") or 0
+    side = get_value(strategy_draft, "side")
+    asset = get_value(strategy_draft, "asset")
+    order_amount = get_value(strategy_draft, "order_amount") or 0
 
     system_constraints = policy_context.get("system_trading_constraints") or {}
     max_single_stock_ratio = system_constraints.get("resolved_max_single_stock_ratio")
@@ -189,8 +189,8 @@ def _run_deterministic_checks(state: InvestmentAgentState) -> tuple[list[str], b
                     has_blocking_risk = True
 
     risk_rules = user_context.get("risk_rules", {})
-    stop_loss_price = _get_value(strategy_draft, "stop_loss_price")
-    target_price = _get_value(strategy_draft, "target_price")
+    stop_loss_price = get_value(strategy_draft, "stop_loss_price")
+    target_price = get_value(strategy_draft, "target_price")
 
     if side == "buy" and stop_loss_price is None:
         comments.append("매수 전략인데 손절가가 설정되지 않았습니다.")
@@ -228,16 +228,3 @@ def _fallback_feedback(
         )
     }
 
-
-def _get_value(obj: Any, key: str) -> Any:
-    """
-    dict와 Pydantic 모델을 모두 지원하는 값 조회 함수.
-    """
-
-    if obj is None:
-        return None
-
-    if isinstance(obj, dict):
-        return obj.get(key)
-
-    return getattr(obj, key, None)
