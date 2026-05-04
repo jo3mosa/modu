@@ -70,4 +70,12 @@ Memory 활용 지침:
 {portfolio_snapshot}
 
 출력 형식:
+- action이 "trade"이면 다음 필드를 반드시 채웁니다:
+  - asset
+  - side
+  - order_amount
+  - target_price
+  - stop_loss_price
+- action이 "hold"이면 side, order_amount, target_price, stop_loss_price는 null이어도 됩니다.
+
 {format_instructions}
