@@ -40,6 +40,22 @@ def supervisor_agent(state: InvestmentAgentState) -> dict[str, Any]:
             "flow_status": "hold",
         }
 
+    # Strategy Agent가 보류를 권고한 경우
+    if draft.side == "hold":
+        return {
+            "final_decision": FinalDecision(
+                action="hold",
+                asset=draft.asset,
+                reason_summary=draft.reason or "Strategy Agent가 보류를 권고했습니다.",
+                expected_scenario=ExpectedScenario(
+                    base="전략 초안 단계에서 보류 판단이 내려졌습니다.",
+                ),
+                confidence=draft.confidence,
+                user_message="현재 조건에서는 진입 근거가 충분하지 않아 보류합니다.",
+            ),
+            "flow_status": "hold",
+        }
+
     # Critic Agent가 승인하지 않은 경우 거래하지 않고 보류
     if not feedback.approved:
         return {

@@ -46,7 +46,7 @@ class InvestmentAgentState(BaseModel):
 
     # Memory Agent가 만든 요약 문맥
     # 과거 유사 거래, 사용자 성향, 정책 등을 LLM 입력용으로 압축한 값
-    memory_context: str = ""
+    memory_context: dict[str, Any] = {}
 
     # 사용자 투자 성향 및 리스크 설정
     # 예: risk_level, max_order_amount, stop_loss_rate
@@ -57,7 +57,7 @@ class InvestmentAgentState(BaseModel):
     policy_context: dict[str, Any] = Field(default_factory=dict)
 
     # 과거 거래 복기에서 도출된 패턴/교훈
-    history_context: str = ""
+    history_context: dict[str, Any] = {}
 
     # ==============================
     # 4. Reasoning Layer output
