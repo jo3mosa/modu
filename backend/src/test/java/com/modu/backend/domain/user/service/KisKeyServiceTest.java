@@ -31,6 +31,7 @@ import static org.mockito.Mockito.when;
 class KisKeyServiceTest {
 
     @Mock KisCredentialRepository kisCredentialRepository;
+    @Mock KisTokenService kisTokenService;
     @Mock AesGcmEncryptor encryptor;
 
     @InjectMocks
@@ -53,7 +54,7 @@ class KisKeyServiceTest {
     // ── 연동 ──────────────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("KIS API 연동 성공 - appKey/appSecret 암호화 후 저장")
+    @DisplayName("KIS API 연동 성공 - 토큰 즉시 발급 및 자격증명 암호화 저장")
     void KIS_연동_성공() {
         // given
         KisKeyRegisterRequest request = new KisKeyRegisterRequest(
@@ -66,6 +67,8 @@ class KisKeyServiceTest {
         kisKeyService.registerKisKey(1L, request);
 
         // then
+        verify(kisTokenService).issueAndSaveAccessToken(1L, "real-app-key", "real-app-secret");
+        verify(kisTokenService).issueAndSaveWebSocketKey(1L, "real-app-key", "real-app-secret");
         verify(kisCredentialRepository).save(any(KisCredential.class));
     }
 
