@@ -43,22 +43,6 @@ def supervisor_agent(state: InvestmentAgentState) -> dict[str, Any]:
             risk_summary=["Critic Agent 결과가 누락되었습니다."],
         )
 
-    if get_value(draft, "side") == "hold":
-        return _hold(
-            reason=get_value(draft, "reason") or "Strategy Agent가 보류를 권고했습니다.",
-            asset=get_value(draft, "asset"),
-            confidence=get_value(draft, "confidence"),
-            risk_summary=["전략 초안 단계에서 보류 판단이 내려졌습니다."],
-        )
-
-    if not get_value(feedback, "approved"):
-        return _hold(
-            reason="Critic Agent가 리스크 과다 또는 검토 실패로 보류를 권고했습니다.",
-            asset=get_value(draft, "asset"),
-            confidence=0.0,
-            risk_summary=get_value(feedback, "comments") or ["리스크 검토를 통과하지 못했습니다."],
-        )
-
     inputs = {
         "strategy_draft": to_json(draft),
         "critic_feedback": to_json(feedback),
