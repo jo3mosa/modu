@@ -1,0 +1,185 @@
+.mypage-container {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  color: #fff;
+  font-family: 'Pretendard', sans-serif;
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.mypage-header h1 {
+  font-size: 2rem;
+  font-weight: 800;
+  margin: 0 0 0.5rem 0;
+  letter-spacing: -1px;
+}
+
+.mypage-header p {
+  color: #888;
+  margin: 0;
+  font-size: 1rem;
+}
+
+.portfolio-summary-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+}
+
+.summary-card {
+  background: var(--card-bg, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1));
+  border-radius: 16px;
+  padding: 1.5rem 2rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.2);
+}
+
+.card-label {
+  color: #888;
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 0.8rem;
+}
+
+.card-value-group {
+  display: flex;
+  align-items: baseline;
+  gap: 0.8rem;
+}
+
+.card-value {
+  font-size: 2.2rem;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+
+.card-value .unit {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-left: 0.3rem;
+  color: #aaa;
+}
+
+.card-rate {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.row-card {
+  gap: 1.5rem;
+  justify-content: center;
+}
+
+.row-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.row-item .card-label {
+  margin-bottom: 0.4rem;
+}
+
+.row-value {
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+
+.row-value.cash {
+  color: #84cc16; /* 라임 그린으로 강조 */
+}
+
+/* 색상 유틸리티 */
+.text-red { color: #ef4444 !important; }
+.text-blue { color: #3b82f6 !important; }
+
+.portfolio-holdings {
+  margin-top: 1rem;
+}
+
+.portfolio-holdings h2 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin-bottom: 1.2rem;
+}
+
+.holdings-table-wrapper {
+  background: var(--card-bg, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1));
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.holdings-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: right;
+}
+
+.holdings-table th {
+  padding: 1.2rem;
+  color: #888;
+  font-weight: 600;
+  font-size: 0.9rem;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  background: rgba(0,0,0,0.2);
+}
+
+.holdings-table th:first-child { text-align: left; }
+.holdings-table td {
+  padding: 1.2rem;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.holding-row {
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.holding-row:hover {
+  background: rgba(255,255,255,0.05);
+}
+
+.holding-row:last-child td {
+  border-bottom: none;
+}
+
+.col-name {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.stock-name {
+  color: #fff;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.stock-code {
+  color: #666;
+  font-size: 0.85rem;
+}
+
+.col-quantity { color: #ddd; }
+.col-price { color: #ccc; }
+
+.empty-message {
+  text-align: center !important;
+  color: #666;
+  padding: 4rem !important;
+  font-size: 1.1rem;
+}
+
+@media (max-width: 1024px) {
+  .portfolio-summary-cards {
+    grid-template-columns: 1fr;
+  }
+}

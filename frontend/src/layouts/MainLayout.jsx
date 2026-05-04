@@ -49,7 +49,7 @@ export default function MainLayout() {
           </div>
         </header>
 
-        <div className="page-content">
+        <div className="page-content fade-in-page" key={location.pathname}>
           <Outlet />
         </div>
       </main>

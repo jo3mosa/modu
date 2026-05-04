@@ -248,14 +248,14 @@ function Step3Rules({ rules, setRules, nextStep, prevStep }) {
   );
 }
 
-// 4단계 (마지막) -> 계좌 연동
+// 4단계 -> 계좌 연동
 function Step4ApiKeys({ apiKeys, setApiKeys, handleComplete, prevStep }) {
   const isComplete = apiKeys.appKey && apiKeys.appSecret;
 
   return (
     <div className="step-wrapper">
       <h2 className="step-title">계좌 연동</h2>
-      <p className="step-subtitle">마지막입니다! 실제 자동매매를 위해 한국투자증권 API 키를 연결해주세요.</p>
+      <p className="step-subtitle">마지막입니다! 실제 자동매매를 위해 한국투자증권 API 키를 연결해주세요!</p>
 
       <div className="api-form">
         <div className="input-box">
