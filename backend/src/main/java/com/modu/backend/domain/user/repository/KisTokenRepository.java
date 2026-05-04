@@ -16,13 +16,14 @@ import java.util.Optional;
  */
 public interface KisTokenRepository extends JpaRepository<KisToken, Long> {
 
-    /** 유효한 KIS 액세스 토큰 조회 (미만료 + 미revoke, 발급일 기준 최신 1건) */
+    /** 유효한 KIS 토큰 조회 (미만료 + 미revoke, 발급일 기준 최신 1건) */
     @Query("SELECT t FROM KisToken t " +
             "WHERE t.userId = :userId " +
-            "AND t.tokenType = 'ACCESS_TOKEN' " +
+            "AND t.tokenType = :tokenType " +
             "AND t.isRevoked = false " +
             "AND t.expiresAt > :now " +
             "ORDER BY t.issuedAt DESC LIMIT 1")
     Optional<KisToken> findValidToken(@Param("userId") Long userId,
+                                      @Param("tokenType") String tokenType,
                                       @Param("now") OffsetDateTime now);
 }

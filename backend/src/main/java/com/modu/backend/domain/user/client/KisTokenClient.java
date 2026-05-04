@@ -57,6 +57,34 @@ public class KisTokenClient {
         }
     }
 
+    /**
+     * KIS 실시간 웹소켓 접속키 발급
+     *
+     * POST /oauth2/approval 호출
+     * - 유효기간 24시간
+     * - 웹소켓 연결 시 appkey/appsecret 대신 헤더에 사용
+     */
+    public String issueWebSocketKey(String appKey, String appSecret) {
+        try {
+            WebSocketKeyResponse response = kisRestClient.post()
+                    .uri("/oauth2/approval")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(new TokenRequest("client_credentials", appKey, appSecret))
+                    .retrieve()
+                    .body(WebSocketKeyResponse.class);
+
+            if (response == null || response.approvalKey() == null) {
+                throw new ApiException(UserErrorCode.KIS_TOKEN_ISSUANCE_FAILED);
+            }
+
+            return response.approvalKey();
+
+        } catch (RestClientException e) {
+            log.error("KIS 웹소켓 접속키 발급 실패: {}", e.getMessage());
+            throw new ApiException(UserErrorCode.KIS_TOKEN_ISSUANCE_FAILED);
+        }
+    }
+
     private record TokenRequest(
             @JsonProperty("grant_type") String grantType,
             String appkey,
@@ -67,5 +95,9 @@ public class KisTokenClient {
             @JsonProperty("access_token") String accessToken,
             @JsonProperty("token_type") String tokenType,
             @JsonProperty("expires_in") Long expiresIn
+    ) {}
+
+    private record WebSocketKeyResponse(
+            @JsonProperty("approval_key") String approvalKey
     ) {}
 }

@@ -38,7 +38,7 @@ public class AccountService {
         String decryptedAppKey = encryptor.decrypt(credential.getAppKeyEnc());
         String decryptedAppSecret = encryptor.decrypt(credential.getAppSecretEnc());
 
-        String accessToken = kisTokenService.getOrIssueToken(userId, decryptedAppKey, decryptedAppSecret);
+        String accessToken = kisTokenService.getOrIssueAccessToken(userId, decryptedAppKey, decryptedAppSecret);
 
         return kisAssetClient.getAssetSummary(
                 accessToken,

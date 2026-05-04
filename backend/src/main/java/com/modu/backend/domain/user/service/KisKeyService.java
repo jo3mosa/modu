@@ -45,8 +45,9 @@ public class KisKeyService {
 
         String[] accountParts = parseAccountNo(request.accountNo());
 
-        // 토큰 발급으로 자격증명 유효성 검증 (실패 시 KIS_TOKEN_ISSUANCE_FAILED 예외)
-        kisTokenService.issueAndSaveToken(userId, request.appKey(), request.appSecret());
+        // 액세스 토큰 + 웹소켓 접속키 즉시 발급 (자격증명 유효성 검증 겸용)
+        kisTokenService.issueAndSaveAccessToken(userId, request.appKey(), request.appSecret());
+        kisTokenService.issueAndSaveWebSocketKey(userId, request.appKey(), request.appSecret());
 
         try {
             kisCredentialRepository.save(KisCredential.builder()
