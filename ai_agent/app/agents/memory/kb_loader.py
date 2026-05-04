@@ -51,8 +51,8 @@ class KnowledgeBaseLoader:
         for section in sections:
             try:
                 parsed = yaml.safe_load(section) or {}
-            except yaml.YAMLError:
-                continue
+            except yaml.YAMLError as e:
+                raise ValueError(f"YAML parsing failed in {file_name}") from e
 
             if isinstance(parsed, dict):
                 merged = self._deep_merge(merged, parsed)
