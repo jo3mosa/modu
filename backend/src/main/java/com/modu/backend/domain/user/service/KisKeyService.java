@@ -8,6 +8,7 @@ import com.modu.backend.domain.user.repository.KisCredentialRepository;
 import com.modu.backend.global.error.ApiException;
 import com.modu.backend.global.util.AesGcmEncryptor;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,14 +41,20 @@ public class KisKeyService {
 
         String[] accountParts = parseAccountNo(request.accountNo());
 
-        kisCredentialRepository.save(KisCredential.builder()
-                .userId(userId)
-                .appKeyEnc(encryptor.encrypt(request.appKey()))
-                .appSecretEnc(encryptor.encrypt(request.appSecret()))
-                .accountNo(accountParts[0])
-                .accountPrdtCd(accountParts[1])
-                .isRealAccount(request.isRealAccount())
-                .build());
+        try {
+            kisCredentialRepository.save(KisCredential.builder()
+                    .userId(userId)
+                    .appKeyEnc(encryptor.encrypt(request.appKey()))
+                    .appSecretEnc(encryptor.encrypt(request.appSecret()))
+                    .accountNo(accountParts[0])
+                    .accountPrdtCd(accountParts[1])
+                    .isRealAccount(request.isRealAccount())
+                    .build());
+        } catch (DataIntegrityViolationException e) {
+            // existsByUserId와 save 사이 동시 요청 race condition 발생 시
+            // DB 제약 예외(5xx) 대신 도메인 예외(409)로 변환
+            throw new ApiException(UserErrorCode.KIS_ALREADY_CONNECTED);
+        }
     }
 
     // ── 수정 ──────────────────────────────────────────────────────────────────
