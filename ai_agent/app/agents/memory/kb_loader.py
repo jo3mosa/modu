@@ -48,14 +48,18 @@ class KnowledgeBaseLoader:
 
         merged: dict[str, Any] = {}
 
-        for section in sections:
+        for index, section in enumerate(sections, start=1):
             try:
                 parsed = yaml.safe_load(section) or {}
             except yaml.YAMLError as e:
                 raise ValueError(f"YAML parsing failed in {file_name}") from e
 
-            if isinstance(parsed, dict):
-                merged = self._deep_merge(merged, parsed)
+            if not isinstance(parsed, dict):
+                raise ValueError(
+                    f"YAML block #{index} in {file_name} must be a mapping, got {type(parsed).__name__}"
+                )
+
+            merged = self._deep_merge(merged, parsed)
 
         return merged
 
