@@ -10,6 +10,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -80,7 +81,7 @@ public class UserController {
     @PatchMapping("/kis-keys")
     public ResponseEntity<ApiResponse<Void>> updateKisKey(
             @AuthenticationPrincipal Long userId,
-            @RequestBody KisKeyUpdateRequest request) {
+            @RequestBody @Valid KisKeyUpdateRequest request) {
 
         kisKeyService.updateKisKey(userId, request);
         return ResponseEntity.ok(ApiResponse.success("한국투자증권 API 정보가 수정되었습니다."));
