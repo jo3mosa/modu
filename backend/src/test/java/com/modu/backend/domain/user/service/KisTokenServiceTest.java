@@ -45,7 +45,7 @@ class KisTokenServiceTest {
                 .expiresAt(OffsetDateTime.now().plusHours(12))
                 .build();
 
-        when(kisTokenRepository.findValidToken(eq(1L), eq("ACCESS_TOKEN"), any()))
+        when(kisTokenRepository.findFirstByUserIdAndTokenTypeAndIsRevokedFalseAndExpiresAtAfterOrderByIssuedAtDesc(eq(1L), eq("ACCESS_TOKEN"), any()))
                 .thenReturn(Optional.of(cachedToken));
 
         // when
@@ -60,7 +60,7 @@ class KisTokenServiceTest {
     @DisplayName("유효한 액세스 토큰이 없으면 KIS API 호출 후 DB 저장")
     void 액세스_토큰_없을_때_신규_발급_및_저장() {
         // given
-        when(kisTokenRepository.findValidToken(eq(1L), eq("ACCESS_TOKEN"), any()))
+        when(kisTokenRepository.findFirstByUserIdAndTokenTypeAndIsRevokedFalseAndExpiresAtAfterOrderByIssuedAtDesc(eq(1L), eq("ACCESS_TOKEN"), any()))
                 .thenReturn(Optional.empty());
         when(kisTokenClient.issueAccessToken("appKey", "appSecret"))
                 .thenReturn("new-access-token");
@@ -106,7 +106,7 @@ class KisTokenServiceTest {
                 .expiresAt(OffsetDateTime.now().plusHours(12))
                 .build();
 
-        when(kisTokenRepository.findValidToken(eq(1L), eq("WEBSOCKET_KEY"), any()))
+        when(kisTokenRepository.findFirstByUserIdAndTokenTypeAndIsRevokedFalseAndExpiresAtAfterOrderByIssuedAtDesc(eq(1L), eq("WEBSOCKET_KEY"), any()))
                 .thenReturn(Optional.of(cachedKey));
 
         // when

@@ -37,7 +37,7 @@ public class KisTokenService {
      * 유효한 KIS 액세스 토큰 반환 (캐시 우선, 없으면 신규 발급)
      */
     public String getOrIssueAccessToken(Long userId, String decryptedAppKey, String decryptedAppSecret) {
-        return kisTokenRepository.findValidToken(userId, ACCESS_TOKEN, OffsetDateTime.now())
+        return kisTokenRepository.findFirstByUserIdAndTokenTypeAndIsRevokedFalseAndExpiresAtAfterOrderByIssuedAtDesc(userId, ACCESS_TOKEN, OffsetDateTime.now())
                 .map(KisToken::getAccessToken)
                 .orElseGet(() -> issueAndSaveAccessToken(userId, decryptedAppKey, decryptedAppSecret));
     }
@@ -59,7 +59,7 @@ public class KisTokenService {
      * 유효한 KIS 웹소켓 접속키 반환 (캐시 우선, 없으면 신규 발급)
      */
     public String getOrIssueWebSocketKey(Long userId, String decryptedAppKey, String decryptedAppSecret) {
-        return kisTokenRepository.findValidToken(userId, WEBSOCKET_KEY, OffsetDateTime.now())
+        return kisTokenRepository.findFirstByUserIdAndTokenTypeAndIsRevokedFalseAndExpiresAtAfterOrderByIssuedAtDesc(userId, WEBSOCKET_KEY, OffsetDateTime.now())
                 .map(KisToken::getAccessToken)
                 .orElseGet(() -> issueAndSaveWebSocketKey(userId, decryptedAppKey, decryptedAppSecret));
     }
