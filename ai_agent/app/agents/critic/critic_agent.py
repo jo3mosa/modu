@@ -92,24 +92,19 @@ def critic_agent(state: InvestmentAgentState) -> dict[str, Any]:
 
     try:
         chain = load_prompt(str(_PROMPT_PATH)) | get_strategy_llm() | _parser
+
         try:
-            critic_feedback = chain.invoke(inputs)
-        except OutputParserException:
             critic_feedback = chain.invoke(inputs)
 
-    except OutputParserException:
-        try:
-            critic_feedback = chain.invoke(inputs)
         except OutputParserException:
-            return _fallback_feedback(
-                reason="LLM 출력 파싱 2회 실패",
-                comments=deterministic_comments,
-            )
-        except Exception:
-            return _fallback_feedback(
-                reason="LLM 호출 실패",
-                comments=deterministic_comments,
-            )
+            try:
+                critic_feedback = chain.invoke(inputs)
+
+            except OutputParserException:
+                return _fallback_feedback(
+                    reason="LLM 출력 파싱 2회 실패",
+                    comments=deterministic_comments,
+                )
 
     except Exception:
         return _fallback_feedback(
