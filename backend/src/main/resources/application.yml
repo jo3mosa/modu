@@ -19,6 +19,31 @@ management:
     health:
       show-details: when-authorized
 
+# 한국투자증권 실전투자 API
+kis:
+  api:
+    url: ${KIS_API_URL}
+    app-key: ${KIS_APP_KEY}
+    app-secret: ${KIS_APP_SECRET}
+    cano: ${KIS_CANO:}           # 계좌번호 앞 8자리 (미설정 시 빈값, 실거래 전 필수 입력)
+    acnt-prdt-cd: ${KIS_ACNT_PRDT_CD:01}  # 계좌 상품 코드 (일반 주식: 01)
+
+# JWT 설정
+jwt:
+  secret: ${JWT_SECRET}
+  access-token-expiration: ${JWT_ACCESS_TOKEN_EXPIRATION:3600000}
+  refresh-token-expiration: ${JWT_REFRESH_TOKEN_EXPIRATION:1209600000}
+
+# 카카오 OAuth 설정
+kakao:
+  client-id: ${KAKAO_CLIENT_ID}
+  client-secret: ${KAKAO_CLIENT_SECRET}
+  redirect-uri: ${KAKAO_REDIRECT_URI}
+
+# AES-256-GCM 암호화 설정 (KIS API 키 암호화용)
+encryption:
+  kis-key: ${KIS_ENCRYPTION_KEY}
+
 # ================================================================
 # 로컬 개발 환경 (spring.profiles.active: local)
 # ================================================================
@@ -53,15 +78,6 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
-
-# 한국투자증권 실전투자 API
-kis:
-  api:
-    url: ${KIS_API_URL}
-    app-key: ${KIS_APP_KEY}
-    app-secret: ${KIS_APP_SECRET}
-    cano: ${KIS_CANO:}           # 계좌번호 앞 8자리 (미설정 시 빈값, 실거래 전 필수 입력)
-    acnt-prdt-cd: ${KIS_ACNT_PRDT_CD:01}  # 계좌 상품 코드 (일반 주식: 01)
 
 # ================================================================
 # 운영 환경 설정 시 주의사항 (application-prod.yml 작성 시 반영)
