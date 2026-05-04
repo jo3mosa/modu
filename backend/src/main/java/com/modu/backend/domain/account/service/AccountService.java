@@ -10,7 +10,6 @@ import com.modu.backend.global.error.ApiException;
 import com.modu.backend.global.util.AesGcmEncryptor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 사용자 계좌 자산 서비스
@@ -20,10 +19,15 @@ import org.springframework.transaction.annotation.Transactional;
  * 2. appKey/appSecret 복호화
  * 3. 유효 토큰 조회 또는 재발급
  * 4. KIS 자산 조회 API 호출
+ *
+ * [트랜잭션 설계]
+ * 클래스 레벨 @Transactional 미사용.
+ * - DB 읽기: 트랜잭션 없이도 동작 (단순 조회)
+ * - 토큰 쓰기: KisTokenService 자체 @Transactional에서 처리
+ * - 외부 HTTP 호출: 트랜잭션 밖에서 실행해 DB 커넥션 점유 방지
  */
 @Service
 @RequiredArgsConstructor
-@Transactional(readOnly = true)
 public class AccountService {
 
     private final KisCredentialRepository kisCredentialRepository;
