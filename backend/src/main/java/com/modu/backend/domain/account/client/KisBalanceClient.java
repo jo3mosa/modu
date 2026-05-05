@@ -112,11 +112,17 @@ public class KisBalanceClient {
                 .toList();
     }
 
+    /**
+     * 숫자 문자열 파싱
+     * null/blank: 0 반환 (KIS API에서 미제공 필드는 빈 문자열로 내려올 수 있음)
+     * 형식 오류: 에러 로그 후 0 반환 (단일 종목 파싱 실패가 전체 응답을 막지 않도록)
+     */
     private long parseLong(String value) {
         if (value == null || value.isBlank()) return 0L;
         try {
             return Long.parseLong(value.trim());
         } catch (NumberFormatException e) {
+            log.error("KIS 잔고 응답 Long 파싱 실패 - value: '{}'", value);
             return 0L;
         }
     }
@@ -126,6 +132,7 @@ public class KisBalanceClient {
         try {
             return Math.round(Double.parseDouble(value.trim()) * 100.0) / 100.0;
         } catch (NumberFormatException e) {
+            log.error("KIS 잔고 응답 Double 파싱 실패 - value: '{}'", value);
             return 0.0;
         }
     }
