@@ -22,7 +22,10 @@ public enum UserErrorCode implements ErrorCode {
     KIS_NOT_CONNECTED("USER_002", HttpStatus.NOT_FOUND, "연동된 한국투자증권 API 정보가 없습니다."),
 
     /** accountNo가 "계좌번호-상품코드" 형식이 아닐 때 */
-    INVALID_ACCOUNT_NO_FORMAT("USER_003", HttpStatus.BAD_REQUEST, "계좌번호 형식이 올바르지 않습니다. (예: 50012345-01)");
+    INVALID_ACCOUNT_NO_FORMAT("USER_003", HttpStatus.BAD_REQUEST, "계좌번호 형식이 올바르지 않습니다. (예: 50012345-01)"),
+
+    /** KIS 연동 시 appKey/appSecret으로 토큰 발급 실패 (잘못된 자격증명 또는 KIS 서버 오류) */
+    KIS_TOKEN_ISSUANCE_FAILED("USER_004", HttpStatus.BAD_GATEWAY, "한국투자증권 API 토큰 발급에 실패했습니다. 앱키와 시크릿을 확인해주세요.");
 
     private final String code;
     private final HttpStatus status;
