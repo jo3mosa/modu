@@ -239,8 +239,6 @@ def _validate_stop_loss_take_profit(
     *,
     checks: list[dict[str, Any]],
     decision: Any,
-    user_context: dict[str, Any],
-    policy_context: dict[str, Any],
 ) -> dict[str, Any] | None:
     """
     손절/익절 기준 충돌 여부를 검증한다.
@@ -549,8 +547,6 @@ def risk_guard(state: InvestmentAgentState) -> dict[str, Any]:
     price_rule_result = _validate_stop_loss_take_profit(
         checks=checks,
         decision=decision,
-        user_context=user_context,
-        policy_context=policy_context,
     )
 
     if price_rule_result is not None:
@@ -905,9 +901,24 @@ def risk_guard(state: InvestmentAgentState) -> dict[str, Any]:
     # 10. 시장 상태 검증
     # ==============================
 
-    market_open = market_snapshot.get("market_open", True)
+    market_open = market_snapshot.get("market_open")
     kospi_change_rate = market_snapshot.get("kospi_change_rate")
     kosdaq_change_rate = market_snapshot.get("kosdaq_change_rate")
+
+    if market_open is None:
+        _add_check(
+            checks,
+            name="market_open_exists",
+            status="hold",
+            reason="장 운영 여부 정보가 없어 주문 가능 시간을 판단할 수 없습니다.",
+            value=market_open,
+            limit="True | False",
+        )
+        return _make_result(
+            status="hold",
+            reason="장 운영 여부 정보 누락으로 주문을 보류합니다.",
+            checks=checks,
+        )
 
     if not market_open:
         _add_check(
