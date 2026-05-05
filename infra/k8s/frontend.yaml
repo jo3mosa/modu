@@ -1,0 +1,54 @@
+# 1. 프론트엔드 애플리케이션 배포 설정
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: modu-frontend
+  namespace: modu-apps
+  labels:
+    app: frontend
+spec:
+  replicas: 1 # 프론트엔드 포드 개수
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      # [중요] ECR 프라이빗 리포지토리 인증을 위해 생성한 시크릿(열쇠)을 지정합니다.
+      # 이 설정이 없으면 ImagePullBackOff 에러가 발생합니다.
+      imagePullSecrets:
+      - name: regcred
+      containers:
+      - name: frontend
+        # [주의] Jenkinsfile의 sed 명령어(s|FRONTEND_IMAGE|...)가 이 단어를 찾아 실제 이미지 주소로 치환합니다.
+        # 기존의 _PLACEHOLDER 문구를 제거하여 태그 뒤에 불필요한 문자가 붙지 않도록 방어했습니다.
+        image: FRONTEND_IMAGE
+        ports:
+        - containerPort: 80 # 컨테이너 내부에서 사용하는 포트 (Nginx 등)
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+
+---
+
+# 2. 프론트엔드 외부 노출을 위한 네트워크 설정
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  namespace: modu-apps
+spec:
+  selector:
+    app: frontend # 위의 Deployment 라벨과 일치해야 연결됩니다.
+  ports:
+  - protocol: TCP
+    port: 80       # 서비스(내부) 포트
+    targetPort: 80 # 컨테이너(실제 앱) 포트
+  # 외부 노출은 Nginx Ingress가 담당하므로 ClusterIP로 설정합니다.
+  type: ClusterIP
