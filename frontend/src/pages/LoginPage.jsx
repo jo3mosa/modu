@@ -7,38 +7,20 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const [userId, setUserId] = useState('');
 
-  const handleSocialLogin = async (provider) => {
+  const handleSocialLogin = (provider) => {
     console.log(`Connecting to ${provider} login...`);
 
-    /* 
-    // 실제 연동 시 주석 해제 필요 !!
-    try {
-      const response = await fetch(`/api/v1/auth/social/${provider}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      const data = await response.json();
+    if (provider === 'kakao') {
+      // TODO: .env 파일에 VITE_KAKAO_CLIENT_ID를 등록하세요.
+      const clientId = import.meta.env.VITE_KAKAO_CLIENT_ID || 'YOUR_KAKAO_REST_API_KEY';
+      // 현재 프론트엔드 도메인 주소를 기반으로 리다이렉트 URI 생성 (예: http://localhost:5173/auth/callback/kakao)
+      const redirectUri = `${window.location.origin}/auth/callback/kakao`;
       
-      if (response.ok) {
-        if (data.isRegistered) {
-          // 로그인 성공 -> Access/Refresh 토큰 저장 후 메인 페이지로 이동
-          // localStorage.setItem('accessToken', data.accessToken);
-          navigate('/home');
-        } else {
-          // 신규 유저 -> tempToken 저장 후 온보딩으로 이동
-          // sessionStorage.setItem('tempToken', data.tempToken);
-          navigate('/onboarding'); // 온보딩 라우트로 변경 필요 ~
-        }
-      } else {
-        alert('소셜 로그인 실패: ' + data.message);
-      }
-    } catch (error) {
-      console.error('Login error:', error);
+      const kakaoAuthUrl = `https://kauth.kakao.com/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code`;
+      
+      // 카카오 로그인 인증 페이지로 이동
+      window.location.href = kakaoAuthUrl;
     }
-    */
-
-    // 임시 -> 테스트를 위해 온보딩으로 바로 이동
-    navigate('/onboarding');
   };
 
   const handleTestLogin = async (e) => {
