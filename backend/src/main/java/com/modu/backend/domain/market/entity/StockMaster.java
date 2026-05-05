@@ -7,6 +7,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
@@ -56,4 +57,14 @@ public class StockMaster {
 
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
+
+    @Builder
+    public StockMaster(String stockCode, String stockName, String marketType,
+                       String sector, boolean isActive) {
+        this.stockCode = stockCode;
+        this.stockName = stockName;
+        this.marketType = marketType;
+        this.sector = sector;
+        this.isActive = isActive;
+    }
 }
