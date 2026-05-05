@@ -22,6 +22,8 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -108,6 +110,43 @@ class PortfolioServiceTest {
 
         // then
         assertThat(result.holdings()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("모의계좌로 포트폴리오 조회 시 KIS_MOCK_ACCOUNT_NOT_SUPPORTED 예외")
+    void 모의계좌_포트폴리오_조회_시_예외() {
+        // given - 모의계좌로 등록된 credential
+        KisCredential mockCredential = KisCredential.builder()
+                .userId(1L)
+                .appKeyEnc("encrypted-key")
+                .appSecretEnc("encrypted-secret")
+                .accountNo("50012345")
+                .accountPrdtCd("01")
+                .isRealAccount(false)
+                .build();
+        when(kisCredentialRepository.findByUserId(1L)).thenReturn(Optional.of(mockCredential));
+
+        // when & then
+        assertThatThrownBy(() -> portfolioService.getPortfolio(1L))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode())
+                        .isEqualTo(UserErrorCode.KIS_MOCK_ACCOUNT_NOT_SUPPORTED));
+
+        verify(kisBalanceClient, never()).getPortfolio(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("복호화 실패 시 KIS_CREDENTIAL_DECRYPT_FAILED 예외")
+    void 복호화_실패_시_예외() {
+        // given
+        when(kisCredentialRepository.findByUserId(1L)).thenReturn(Optional.of(testCredential));
+        when(encryptor.decrypt("encrypted-key")).thenThrow(new IllegalStateException("복호화 실패"));
+
+        // when & then
+        assertThatThrownBy(() -> portfolioService.getPortfolio(1L))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode())
+                        .isEqualTo(UserErrorCode.KIS_CREDENTIAL_DECRYPT_FAILED));
     }
 
     @Test
