@@ -6,8 +6,6 @@ metadata:
   annotations:
     # Nginx Ingress Controller가 이 Ingress를 처리하도록 지정
     kubernetes.io/ingress.class: "nginx"
-    # 정규식 경로(/api(/|$)(.*))가 동작하도록 정규식 모드 활성화
-    nginx.ingress.kubernetes.io/use-regex: "true"
 spec:
   ingressClassName: nginx
   rules:
