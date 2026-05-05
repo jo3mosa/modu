@@ -128,7 +128,7 @@ export default function DashboardPage() {
         innerSize: 130,
         depth: 45,
         size: '80%',
-        center: ['50%', '35%'], // 카드 섹션 중앙에 위치
+        center: ['50%', '35%'],
         dataLabels: { enabled: false },
         borderWidth: 0,
         showInLegend: false,
@@ -155,9 +155,9 @@ export default function DashboardPage() {
       </div>
 
       <div className="dashboard-layout">
-        {/* 좌측: 포트폴리오 메인 (70%) */}
+        {/* 포트폴리오 메인 */}
         <div className="dashboard-main">
-          {/* 자산 요약 및 차트 */}
+          {/* 자산 요약 + 차트 */}
           <div className="panel overview-panel">
             <div className="overview-text">
               <h2>포트폴리오 요약</h2>
