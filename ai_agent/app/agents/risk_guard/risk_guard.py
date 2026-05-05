@@ -1,7 +1,7 @@
 from typing import Any, Literal
 
 from app.state.investment_state import InvestmentAgentState
-from app.util.object_utils import get_value
+from app.utils.object_utils import get_value
 
 RiskStatus = Literal["passed", "blocked", "hold", "approval_required"]
 
