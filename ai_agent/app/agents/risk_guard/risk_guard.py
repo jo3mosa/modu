@@ -146,30 +146,44 @@ def _get_position_amount(position: dict[str, Any] | None) -> int:
     """
     특정 보유 종목의 평가금액을 가져온다.
 
-    evaluation_amount가 가장 명확한 값이고,
-    없을 경우 amount / market_value도 fallback으로 본다.
+    evaluation_amount=0도 정상 값일 수 있으므로,
+    or 체인으로 fallback하지 않고 None일 때만 다음 후보 값을 확인한다.
     """
 
     if position is None:
         return 0
 
-    return int(
-        position.get("evaluation_amount")
-        or position.get("amount")
-        or position.get("market_value")
-        or 0
-    )
+    amount = position.get("evaluation_amount")
+
+    if amount is None:
+        amount = position.get("amount")
+
+    if amount is None:
+        amount = position.get("market_value")
+
+    if amount is None:
+        return 0
+
+    return int(amount)
 
 
 def _get_position_quantity(position: dict[str, Any] | None) -> int:
     """
     특정 보유 종목의 보유 수량을 가져온다.
+
+    quantity=0도 정상적으로 해석될 수 있으므로,
+    None일 때만 기본값 0을 사용한다.
     """
 
     if position is None:
         return 0
 
-    return int(position.get("quantity") or 0)
+    quantity = position.get("quantity")
+
+    if quantity is None:
+        return 0
+
+    return int(quantity)
 
 
 def _get_stock_risk_policy_key(asset_snapshot: dict[str, Any]) -> str:
