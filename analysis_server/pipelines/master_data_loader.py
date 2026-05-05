@@ -4,12 +4,16 @@ import os
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import create_engine, text
+from dotenv import load_dotenv
 
 # ====================================
 # DB 연결 설정
-# 로컬 개발: .env 또는 환경변수에서 읽어옴
-# 운영 배포: Jenkins 환경변수로 주입
+# 로컬 개발: 모노레포 루트의 .env 파일 로드
+# 운영 배포: Jenkins 환경변수로 주입 (.env 파일 없어도 동작)
 # ====================================
+env_path = os.path.join(os.path.dirname(__file__), "../../.env")
+load_dotenv(dotenv_path=env_path)
+
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = os.getenv("DB_PORT", "5432")
 DB_NAME = os.getenv("DB_NAME", "modu_db")
@@ -88,12 +92,28 @@ def update_krx_master_db():
 
     print("[COLLECT] PostgreSQL DB 업데이트 및 병합 데이터 적재")
 
-    with engine.connect() as conn:
-        # stock_code 기준 upsert: 기존 데이터 삭제 후 전체 재적재
-        conn.execute(text("TRUNCATE TABLE stock_master RESTART IDENTITY"))
-        conn.commit()
+    # 스테이징 테이블에 데이터 적재 후 upsert
+    # TRUNCATE 대신 upsert 사용: orders 등 FK 참조 테이블이 있어 TRUNCATE 불가
+    df_final.to_sql('stock_master_staging', engine, if_exists='replace', index=False)
 
-    df_final.to_sql('stock_master', engine, if_exists='append', index=False)
+    with engine.connect() as conn:
+        conn.execute(text("""
+            INSERT INTO stock_master
+                (stock_code, stock_name, market_type, sector, is_active, listed_at, created_at, updated_at)
+            SELECT
+                stock_code, stock_name, market_type, sector, is_active,
+                listed_at::date, created_at::timestamptz, updated_at::timestamptz
+            FROM stock_master_staging
+            ON CONFLICT (stock_code) DO UPDATE SET
+                stock_name  = EXCLUDED.stock_name,
+                market_type = EXCLUDED.market_type,
+                sector      = EXCLUDED.sector,
+                is_active   = EXCLUDED.is_active,
+                listed_at   = EXCLUDED.listed_at,
+                updated_at  = EXCLUDED.updated_at
+        """))
+        conn.execute(text("DROP TABLE IF EXISTS stock_master_staging"))
+        conn.commit()
 
     print(f"    [FIN] 총 {len(df_final)}개 (활성: {len(df_new)}, 비활성: {len(df_final) - len(df_new)}) 데이터 적재 성공")
 
