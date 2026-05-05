@@ -58,7 +58,12 @@ def _make_result(
     Executor는 risk_cleared=True일 때만 주문을 실행해야 한다.
     """
 
-    flow_status = "running" if status == "passed" else status
+    if status == "passed":
+        flow_status = "running"
+    elif status == "approval_required":
+        flow_status = "hold"
+    else:
+        flow_status = status
 
     return {
         "risk_cleared": risk_cleared,
@@ -363,18 +368,33 @@ def risk_guard(state: InvestmentAgentState) -> dict[str, Any]:
     side = get_value(decision, "side")
     order_amount = get_value(decision, "order_amount") or 0
 
+    if action == "hold":
+        _add_check(
+            checks,
+            name="trade_action",
+            status="hold",
+            reason="최종 결정이 hold이므로 주문을 실행하지 않습니다.",
+            value=action,
+            limit="trade",
+        )
+        return _make_result(
+            status="hold",
+            reason="최종 투자 결정이 보류이므로 주문을 실행하지 않습니다.",
+            checks=checks,
+        )
+
     if action != "trade":
         _add_check(
             checks,
             name="trade_action",
             status="blocked",
-            reason="최종 결정이 trade가 아닙니다.",
+            reason="알 수 없는 action 값입니다.",
             value=action,
-            limit="trade",
+            limit="trade | hold",
         )
         return _make_result(
             status="blocked",
-            reason="거래 결정이 아니므로 주문을 차단합니다.",
+            reason="최종 투자 결정 action 값이 유효하지 않아 주문을 차단합니다.",
             checks=checks,
         )
 
@@ -557,6 +577,20 @@ def risk_guard(state: InvestmentAgentState) -> dict[str, Any]:
     # ==============================
 
     asset_snapshot = _find_asset_snapshot(state, asset)
+    if side == "buy" and not asset_snapshot:
+        _add_check(
+            checks,
+            name="asset_snapshot_exists",
+            status="hold",
+            reason="종목 상태 스냅샷이 없어 거래정지/관리종목 여부를 확인할 수 없습니다.",
+            value=asset,
+        )
+        return _make_result(
+            status="hold",
+            reason="종목 상태 정보 누락으로 매수 주문을 보류합니다.",
+            checks=checks,
+        )
+
     stock_policy_key = _get_stock_risk_policy_key(asset_snapshot)
 
     auto_buy_policy = _get_nested(
@@ -609,8 +643,14 @@ def risk_guard(state: InvestmentAgentState) -> dict[str, Any]:
     # 7. 포트폴리오 스냅샷 검증
     # ==============================
 
-    total_asset = portfolio_snapshot.get("total_asset") or portfolio_snapshot.get("total_assets")
-    cash = portfolio_snapshot.get("cash") or portfolio_snapshot.get("cash_balance")
+    total_asset = portfolio_snapshot.get("total_asset")
+    if total_asset is None:
+        total_asset = portfolio_snapshot.get("total_assets")
+
+    cash = portfolio_snapshot.get("cash")
+    if cash is None:
+        cash = portfolio_snapshot.get("cash_balance")
+
     positions = _get_positions(portfolio_snapshot)
     current_position = _find_position(positions, asset)
 
