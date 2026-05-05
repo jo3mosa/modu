@@ -6,8 +6,11 @@ import './TradingPage.css';
 export default function TradingPage() {
   return (
     <div className="trading-container">
-      <div className="trading-header">
-        <h1>트레이딩 룸</h1>
+      <div className="page-header-container">
+        <div className="page-title-group">
+          <h1>트레이딩 룸</h1>
+          <p>실시간 호가와 차트를 보며 매매를 진행하세요.</p>
+        </div>
       </div>
       
       <div className="trading-top">
