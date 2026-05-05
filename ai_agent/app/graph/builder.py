@@ -1,7 +1,7 @@
 from langgraph.graph import END, StateGraph
 
 from app.agents.critic_agent import critic_agent
-from app.agents.memory_agent import memory_agent
+from app.agents.memory.memory_agent import memory_agent
 from app.agents.risk_guard import risk_guard
 from app.agents.strategy_agent import strategy_agent
 from app.agents.supervisor_agent import supervisor_agent
