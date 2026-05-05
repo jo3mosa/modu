@@ -9,6 +9,8 @@ metadata:
     # /api 접두사를 제거하여 백엔드로 전달
     # 예: /api/users → /users
     nginx.ingress.kubernetes.io/rewrite-target: /$2
+    # 정규식 경로(/api(/|$)(.*))가 동작하도록 정규식 모드 활성화
+    nginx.ingress.kubernetes.io/use-regex: "true"
 spec:
   ingressClassName: nginx
   rules:
