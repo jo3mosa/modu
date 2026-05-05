@@ -65,14 +65,14 @@ spec:
         # DB가 준비됐는지 확인 — 준비 전까지 백엔드 트래픽 차단
         readinessProbe:
           exec:
-            command: ["pg_isready", "-U", "postgres"]
+            command: ["pg_isready", "-U", "$(POSTGRES_USER)"]
           initialDelaySeconds: 5   # 컨테이너 시작 후 5초 뒤부터 체크
           periodSeconds: 5         # 5초마다 체크
           failureThreshold: 3      # 3번 실패 시 NotReady 처리
         # DB가 살아있는지 확인 — 실패 시 컨테이너 자동 재시작
         livenessProbe:
           exec:
-            command: ["pg_isready", "-U", "postgres"]
+            command: ["pg_isready", "-U", "$(POSTGRES_USER)"]
           initialDelaySeconds: 30  # 초기 기동 시간 여유를 위해 30초 대기
           periodSeconds: 10        # 10초마다 체크
           failureThreshold: 5      # 5번 연속 실패 시 재시작
