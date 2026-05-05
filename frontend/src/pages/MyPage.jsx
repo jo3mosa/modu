@@ -4,7 +4,7 @@ import './MyPage.css';
 
 // 더미
 const MOCK_PROFILE = {
-  name: '김모두',
+  name: '김싸피',
   email: 'modu@kakao.com',
   provider: 'Kakao',
   joinedAt: '2026.5.2'
