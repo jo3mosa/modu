@@ -11,7 +11,7 @@ const MOCK_NEWS = [
   { title: '전쟁은 언제 끝날까요?', source: '블룸버그', time: '3시간 전' },
 ];
 
-export default function TradingNews() {
+export default function TradingNews({ stockCode }) {
   const [activeTab, setActiveTab] = useState('뉴스');
 
   // ── TODO: 백엔드 연동 시 아래 블록 해제, 위 useState(MOCK_NEWS) 교체 ────
