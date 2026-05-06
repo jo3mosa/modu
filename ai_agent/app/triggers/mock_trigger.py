@@ -1,3 +1,5 @@
+from pydantic import ValidationError
+
 from app.triggers.schemas import TriggerType, UserTriggerEvent
 
 
@@ -61,10 +63,6 @@ def create_mock_user_trigger() -> UserTriggerEvent:
         },
         source="mock_trigger",
     )
-
-from pydantic import ValidationError
-
-from app.triggers.schemas import TriggerType, UserTriggerEvent
 
 
 def create_invalid_mock_user_trigger():
