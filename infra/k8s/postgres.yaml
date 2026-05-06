@@ -96,4 +96,5 @@ spec:
   - protocol: TCP
     port: 5432
     targetPort: 5432
-  type: ClusterIP
+    nodePort: 30432   # 외부 접속 포트 추가
+  type: NodePort      # ClusterIP → NodePort 변경

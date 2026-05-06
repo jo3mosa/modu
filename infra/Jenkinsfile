@@ -45,8 +45,37 @@ pipeline {
             }
         }
 
-        // ── Stage 2. Docker 이미지 빌드 및 ECR 푸시 ──────────
-        stage('2. 빌드: 컨테이너 이미지 생성 및 푸시') {
+        // ── Stage 2. 백엔드 단위 테스트 ──────────────────────
+        stage('2. 테스트: 백엔드 단위 테스트') {
+            steps {
+                script {
+                    env.FAILED_STAGE = "2. 백엔드 단위 테스트"
+                }
+                // Gradle 테스트 실행 — 실패 시 파이프라인 중단
+                sh './gradlew test --no-daemon -p backend'
+            }
+            post {
+                always {
+                    // 테스트 결과 리포트 Jenkins UI에 발행
+                    junit 'backend/build/test-results/test/*.xml'
+                }
+                failure {
+                    script {
+                        env.ERROR_DETAILS = "❌ **단위 테스트 실패**\n테스트 결과를 확인하세요."
+                    }
+                }
+            }
+        }
+
+        // ── Stage 3. Docker 이미지 빌드 및 ECR 푸시 ──────────
+        stage('3. 빌드: 컨테이너 이미지 생성 및 푸시') {
+            // develop, main 브랜치에서만 빌드
+            when {
+                anyOf {
+                    branch 'develop'
+                    branch 'main'
+                }
+            }
             steps {
                 script {
                     // ECR URI를 Credentials에서 가져옴
@@ -120,26 +149,26 @@ ${log}
             }
         }
 
-        // ── Stage 3. SSAFY K3s 배포 (develop 브랜치 전용) ───
-        stage('3. 배포: SSAFY K3s (Develop)') {
+        // ── Stage 4. SSAFY K3s 배포 (develop 브랜치 전용) ───
+        stage('4. 배포: SSAFY K3s (Develop)') {
             // develop 브랜치에서만 실행
             when { branch 'develop' }
             steps {
                 script {
-                    env.FAILED_STAGE = "3. SSAFY K3s 클러스터 배포"
+                    env.FAILED_STAGE = "4. SSAFY K3s 클러스터 배포"
                     // K3s kubeconfig ID와 클러스터 이름을 전달하여 배포 함수 호출
                     deployToCluster("${K3S_CONFIG_ID}", "SSAFY K3s")
                 }
             }
         }
 
-        // ── Stage 4. AWS EKS 배포 (main 브랜치 전용) ─────────
-        stage('4. 배포: AWS EKS (Main)') {
+        // ── Stage 5. AWS EKS 배포 (main 브랜치 전용) ─────────
+        stage('5. 배포: AWS EKS (Main)') {
             // main 브랜치에서만 실행
             when { branch 'main' }
             steps {
                 script {
-                    env.FAILED_STAGE = "4. AWS EKS 운영 환경 배포"
+                    env.FAILED_STAGE = "5. AWS EKS 운영 환경 배포"
                     // EKS kubeconfig ID와 클러스터 이름을 전달하여 배포 함수 호출
                     deployToCluster("${EKS_CONFIG_ID}", "AWS EKS")
                 }
