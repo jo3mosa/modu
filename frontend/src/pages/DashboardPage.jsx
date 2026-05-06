@@ -5,7 +5,6 @@ import HighchartsReactPkg from 'highcharts-react-official';
 const HighchartsReact = HighchartsReactPkg.default || HighchartsReactPkg;
 import highcharts3d from 'highcharts/highcharts-3d';
 import TutorialOverlay from '../components/TutorialOverlay';
-// TODO: 백엔드 연동 시 아래 주석 해제
 // import { getAccountSummary, getPortfolio } from '../api/account';
 import './DashboardPage.css';
 
@@ -17,21 +16,24 @@ if (typeof Highcharts === 'object') {
   }
 }
 
+
 // ── MOCK 데이터 (백엔드 연동 후 삭제 예정) ──────────────────────────────────
+// 필드명은 백엔드 응답 스펙 기준으로 맞춰둠 → 연동 시 그대로 사용 가능
 const MOCK_SUMMARY = {
-  totalAssets: 600000,
-  principal: 570000,
-  totalPnL: 30000,
-  returnRate: 5.26,
-  availableCash: 200000
+  totalAsset: 600000,       // GET /api/v1/accounts/assets
+  totalBuyAmount: 570000,
+  totalEvalAmount: 400000,
+  totalPnl: 30000,
+  totalPnlPct: 5.26,
+  availableCash: 200000,
 };
 
 const MOCK_HOLDINGS = [
-  { name: '삼성전자', code: '005930', quantity: 3, avgPrice: 70000, currentPrice: 74900, pnl: 14700, returnRate: 7.00 },
-  { name: '한화에어로스페이스', code: '012450', quantity: 1, avgPrice: 60000, currentPrice: 85300, pnl: 25300, returnRate: 42.16 },
-  { name: '카카오', code: '035720', quantity: 2, avgPrice: 50000, currentPrice: 45000, pnl: -10000, returnRate: -10.00 },
+  { stockName: '삼성전자', stockCode: '005930', quantity: 3, avgBuyPrice: 70000, currentPrice: 74900, pnl: 14700, pnlPct: 7.00 },
+  { stockName: '한화에어로스페이스', stockCode: '012450', quantity: 1, avgBuyPrice: 60000, currentPrice: 85300, pnl: 25300, pnlPct: 42.16 },
+  { stockName: '카카오', stockCode: '035720', quantity: 2, avgBuyPrice: 50000, currentPrice: 45000, pnl: -10000, pnlPct: -10.00 },
 ];
-// ──────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 
 const MOCK_AI_STATUS = {
   isActive: true,
@@ -51,36 +53,31 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const [showTutorial, setShowTutorial] = useState(false);
 
-  // ── API 연동용 상태 (MOCK 제거 시 아래 주석 해제, useState(MOCK_...) 부분 교체) ──
+  // 더미 데이터 사용 중 — 연동 시 아래 주석 블록으로 교체
+  const [summary, setSummary] = useState(MOCK_SUMMARY);
+  const [holdings, setHoldings] = useState(MOCK_HOLDINGS);
   // const [summary, setSummary] = useState(null);
   // const [holdings, setHoldings] = useState([]);
   // const [isLoading, setIsLoading] = useState(true);
-  // const [isKisConnected, setIsKisConnected] = useState(true); // false면 안내 배너 표시
-
-  // ── 현재: MOCK 데이터 사용 중 ─────────────────────────────────────────────
-  const [summary] = useState(MOCK_SUMMARY);
-  const [holdings] = useState(MOCK_HOLDINGS);
+  // const [isKisConnected, setIsKisConnected] = useState(true);
   const [aiStatus, setAiStatus] = useState(MOCK_AI_STATUS);
   const [logs] = useState(MOCK_LOGS);
 
   useEffect(() => {
     setShowTutorial(true);
 
-    // ── TODO: 백엔드 연동 시 아래 주석 블록 해제 ────────────────────────────
+    // ── TODO: 백엔드 연동 시 위 MOCK useState → 주석 처리하고 아래 블록 해제 ──
     // async function fetchDashboardData() {
     //   setIsLoading(true);
     //   try {
-    //     // GET /api/v1/accounts/me/summary
-    //     const summaryData = await getAccountSummary();
+    //     const [summaryData, portfolioData] = await Promise.all([
+    //       getAccountSummary(),   // GET /api/v1/accounts/assets
+    //       getPortfolio(),        // GET /api/v1/accounts/portfolio
+    //     ]);
     //     setSummary(summaryData);
-    //
-    //     // GET /api/v1/accounts/me/holdings
-    //     const portfolioData = await getPortfolio();
-    //     // 백엔드 PortfolioResponse 구조에 맞게 파싱 (holdings 배열 확인 필요)
-    //     setHoldings(portfolioData.holdings ?? portfolioData);
+    //     setHoldings(portfolioData.holdings ?? []);
     //   } catch (error) {
     //     if (error.message.includes('KIS_NOT_CONNECTED')) {
-    //       // KIS 미연동 상태 → 마이페이지로 안내
     //       setIsKisConnected(false);
     //     } else {
     //       console.error('대시보드 데이터 로드 실패:', error);
@@ -90,7 +87,7 @@ export default function DashboardPage() {
     //   }
     // }
     // fetchDashboardData();
-    // ────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
   }, []);
 
   const handleCloseTutorial = () => setShowTutorial(false);
@@ -108,12 +105,12 @@ export default function DashboardPage() {
 
   // 도넛 차트 데이터 포맷팅
   const chartData = holdings.map((h, i) => ({
-    name: h.name,
+    name: h.stockName,
     y: h.quantity * h.currentPrice,
     color: CHART_COLORS[i % CHART_COLORS.length],
     quantity: h.quantity
   }));
-  chartData.push({ name: '예수금', y: summary.availableCash, color: '#84cc16', quantity: null });
+  chartData.push({ name: '예수금', y: summary?.availableCash ?? 0, color: '#84cc16', quantity: null });
 
   // 비중 내림차순 정렬
   chartData.sort((a, b) => b.y - a.y);
@@ -180,6 +177,12 @@ export default function DashboardPage() {
     }]
   };
 
+  // ── 연동 시 아래 주석 해제 (KIS 미연동/로딩 상태 처리) ──────────────────
+  // if (isLoading) return <div className="dashboard-container"><p style={{ padding: '2rem', color: '#aaa' }}>자산 정보를 불러오는 중...</p></div>;
+  // if (!isKisConnected) return <div className="dashboard-container"><p style={{ padding: '2rem', color: '#ef4444' }}>한국투자증권 API 연동이 필요합니다. 마이페이지에서 설정해주세요.</p></div>;
+  // if (!summary) return null;
+  // ─────────────────────────────────────────────────────────────────────────
+
   return (
     <div className="dashboard-container">
       {showTutorial && <TutorialOverlay onClose={handleCloseTutorial} />}
@@ -201,7 +204,7 @@ export default function DashboardPage() {
               <div className="asset-huge">
                 <span className="label">총 자산</span>
                 <div className="value-row">
-                  <span className="value">{formatNumber(summary.totalAssets)}</span>
+                  <span className="value">{formatNumber(summary.totalAsset)}</span>
                   <span className="unit">원</span>
                 </div>
               </div>
@@ -209,14 +212,14 @@ export default function DashboardPage() {
               <div className="asset-details">
                 <div className="detail-item">
                   <span className="detail-label">총 평가 손익</span>
-                  <span className={`detail-value ${getColorClass(summary.totalPnL)}`}>
-                    {summary.totalPnL > 0 ? '+' : ''}{formatNumber(summary.totalPnL)}원
-                    <span className="rate">({summary.returnRate > 0 ? '+' : ''}{summary.returnRate}%)</span>
+                  <span className={`detail-value ${getColorClass(summary.totalPnl)}`}>
+                    {summary.totalPnl > 0 ? '+' : ''}{formatNumber(summary.totalPnl)}원
+                    <span className="rate">({summary.totalPnlPct > 0 ? '+' : ''}{summary.totalPnlPct}%)</span>
                   </span>
                 </div>
                 <div className="detail-item">
                   <span className="detail-label">투자 원금</span>
-                  <span className="detail-value">{formatNumber(summary.principal)}원</span>
+                  <span className="detail-value">{formatNumber(summary.totalBuyAmount)}원</span>
                 </div>
                 <div className="detail-item">
                   <span className="detail-label">가용 예수금</span>
@@ -253,17 +256,17 @@ export default function DashboardPage() {
                   {holdings.map((item, idx) => (
                     <tr key={idx} onClick={() => navigate('/trading')} className="clickable-row">
                       <td className="col-name">
-                        <span className="stock-name">{item.name}</span>
-                        <span className="stock-code">{item.code}</span>
+                        <span className="stock-name">{item.stockName}</span>
+                        <span className="stock-code">{item.stockCode}</span>
                       </td>
                       <td>{formatNumber(item.quantity)}주</td>
-                      <td>{formatNumber(item.avgPrice)}원</td>
+                      <td>{formatNumber(item.avgBuyPrice)}원</td>
                       <td>{formatNumber(item.currentPrice)}원</td>
                       <td className={getColorClass(item.pnl)}>
                         {item.pnl > 0 ? '+' : ''}{formatNumber(item.pnl)}원
                       </td>
-                      <td className={getColorClass(item.returnRate)}>
-                        {item.returnRate > 0 ? '+' : ''}{item.returnRate}%
+                      <td className={getColorClass(item.pnlPct)}>
+                        {item.pnlPct > 0 ? '+' : ''}{item.pnlPct}%
                       </td>
                     </tr>
                   ))}

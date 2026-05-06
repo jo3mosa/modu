@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { createChart } from 'lightweight-charts';
+// import { getStockCandles } from '../api/market';
 import './TradingChart.css';
 
 // 더미 캔들스틱 데이터 생성 함수
@@ -40,37 +41,41 @@ const generateVolumeData = (candleData) => {
 export default function TradingChart() {
   const chartContainerRef = useRef(null);
 
-  // 연동 시 주석 해제 필요 !!
-  // 1. 과거 데이터 불러오기 (REST API)
-  /*
-  useEffect(() => {
-    const fetchHistoricalData = async () => {
-      try {
-        const response = await fetch('/api/v1/markets/stocks/005930/candles?timeframe=1D'); // ex) 삼성전자 일봉
-        const data = await response.json();
-        // data 형식: [{ time: '2023-10-01', open: 75000, high: 76000, low: 74500, close: 75500 }, ...]
-        candlestickSeries.current.setData(data);
-      } catch (error) {
-        console.error("차트 데이터 로드 실패:", error);
-      }
-    };
-    // fetchHistoricalData();
-  }, []);
+  // ── TODO: 백엔드 연동 시 아래 두 블록 해제 ──────────────────────────────
 
-  // 2. 실시간 현재가 업데이트 (WebSocket)
-  /*
-  useEffect(() => {
-    const ws = new WebSocket('ws://api.modu.com/ws/stocks/005930/price');
-    
-    ws.onmessage = (event) => {
-      const liveData = JSON.parse(event.data);
-      // liveData 형식: { time: '2023-10-01', open: 75000, high: 76000, low: 74500, close: 75500 }
-      candlestickSeries.current.update(liveData);
-    };
+  // 1. 과거 캔들 데이터 (REST) — stockCode는 종목 검색으로 선택된 값으로 교체
+  // useEffect(() => {
+  //   async function fetchCandles() {
+  //     try {
+  //       const candles = await getStockCandles(stockCode, timeframe);
+  //       // candles: [{ time, open, high, low, close, volume }, ...]
+  //       candlestickSeries.current.setData(candles);
+  //       volumeSeries.current.setData(
+  //         candles.map(d => ({
+  //           time: d.time,
+  //           value: d.volume,
+  //           color: d.close >= d.open ? 'rgba(239,68,68,0.4)' : 'rgba(59,130,246,0.4)',
+  //         }))
+  //       );
+  //     } catch (error) {
+  //       console.error('캔들 데이터 로드 실패:', error);
+  //     }
+  //   }
+  //   fetchCandles();
+  // }, [stockCode, timeframe]);
 
-    return () => ws.close();
-  }, []);
-  */
+  // 2. 실시간 현재가 (WebSocket) — GET /ws/stocks/{stockCode}/price
+  // useEffect(() => {
+  //   const ws = new WebSocket(`/ws/stocks/${stockCode}/price`);
+  //   ws.onmessage = (event) => {
+  //     const tick = JSON.parse(event.data);
+  //     // tick: { time, open, high, low, close }
+  //     candlestickSeries.current.update(tick);
+  //   };
+  //   return () => ws.close();
+  // }, [stockCode]);
+
+  // ─────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
