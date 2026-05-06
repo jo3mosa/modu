@@ -4,6 +4,8 @@ import os
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import URL
+from sqlalchemy.exc import ProgrammingError
 from dotenv import load_dotenv
 
 # ====================================
@@ -20,7 +22,15 @@ DB_NAME = os.getenv("DB_NAME", "modu_db")
 DB_USERNAME = os.getenv("DB_USERNAME", "postgres")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 
-DATABASE_URL = f"postgresql+psycopg2://{DB_USERNAME}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+# URL.create() 사용: 비밀번호에 @, :, / 등 특수문자 포함 시 f-string URL 파싱 오류 방지
+DATABASE_URL = URL.create(
+    drivername="postgresql+psycopg2",
+    username=DB_USERNAME,
+    password=DB_PASSWORD,
+    host=DB_HOST,
+    port=int(DB_PORT),
+    database=DB_NAME
+)
 
 
 def update_krx_master_db():
@@ -85,10 +95,15 @@ def update_krx_master_db():
                 df_final = df_new
                 print("--------- 상장 폐지된 종목 없음")
 
-        except Exception:
-            # 테이블이 없는 최초 실행
-            print("--------- 최초 실행: 기존 데이터가 없어 전체 신규 적재 진행")
-            df_final = df_new
+        except ProgrammingError as e:
+            # 테이블이 없는 경우(42P01)만 첫 적재로 처리
+            # 권한 오류, 스키마 불일치 등 다른 오류는 재예외 처리
+            if "42P01" in str(e.orig) or "does not exist" in str(e.orig):
+                print("--------- 최초 실행: 기존 데이터가 없어 전체 신규 적재 진행")
+                df_final = df_new
+            else:
+                print(f"[ERROR] 예상치 못한 DB 오류: {e}")
+                raise
 
     print("[COLLECT] PostgreSQL DB 업데이트 및 병합 데이터 적재")
 
