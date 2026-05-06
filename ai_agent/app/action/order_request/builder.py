@@ -51,7 +51,9 @@ def build_order_request(
     if side not in {"buy", "sell"}:
         return None
 
-    if order_amount is None or order_amount <= 0:
+    safe_order_amount = _safe_to_int(order_amount)
+
+    if safe_order_amount <= 0:
         return None
 
     # MVP에서는 target_price를 주문 수량 계산 기준 가격으로 사용한다.
@@ -67,7 +69,7 @@ def build_order_request(
 
     quantity = _resolve_quantity(
         side=side,
-        order_amount=order_amount,
+        order_amount=safe_order_amount,
         reference_price=reference_price,
         portfolio_snapshot=portfolio_snapshot,
         stock_code=stock_code,
@@ -82,7 +84,7 @@ def build_order_request(
         quantity=quantity,
         order_type="market",
         limit_price=None,
-        order_amount=order_amount,
+        order_amount=safe_order_amount,
         reason=final_decision.reason_summary
         or final_decision.user_message
         or "Risk Guard 검증을 통과한 최종 투자 결정에 따라 주문 요청을 생성합니다.",
@@ -111,10 +113,10 @@ def _resolve_reference_price(
     current_price = get_value(position, "current_price")
 
     if current_price is not None:
-        return int(current_price)
+        return _safe_to_int(current_price)
 
     if final_decision.target_price is not None:
-        return int(final_decision.target_price)
+        return _safe_to_int(final_decision.target_price)
 
     return 0
 
@@ -138,7 +140,13 @@ def _resolve_quantity(
     - 실제 보유 수량보다 많이 팔지 않도록 제한한다.
     """
 
-    calculated_quantity = int(order_amount // reference_price)
+    safe_order_amount = _safe_to_int(order_amount)
+    safe_reference_price = _safe_to_int(reference_price)
+
+    if safe_order_amount <= 0 or safe_reference_price <= 0:
+        return 0
+
+    calculated_quantity = safe_order_amount // safe_reference_price
 
     if calculated_quantity <= 0:
         return 0
@@ -174,6 +182,12 @@ def _find_position(
         return None
 
     for position in positions:
+
+        # 외부 snapshot 데이터는 비정상 값이 섞일 수 있으므로
+        # dict 타입만 처리한다.
+        if not isinstance(position, dict):
+            continue
+
         position_code = (
             position.get("stock_code")
             or position.get("asset")
@@ -208,4 +222,29 @@ def _get_holding_quantity(
     if quantity is None:
         return 0
 
-    return int(quantity)
+    return _safe_to_int(quantity)
+
+
+def _safe_to_int(value: Any, default: int = 0) -> int:
+    """
+    다양한 입력 값을 안전하게 int로 변환한다.
+
+    외부 snapshot 데이터는:
+    - "1234"
+    - "1234.5"
+    - None
+    - "N/A"
+    - {}
+    등 비정상 값이 들어올 수 있다.
+
+    build_order_request는 주문 생성 단계이므로,
+    예외를 발생시키기보다 안전하게 default 값으로 fallback한다.
+    """
+
+    if value is None:
+        return default
+
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
