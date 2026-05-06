@@ -9,32 +9,32 @@ const MOCK_NEWS = [
     title: '삼성전자, 3나노 파운드리 수율 개선…하반기 실적 기대감 ↑',
     source: '한국경제',
     publishedAt: new Date(Date.now() - 40 * 60 * 1000).toISOString(),
-    url: 'https://example.com/news/1',
+    // url: 'https://example.com/news',
   },
   {
     title: 'SK하이닉스, HBM4 공급 계약 체결…엔비디아와 협력 강화',
     source: '매일경제',
     publishedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    url: 'https://example.com/news/2',
+    // url: 'https://example.com/news',
   },
   {
     title: '미 연준 금리 동결 시사…국내 증시 외국인 순매수 전환',
     source: '블룸버그',
     publishedAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
-    url: 'https://example.com/news/3',
+    // url: 'https://example.com/news',
   },
   {
     title: '코스피 2,600선 회복…반도체·2차전지 동반 강세',
     source: '연합뉴스',
     publishedAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-    url: 'https://example.com/news/4',
+    // url: 'https://example.com/news',
   },
 ];
 // ─────────────────────────────────────────────────────────────────────────────
 
 function toRelativeTime(isoString) {
   const diff = Math.floor((Date.now() - new Date(isoString).getTime()) / 1000);
-  if (diff < 60)  return `${diff}초 전`;
+  if (diff < 60) return `${diff}초 전`;
   if (diff < 3600) return `${Math.floor(diff / 60)}분 전`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}시간 전`;
   return `${Math.floor(diff / 86400)}일 전`;
