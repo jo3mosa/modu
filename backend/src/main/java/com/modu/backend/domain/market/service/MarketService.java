@@ -6,6 +6,7 @@ import com.modu.backend.domain.market.repository.StockMasterRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,7 +34,8 @@ public class MarketService {
      * @param size    페이지 크기
      */
     public StockListResponse getStocks(String keyword, int page, int size) {
-        PageRequest pageable = PageRequest.of(page - 1, size);
+        // stockCode 오름차순 정렬 고정: 정렬 없이 페이징 시 데이터 변경에 따른 중복/누락 방지
+        PageRequest pageable = PageRequest.of(page - 1, size, Sort.by("stockCode").ascending());
 
         Page<StockSummaryResponse> result = isKeywordBlank(keyword)
                 ? stockMasterRepository.findByIsActiveTrue(pageable).map(StockSummaryResponse::from)
