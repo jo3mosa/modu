@@ -4,7 +4,7 @@ from app.triggers.schemas import MarketTriggerEvent
 from app.triggers.user_trigger_matcher import (
     match_market_event_to_users,
 )
-from app.triggers.state_factory import build_state_from_user_trigger, create_initial_state
+from app.triggers.state_factory import build_state_from_user_trigger
 
 
 def main() -> None:
