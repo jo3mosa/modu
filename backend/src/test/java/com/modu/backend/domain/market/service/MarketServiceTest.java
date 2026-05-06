@@ -1,6 +1,9 @@
 package com.modu.backend.domain.market.service;
 
+import com.modu.backend.domain.market.client.KisCandleClient;
 import com.modu.backend.domain.market.client.KisPriceClient;
+import com.modu.backend.domain.market.dto.CandleListResponse;
+import com.modu.backend.domain.market.dto.CandleResponse;
 import com.modu.backend.domain.market.dto.StockDetailResponse;
 import com.modu.backend.domain.market.dto.StockListResponse;
 import com.modu.backend.domain.market.entity.StockMaster;
@@ -34,6 +37,7 @@ class MarketServiceTest {
     @Mock StockMasterRepository stockMasterRepository;
     @Mock KisPlatformTokenService kisPlatformTokenService;
     @Mock KisPriceClient kisPriceClient;
+    @Mock KisCandleClient kisCandleClient;
 
     @InjectMocks
     MarketService marketService;
@@ -221,5 +225,78 @@ class MarketServiceTest {
 
         // then
         verify(kisPriceClient).getStockDetail("platform-token", "005930", "삼성전자", "KOSPI");
+    }
+
+    // ── 캔들 데이터 조회 ──────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("일봉 캔들 조회 성공 - 플랫폼 토큰과 stockCode, period가 클라이언트에 전달")
+    void 일봉_캔들_조회_성공() {
+        // given
+        List<CandleResponse> mockCandles = List.of(
+                new CandleResponse("20250426", 81500L, 83000L, 80500L, 82000L, 15000000L),
+                new CandleResponse("20250425", 80000L, 82000L, 79500L, 81000L, 12000000L)
+        );
+        when(kisPlatformTokenService.getAccessToken()).thenReturn("platform-token");
+        when(kisCandleClient.getCandles("platform-token", "005930", "D", null, null))
+                .thenReturn(mockCandles);
+
+        // when
+        CandleListResponse result = marketService.getCandleData("005930", "D", null, null);
+
+        // then
+        assertThat(result.stockCode()).isEqualTo("005930");
+        assertThat(result.period()).isEqualTo("D");
+        assertThat(result.candles()).hasSize(2);
+        assertThat(result.candles().get(0).timestamp()).isEqualTo("20250426");
+    }
+
+    @Test
+    @DisplayName("분봉 캔들 조회 성공")
+    void 분봉_캔들_조회_성공() {
+        // given
+        List<CandleResponse> mockCandles = List.of(
+                new CandleResponse("090000", 81000L, 81500L, 80800L, 81200L, 500000L)
+        );
+        when(kisPlatformTokenService.getAccessToken()).thenReturn("platform-token");
+        when(kisCandleClient.getCandles("platform-token", "005930", "5", null, null))
+                .thenReturn(mockCandles);
+
+        // when
+        CandleListResponse result = marketService.getCandleData("005930", "5", null, null);
+
+        // then
+        assertThat(result.period()).isEqualTo("5");
+        assertThat(result.candles()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("캔들 데이터가 없는 종목 조회 시 빈 목록 반환")
+    void 캔들_데이터_없으면_빈_목록() {
+        // given
+        when(kisPlatformTokenService.getAccessToken()).thenReturn("platform-token");
+        when(kisCandleClient.getCandles("platform-token", "005930", "D", null, null))
+                .thenReturn(List.of());
+
+        // when
+        CandleListResponse result = marketService.getCandleData("005930", "D", null, null);
+
+        // then
+        assertThat(result.candles()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("startDate, endDate 있을 때 KIS 클라이언트에 정확히 전달")
+    void 날짜_파라미터_전달_확인() {
+        // given
+        when(kisPlatformTokenService.getAccessToken()).thenReturn("platform-token");
+        when(kisCandleClient.getCandles("platform-token", "005930", "D", "20250101", "20250426"))
+                .thenReturn(List.of());
+
+        // when
+        marketService.getCandleData("005930", "D", "20250101", "20250426");
+
+        // then
+        verify(kisCandleClient).getCandles("platform-token", "005930", "D", "20250101", "20250426");
     }
 }
