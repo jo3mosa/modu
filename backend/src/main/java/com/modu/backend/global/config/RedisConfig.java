@@ -39,7 +39,8 @@ public class RedisConfig {
 
         // 캐시별 TTL 설정
         Map<String, RedisCacheConfiguration> cacheConfigurations = Map.of(
-                "stock:price", defaultConfig.entryTtl(Duration.ofSeconds(3))
+                "stock:price",          defaultConfig.entryTtl(Duration.ofSeconds(3)),   // 실시간 시세
+                "kis:platform:token",   defaultConfig.entryTtl(Duration.ofHours(23))     // 플랫폼 KIS 토큰 (만료 1시간 전 갱신)
         );
 
         return RedisCacheManager.builder(connectionFactory)
