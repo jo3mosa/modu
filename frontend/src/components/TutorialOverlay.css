@@ -176,7 +176,6 @@
 
 .nav-btn.next:hover {
   background: #eee;
-  transform: translateY(-2px);
 }
 
 .nav-btn.finish {
@@ -186,6 +185,5 @@
 
 .nav-btn.finish:hover {
   background: #95df19;
-  transform: translateY(-2px);
   box-shadow: 0 4px 15px rgba(132, 204, 22, 0.3);
 }
