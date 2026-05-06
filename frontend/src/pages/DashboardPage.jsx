@@ -20,7 +20,7 @@ if (typeof Highcharts === 'object') {
 // ── MOCK 데이터 (백엔드 연동 후 삭제 예정) ──────────────────────────────────
 // 필드명은 백엔드 응답 스펙 기준으로 맞춰둠 → 연동 시 그대로 사용 가능
 const MOCK_SUMMARY = {
-  totalAsset: 600000,       // GET /api/v1/accounts/assets
+  totalAsset: 600000,       // GET /api/v1/accounts/me/summary
   totalBuyAmount: 570000,
   totalEvalAmount: 400000,
   totalPnl: 30000,
@@ -71,8 +71,8 @@ export default function DashboardPage() {
     //   setIsLoading(true);
     //   try {
     //     const [summaryData, portfolioData] = await Promise.all([
-    //       getAccountSummary(),   // GET /api/v1/accounts/assets
-    //       getPortfolio(),        // GET /api/v1/accounts/portfolio
+    //       getAccountSummary(),   // GET /api/v1/accounts/me/summary
+    //       getPortfolio(),        // GET /api/v1/accounts/me/holdings
     //     ]);
     //     setSummary(summaryData);
     //     setHoldings(portfolioData.holdings ?? []);
