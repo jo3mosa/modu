@@ -1,4 +1,6 @@
 import { useState } from 'react';
+// import { useEffect } from 'react';
+// import { getStockNews } from '../api/market';
 import './TradingNews.css';
 
 const TABS = ['뉴스'];
@@ -12,24 +14,22 @@ const MOCK_NEWS = [
 export default function TradingNews() {
   const [activeTab, setActiveTab] = useState('뉴스');
 
-  // 연동 시 주석 해제 필요 !!
-  /*
-  const [newsList, setNewsList] = useState(MOCK_NEWS);
-
-  useEffect(() => {
-    const fetchNews = async () => {
-      try {
-        const response = await fetch('/api/v1/markets/stocks/005930/news');
-        const data = await response.json();
-        // data: [{ title: '...', source: '...', time: '...' }, ...]
-        setNewsList(data);
-      } catch (error) {
-        console.error("뉴스 데이터 로드 실패:", error);
-      }
-    };
-    // fetchNews();
-  }, [activeTab]); // 탭이 바뀔 때마다 다시 fetch 할 수도 있음
-  */
+  // ── TODO: 백엔드 연동 시 아래 블록 해제, 위 useState(MOCK_NEWS) 교체 ────
+  // const [newsList, setNewsList] = useState([]);
+  //
+  // useEffect(() => {
+  //   async function fetchNews() {
+  //     try {
+  //       const news = await getStockNews(stockCode);
+  //       // news: [{ title, source, publishedAt, url }, ...]
+  //       setNewsList(news);
+  //     } catch (error) {
+  //       console.error('뉴스 데이터 로드 실패:', error);
+  //     }
+  //   }
+  //   fetchNews();
+  // }, [stockCode]);
+  // ─────────────────────────────────────────────────────────────────────────
 
   return (
     <div className="news-wrapper">
