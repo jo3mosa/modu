@@ -84,12 +84,17 @@ export default function TradingChart({ stockCode }) {
       scaleMargins: { top: 0.8, bottom: 0 },
     });
 
-    // ── MOCK 데이터 세팅 (연동 시 아래 3줄 삭제) ──────────────────────────
+    // ── MOCK 데이터 세팅 (연동 시 아래 블록 삭제) ──────────────────────────
     const data = generateDummyData();
     candlestickSeriesRef.current.setData(data);
+    
+    // UI 표시용 가짜 AI 매매 내역 마커
     candlestickSeriesRef.current.setMarkers([
-      { time: data[data.length - 25].time, position: 'belowBar', color: '#ef4444', shape: 'arrowUp',   text: '매수'    },
-      { time: data[data.length - 15].time, position: 'aboveBar', color: '#3b82f6', shape: 'arrowDown', text: '매도'    },
+      { time: data[data.length - 80].time, position: 'belowBar', color: '#ef4444', shape: 'arrowUp',   text: 'AI 매수' },
+      { time: data[data.length - 60].time, position: 'aboveBar', color: '#3b82f6', shape: 'arrowDown', text: 'AI 매도' },
+      { time: data[data.length - 45].time, position: 'belowBar', color: '#ef4444', shape: 'arrowUp',   text: 'AI 매수' },
+      { time: data[data.length - 25].time, position: 'belowBar', color: '#ef4444', shape: 'arrowUp',   text: '사용자 매수' },
+      { time: data[data.length - 15].time, position: 'aboveBar', color: '#3b82f6', shape: 'arrowDown', text: 'AI 매도' },
       { time: data[data.length - 5].time,  position: 'belowBar', color: '#ef4444', shape: 'arrowUp',   text: 'AI 매수' },
     ]);
     volumeSeriesRef.current.setData(generateVolumeData(data));
@@ -133,6 +138,39 @@ export default function TradingChart({ stockCode }) {
   //   }
   //   fetchCandles();
   // }, [stockCode, timeframe]);
+
+  // ── 연동 시 아래 블록 해제 (AI 매매 내역 차트 마커 시각화 - TASK 4) ──────
+  // import { getAiDecisions } from '../api/aiAgent'; // 파일 상단 주석 해제 필요
+  // useEffect(() => {
+  //   if (!stockCode || !candlestickSeriesRef.current) return;
+  //   async function fetchAiDecisions() {
+  //     try {
+  //       const decisions = await getAiDecisions();
+  //       // 해당 종목의 매매 내역만 필터링 (주문 내역과 캔들 데이터의 시간 형식 일치 필수)
+  //       const stockDecisions = decisions.filter(d => d.stockCode === stockCode && d.decisionType !== 'HOLD');
+  //       
+  //       const markers = stockDecisions.map(d => {
+  //         // 시간 문자열은 차트의 time 필드와 동일한 포맷이어야 함 (예: YYYY-MM-DD)
+  //         const timeFormatted = d.decidedAt.split('T')[0]; 
+  //         const isBuy = d.decisionType === 'BUY';
+  //         
+  //         return {
+  //           time: timeFormatted,
+  //           position: isBuy ? 'belowBar' : 'aboveBar',
+  //           color: isBuy ? '#ef4444' : '#3b82f6',
+  //           shape: isBuy ? 'arrowUp' : 'arrowDown',
+  //           text: `AI ${isBuy ? '매수' : '매도'}`
+  //         };
+  //       });
+  //       
+  //       // 주의: 캔들 데이터(setData)가 완료된 이후에 호출되어야 함
+  //       candlestickSeriesRef.current.setMarkers(markers);
+  //     } catch (error) {
+  //       console.error('AI 판단 데이터 로드 실패:', error);
+  //     }
+  //   }
+  //   fetchAiDecisions();
+  // }, [stockCode]);
 
   // ── 연동 시 아래 블록 해제 (실시간 현재가 WebSocket) ──────────────────────
   // useEffect(() => {
