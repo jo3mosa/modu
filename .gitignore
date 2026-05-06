@@ -76,3 +76,5 @@ venv/
 .vscode/
 .idea/
 .env
+
+data/
