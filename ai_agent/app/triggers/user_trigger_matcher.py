@@ -11,24 +11,24 @@ from app.triggers.schemas import MarketTriggerEvent, UserTriggerEvent
 #
 # 이후 실제 구현에서는 아래 mock dict 대신
 # PortfolioRepository / Redis cache / DB query 등으로 교체
-_MOCK_HOLDERS_BY_STOCK_CODE: dict[str, list[str]] = {
-    "005930": ["user_1", "user_2"],  # 삼성전자 보유 사용자
-    "000660": ["user_3"],            # SK하이닉스 보유 사용자
+_MOCK_HOLDERS_BY_STOCK_CODE: dict[str, list[int]] = {
+    "005930": [1, 2],  # 삼성전자 보유 사용자
+    "000660": [3],            # SK하이닉스 보유 사용자
 }
 
 
-_MOCK_USER_CONTEXT_BY_USER_ID: dict[str, dict] = {
-    "user_1": {
+_MOCK_USER_CONTEXT_BY_USER_ID: dict[int, dict] = {
+    1: {
         "investment_style": "balanced",
         "risk_level": "medium",
         "strategy_note": "대형주 중심으로 안정적인 수익을 선호",
     },
-    "user_2": {
+    2: {
         "investment_style": "aggressive",
         "risk_level": "high",
         "strategy_note": "모멘텀 강한 종목에 적극 대응",
     },
-    "user_3": {
+    3: {
         "investment_style": "conservative",
         "risk_level": "low",
         "strategy_note": "손실 회피 성향이 강함",
@@ -36,8 +36,8 @@ _MOCK_USER_CONTEXT_BY_USER_ID: dict[str, dict] = {
 }
 
 
-_MOCK_PORTFOLIO_SNAPSHOT_BY_USER_ID: dict[str, dict] = {
-    "user_1": {
+_MOCK_PORTFOLIO_SNAPSHOT_BY_USER_ID: dict[int, dict] = {
+    1: {
         "cash": 1_000_000,
         "positions": [
             {
@@ -48,7 +48,7 @@ _MOCK_PORTFOLIO_SNAPSHOT_BY_USER_ID: dict[str, dict] = {
             }
         ],
     },
-    "user_2": {
+    2: {
         "cash": 500_000,
         "positions": [
             {
@@ -59,7 +59,7 @@ _MOCK_PORTFOLIO_SNAPSHOT_BY_USER_ID: dict[str, dict] = {
             }
         ],
     },
-    "user_3": {
+    3: {
         "cash": 2_000_000,
         "positions": [
             {
@@ -73,7 +73,7 @@ _MOCK_PORTFOLIO_SNAPSHOT_BY_USER_ID: dict[str, dict] = {
 }
 
 
-def get_holding_user_ids(stock_code: str) -> list[str]:
+def get_holding_user_ids(stock_code: str) -> list[int]:
     """
     특정 종목을 보유한 사용자 목록을 조회한다.
 
@@ -83,7 +83,7 @@ def get_holding_user_ids(stock_code: str) -> list[str]:
     return _MOCK_HOLDERS_BY_STOCK_CODE.get(stock_code, [])
 
 
-def get_user_context(user_id: str) -> dict:
+def get_user_context(user_id: int) -> dict:
     """
     사용자별 투자 성향, 리스크 설정, 자연어 전략 등을 조회한다.
 
@@ -92,7 +92,7 @@ def get_user_context(user_id: str) -> dict:
     return _MOCK_USER_CONTEXT_BY_USER_ID.get(user_id, {})
 
 
-def get_portfolio_snapshot(user_id: str) -> dict:
+def get_portfolio_snapshot(user_id: int) -> dict:
     """
     사용자별 포트폴리오 스냅샷을 조회한다.
 

@@ -4,6 +4,7 @@ from app.triggers.schemas import MarketTriggerEvent
 from app.triggers.user_trigger_matcher import (
     match_market_event_to_users,
 )
+from app.triggers.state_factory import build_state_from_user_trigger, create_initial_state
 
 
 def main() -> None:
@@ -15,7 +16,7 @@ def main() -> None:
     mock_market_event = MarketTriggerEvent(
         event_id="market_event_001",
         trigger_type="MARKET_EVENT",
-        trigger_reason="RSI 과열 및 긍정 공시 감지",
+        trigger_reason=["RSI 과열", "긍정 공시 감지",],
         stock_code="005930",
         market_snapshot={
             "market_status": "OPEN",
@@ -50,6 +51,12 @@ def main() -> None:
     for event in user_trigger_events:
         pprint(event.model_dump())
         print("-" * 60)
+
+        state = build_state_from_user_trigger(event)
+
+        print("InvestmentAgentState 변환 성공")
+        pprint(state.model_dump())
+        print("=" * 60)
 
 
 if __name__ == "__main__":
