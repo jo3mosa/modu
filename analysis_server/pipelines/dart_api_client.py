@@ -15,6 +15,7 @@ class DartApiClient:
     BASE_URL = "https://opendart.fss.or.kr/api"
     CORP_CODE_CACHE = "dart_corp_code.json"
     CORP_CODE_TTL_DAYS = 7
+    HTTP_TIMEOUT = 10  # seconds — polling worker hang 방지
 
     # 단일회사 전체 재무제표에서 추출할 (statement, account_nm) 쌍
     # sj_div: BS=재무상태표, IS=손익계산서, CIS=포괄손익계산서
@@ -40,6 +41,12 @@ class DartApiClient:
             raise ValueError("DART_API_KEY 환경변수가 설정되지 않았습니다.")
         self._corp_code_map = None
 
+    # 공통 HTTP GET — timeout + 4xx/5xx 검증
+    def _get(self, url, params=None):
+        response = requests.get(url, params=params, timeout=self.HTTP_TIMEOUT)
+        response.raise_for_status()
+        return response
+
     # corp_code (8자리) ↔ stock_code (6자리) 매핑
     def _load_corp_code_map(self):
         if self._corp_code_map is not None:
@@ -51,8 +58,7 @@ class DartApiClient:
             return self._corp_code_map
 
         url = f"{self.BASE_URL}/corpCode.xml"
-        response = requests.get(url, params={"crtfc_key": self.api_key})
-        response.raise_for_status()
+        response = self._get(url, params={"crtfc_key": self.api_key})
 
         with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
             with zf.open("CORPCODE.xml") as f:
@@ -91,14 +97,16 @@ class DartApiClient:
             "reprt_code": reprt_code,
             "fs_div": fs_div,
         }
-        response = requests.get(url, params=params)
-        data = response.json()
+        data = self._get(url, params=params).json()
 
-        if data.get("status") != "000":
-            if fs_div == "CFS":
-                # 연결재무제표가 없는 소형주 → 별도재무제표로 fallback
-                return self.get_financial_accounts(corp_code, bsns_year, reprt_code, fs_div="OFS")
-            print(f"[WARN] 재무제표 조회 실패 ({bsns_year}/{reprt_code}): {data.get('message')}")
+        status = data.get("status")
+        # status 013 = 조회된 데이터 없음 → 연결재무제표가 없는 소형주이므로 별도(OFS)로 fallback
+        if status == "013" and fs_div == "CFS":
+            return self.get_financial_accounts(corp_code, bsns_year, reprt_code, fs_div="OFS")
+        # 그 외 에러(인증/한도/장애)는 fallback 없이 즉시 실패 — quota 낭비 방지
+        if status != "000":
+            print(f"[ERROR] 재무제표 조회 실패 ({bsns_year}/{reprt_code}/{fs_div}): "
+                  f"status={status}, message={data.get('message')}")
             return None
 
         accounts = {}
@@ -128,11 +136,12 @@ class DartApiClient:
             "bsns_year": str(bsns_year),
             "reprt_code": reprt_code,
         }
-        response = requests.get(url, params=params)
-        data = response.json()
+        data = self._get(url, params=params).json()
 
-        if data.get("status") != "000":
-            print(f"[WARN] 주식수 조회 실패: {data.get('message')}")
+        status = data.get("status")
+        if status != "000":
+            print(f"[ERROR] 주식수 조회 실패 ({bsns_year}/{reprt_code}): "
+                  f"status={status}, message={data.get('message')}")
             return None
 
         for item in data.get("list", []):
@@ -156,11 +165,11 @@ class DartApiClient:
             "end_de": end_de,
             "page_count": str(page_count),
         }
-        response = requests.get(url, params=params)
-        data = response.json()
+        data = self._get(url, params=params).json()
 
-        if data.get("status") not in ("000", "013"):  # 013 = 조회된 데이터 없음
-            print(f"[WARN] 공시 조회 실패: {data.get('message')}")
+        status = data.get("status")
+        if status not in ("000", "013"):  # 013 = 조회된 데이터 없음 (정상)
+            print(f"[ERROR] 공시 조회 실패: status={status}, message={data.get('message')}")
             return []
         return data.get("list", [])
 
@@ -172,4 +181,4 @@ if __name__ == "__main__":
     accounts = client.get_financial_accounts(code, 2024)
     print(json.dumps(accounts, indent=2, ensure_ascii=False))
     shares = client.get_shares_outstanding(code, 2024)
-    print(f"발행주식수: {shares:,}")
+    print(f"발행주식수: {shares:,}" if shares is not None else "발행주식수: 조회 실패")

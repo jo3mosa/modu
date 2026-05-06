@@ -1,10 +1,8 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from dart_api_client import DartApiClient
 from kis_api_client import KisApiClient
-
-from datetime import timedelta
 
 
 # 공시 임팩트 분류 (룰베이스 시작용 — 추후 LLM 분류기로 대체 가능)
@@ -67,17 +65,22 @@ def classify_growth(curr, prev):
 
 
 def classify_stability(accounts):
-    equity = accounts.get("자본총계")
-    debt = accounts.get("부채총계")
-    current_assets = accounts.get("유동자산")
-    current_liab = accounts.get("유동부채")
+    # 필수 계정 결측 시 unknown — 결측을 stable/moderate로 오분류 방지
+    required = ("자본총계", "부채총계", "유동자산", "유동부채")
+    if any(accounts.get(k) is None for k in required):
+        return "unknown"
+
+    equity = accounts["자본총계"]
+    debt = accounts["부채총계"]
+    current_assets = accounts["유동자산"]
+    current_liab = accounts["유동부채"]
 
     # 자본잠식
-    if not equity or equity <= 0:
+    if equity <= 0:
         return "risky"
 
-    debt_ratio = (debt / equity * 100) if debt else 0
-    current_ratio = (current_assets / current_liab * 100) if current_liab else None
+    debt_ratio = debt / equity * 100
+    current_ratio = (current_assets / current_liab * 100) if current_liab > 0 else None
 
     if debt_ratio > 200:
         return "risky"
@@ -101,8 +104,10 @@ def _format_disclosure(d):
 def calculate_fundamental(stock_code, bsns_year=None):
     """OpenDART 재무제표 + KIS 현재가로 fundamental/event 섹션을 계산."""
     if bsns_year is None:
-        # 직전 사업연도 (사업보고서는 익년 3월말 공시)
-        bsns_year = datetime.now().year - 1
+        # 사업보고서는 사업연도 종료 후 90일 이내(통상 익년 3월말) 공시 의무.
+        # → 4월부터는 직전연도, 1~3월에는 재작년 보고서가 가장 최신 확정본.
+        now = datetime.now()
+        bsns_year = now.year - 1 if now.month >= 4 else now.year - 2
 
     dart = DartApiClient()
     kis = KisApiClient()
@@ -125,15 +130,23 @@ def calculate_fundamental(stock_code, bsns_year=None):
     snapshot = kis.get_realtime_snapshot(stock_code)
     current_price = snapshot["close"] if snapshot else None
 
-    # 5) 핵심 지표 계산
+    # 5) 핵심 지표 계산 — 결측(None)과 0을 명확히 분리
+    #   · 0인 net_income → ROE = 0% (실제 BEP)
+    #   · 음수 net_income → ROE 음수 (적자기업)
+    #   · None → unknown 분기
     net_income = accounts_curr.get("당기순이익")
     equity = accounts_curr.get("자본총계")
 
-    eps = (net_income / shares) if (net_income and shares) else None
-    bps = (equity / shares) if (equity and shares and shares > 0) else None
-    per = (current_price / eps) if (current_price and eps and eps > 0) else None
-    pbr = (current_price / bps) if (current_price and bps and bps > 0) else None
-    roe = (net_income / equity * 100) if (net_income and equity and equity > 0) else None
+    def _present(*vals):
+        return all(v is not None for v in vals)
+
+    eps = (net_income / shares) if _present(net_income, shares) and shares > 0 else None
+    bps = (equity / shares) if _present(equity, shares) and shares > 0 else None
+    # PER/PBR은 분모가 양수일 때만 의미 (적자기업 PER, 자본잠식 PBR은 정의상 무의미)
+    per = (current_price / eps) if _present(current_price, eps) and eps > 0 else None
+    pbr = (current_price / bps) if _present(current_price, bps) and bps > 0 else None
+    # ROE는 음수도 유효 (적자율). 자본잠식(equity ≤ 0)만 None
+    roe = (net_income / equity * 100) if _present(net_income, equity) and equity > 0 else None
 
     # 6) 공시 (오늘자)
     today = datetime.now().strftime("%Y%m%d")
@@ -147,12 +160,13 @@ def calculate_fundamental(stock_code, bsns_year=None):
         "current_price": current_price,
         "fundamental": {
             "valuation": {
-                "per": round(per, 2) if per else None,
-                "pbr": round(pbr, 2) if pbr else None,
+                "per": round(per, 2) if per is not None else None,
+                "pbr": round(pbr, 2) if pbr is not None else None,
                 "status": classify_valuation(per, pbr),
             },
             "profitability": {
-                "roe": round(roe, 2) if roe else None,
+                # 0.0 (BEP)도 정상값 — 'is not None'으로 결측만 None 처리
+                "roe": round(roe, 2) if roe is not None else None,
                 "status": classify_profitability(roe),
             },
             "growth": {
