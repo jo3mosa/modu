@@ -1,17 +1,85 @@
-import { Outlet, Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Activity, Newspaper, FileText, User, Search } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { Search } from 'lucide-react';
+// import { getStocks } from '../api/market';
 import './MainLayout.css';
+
+// ── MOCK 종목 목록 (백엔드 연동 후 삭제 예정) ─────────────────────────────────
+const MOCK_STOCKS = [
+  { stockCode: '005930', stockName: '삼성전자',       currentPrice: 74900,  changeRate:  0.40 },
+  { stockCode: '000660', stockName: 'SK하이닉스',     currentPrice: 197500, changeRate: -1.25 },
+  { stockCode: '035420', stockName: 'NAVER',          currentPrice: 184500, changeRate:  0.82 },
+  { stockCode: '035720', stockName: '카카오',         currentPrice: 45000,  changeRate: -2.17 },
+  { stockCode: '012450', stockName: '한화에어로스페이스', currentPrice: 85300, changeRate:  3.45 },
+  { stockCode: '005380', stockName: '현대차',         currentPrice: 213500, changeRate:  1.17 },
+  { stockCode: '000270', stockName: '기아',           currentPrice: 98200,  changeRate:  0.62 },
+  { stockCode: '068270', stockName: '셀트리온',       currentPrice: 178000, changeRate: -0.56 },
+];
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function MainLayout() {
   const location = useLocation();
+  const navigate = useNavigate();
+
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const searchRef = useRef(null);
+  const debounceRef = useRef(null);
 
   const menuItems = [
-    { path: '/home', label: '대시보드' },
-    { path: '/trading', label: '트레이딩 룸' },
-    { path: '/report', label: '리포트' },
+    { path: '/home',        label: '대시보드' },
+    { path: '/trading',     label: '트레이딩 룸' },
+    { path: '/report',      label: '리포트' },
     { path: '/risk-manage', label: '리스크 관리' },
-    { path: '/mypage', label: '마이페이지' },
+    { path: '/mypage',      label: '마이페이지' },
   ];
+
+  // 검색어 변경 시 MOCK 필터링 (300ms debounce)
+  // ── 연동 시 아래 MOCK 필터 → 주석 처리하고 아래 블록 해제 ──────────────────
+  // useEffect(() => {
+  //   if (!query.trim()) { setResults([]); setShowDropdown(false); return; }
+  //   clearTimeout(debounceRef.current);
+  //   debounceRef.current = setTimeout(async () => {
+  //     try {
+  //       const data = await getStocks(query);  // GET /api/v1/markets/stocks?query=...
+  //       setResults(data);
+  //       setShowDropdown(data.length > 0);
+  //     } catch { setResults([]); }
+  //   }, 300);
+  //   return () => clearTimeout(debounceRef.current);
+  // }, [query]);
+  // ─────────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!query.trim()) { setResults([]); setShowDropdown(false); return; }
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      const q = query.toLowerCase();
+      const filtered = MOCK_STOCKS.filter(
+        s => s.stockName.toLowerCase().includes(q) || s.stockCode.includes(q)
+      );
+      setResults(filtered);
+      setShowDropdown(filtered.length > 0);
+    }, 300);
+    return () => clearTimeout(debounceRef.current);
+  }, [query]);
+
+  // 검색바 외부 클릭 시 드롭다운 닫기
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (searchRef.current && !searchRef.current.contains(e.target)) {
+        setShowDropdown(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleSelect = (stock) => {
+    setQuery('');
+    setShowDropdown(false);
+    navigate(`/trading?stock=${stock.stockCode}&name=${encodeURIComponent(stock.stockName)}`);
+  };
 
   return (
     <div className="main-layout">
@@ -40,12 +108,33 @@ export default function MainLayout() {
       <main className="main-content">
         {/* 상단 통합 검색바 */}
         <header className="global-header">
-          <div className="global-search-bar">
-            <Search size={20} color="#888" />
-            <input
-              type="text"
-              placeholder="원하는 종목을 검색해보세요!"
-            />
+          <div className="global-search-wrapper" ref={searchRef}>
+            <div className="global-search-bar">
+              <Search size={20} color="#888" />
+              <input
+                type="text"
+                placeholder="원하는 종목을 검색해보세요!"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                onFocus={() => results.length > 0 && setShowDropdown(true)}
+              />
+            </div>
+            {showDropdown && (
+              <ul className="search-dropdown">
+                {results.map(stock => (
+                  <li key={stock.stockCode} className="search-dropdown-item" onMouseDown={() => handleSelect(stock)}>
+                    <span className="sd-name">{stock.stockName}</span>
+                    <span className="sd-code">{stock.stockCode}</span>
+                    <span className={`sd-price ${stock.changeRate >= 0 ? 'up' : 'down'}`}>
+                      {stock.currentPrice.toLocaleString()}원&nbsp;
+                      <span className="sd-rate">
+                        {stock.changeRate >= 0 ? '+' : ''}{stock.changeRate}%
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </header>
 

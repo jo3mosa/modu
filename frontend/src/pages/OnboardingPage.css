@@ -92,7 +92,6 @@
 
 .option-btn:hover {
   background: rgba(255, 255, 255, 0.08);
-  transform: translateY(-2px);
 }
 
 .option-btn.selected {
@@ -100,7 +99,6 @@
   border-color: #84cc16;
   color: #84cc16;
   font-weight: 700;
-  transform: translateY(0);
 }
 
 .principle-textarea {
@@ -210,7 +208,6 @@
 
 .nav-btn.primary:hover:not(:disabled) {
   background: #eee;
-  transform: translateY(-2px);
 }
 
 .nav-btn.primary:disabled {
@@ -236,7 +233,6 @@
 
 .nav-btn.submit:hover:not(:disabled) {
   background: #95df19;
-  transform: translateY(-2px);
 }
 
 .nav-btn.submit:disabled {

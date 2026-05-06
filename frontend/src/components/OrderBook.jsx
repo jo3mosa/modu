@@ -16,7 +16,7 @@ const MOCK_BIDS = [
   { price: '74,500', amount: '8,500' },
 ];
 
-export default function OrderBook() {
+export default function OrderBook({ stockCode }) {
   // 연동 시 주석 해제 필요 !!
   /*
   const [asks, setAsks] = useState(MOCK_ASKS);
@@ -24,7 +24,7 @@ export default function OrderBook() {
   const [currentPrice, setCurrentPrice] = useState('74,900');
 
   useEffect(() => {
-    const ws = new WebSocket('ws://api.modu.com/ws/stocks/005930/orderbook'); // -> 종목코드 템플릿 -> 하드코딩 부분들 상태 변수로 변경 필요 !!
+    const ws = new WebSocket(`/ws/stocks/${stockCode}/orderbook`);
     
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
@@ -46,9 +46,9 @@ export default function OrderBook() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          stockCode: '005930', // -> 종목코드 템플릿 -> 하드코딩 부분들 상태 변수로 변경 필요 !!
+          stockCode: stockCode,
           orderType: orderType, // 'BUY' or 'SELL'
-          price: 74900, // -> 현재가 템플릿 -> 하드코딩 부분들 상태 변수로 변경 필요 !!
+          price: 74900, // TODO: 연동 시 currentPrice 상태 변수로 교체
           quantity: 1
         })
       });

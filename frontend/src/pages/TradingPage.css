@@ -5,6 +5,76 @@
   color: #fff;
 }
 
+/* 종목 정보 스트립 */
+.stock-info-strip {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 0.9rem 1.5rem;
+  flex-wrap: wrap;
+}
+
+.stock-identity {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
+.stock-strip-name {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: #fff;
+}
+
+.stock-strip-code {
+  font-size: 0.85rem;
+  color: #666;
+  font-family: monospace;
+}
+
+.stock-price-group {
+  display: flex;
+  align-items: baseline;
+  gap: 0.8rem;
+}
+
+.stock-strip-price {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #fff;
+}
+
+.stock-strip-change {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.stock-meta-group {
+  display: flex;
+  gap: 1.2rem;
+  margin-left: auto;
+}
+
+.meta-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: #aaa;
+}
+
+.meta-item em {
+  font-style: normal;
+  color: #555;
+  font-size: 0.8rem;
+}
+
+.up   { color: #ef4444; }
+.down { color: #3b82f6; }
+
 .trading-top {
   display: grid;
   grid-template-columns: 1fr 340px;

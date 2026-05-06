@@ -1,24 +1,21 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MessageCircle } from 'lucide-react';
+// TODO: 백엔드 연동 시 아래 주석 해제
+// import { testLogin } from '../api/auth';
 import './LoginPage.css';
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const [userId, setUserId] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
   const handleSocialLogin = (provider) => {
-    console.log(`Connecting to ${provider} login...`);
-
     if (provider === 'kakao') {
-      // TODO: .env 파일에 VITE_KAKAO_CLIENT_ID를 등록하세요.
       const clientId = import.meta.env.VITE_KAKAO_CLIENT_ID || 'YOUR_KAKAO_REST_API_KEY';
-      // 현재 프론트엔드 도메인 주소를 기반으로 리다이렉트 URI 생성 (예: http://localhost:5173/auth/callback/kakao)
       const redirectUri = `${window.location.origin}/auth/callback/kakao`;
-      
       const kakaoAuthUrl = `https://kauth.kakao.com/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code`;
-      
-      // 카카오 로그인 인증 페이지로 이동
       window.location.href = kakaoAuthUrl;
     }
   };
@@ -26,32 +23,36 @@ export default function LoginPage() {
   const handleTestLogin = async (e) => {
     e.preventDefault();
     if (!userId.trim()) return;
-    console.log(`Bypass login with UUID: ${userId}`);
 
-    /*
-    // 실제 연동 시 주석 해제 필요 !!
-    try {
-      const response = await fetch('/api/v1/auth/test/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: userId })
-      });
-      const data = await response.json();
+    setIsLoading(true);
+    setErrorMsg('');
 
-      if (response.ok) {
-        // 성공 시 토큰 저장 + 메인 페이지로 이동
-        // localStorage.setItem('accessToken', data.accessToken);
-        navigate('/home');
-      } else {
-        alert('우회 로그인 실패: ' + data.message);
-      }
-    } catch (error) {
-      console.error('Test Login error:', error);
-    }
-    */
+    // ─────────────────────────────────────────────────────────────────────────
+    // TODO: 백엔드 연동 시 아래 주석 블록 해제 후, 하단 임시 코드 제거
+    // ─────────────────────────────────────────────────────────────────────────
+    // try {
+    //   // POST /api/v1/auth/test/login
+    //   // 로컬 환경(Spring Profile: local)에서만 동작
+    //   const loginData = await testLogin(Number(userId));
+    //
+    //   // 응답의 onboarding 상태에 따라 라우팅 분기
+    //   const { isSurveyCompleted, isRuleSetCompleted } = loginData.onboarding;
+    //   if (isSurveyCompleted && isRuleSetCompleted) {
+    //     navigate('/home');       // 온보딩 완료 → 대시보드
+    //   } else {
+    //     navigate('/onboarding'); // 온보딩 미완료 → 온보딩 페이지
+    //   }
+    // } catch (error) {
+    //   setErrorMsg(error.message || '로그인에 실패했습니다. 사용자 ID를 확인해주세요.');
+    // } finally {
+    //   setIsLoading(false);
+    // }
 
-    // 임시 -> 테스트를 위해 온보딩으로 바로 이동
-    navigate('/onboarding');
+    // 임시: 백엔드 연동 전 온보딩으로 직행
+    setTimeout(() => {
+      navigate('/onboarding');
+      setIsLoading(false);
+    }, 300);
   };
 
   return (
@@ -82,10 +83,15 @@ export default function LoginPage() {
               id="userId"
               value={userId}
               onChange={(e) => setUserId(e.target.value)}
-              placeholder="테스트 ID"
+              placeholder="테스트 User ID (숫자)"
             />
-            <button type="submit" className="test-login-btn">접속</button>
+            {/* TODO: 연동 후 isLoading에 따라 비활성화 */}
+            <button type="submit" className="test-login-btn" disabled={isLoading}>
+              {isLoading ? '접속 중...' : '접속'}
+            </button>
           </div>
+          {/* TODO: 연동 후 에러 메시지 표시 */}
+          {errorMsg && <p style={{ color: '#ef4444', fontSize: '0.9rem', marginTop: '0.5rem' }}>{errorMsg}</p>}
         </form>
       </div>
     </div>
