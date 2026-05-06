@@ -253,7 +253,6 @@
 
 .save-btn:hover {
   background: #9add36;
-  transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(132, 204, 22, 0.3);
 }
 
