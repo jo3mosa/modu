@@ -44,6 +44,13 @@ kakao:
 encryption:
   kis-key: ${KIS_ENCRYPTION_KEY}
 
+# Redis 설정
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
 # ================================================================
 # 로컬 개발 환경 (spring.profiles.active: local)
 # ================================================================
