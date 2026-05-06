@@ -1,6 +1,6 @@
 from uuid import uuid4
 
-from app.state.schemas import MarketTriggerEvent, UserTriggerEvent
+from app.triggers.schemas import MarketTriggerEvent, UserTriggerEvent
 
 
 # ==============================
