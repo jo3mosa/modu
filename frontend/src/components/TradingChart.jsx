@@ -1,11 +1,19 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createChart } from 'lightweight-charts';
 // import { getStockCandles } from '../api/market';
 import './TradingChart.css';
 
-// 더미 캔들스틱 데이터 생성 함수
+const TIMEFRAME_OPTIONS = [
+  { label: '1분',  value: '1m'  },
+  { label: '5분',  value: '5m'  },
+  { label: '15분', value: '15m' },
+  { label: '60분', value: '60m' },
+  { label: '일봉', value: '1D'  },
+];
+
+// ── MOCK 더미 데이터 (백엔드 연동 후 삭제 예정) ───────────────────────────────
 const generateDummyData = () => {
-  let initialDate = new Date();
+  const initialDate = new Date();
   initialDate.setUTCDate(initialDate.getUTCDate() - 100);
   const data = [];
   let currentPrice = 75000;
@@ -15,72 +23,32 @@ const generateDummyData = () => {
     const high = open + Math.random() * 2000;
     const low = open - Math.random() * 2000;
     const close = low + Math.random() * (high - low);
-
-    // time: string 'YYYY-MM-DD'
     const d = new Date(initialDate.getTime() + i * 86400000);
     const timeStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-
-    data.push({
-      time: timeStr,
-      open, high, low, close
-    });
+    data.push({ time: timeStr, open, high, low, close });
     currentPrice = close;
   }
   return data;
 };
 
-// 현재 차트 -> 랜덤 더미 데이터
-const generateVolumeData = (candleData) => {
-  return candleData.map(d => ({
+const generateVolumeData = (candleData) =>
+  candleData.map(d => ({
     time: d.time,
     value: Math.random() * 500000 + 100000,
-    color: d.close >= d.open ? 'rgba(239, 68, 68, 0.4)' : 'rgba(59, 130, 246, 0.4)' // 상승 -> 빨강, 하락 -> 파랑
+    color: d.close >= d.open ? 'rgba(239, 68, 68, 0.4)' : 'rgba(59, 130, 246, 0.4)',
   }));
-};
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function TradingChart({ stockCode }) {
   const chartContainerRef = useRef(null);
+  const candlestickSeriesRef = useRef(null);
+  const volumeSeriesRef = useRef(null);
+  const [timeframe, setTimeframe] = useState('1D');
 
-  // ── TODO: 백엔드 연동 시 아래 두 블록 해제 ──────────────────────────────
-
-  // 1. 과거 캔들 데이터 (REST) — stockCode는 종목 검색으로 선택된 값으로 교체
-  // useEffect(() => {
-  //   async function fetchCandles() {
-  //     try {
-  //       const candles = await getStockCandles(stockCode, timeframe);
-  //       // candles: [{ time, open, high, low, close, volume }, ...]
-  //       candlestickSeries.current.setData(candles);
-  //       volumeSeries.current.setData(
-  //         candles.map(d => ({
-  //           time: d.time,
-  //           value: d.volume,
-  //           color: d.close >= d.open ? 'rgba(239,68,68,0.4)' : 'rgba(59,130,246,0.4)',
-  //         }))
-  //       );
-  //     } catch (error) {
-  //       console.error('캔들 데이터 로드 실패:', error);
-  //     }
-  //   }
-  //   fetchCandles();
-  // }, [stockCode, timeframe]);
-
-  // 2. 실시간 현재가 (WebSocket) — GET /ws/stocks/{stockCode}/price
-  // useEffect(() => {
-  //   const ws = new WebSocket(`/ws/stocks/${stockCode}/price`);
-  //   ws.onmessage = (event) => {
-  //     const tick = JSON.parse(event.data);
-  //     // tick: { time, open, high, low, close }
-  //     candlestickSeries.current.update(tick);
-  //   };
-  //   return () => ws.close();
-  // }, [stockCode]);
-
-  // ─────────────────────────────────────────────────────────────────────────
-
+  // 차트 생성 (마운트 1회)
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
-    // 차트 생성
     const chart = createChart(chartContainerRef.current, {
       layout: {
         background: { type: 'solid', color: 'transparent' },
@@ -98,8 +66,7 @@ export default function TradingChart({ stockCode }) {
       },
     });
 
-    // 캔들 색상
-    const candlestickSeries = chart.addCandlestickSeries({
+    candlestickSeriesRef.current = chart.addCandlestickSeries({
       upColor: '#ef4444',
       downColor: '#3b82f6',
       borderVisible: false,
@@ -107,55 +74,130 @@ export default function TradingChart({ stockCode }) {
       wickDownColor: '#3b82f6',
     });
 
-    const data = generateDummyData();
-    candlestickSeries.setData(data);
-
-    // AI + 수동 매매 마커
-    candlestickSeries.setMarkers([
-      { time: data[data.length - 25].time, position: 'belowBar', color: '#ef4444', shape: 'arrowUp', text: '매수' }, // 수동 매수
-      { time: data[data.length - 15].time, position: 'aboveBar', color: '#3b82f6', shape: 'arrowDown', text: '매도' }, // 수동 매도
-      { time: data[data.length - 5].time, position: 'belowBar', color: '#ef4444', shape: 'arrowUp', text: 'AI 매수' }, // AI 매수
-    ]);
-
-    // 거래량
-    const volumeSeries = chart.addHistogramSeries({
+    volumeSeriesRef.current = chart.addHistogramSeries({
       color: '#26a69a',
       priceFormat: { type: 'volume' },
       priceScaleId: '',
     });
 
-    // 거래량 차트 높이 제한
     chart.priceScale('').applyOptions({
-      scaleMargins: {
-        top: 0.8,
-        bottom: 0,
-      },
+      scaleMargins: { top: 0.8, bottom: 0 },
     });
 
-    volumeSeries.setData(generateVolumeData(data));
+    // ── MOCK 데이터 세팅 (연동 시 아래 블록 삭제) ──────────────────────────
+    const data = generateDummyData();
+    candlestickSeriesRef.current.setData(data);
+    
+    // UI 표시용 가짜 AI 매매 내역 마커
+    candlestickSeriesRef.current.setMarkers([
+      { time: data[data.length - 80].time, position: 'belowBar', color: '#ef4444', shape: 'arrowUp',   text: 'AI 매수' },
+      { time: data[data.length - 60].time, position: 'aboveBar', color: '#3b82f6', shape: 'arrowDown', text: 'AI 매도' },
+      { time: data[data.length - 45].time, position: 'belowBar', color: '#ef4444', shape: 'arrowUp',   text: 'AI 매수' },
+      { time: data[data.length - 25].time, position: 'belowBar', color: '#ef4444', shape: 'arrowUp',   text: '사용자 매수' },
+      { time: data[data.length - 15].time, position: 'aboveBar', color: '#3b82f6', shape: 'arrowDown', text: 'AI 매도' },
+      { time: data[data.length - 5].time,  position: 'belowBar', color: '#ef4444', shape: 'arrowUp',   text: 'AI 매수' },
+    ]);
+    volumeSeriesRef.current.setData(generateVolumeData(data));
+    // ─────────────────────────────────────────────────────────────────────
 
     const handleResize = () => {
-      chart.applyOptions({ width: chartContainerRef.current.clientWidth, height: chartContainerRef.current.clientHeight });
+      chart.applyOptions({
+        width: chartContainerRef.current.clientWidth,
+        height: chartContainerRef.current.clientHeight,
+      });
     };
-
     window.addEventListener('resize', handleResize);
     setTimeout(handleResize, 100);
 
     return () => {
       window.removeEventListener('resize', handleResize);
       chart.remove();
+      candlestickSeriesRef.current = null;
+      volumeSeriesRef.current = null;
     };
   }, []);
+
+  // ── 연동 시 아래 블록 해제 (과거 캔들 데이터 REST) ────────────────────────
+  // useEffect(() => {
+  //   if (!stockCode || !candlestickSeriesRef.current) return;
+  //   async function fetchCandles() {
+  //     try {
+  //       const candles = await getStockCandles(stockCode, timeframe);
+  //       // candles: [{ time, open, high, low, close, volume }, ...]
+  //       candlestickSeriesRef.current.setData(candles);
+  //       volumeSeriesRef.current.setData(
+  //         candles.map(d => ({
+  //           time: d.time,
+  //           value: d.volume,
+  //           color: d.close >= d.open ? 'rgba(239,68,68,0.4)' : 'rgba(59,130,246,0.4)',
+  //         }))
+  //       );
+  //     } catch (error) {
+  //       console.error('캔들 데이터 로드 실패:', error);
+  //     }
+  //   }
+  //   fetchCandles();
+  // }, [stockCode, timeframe]);
+
+  // ── 연동 시 아래 블록 해제 (AI 매매 내역 차트 마커 시각화 - TASK 4) ──────
+  // import { getAiDecisions } from '../api/aiAgent'; // 파일 상단 주석 해제 필요
+  // useEffect(() => {
+  //   if (!stockCode || !candlestickSeriesRef.current) return;
+  //   async function fetchAiDecisions() {
+  //     try {
+  //       const decisions = await getAiDecisions();
+  //       // 해당 종목의 매매 내역만 필터링 (주문 내역과 캔들 데이터의 시간 형식 일치 필수)
+  //       const stockDecisions = decisions.filter(d => d.stockCode === stockCode && d.decisionType !== 'HOLD');
+  //       
+  //       const markers = stockDecisions.map(d => {
+  //         // 시간 문자열은 차트의 time 필드와 동일한 포맷이어야 함 (예: YYYY-MM-DD)
+  //         const timeFormatted = d.decidedAt.split('T')[0]; 
+  //         const isBuy = d.decisionType === 'BUY';
+  //         
+  //         return {
+  //           time: timeFormatted,
+  //           position: isBuy ? 'belowBar' : 'aboveBar',
+  //           color: isBuy ? '#ef4444' : '#3b82f6',
+  //           shape: isBuy ? 'arrowUp' : 'arrowDown',
+  //           text: `AI ${isBuy ? '매수' : '매도'}`
+  //         };
+  //       });
+  //       
+  //       // 주의: 캔들 데이터(setData)가 완료된 이후에 호출되어야 함
+  //       candlestickSeriesRef.current.setMarkers(markers);
+  //     } catch (error) {
+  //       console.error('AI 판단 데이터 로드 실패:', error);
+  //     }
+  //   }
+  //   fetchAiDecisions();
+  // }, [stockCode]);
+
+  // ── 연동 시 아래 블록 해제 (실시간 현재가 WebSocket) ──────────────────────
+  // useEffect(() => {
+  //   if (!stockCode || !candlestickSeriesRef.current) return;
+  //   const ws = new WebSocket(`/ws/stocks/${stockCode}/price`);
+  //   ws.onmessage = (event) => {
+  //     const tick = JSON.parse(event.data);
+  //     // tick: { time, open, high, low, close }
+  //     candlestickSeriesRef.current.update(tick);
+  //   };
+  //   return () => ws.close();
+  // }, [stockCode]);
 
   return (
     <div className="chart-wrapper">
       <div className="chart-toolbar">
         <div className="toolbar-left">
-          <button className="tool-btn">1분</button>
-          <button className="tool-btn">5분</button>
-          <button className="tool-btn">15분</button>
-          <button className="tool-btn">60분</button>
-          <button className="tool-btn active" style={{ marginRight: '1rem' }}>일봉</button>
+          {TIMEFRAME_OPTIONS.map((opt, idx) => (
+            <button
+              key={opt.value}
+              className={`tool-btn ${timeframe === opt.value ? 'active' : ''}`}
+              onClick={() => setTimeframe(opt.value)}
+              style={idx === TIMEFRAME_OPTIONS.length - 1 ? { marginRight: '1rem' } : {}}
+            >
+              {opt.label}
+            </button>
+          ))}
 
           <span style={{ color: 'rgba(255,255,255,0.2)', marginRight: '1rem' }}>|</span>
 
