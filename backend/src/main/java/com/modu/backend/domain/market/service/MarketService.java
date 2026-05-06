@@ -1,6 +1,9 @@
 package com.modu.backend.domain.market.service;
 
+import com.modu.backend.domain.market.client.KisCandleClient;
 import com.modu.backend.domain.market.client.KisPriceClient;
+import com.modu.backend.domain.market.dto.CandleListResponse;
+import com.modu.backend.domain.market.dto.CandleResponse;
 import com.modu.backend.domain.market.dto.StockDetailResponse;
 import com.modu.backend.domain.market.dto.StockListResponse;
 import com.modu.backend.domain.market.dto.StockSummaryResponse;
@@ -10,6 +13,8 @@ import com.modu.backend.domain.market.repository.StockMasterRepository;
 import com.modu.backend.global.error.ApiException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.Cacheable;
+
+import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -30,6 +35,7 @@ public class MarketService {
     private final StockMasterRepository stockMasterRepository;
     private final KisPlatformTokenService kisPlatformTokenService;
     private final KisPriceClient kisPriceClient;
+    private final KisCandleClient kisCandleClient;
 
     /**
      * 종목 전체 조회 또는 키워드 검색
@@ -72,6 +78,22 @@ public class MarketService {
                 stock.getStockName(),
                 stock.getMarketType()
         );
+    }
+
+    /**
+     * 차트 캔들 데이터 조회
+     *
+     * period에 따라 KIS API를 자동 선택
+     * - D/W/M: 기간별시세 API (FHKST03010100)
+     * - 1/5/60: 당일분봉(FHKST03010200) 또는 일별분봉(FHKST03010230)
+     */
+    public CandleListResponse getCandleData(String stockCode, String period,
+                                             String startDate, String endDate) {
+        String accessToken = kisPlatformTokenService.getAccessToken();
+        List<CandleResponse> candles = kisCandleClient.getCandles(
+                accessToken, stockCode, period, startDate, endDate);
+
+        return new CandleListResponse(stockCode, period, candles);
     }
 
     private boolean isKeywordBlank(String keyword) {
