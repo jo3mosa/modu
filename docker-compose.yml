@@ -41,10 +41,15 @@ services:
       KIS_API_URL: ${KIS_API_URL}
       KIS_APP_KEY: ${KIS_APP_KEY}
       KIS_APP_SECRET: ${KIS_APP_SECRET}
+      KIS_ENCRYPTION_KEY: ${KIS_ENCRYPTION_KEY}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
       # KIS_CANO: ${KIS_CANO:-}
       # KIS_ACNT_PRDT_CD: ${KIS_ACNT_PRDT_CD:-01}
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - modu-network
@@ -69,6 +74,19 @@ services:
       timeout: 5s
       retries: 5
 
+  # Redis 캐시 (종목 시세 데이터 TTL 캐싱용)
+  redis:
+    image: redis:7-alpine
+    container_name: modu-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    networks:
+      - modu-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   postgres_data:
