@@ -7,6 +7,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Optional;
+
 /**
  * 종목 마스터 레포지토리
  *
@@ -14,6 +16,9 @@ import org.springframework.data.repository.query.Param;
  * - 검색: 종목명 또는 종목코드 부분 일치 (대소문자 무시)
  */
 public interface StockMasterRepository extends JpaRepository<StockMaster, Long> {
+
+    /** 종목코드로 단건 조회 (상세 조회 시 종목명/시장구분 조회용) */
+    Optional<StockMaster> findByStockCode(String stockCode);
 
     /** 활성 종목 전체 조회 (페이징) */
     Page<StockMaster> findByIsActiveTrue(Pageable pageable);
