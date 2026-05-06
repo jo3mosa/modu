@@ -10,14 +10,14 @@ tqdm.pandas()
 
 class FinancialSentimentAnalyzer:
     def __init__(self):
-        print("🤖 KR-FinBERT-SC 모델 로딩 중...")
+        print("[LOAD] KR-FinBERT-SC 모델 로딩 중")
         model_name = "snunlp/KR-FinBERT-SC"
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
         self.model.eval()
-        print(f"✅ 모델 로딩 완료! [사용 장치: {self.device}]")
+        print(f"[LOAD] 모델 로딩 완료 [사용 장치: {self.device}]")
 
     def clean_text(self, text: str) -> str:
         """기사 본문의 불필요한 노이즈(이메일, 기자 이름, 캡션, 무단전재 등) 제거"""
@@ -96,7 +96,7 @@ class FinancialSentimentAnalyzer:
         return (avg_neg, avg_neu, avg_pos)
 
     def _probs_to_score(self, neg: float, neu: float, pos: float) -> float:
-        """가희 님의 훌륭한 확신도(Confidence) 공식을 유지하되, -100 ~ 100 스케일로 직관성 부여"""
+        """확신도(Confidence) 공식을 유지하되, -100 ~ 100 스케일로 직관성 부여"""
         raw_score = pos - neg
         confidence = 1.0 - neu
         
@@ -105,7 +105,7 @@ class FinancialSentimentAnalyzer:
         return round(float(score), 2)
 
     def analyze(self, title: str = None, content: str = None) -> dict:
-        """제목을 본문 앞에 prepend하여 lead chunk가 헤드라인 결론을 반영하도록 한다."""
+        """제목을 본문 앞에 prepend하여 lead chunk가 헤드라인 결론 반영"""
         cleaned_title = self.clean_text(title)
         cleaned_content = self.clean_text(content)
 
@@ -142,15 +142,15 @@ def preview_news_sentiment():
         df = pd.read_sql(query, conn)
         conn.close()
     except Exception as e:
-        print(f"❌ DB 연결 에러: {e}")
+        print(f"[ERROR] DB 연결 에러: {e}")
         return
 
     if "content" not in df.columns:
-        print("⚠️ 'content' 컬럼이 없어 분석을 중단합니다.")
+        print(f"[WARNING] 'content' 컬럼이 없어 분석을 중단합니다.")
         return
 
     analyzer = FinancialSentimentAnalyzer()
-    print("\n🧠 제목+본문(가중치 적용) 감성 분석 시작...")
+    print(f"[INFO] 제목+본문(가중치 적용) 감성 분석 시작")
 
     results = []
     for _, row in tqdm(df.iterrows(), total=len(df)):
@@ -163,8 +163,8 @@ def preview_news_sentiment():
     df = pd.concat([df.reset_index(drop=True), result_df], axis=1)
 
     df.to_csv(csv_output_path, index=False, encoding='utf-8-sig')
-    print(f"\n✅ 분석 완료! 결과가 '{csv_output_path}'에 저장되었습니다.")
-    print("\n📊 감성 지수 분포 (-100 ~ 100 스케일):")
+    print(f"\n[FINISH] 분석 완료! 결과가 '{csv_output_path}'에 저장되었습니다.")
+    print(f"[INFO] 감성 지수 분포 (-100 ~ 100 스케일):")
     print(df["sentiment_score"].describe())
 
 if __name__ == "__main__":
