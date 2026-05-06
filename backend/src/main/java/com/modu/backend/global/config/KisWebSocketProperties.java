@@ -8,6 +8,14 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 import org.springframework.validation.annotation.Validated;
 
+/**
+ * KIS WebSocket 연결 설정
+ *
+ * [설정 항목]
+ * - url: KIS 실시간 WebSocket 접속 URL
+ * - reconnectMaxAttempts: upstream 연결 종료 시 재연결 최대 횟수
+ * - reconnectDelayMs: 재연결 시도 간 대기 시간(ms)
+ */
 @Getter
 @Setter
 @Validated
@@ -24,4 +32,3 @@ public class KisWebSocketProperties {
     @Min(100)
     private long reconnectDelayMs = 1000;
 }
-

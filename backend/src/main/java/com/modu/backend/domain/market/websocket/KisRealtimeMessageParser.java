@@ -8,9 +8,23 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * KIS 실시간 WebSocket 메시지 파서
+ *
+ * [수신 포맷]
+ * - 시스템 메시지: JSON
+ * - 실시간 데이터: 0|H0STCNT0|1|필드^필드^...
+ *
+ * [변환 대상]
+ * - H0STCNT0: RealtimePriceResponse
+ * - H0STASP0: OrderbookResponse
+ */
 @Component
 public class KisRealtimeMessageParser {
 
+    /**
+     * delimiter 기반 실시간 데이터 파싱
+     */
     public Optional<KisRealtimeParsedMessage> parse(String message) {
         if (message == null || message.isBlank() || (!message.startsWith("0|") && !message.startsWith("1|"))) {
             return Optional.empty();
@@ -32,6 +46,9 @@ public class KisRealtimeMessageParser {
         return Optional.of(new KisRealtimeParsedMessage(new KisRealtimeStreamKey(type, stockCode), payload));
     }
 
+    /**
+     * H0STCNT0 체결가 필드 매핑
+     */
     private RealtimePriceResponse parsePrice(String[] f) {
         return new RealtimePriceResponse(
                 value(f, 0),
@@ -55,6 +72,9 @@ public class KisRealtimeMessageParser {
         );
     }
 
+    /**
+     * H0STASP0 호가 필드 매핑
+     */
     private OrderbookResponse parseOrderbook(String[] f) {
         List<OrderbookResponse.OrderbookLevel> asks = new ArrayList<>();
         List<OrderbookResponse.OrderbookLevel> bids = new ArrayList<>();
@@ -77,6 +97,9 @@ public class KisRealtimeMessageParser {
         );
     }
 
+    /**
+     * 문자열 필드 안전 조회
+     */
     private String value(String[] fields, int index) {
         if (index >= fields.length) {
             return null;
@@ -84,6 +107,9 @@ public class KisRealtimeMessageParser {
         return fields[index].isBlank() ? null : fields[index];
     }
 
+    /**
+     * Long 필드 안전 변환
+     */
     private Long longValue(String[] fields, int index) {
         String value = value(fields, index);
         if (value == null) {
@@ -96,6 +122,9 @@ public class KisRealtimeMessageParser {
         }
     }
 
+    /**
+     * Double 필드 안전 변환
+     */
     private Double doubleValue(String[] fields, int index) {
         String value = value(fields, index);
         if (value == null) {
@@ -108,10 +137,12 @@ public class KisRealtimeMessageParser {
         }
     }
 
+    /**
+     * 파싱 결과와 fan-out 대상 키
+     */
     public record KisRealtimeParsedMessage(
             KisRealtimeStreamKey key,
             Object payload
     ) {
     }
 }
-

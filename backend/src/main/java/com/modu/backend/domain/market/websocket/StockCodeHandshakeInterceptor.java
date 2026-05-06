@@ -9,6 +9,16 @@ import java.net.URI;
 import java.util.Map;
 import java.util.regex.Pattern;
 
+/**
+ * 실시간 시세 WebSocket handshake 인터셉터
+ *
+ * [검증]
+ * - path 내 stockCode 6자리 숫자 형식
+ *
+ * [세션 속성]
+ * - streamType: 체결가/호가 구분
+ * - stockCode: KIS tr_key 구독 대상 종목코드
+ */
 public class StockCodeHandshakeInterceptor implements HandshakeInterceptor {
 
     private static final Pattern STOCK_CODE_PATTERN = Pattern.compile("\\d{6}");
@@ -19,6 +29,9 @@ public class StockCodeHandshakeInterceptor implements HandshakeInterceptor {
         this.streamType = streamType;
     }
 
+    /**
+     * handshake 전 종목코드 검증 및 세션 속성 저장
+     */
     @Override
     public boolean beforeHandshake(
             ServerHttpRequest request,
@@ -45,6 +58,9 @@ public class StockCodeHandshakeInterceptor implements HandshakeInterceptor {
     ) {
     }
 
+    /**
+     * path 내 stockCode 추출
+     */
     private String extractStockCode(URI uri) {
         String[] parts = uri.getPath().split("/");
         if (parts.length < 4) {
@@ -53,4 +69,3 @@ public class StockCodeHandshakeInterceptor implements HandshakeInterceptor {
         return parts[3];
     }
 }
-
