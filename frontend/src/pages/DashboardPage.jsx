@@ -5,6 +5,8 @@ import HighchartsReactPkg from 'highcharts-react-official';
 const HighchartsReact = HighchartsReactPkg.default || HighchartsReactPkg;
 import highcharts3d from 'highcharts/highcharts-3d';
 import TutorialOverlay from '../components/TutorialOverlay';
+// TODO: 백엔드 연동 시 아래 주석 해제
+// import { getAccountSummary, getPortfolio } from '../api/account';
 import './DashboardPage.css';
 
 if (typeof Highcharts === 'object') {
@@ -15,6 +17,7 @@ if (typeof Highcharts === 'object') {
   }
 }
 
+// ── MOCK 데이터 (백엔드 연동 후 삭제 예정) ──────────────────────────────────
 const MOCK_SUMMARY = {
   totalAssets: 600000,
   principal: 570000,
@@ -28,6 +31,7 @@ const MOCK_HOLDINGS = [
   { name: '한화에어로스페이스', code: '012450', quantity: 1, avgPrice: 60000, currentPrice: 85300, pnl: 25300, returnRate: 42.16 },
   { name: '카카오', code: '035720', quantity: 2, avgPrice: 50000, currentPrice: 45000, pnl: -10000, returnRate: -10.00 },
 ];
+// ──────────────────────────────────────────────────────────────────────────────
 
 const MOCK_AI_STATUS = {
   isActive: true,
@@ -47,6 +51,13 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const [showTutorial, setShowTutorial] = useState(false);
 
+  // ── API 연동용 상태 (MOCK 제거 시 아래 주석 해제, useState(MOCK_...) 부분 교체) ──
+  // const [summary, setSummary] = useState(null);
+  // const [holdings, setHoldings] = useState([]);
+  // const [isLoading, setIsLoading] = useState(true);
+  // const [isKisConnected, setIsKisConnected] = useState(true); // false면 안내 배너 표시
+
+  // ── 현재: MOCK 데이터 사용 중 ─────────────────────────────────────────────
   const [summary] = useState(MOCK_SUMMARY);
   const [holdings] = useState(MOCK_HOLDINGS);
   const [aiStatus, setAiStatus] = useState(MOCK_AI_STATUS);
@@ -54,6 +65,32 @@ export default function DashboardPage() {
 
   useEffect(() => {
     setShowTutorial(true);
+
+    // ── TODO: 백엔드 연동 시 아래 주석 블록 해제 ────────────────────────────
+    // async function fetchDashboardData() {
+    //   setIsLoading(true);
+    //   try {
+    //     // GET /api/v1/accounts/me/summary
+    //     const summaryData = await getAccountSummary();
+    //     setSummary(summaryData);
+    //
+    //     // GET /api/v1/accounts/me/holdings
+    //     const portfolioData = await getPortfolio();
+    //     // 백엔드 PortfolioResponse 구조에 맞게 파싱 (holdings 배열 확인 필요)
+    //     setHoldings(portfolioData.holdings ?? portfolioData);
+    //   } catch (error) {
+    //     if (error.message.includes('KIS_NOT_CONNECTED')) {
+    //       // KIS 미연동 상태 → 마이페이지로 안내
+    //       setIsKisConnected(false);
+    //     } else {
+    //       console.error('대시보드 데이터 로드 실패:', error);
+    //     }
+    //   } finally {
+    //     setIsLoading(false);
+    //   }
+    // }
+    // fetchDashboardData();
+    // ────────────────────────────────────────────────────────────────────────
   }, []);
 
   const handleCloseTutorial = () => setShowTutorial(false);
