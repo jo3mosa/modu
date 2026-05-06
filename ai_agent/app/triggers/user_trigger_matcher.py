@@ -1,0 +1,154 @@
+from uuid import uuid4
+
+from app.state.schemas import MarketTriggerEvent, UserTriggerEvent
+
+
+# ==============================
+# 1. Mock repository
+# ==============================
+# 초기 구현에서는 DB/Redis를 붙이지 않고,
+# stock_code 기준으로 해당 종목을 보유한 user_id 목록을 반환한다.
+#
+# 이후 실제 구현에서는 아래 mock dict 대신
+# PortfolioRepository / Redis cache / DB query 등으로 교체
+_MOCK_HOLDERS_BY_STOCK_CODE: dict[str, list[str]] = {
+    "005930": ["user_1", "user_2"],  # 삼성전자 보유 사용자
+    "000660": ["user_3"],            # SK하이닉스 보유 사용자
+}
+
+
+_MOCK_USER_CONTEXT_BY_USER_ID: dict[str, dict] = {
+    "user_1": {
+        "investment_style": "balanced",
+        "risk_level": "medium",
+        "strategy_note": "대형주 중심으로 안정적인 수익을 선호",
+    },
+    "user_2": {
+        "investment_style": "aggressive",
+        "risk_level": "high",
+        "strategy_note": "모멘텀 강한 종목에 적극 대응",
+    },
+    "user_3": {
+        "investment_style": "conservative",
+        "risk_level": "low",
+        "strategy_note": "손실 회피 성향이 강함",
+    },
+}
+
+
+_MOCK_PORTFOLIO_SNAPSHOT_BY_USER_ID: dict[str, dict] = {
+    "user_1": {
+        "cash": 1_000_000,
+        "positions": [
+            {
+                "stock_code": "005930",
+                "stock_name": "삼성전자",
+                "quantity": 10,
+                "average_price": 75000,
+            }
+        ],
+    },
+    "user_2": {
+        "cash": 500_000,
+        "positions": [
+            {
+                "stock_code": "005930",
+                "stock_name": "삼성전자",
+                "quantity": 5,
+                "average_price": 72000,
+            }
+        ],
+    },
+    "user_3": {
+        "cash": 2_000_000,
+        "positions": [
+            {
+                "stock_code": "000660",
+                "stock_name": "SK하이닉스",
+                "quantity": 3,
+                "average_price": 180000,
+            }
+        ],
+    },
+}
+
+
+def get_holding_user_ids(stock_code: str) -> list[str]:
+    """
+    특정 종목을 보유한 사용자 목록을 조회한다.
+
+    현재는 mock 데이터 기반으로 동작한다.
+    추후 DB/Redis 연동 시 이 함수 내부만 repository 호출로 교체하면 된다.
+    """
+    return _MOCK_HOLDERS_BY_STOCK_CODE.get(stock_code, [])
+
+
+def get_user_context(user_id: str) -> dict:
+    """
+    사용자별 투자 성향, 리스크 설정, 자연어 전략 등을 조회한다.
+
+    현재는 mock 데이터 기반이다.
+    """
+    return _MOCK_USER_CONTEXT_BY_USER_ID.get(user_id, {})
+
+
+def get_portfolio_snapshot(user_id: str) -> dict:
+    """
+    사용자별 포트폴리오 스냅샷을 조회한다.
+
+    Reasoning Layer는 이 정보를 바탕으로
+    실제 보유 수량, 현금, 평균 단가 등을 고려해 판단한다.
+    """
+    return _MOCK_PORTFOLIO_SNAPSHOT_BY_USER_ID.get(user_id, {})
+
+
+def match_market_event_to_users(
+    event: MarketTriggerEvent,
+) -> list[UserTriggerEvent]:
+    """
+    MarketTriggerEvent를 사용자별 UserTriggerEvent로 변환한다.
+
+    처리 흐름:
+    1. MarketTriggerEvent에서 stock_code를 읽는다.
+    2. 해당 종목을 보유한 사용자 목록을 조회한다.
+    3. 사용자별 portfolio_snapshot / user_context를 조회한다.
+    4. 시장 이벤트 정보와 사용자 정보를 합쳐 UserTriggerEvent를 생성한다.
+    5. 매칭 대상 사용자가 없으면 빈 list를 반환한다.
+
+    주의:
+    - 이 함수는 Reasoning Layer를 직접 실행하지 않는다.
+    - Reasoning Layer가 실행할 수 있는 사용자 단위 이벤트만 생성한다.
+    """
+
+    holding_user_ids = get_holding_user_ids(event.stock_code)
+
+    if not holding_user_ids:
+        return []
+
+    user_trigger_events: list[UserTriggerEvent] = []
+
+    for user_id in holding_user_ids:
+        portfolio_snapshot = get_portfolio_snapshot(user_id)
+        user_context = get_user_context(user_id)
+
+        # TODO: 동일 user_id / stock_code / source_event_id 중복 방지
+        # 추후 Redis cooldown 또는 event deduplication 저장소를 붙여서
+        # 같은 시장 이벤트가 동일 사용자에게 반복 실행되지 않도록 처리한다.
+
+        user_trigger_event = UserTriggerEvent(
+            event_id=f"user_trigger_{uuid4()}",
+            source_event_id=event.event_id,
+            trigger_type=event.trigger_type,
+            trigger_reason=event.trigger_reason,
+            user_id=user_id,
+            stock_code=event.stock_code,
+            market_snapshot=event.market_snapshot,
+            analysis_snapshot=event.analysis_snapshot,
+            candidate_assets=event.candidate_assets,
+            portfolio_snapshot=portfolio_snapshot,
+            user_context=user_context,
+        )
+
+        user_trigger_events.append(user_trigger_event)
+
+    return user_trigger_events
