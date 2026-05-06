@@ -25,8 +25,11 @@ public class KisPlatformTokenService {
 
     /**
      * 플랫폼 KIS 액세스 토큰 반환 (캐시 우선, 만료 시 재발급)
+     *
+     * sync = true: TTL 만료 시 동시 다중 요청이 들어와도 단 한 번만 issueAccessToken() 호출
+     * (cache stampede 방지)
      */
-    @Cacheable(value = "kis:platform:token", key = "'global'")
+    @Cacheable(value = "kis:platform:token", key = "'global'", sync = true)
     public String getAccessToken() {
         return kisTokenClient.issueAccessToken(
                 kisApiProperties.getAppKey(),
