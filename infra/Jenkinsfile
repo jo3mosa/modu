@@ -52,12 +52,12 @@ pipeline {
                     env.FAILED_STAGE = "2. 백엔드 단위 테스트"
                 }
                 // Gradle 테스트 실행 — 실패 시 파이프라인 중단
-                sh './gradlew test --no-daemon -p backend'
+                sh 'cd backend && ./gradlew test --no-daemon'
             }
             post {
                 always {
-                    // 테스트 결과 리포트 Jenkins UI에 발행
-                    junit 'backend/build/test-results/test/*.xml'
+                    // 테스트 결과 리포트 Jenkins UI에 발행 (결과 파일 없어도 파이프라인 중단 방지)
+                    junit allowEmptyResults: true, testResults: 'backend/build/test-results/test/*.xml'
                 }
                 failure {
                     script {
@@ -182,25 +182,39 @@ ${log}
         // 파이프라인 성공 시 Mattermost로 성공 알림 전송
         success {
             script {
-                // 기본 메시지 (배포 대상 외 브랜치일 경우)
-                def successMsg = "✅ 빌드/검증 성공 (배포 미대상 브랜치)"
-                // develop 브랜치 성공 메시지
-                if (env.BRANCH_NAME == 'develop') successMsg = "🚀 **SSAFY K3s** 배포 성공!"
-                // main 브랜치 성공 메시지
-                if (env.BRANCH_NAME == 'main')    successMsg = "🌟 **AWS EKS** 운영 환경 배포 성공!"
+                def author = sh(script: 'git log -1 --pretty=format:"%an"', returnStdout: true).trim()
 
-                // 성공 시 실패 추적 변수 초기화
+                def stageFlow = ""
+                def resultMsg = ""
+                if (env.BRANCH_NAME == 'develop') {
+                    stageFlow = "✅ 백엔드 테스트 → ✅ 이미지 빌드 → 🚀 SSAFY K3s 배포"
+                    resultMsg = "🚀 **SSAFY K3s** 배포 성공!"
+                } else if (env.BRANCH_NAME == 'main') {
+                    stageFlow = "✅ 백엔드 테스트 → ✅ 이미지 빌드 → 🌟 AWS EKS 배포"
+                    resultMsg = "🌟 **AWS EKS** 운영 환경 배포 성공!"
+                } else {
+                    stageFlow = "✅ 백엔드 테스트"
+                    resultMsg = "✅ 빌드/검증 성공 (배포 미대상 브랜치)"
+                }
+
                 env.FAILED_STAGE = ""
-                sendMattermostNotification("SUCCESS", "#00FF00", successMsg)
+                sendMattermostNotification("SUCCESS", "#00FF00", """${resultMsg}
+
+**진행 단계:** ${stageFlow}
+**작업자:** ${author}
+**브랜치:** ${env.BRANCH_NAME}""")
             }
         }
 
         // 파이프라인 실패 시 실패 지점과 상세 원인을 포함한 알림 전송
         failure {
             script {
+                def author = sh(script: 'git log -1 --pretty=format:"%an"', returnStdout: true).trim()
                 sendMattermostNotification("FAILURE", "#FF0000", """🚨 **공정 실패 리포트**
 
 **실패 지점:** `${env.FAILED_STAGE}`
+**작업자:** ${author}
+**브랜치:** ${env.BRANCH_NAME}
 
 **상세 원인:**
 ${env.ERROR_DETAILS}""")
