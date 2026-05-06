@@ -52,7 +52,7 @@ pipeline {
                     env.FAILED_STAGE = "2. 백엔드 단위 테스트"
                 }
                 // Gradle 테스트 실행 — 실패 시 파이프라인 중단
-                sh 'cd backend && ./gradlew test --no-daemon'
+                sh 'cd backend && chmod +x ./gradlew && ./gradlew test --no-daemon'
             }
             post {
                 always {
@@ -342,22 +342,22 @@ def sendMattermostNotification(String status, String color, String message) {
     def decodedJobName = java.net.URLDecoder.decode(env.JOB_NAME, "UTF-8")
 
     withCredentials([string(credentialsId: 'MATTERMOST_WEBHOOK_URL', variable: 'WEBHOOK_URL')]) {
-        // 상태에 따른 알림 제목 설정
         def title = (status == "SUCCESS") ? "✅ 파이프라인 공정 성공" : "🚨 파이프라인 공정 실패"
 
-        // Mattermost Attachment 형식의 JSON 페이로드 구성
-        def payload = """
-        {
-            "attachments": [
-                {
-                    "color": "${color}",
-                    "title": "${title}",
-                    "text": "### **Project:** ${decodedJobName} (#${env.BUILD_NUMBER})\\n${message}\\n\\n---\\n[🔍 젠킨스 상세 로그 확인](${env.BUILD_URL}console)"
-                }
-            ]
-        }
-        """
-        // curl로 Webhook에 POST 요청 전송
-        sh "curl -i -X POST -H 'Content-Type: application/json' -d '${payload}' ${WEBHOOK_URL}"
+        def fullText = "### **Project:** ${decodedJobName} (#${env.BUILD_NUMBER})\n${message}\n\n---\n[🔍 젠킨스 상세 로그 확인](${env.BUILD_URL}console)"
+
+        // JSON 삽입 전 특수문자 이스케이프 (백슬래시 → 개행 → 따옴표 순서 중요)
+        def escapedText = fullText
+            .replace('\\', '\\\\')
+            .replace('"',  '\\"')
+            .replace('\n', '\\n')
+            .replace('\r', '\\r')
+            .replace('\t', '\\t')
+
+        def escapedTitle = title.replace('"', '\\"')
+
+        // JSON을 파일로 저장 후 전송 (인라인 -d 방식은 개행/특수문자로 JSON이 깨짐)
+        writeFile file: 'mm_payload.json', text: """{"attachments":[{"color":"${color}","title":"${escapedTitle}","text":"${escapedText}"}]}"""
+        sh 'curl -s -X POST -H "Content-Type: application/json" --data @mm_payload.json "$WEBHOOK_URL"'
     }
 }
