@@ -17,6 +17,7 @@ services:
       - backend
     networks:
       - modu-network
+    restart: always
 
   # Spring Boot 백엔드
   backend:
@@ -57,6 +58,7 @@ services:
         condition: service_healthy
     networks:
       - modu-network
+    restart: on-failure
 
   # 백엔드 DB
   postgres:
@@ -74,9 +76,9 @@ services:
       - modu-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   # Redis 캐시 (종목 시세 데이터 TTL 캐싱용)
   redis:
@@ -88,9 +90,9 @@ services:
       - modu-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   # MongoDB
   mongo:
@@ -101,16 +103,17 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-localpassword}
       MONGO_INITDB_DATABASE: ${MONGO_DB:-modu_news}
     ports:
-      - "${MONGO_PORT:-27017}:27017"
+      - "27017:27017"
     volumes:
       - ./data/mongo:/data/db
     networks:
       - modu-network
     healthcheck:
+      # mongosh를 이용한 최신 버전 헬스체크 방식 유지
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 
 networks:
