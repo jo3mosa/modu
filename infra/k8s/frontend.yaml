@@ -34,6 +34,20 @@ spec:
           limits:
             memory: "256Mi"
             cpu: "200m"
+        # Nginx 서빙 준비 확인
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        # Nginx 정상 동작 확인
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 15
 
 ---
 
