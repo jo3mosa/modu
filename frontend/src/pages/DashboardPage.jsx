@@ -70,12 +70,14 @@ export default function DashboardPage() {
     // async function fetchDashboardData() {
     //   setIsLoading(true);
     //   try {
-    //     const [summaryData, portfolioData] = await Promise.all([
+    //     const [summaryData, portfolioData, decisionsData] = await Promise.all([
     //       getAccountSummary(),   // GET /api/v1/accounts/me/summary
     //       getPortfolio(),        // GET /api/v1/accounts/me/holdings
+    //       getAiDecisions()       // GET /api/v1/ai-agent/decisions
     //     ]);
     //     setSummary(summaryData);
     //     setHoldings(portfolioData.holdings ?? []);
+    //     setLogs(decisionsData.content ?? []); // 페이징 결과의 content 배열
     //   } catch (error) {
     //     if (error.message.includes('KIS_NOT_CONNECTED')) {
     //       setIsKisConnected(false);
@@ -315,7 +317,7 @@ export default function DashboardPage() {
             <h2>최근 매매 로그</h2>
             <div className="logs-list">
               {logs.map((log) => (
-                <div key={log.id} className="log-item">
+                <div key={log.id} className="log-item" onClick={() => navigate(`/report?logId=${log.id}`)}>
                   <div className={`log-icon ${log.type.toLowerCase()}`}>
                     {log.type === 'BUY' ? '매수' : log.type === 'SELL' ? '매도' : '경고'}
                   </div>

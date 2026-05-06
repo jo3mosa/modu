@@ -3,6 +3,8 @@ import Highcharts from 'highcharts';
 import HighchartsReactPkg from 'highcharts-react-official';
 import highcharts3d from 'highcharts/highcharts-3d';
 import { ChevronDown, ChevronUp } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
+// import { getAiDecisions, getAiDecisionByOrder } from '../api/aiAgent';
 import './ReportPage.css';
 
 const HighchartsReact = HighchartsReactPkg.default || HighchartsReactPkg;
@@ -50,7 +52,13 @@ const MOCK_TRADE_LOGS = [
     price: 74500,
     qty: 10,
     time: '2026-05-03 10:30',
-    reason: 'RSI 지표가 30 이하로 과매도 구간에 진입하였으며, 외국인 순매수세가 3일 연속 유입되는 것을 확인하여 분할 매수 1차 진입을 결정했습니다.'
+    reason: 'RSI 지표가 30 이하로 과매도 구간에 진입하였으며, 외국인 순매수세가 3일 연속 유입되는 것을 확인하여 분할 매수 1차 진입을 결정했습니다.',
+    confidence: 85,
+    marketDataSnapshot: [
+      { label: 'RSI 28 (과매도)', type: 'positive' },
+      { label: '외국인 순매수', type: 'positive' },
+      { label: 'MACD 골든크로스 임박', type: 'info' }
+    ]
   },
   {
     id: 2,
@@ -59,7 +67,13 @@ const MOCK_TRADE_LOGS = [
     price: 149000,
     qty: 5,
     time: '2026-05-02 09:15',
-    reason: '설정된 목표 수익률 5%를 초과 달성하였으며, 볼린저 밴드 상단 이탈 및 단기 저항선 도달을 확인하여 수익 실현을 위해 매도 처리했습니다.'
+    reason: '설정된 목표 수익률 5%를 초과 달성하였으며, 볼린저 밴드 상단 이탈 및 단기 저항선 도달을 확인하여 수익 실현을 위해 매도 처리했습니다.',
+    confidence: 92,
+    marketDataSnapshot: [
+      { label: '목표 수익 달성 (+6.2%)', type: 'positive' },
+      { label: '볼린저 밴드 상단 돌파', type: 'negative' },
+      { label: 'RSI 75 (과매수)', type: 'negative' }
+    ]
   },
   {
     id: 3,
@@ -68,7 +82,13 @@ const MOCK_TRADE_LOGS = [
     price: 45000,
     qty: 20,
     time: '2026-05-01 14:20',
-    reason: '설정된 최대 허용 손실률(-3%)에 도달하여, 추가적인 하락 리스크를 방어하기 위해 설정된 리스크 관리 룰셋에 따라 기계적 손절매를 집행했습니다.'
+    reason: '설정된 최대 허용 손실률(-3%)에 도달하여, 추가적인 하락 리스크를 방어하기 위해 설정된 리스크 관리 룰셋에 따라 기계적 손절매를 집행했습니다.',
+    confidence: 99,
+    marketDataSnapshot: [
+      { label: '최대 손실률 도달 (-3.1%)', type: 'negative' },
+      { label: '20일선 하향 돌파', type: 'negative' },
+      { label: '기관 대량 매도', type: 'negative' }
+    ]
   }
 ];
 
@@ -87,13 +107,48 @@ const MOCK_HABIT_SUMMARY = {
 };
 
 export default function ReportPage() {
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const initialLogId = searchParams.get('logId');
+
   const [period, setPeriod] = useState('1M');
   const [briefing] = useState(MOCK_MARKET_BRIEFING);
-  const [logs] = useState(MOCK_TRADE_LOGS);
-  const [expandedLogId, setExpandedLogId] = useState(null);
+  const [logs, setLogs] = useState(MOCK_TRADE_LOGS);
+  const [expandedLogId, setExpandedLogId] = useState(initialLogId ? parseInt(initialLogId, 10) : null);
+  const [detailedDecisions, setDetailedDecisions] = useState({});
 
-  const toggleLog = (id) => {
-    setExpandedLogId(prev => (prev === id ? null : id));
+  // ── TODO: 백엔드 연동 시 아래 주석 블록 해제 ( 전체 이력 조회) ──
+  // useEffect(() => {
+  //   async function fetchLogs() {
+  //     try {
+  //       const response = await getAiDecisions();
+  //       setLogs(response.content ?? []); // 응답 스펙에 맞게 변환 필요
+  //     } catch (error) {
+  //       console.error('AI 매매 이력을 불러오지 못했습니다.', error);
+  //     }
+  //   }
+  //   fetchLogs();
+  // }, []);
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  // 아코디언 토글 및 단건 상세 조회
+  const toggleLog = async (id) => {
+    if (expandedLogId === id) {
+      setExpandedLogId(null);
+      return;
+    }
+    setExpandedLogId(id);
+
+    // ── TODO: 백엔드 연동 시 아래 주석 블록 해제 (주문별 근거 조회) ──
+    // if (!detailedDecisions[id]) {
+    //   try {
+    //     const detail = await getAiDecisionByOrder(id);
+    //     setDetailedDecisions(prev => ({ ...prev, [id]: detail }));
+    //   } catch (error) {
+    //     console.error('상세 판단 근거를 불러오지 못했습니다.', error);
+    //   }
+    // }
+    // ─────────────────────────────────────────────────────────────────────────
   };
 
   // 1. 도넛 차트 -> 종목 비중
@@ -179,8 +234,8 @@ export default function ReportPage() {
         </div>
         <div className="period-filter">
           {PERIOD_OPTIONS.map(opt => (
-            <button 
-              key={opt.value} 
+            <button
+              key={opt.value}
               className={`period-btn ${period === opt.value ? 'active' : ''}`}
               onClick={() => setPeriod(opt.value)}
             >
@@ -239,7 +294,7 @@ export default function ReportPage() {
           <div className="habit-pnl">
             <span className="pnl-label">기간 내 실현 손익</span>
             <span className="pnl-value">
-              +{MOCK_HABIT_SUMMARY.pnl.toLocaleString()}원 
+              +{MOCK_HABIT_SUMMARY.pnl.toLocaleString()}원
               <span className="pnl-rate">(+{MOCK_HABIT_SUMMARY.pnlRate}%)</span>
             </span>
           </div>
@@ -271,7 +326,19 @@ export default function ReportPage() {
                 {isExpanded && (
                   <div className="log-reason-box">
                     <h4>AI 판단 근거</h4>
-                    <p>{log.reason}</p>
+                    <p className="reason-text">{log.reason}</p>
+
+                    {log.marketDataSnapshot && log.marketDataSnapshot.length > 0 && (
+                      <div className="market-snapshot">
+                        <div className="snapshot-tags">
+                          {log.marketDataSnapshot.map((tag, idx) => (
+                            <span key={idx} className={`snap-tag ${tag.type}`}>
+                              {tag.label}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
