@@ -50,19 +50,21 @@ pipeline {
             steps {
                 script {
                     env.FAILED_STAGE = "2. 백엔드 단위 테스트"
+                    try {
+                        // Gradle 테스트 실행 — 실패 시 파이프라인 중단
+                        sh 'cd backend && chmod +x ./gradlew && ./gradlew test --no-daemon'
+                    } catch (Exception e) {
+                        // stage post.failure에서 설정한 env 변수는 pipeline post로 전파되지 않으므로
+                        // steps 안에서 직접 설정
+                        env.ERROR_DETAILS = "❌ **단위 테스트 실패**\n테스트 결과를 확인하세요."
+                        throw e
+                    }
                 }
-                // Gradle 테스트 실행 — 실패 시 파이프라인 중단
-                sh 'cd backend && chmod +x ./gradlew && ./gradlew test --no-daemon'
             }
             post {
                 always {
                     // 테스트 결과 리포트 Jenkins UI에 발행 (결과 파일 없어도 파이프라인 중단 방지)
                     junit allowEmptyResults: true, testResults: 'backend/build/test-results/test/*.xml'
-                }
-                failure {
-                    script {
-                        env.ERROR_DETAILS = "❌ **단위 테스트 실패**\n테스트 결과를 확인하세요."
-                    }
                 }
             }
         }
