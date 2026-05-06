@@ -12,6 +12,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 
 import java.util.List;
 
@@ -124,8 +125,9 @@ class MarketServiceTest {
     @DisplayName("page 파라미터가 1부터 시작해도 0 기반으로 변환")
     void page_1부터_시작_변환_확인() {
         // given
-        when(stockMasterRepository.findByIsActiveTrue(eq(PageRequest.of(1, 10))))
-                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(1, 10), 25));
+        PageRequest expectedPageable = PageRequest.of(1, 10, Sort.by("stockCode").ascending());
+        when(stockMasterRepository.findByIsActiveTrue(eq(expectedPageable)))
+                .thenReturn(new PageImpl<>(List.of(), expectedPageable, 25));
 
         // when
         StockListResponse result = marketService.getStocks(null, 2, 10);
@@ -133,7 +135,7 @@ class MarketServiceTest {
         // then
         assertThat(result.page()).isEqualTo(2);
         assertThat(result.size()).isEqualTo(10);
-        verify(stockMasterRepository).findByIsActiveTrue(eq(PageRequest.of(1, 10)));
+        verify(stockMasterRepository).findByIsActiveTrue(eq(expectedPageable));
     }
 
     @Test
