@@ -38,7 +38,7 @@ const generateVolumeData = (candleData) => {
   }));
 };
 
-export default function TradingChart() {
+export default function TradingChart({ stockCode }) {
   const chartContainerRef = useRef(null);
 
   // ── TODO: 백엔드 연동 시 아래 두 블록 해제 ──────────────────────────────
