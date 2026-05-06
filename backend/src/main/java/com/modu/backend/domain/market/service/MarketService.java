@@ -1,9 +1,15 @@
 package com.modu.backend.domain.market.service;
 
+import com.modu.backend.domain.market.client.KisPriceClient;
+import com.modu.backend.domain.market.dto.StockDetailResponse;
 import com.modu.backend.domain.market.dto.StockListResponse;
 import com.modu.backend.domain.market.dto.StockSummaryResponse;
+import com.modu.backend.domain.market.entity.StockMaster;
+import com.modu.backend.domain.market.exception.MarketErrorCode;
 import com.modu.backend.domain.market.repository.StockMasterRepository;
+import com.modu.backend.global.error.ApiException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -22,19 +28,16 @@ import org.springframework.transaction.annotation.Transactional;
 public class MarketService {
 
     private final StockMasterRepository stockMasterRepository;
+    private final KisPlatformTokenService kisPlatformTokenService;
+    private final KisPriceClient kisPriceClient;
 
     /**
      * 종목 전체 조회 또는 키워드 검색
      *
      * keyword 없음: 활성 종목 전체 페이징 조회
      * keyword 있음: 종목명 또는 종목코드 부분 일치 검색
-     *
-     * @param keyword 검색어 (null 또는 공백이면 전체 조회)
-     * @param page    페이지 번호 (1부터 시작, 내부적으로 0 기반으로 변환)
-     * @param size    페이지 크기
      */
     public StockListResponse getStocks(String keyword, int page, int size) {
-        // stockCode 오름차순 정렬 고정: 정렬 없이 페이징 시 데이터 변경에 따른 중복/누락 방지
         PageRequest pageable = PageRequest.of(page - 1, size, Sort.by("stockCode").ascending());
 
         Page<StockSummaryResponse> result = isKeywordBlank(keyword)
@@ -46,6 +49,28 @@ public class MarketService {
                 result.getTotalElements(),
                 page,
                 size
+        );
+    }
+
+    /**
+     * 종목 상세 조회 (실시간 시세 포함)
+     *
+     * 1. stock_master에서 종목명/시장구분 조회 (없으면 STOCK_NOT_FOUND)
+     * 2. KIS 시세 API 호출로 실시간 가격 데이터 조회
+     * 3. Redis "stock:price" 캐시 TTL 3초 적용
+     */
+    @Cacheable(value = "stock:price", key = "#stockCode")
+    public StockDetailResponse getStockDetail(String stockCode) {
+        StockMaster stock = stockMasterRepository.findByStockCode(stockCode)
+                .orElseThrow(() -> new ApiException(MarketErrorCode.STOCK_NOT_FOUND));
+
+        String accessToken = kisPlatformTokenService.getAccessToken();
+
+        return kisPriceClient.getStockDetail(
+                accessToken,
+                stockCode,
+                stock.getStockName(),
+                stock.getMarketType()
         );
     }
 
