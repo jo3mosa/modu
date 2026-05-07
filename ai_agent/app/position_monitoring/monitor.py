@@ -1,6 +1,9 @@
 from app.repositories.position_cache_repository import PositionCacheRepository
 from app.repositories.position_index_repository import PositionIndexRepository
 from app.repositories.trade_rule_cache_repository import TradeRuleCacheRepository
+from app.repositories.position_event_cooldown_repository import (
+    PositionEventCooldownRepository,
+)
 
 from app.position_monitoring.schemas import PositionEvent, PriceTick
 
@@ -14,17 +17,22 @@ class PositionMonitor:
     - 현재가가 들어온 종목을 실제 보유 중인 사용자만 Redis index로 찾는다.
     - 사용자의 평균단가 기준 손익률을 계산한다.
     - 익절/손절 조건 도달 시 Position Event를 생성한다.
+    - 동일 이벤트 반복 발생은 cooldown으로 제한한다.
     """
+
+    COOLDOWN_SECONDS = 300 # 이벤트 재발생 방지 위해 5분 cooldown 적용
 
     def __init__(
         self,
         position_index_repository: PositionIndexRepository,
         position_cache_repository: PositionCacheRepository,
         trade_rule_repository: TradeRuleCacheRepository,
+        cooldown_repository: PositionEventCooldownRepository,
     ) -> None:
         self.position_index_repository = position_index_repository
         self.position_cache_repository = position_cache_repository
         self.trade_rule_repository = trade_rule_repository
+        self.cooldown_repository = cooldown_repository
 
     def detect_events(
         self,
@@ -65,16 +73,35 @@ class PositionMonitor:
                 continue
 
             profit_rate = (
-                (tick.current_price - average_price) / average_price
+                (tick.current_price - average_price)
+                / average_price
             ) * 100
 
-            take_profit_rate = trade_rule.get("take_profit_rate")
-            stop_loss_rate = trade_rule.get("stop_loss_rate")
+            profit_rate = round(profit_rate, 2)
+
+            take_profit_rate = trade_rule.get(
+                "take_profit_rate"
+            )
+
+            stop_loss_rate = trade_rule.get(
+                "stop_loss_rate"
+            )
+
+            # ==============================
+            # 익절 이벤트 생성
+            # ==============================
 
             if (
                 isinstance(take_profit_rate, (int, float))
                 and profit_rate >= take_profit_rate
             ):
+                if self.cooldown_repository.is_cooldown_active(
+                    user_id=user_id,
+                    stock_code=tick.stock_code,
+                    event_type="TAKE_PROFIT_RATE_HIT",
+                ):
+                    continue
+
                 events.append(
                     PositionEvent(
                         user_id=user_id,
@@ -83,15 +110,33 @@ class PositionMonitor:
                         current_price=tick.current_price,
                         trade_rule=trade_rule,
                         position=position,
-                        profit_rate=round(profit_rate, 2),
+                        profit_rate=profit_rate,
                         timestamp=tick.timestamp,
                     )
                 )
+
+                self.cooldown_repository.activate_cooldown(
+                    user_id=user_id,
+                    stock_code=tick.stock_code,
+                    event_type="TAKE_PROFIT_RATE_HIT",
+                    ttl_seconds=self.COOLDOWN_SECONDS,
+                )
+
+            # ==============================
+            # 손절 이벤트 생성
+            # ==============================
 
             if (
                 isinstance(stop_loss_rate, (int, float))
                 and profit_rate <= stop_loss_rate
             ):
+                if self.cooldown_repository.is_cooldown_active(
+                    user_id=user_id,
+                    stock_code=tick.stock_code,
+                    event_type="STOP_LOSS_RATE_HIT",
+                ):
+                    continue
+
                 events.append(
                     PositionEvent(
                         user_id=user_id,
@@ -100,9 +145,16 @@ class PositionMonitor:
                         current_price=tick.current_price,
                         trade_rule=trade_rule,
                         position=position,
-                        profit_rate=round(profit_rate, 2),
+                        profit_rate=profit_rate,
                         timestamp=tick.timestamp,
                     )
+                )
+
+                self.cooldown_repository.activate_cooldown(
+                    user_id=user_id,
+                    stock_code=tick.stock_code,
+                    event_type="STOP_LOSS_RATE_HIT",
+                    ttl_seconds=self.COOLDOWN_SECONDS,
                 )
 
         return events
