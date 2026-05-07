@@ -67,7 +67,10 @@ async function apiClient(endpoint, options = {}, retry = true) {
 
   if (!response.ok) {
     // 백엔드 공통 에러 형식: { success: false, message: '...', errorCode: '...' }
-    throw new Error(data.message || `HTTP ${response.status} 에러`);
+    const error = new Error(data.message || `HTTP ${response.status} 에러`);
+    error.errorCode = data.errorCode;
+    error.status = response.status;
+    throw error;
   }
 
   return data; // { success: true, message: '...', data: { ... } }

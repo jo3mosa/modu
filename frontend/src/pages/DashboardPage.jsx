@@ -73,7 +73,7 @@ export default function DashboardPage() {
         setSummary(summaryData);
         setHoldings(portfolioData.holdings ?? []);
       } catch (error) {
-        if (error.message?.includes('KIS_NOT_CONNECTED') || error.message?.includes('USER_002')) {
+        if (error.errorCode === 'KIS_NOT_CONNECTED' || error.errorCode === 'USER_002') {
           setIsKisConnected(false);
         } else {
           console.error('대시보드 데이터 로드 실패:', error);
