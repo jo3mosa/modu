@@ -10,15 +10,6 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/**
- * 프론트 WebSocket 세션 구독 관리자
- *
- * [관리 기준]
- * - KisRealtimeStreamKey(type + stockCode) 단위 세션 그룹핑
- * - 첫 구독자 등록 시 KIS upstream subscribe
- * - 마지막 구독자 종료 시 KIS upstream unsubscribe
- * - 동일 구독 데이터 fan-out
- */
 @Slf4j
 @Component
 public class KisRealtimeSubscriptionManager {
@@ -34,9 +25,6 @@ public class KisRealtimeSubscriptionManager {
         this.upstreamClient.setSubscriptionManager(this);
     }
 
-    /**
-     * 프론트 WebSocket 세션 구독 등록
-     */
     public void register(WebSocketSession session, KisRealtimeStreamKey key) {
         AtomicBoolean firstSubscriber = new AtomicBoolean(false);
 
@@ -55,9 +43,6 @@ public class KisRealtimeSubscriptionManager {
         }
     }
 
-    /**
-     * 프론트 WebSocket 세션 구독 해제
-     */
     public void unregister(WebSocketSession session) {
         KisRealtimeStreamKey key = keyBySessionId.remove(session.getId());
         if (key == null) {
@@ -80,12 +65,6 @@ public class KisRealtimeSubscriptionManager {
         }
     }
 
-    /**
-     * 구독 세션 대상 실시간 데이터 fan-out
-     *
-     * 직렬화를 루프 밖에서 1회 수행 후 세션별 개별 try-catch 적용
-     * 단일 세션 전송 실패가 다른 세션에 영향주지 않도록 격리
-     */
     void broadcast(KisRealtimeStreamKey key, Object payload) {
         Set<WebSocketSession> sessions = sessionsByKey.get(key);
         if (sessions == null || sessions.isEmpty()) {
@@ -96,7 +75,7 @@ public class KisRealtimeSubscriptionManager {
         try {
             message = new TextMessage(objectMapper.writeValueAsString(payload));
         } catch (Exception e) {
-            log.error("Realtime websocket payload 직렬화 실패 - trId: {}, stockCode: {}, error: {}",
+            log.error("Realtime websocket message serialization failed - trId: {}, stockCode: {}, error: {}",
                     key.type().trId(), key.stockCode(), e.getMessage());
             return;
         }
@@ -108,7 +87,7 @@ public class KisRealtimeSubscriptionManager {
             try {
                 session.sendMessage(message);
             } catch (Exception e) {
-                log.error("Realtime websocket 세션 전송 실패 - sessionId: {}, trId: {}, stockCode: {}, error: {}",
+                log.warn("Realtime websocket send failed - sessionId: {}, trId: {}, stockCode: {}, error: {}",
                         session.getId(), key.type().trId(), key.stockCode(), e.getMessage());
             }
         }

@@ -1,6 +1,7 @@
 package com.modu.backend.domain.market.websocket;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
@@ -13,6 +14,7 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
  * - WebSocket 연결 종료
  * - WebSocket 전송 오류
  */
+@Slf4j
 @RequiredArgsConstructor
 public class KisRealtimeFrontendWebSocketHandler extends TextWebSocketHandler {
 
@@ -25,9 +27,19 @@ public class KisRealtimeFrontendWebSocketHandler extends TextWebSocketHandler {
      * 프론트 세션 구독 등록
      */
     @Override
-    public void afterConnectionEstablished(WebSocketSession session) {
-        KisRealtimeStreamType type = (KisRealtimeStreamType) session.getAttributes().get(STREAM_TYPE_ATTRIBUTE);
-        String stockCode = (String) session.getAttributes().get(STOCK_CODE_ATTRIBUTE);
+    public void afterConnectionEstablished(WebSocketSession session) throws Exception {
+        Object typeAttribute = session.getAttributes().get(STREAM_TYPE_ATTRIBUTE);
+        Object stockCodeAttribute = session.getAttributes().get(STOCK_CODE_ATTRIBUTE);
+
+        if (!(typeAttribute instanceof KisRealtimeStreamType type)
+                || !(stockCodeAttribute instanceof String stockCode)
+                || !stockCode.matches("\\d{6}")) {
+            log.warn("Invalid realtime websocket handshake attributes - sessionId: {}, streamType: {}, stockCode: {}",
+                    session.getId(), typeAttribute, stockCodeAttribute);
+            session.close(CloseStatus.BAD_DATA);
+            return;
+        }
+
         subscriptionManager.register(session, new KisRealtimeStreamKey(type, stockCode));
     }
 
