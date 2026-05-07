@@ -27,7 +27,7 @@ public class StrategyProfileQuestionService {
     private static final List<ProfileQuestion> QUESTIONS = List.of(
             question(
                     "AGE_GROUP",
-                    "고객님의 연령대",
+                    "고객님의 연령대는 어떻게 되시나요?",
                     ProfileQuestionScoringType.SCORED,
                     option("UNDER_19", "만 19세 이하", 6),
                     option("AGE_20_TO_40", "만 20세~40세", 8),
@@ -37,44 +37,44 @@ public class StrategyProfileQuestionService {
             ),
             question(
                     "INVESTMENT_PERIOD",
-                    "투자예정기간",
+                    "이번 투자금은 어느 정도 기간 동안 운용하실 계획인가요?",
                     ProfileQuestionScoringType.SCORED,
-                    option("OVER_3_YEARS", "3년 이상", 10),
-                    option("YEARS_2_TO_3", "2년 이상 ~ 3년 미만", 8),
-                    option("YEARS_1_TO_2", "1년 이상 ~ 2년 미만", 6),
-                    option("MONTHS_6_TO_12", "6개월 이상 ~ 1년 미만", 4),
-                    option("UNDER_6_MONTHS", "6개월 미만", 2)
+                    option("OVER_3_YEARS", "3년 이상 장기 운용할 계획이에요", 10),
+                    option("YEARS_2_TO_3", "2년 이상 ~ 3년 미만 정도 생각하고 있어요", 8),
+                    option("YEARS_1_TO_2", "1년 이상 ~ 2년 미만 정도 생각하고 있어요", 6),
+                    option("MONTHS_6_TO_12", "6개월 이상 ~ 1년 미만 정도 생각하고 있어요", 4),
+                    option("UNDER_6_MONTHS", "6개월 미만의 단기 운용을 생각하고 있어요", 2)
             ),
             question(
                     "INVESTMENT_EXPERIENCE",
-                    "투자경험",
+                    "지금까지 투자해 본 상품 중 가장 위험도가 높았던 것은 무엇인가요?",
                     ProfileQuestionScoringType.SCORED,
-                    option("AGGRESSIVE_PRODUCTS", "공격투자형 상품", 10),
-                    option("ACTIVE_PRODUCTS", "적극투자형 상품", 8),
-                    option("RISK_NEUTRAL_PRODUCTS", "위험중립형 상품", 6),
-                    option("STABLE_GROWTH_PRODUCTS", "안정추구형 상품", 4),
-                    option("STABLE_PRODUCTS", "안정형 상품", 2)
+                    option("AGGRESSIVE_PRODUCTS", "공격투자형 상품에 투자해 본 적이 있어요", 10),
+                    option("ACTIVE_PRODUCTS", "적극투자형 상품에 투자해 본 적이 있어요", 8),
+                    option("RISK_NEUTRAL_PRODUCTS", "위험중립형 상품에 투자해 본 적이 있어요", 6),
+                    option("STABLE_GROWTH_PRODUCTS", "안정추구형 상품에 투자해 본 적이 있어요", 4),
+                    option("STABLE_PRODUCTS", "안정형 상품 위주로만 투자해 봤어요", 2)
             ),
             question(
                     "DERIVATIVE_EXPERIENCE",
-                    "파생상품 등 투자경험",
+                    "ELS, DLS, 파생결합증권 같은 파생상품 투자 경험은 얼마나 되시나요?",
                     ProfileQuestionScoringType.EXCLUDED,
-                    option("UNDER_1_YEAR", "1년 미만", null),
-                    option("YEARS_1_TO_3", "1년 이상 ~ 3년 미만", null),
-                    option("OVER_3_YEARS", "3년 이상", null)
+                    option("UNDER_1_YEAR", "1년 미만이에요", null),
+                    option("YEARS_1_TO_3", "1년 이상 ~ 3년 미만이에요", null),
+                    option("OVER_3_YEARS", "3년 이상이에요", null)
             ),
             question(
                     "LOSS_TOLERANCE",
-                    "감내할 수 있는 손실수준",
+                    "투자 중 손실이 발생한다면 어느 정도까지 감내할 수 있나요?",
                     ProfileQuestionScoringType.SCORED,
-                    option("HIGH_RISK_HIGH_RETURN", "기대수익이 높다면 위험이 높아도 상관하지 않음", 8),
-                    option("CAN_TAKE_PRINCIPAL_LOSS", "투자원금 중 일부의 손실을 감수할 수 있음", 6),
-                    option("CAN_TAKE_MINIMUM_LOSS", "투자원금에서 최소한의 손실만을 감수할 수 있음", 4),
-                    option("PRINCIPAL_MUST_BE_PROTECTED", "무슨 일이 있어도 투자원금은 보전되어야 함", 2)
+                    option("HIGH_RISK_HIGH_RETURN", "기대수익이 높다면 큰 변동성도 감수할 수 있어요", 8),
+                    option("CAN_TAKE_PRINCIPAL_LOSS", "투자원금 중 일부 손실은 감수할 수 있어요", 6),
+                    option("CAN_TAKE_MINIMUM_LOSS", "투자원금에서 최소한의 손실만 감수할 수 있어요", 4),
+                    option("PRINCIPAL_MUST_BE_PROTECTED", "어떤 경우에도 투자원금은 보전되어야 해요", 2)
             ),
             question(
                     "INVESTABLE_ASSET_RATIO",
-                    "총자산 대비 투자성자산 비중",
+                    "전체 자산 중 투자성 자산이 차지하는 비중은 어느 정도인가요?",
                     ProfileQuestionScoringType.SCORED,
                     option("UNDER_10_PERCENT", "10% 이하", 2),
                     option("UNDER_30_PERCENT", "30% 이하", 4),
@@ -84,7 +84,7 @@ public class StrategyProfileQuestionService {
             ),
             question(
                     "MONTHLY_INCOME",
-                    "월소득 현황",
+                    "고객님의 월 소득 구간은 어떻게 되시나요?",
                     ProfileQuestionScoringType.SCORED,
                     option("OVER_5M", "500만원 초과", 6),
                     option("UNDER_5M", "500만원 이하", 5),
@@ -94,21 +94,21 @@ public class StrategyProfileQuestionService {
             ),
             question(
                     "INVESTMENT_PURPOSE",
-                    "투자목적",
+                    "이번 투자를 통해 가장 기대하는 목표는 무엇인가요?",
                     ProfileQuestionScoringType.SCORED,
-                    option("LIVING_EXPENSE", "생계(단기)자금 운용", 2),
-                    option("EXCESS_RETURN_THAN_DEPOSIT", "예적금수준 수익률 기대", 4),
-                    option("MARKET_AVERAGE_RETURN", "시장평균 이상 수익률 기대", 6),
-                    option("AGGRESSIVE_CAPITAL_GAIN", "적극적인 재산(자산)증식", 8)
+                    option("LIVING_EXPENSE", "생활비나 단기 자금을 안정적으로 운용하고 싶어요", 2),
+                    option("EXCESS_RETURN_THAN_DEPOSIT", "예적금보다 조금 높은 수익을 기대해요", 4),
+                    option("MARKET_AVERAGE_RETURN", "시장 평균 이상의 수익을 기대해요", 6),
+                    option("AGGRESSIVE_CAPITAL_GAIN", "적극적으로 자산을 늘리고 싶어요", 8)
             ),
             question(
                     "FINANCIAL_KNOWLEDGE",
-                    "금융지식 수준/이해도",
+                    "금융투자상품의 구조와 위험에 대해 어느 정도 이해하고 계신가요?",
                     ProfileQuestionScoringType.SCORED,
-                    option("NO_EXPERIENCE", "금융투자상품에 투자해 본 경험이 없음", 0),
-                    option("KNOW_STRUCTURE_AND_RISK_BASIC", "널리 알려진 금융투자상품(주식, 채권 및 펀드 등)의 구조 및 위험을 일정 부분 이해하고 있음", 4),
-                    option("KNOW_STRUCTURE_AND_RISK_ADVANCED", "널리 알려진 금융투자상품(주식, 채권 및 펀드 등)의 구조 및 위험을 깊이 있게 이해하고 있음", 8),
-                    option("KNOW_DERIVATIVES", "파생상품을 포함한 대부분의 금융투자상품의 구조 및 위험을 이해하고 있음", 12)
+                    option("NO_EXPERIENCE", "금융투자상품에 투자해 본 경험이 거의 없어요", 0),
+                    option("KNOW_STRUCTURE_AND_RISK_BASIC", "주식, 채권, 펀드 같은 일반적인 상품의 구조와 위험을 어느 정도 이해하고 있어요", 4),
+                    option("KNOW_STRUCTURE_AND_RISK_ADVANCED", "일반적인 금융투자상품의 구조와 위험을 깊이 이해하고 있어요", 8),
+                    option("KNOW_DERIVATIVES", "파생상품을 포함한 대부분의 금융투자상품 구조와 위험을 이해하고 있어요", 12)
             )
     );
 
