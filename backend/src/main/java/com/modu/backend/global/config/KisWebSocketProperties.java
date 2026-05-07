@@ -31,4 +31,11 @@ public class KisWebSocketProperties {
 
     @Min(100)
     private long reconnectDelayMs = 1000;
+
+    /** KIS WebSocket 연결 타임아웃 (ms). 초과 시 TimeoutException 발생 */
+    @Min(1000)
+    private long connectTimeoutMs = 5000;
+
+    /** 프론트 WebSocket 허용 Origin 목록. 로컬: * / 운영: 실제 도메인 */
+    private String allowedOrigins = "*";
 }
