@@ -1,0 +1,153 @@
+# 1. Headless Service — 브로커 간 통신 + StatefulSet DNS 등록
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-headless
+  namespace: modu-apps
+spec:
+  clusterIP: None
+  selector:
+    app: kafka
+  ports:
+  - name: broker
+    port: 9092
+    targetPort: 9092
+  - name: controller
+    port: 9093
+    targetPort: 9093
+
+---
+
+# 2. ClusterIP Service — 백엔드/AI Server 접속용 (kafka-service:9092)
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-service
+  namespace: modu-apps
+spec:
+  selector:
+    app: kafka
+  ports:
+  - name: broker
+    port: 9092
+    targetPort: 9092
+  type: ClusterIP
+
+---
+
+# 3. PodDisruptionBudget — 롤링 업데이트/노드 유지보수 시 최소 2개 브로커 보장
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: kafka-pdb
+  namespace: modu-apps
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: kafka
+
+---
+
+# 4. StatefulSet — KRaft 모드 3 브로커
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+  namespace: modu-apps
+spec:
+  serviceName: kafka-headless
+  replicas: 3
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - name: kafka
+        image: apache/kafka:3.9.0
+        command:
+          - sh
+          - -c
+          - |
+            export KAFKA_NODE_ID=${HOSTNAME##*-}
+            export KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://${HOSTNAME}.kafka-headless.modu-apps.svc.cluster.local:9092
+            exec /etc/kafka/docker/run
+        ports:
+        - containerPort: 9092
+          name: broker
+        - containerPort: 9093
+          name: controller
+        env:
+        - name: KAFKA_PROCESS_ROLES
+          value: "broker,controller"
+        - name: CLUSTER_ID
+          value: "MkU3OEVBNTcwNTJENDM2Qg"
+        - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+          value: "0@kafka-0.kafka-headless.modu-apps.svc.cluster.local:9093,1@kafka-1.kafka-headless.modu-apps.svc.cluster.local:9093,2@kafka-2.kafka-headless.modu-apps.svc.cluster.local:9093"
+        - name: KAFKA_LISTENERS
+          value: "PLAINTEXT://:9092,CONTROLLER://:9093"
+        - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+          value: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+        - name: KAFKA_CONTROLLER_LISTENER_NAMES
+          value: "CONTROLLER"
+        - name: KAFKA_INTER_BROKER_LISTENER_NAME
+          value: "PLAINTEXT"
+        - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+          value: "3"
+        - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+          value: "3"
+        - name: KAFKA_MIN_INSYNC_REPLICAS
+          value: "2"
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          seccompProfile:
+            type: RuntimeDefault
+          capabilities:
+            drop:
+              - ALL
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        readinessProbe:
+          exec:
+            command:
+              - sh
+              - -c
+              - "kafka-topics.sh --bootstrap-server localhost:9092 --list > /dev/null 2>&1"
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        livenessProbe:
+          exec:
+            command:
+              - sh
+              - -c
+              - "kafka-topics.sh --bootstrap-server localhost:9092 --list > /dev/null 2>&1"
+          initialDelaySeconds: 60
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 5
+        volumeMounts:
+        - name: kafka-storage
+          mountPath: /var/lib/kafka/data
+  volumeClaimTemplates:
+  - metadata:
+      name: kafka-storage
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 5Gi
