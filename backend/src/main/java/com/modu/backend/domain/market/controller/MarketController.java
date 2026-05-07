@@ -1,5 +1,6 @@
 package com.modu.backend.domain.market.controller;
 
+import com.modu.backend.domain.market.dto.CandleListResponse;
 import com.modu.backend.domain.market.dto.StockDetailResponse;
 import com.modu.backend.domain.market.dto.StockListResponse;
 import com.modu.backend.domain.market.service.MarketService;
@@ -85,5 +86,47 @@ public class MarketController {
 
         StockDetailResponse response = marketService.getStockDetail(stockCode);
         return ResponseEntity.ok(ApiResponse.success("종목 상세 정보를 성공적으로 조회했습니다.", response));
+    }
+
+    @Operation(
+            summary = "차트 캔들 데이터 조회",
+            description = """
+                    종목코드와 기간 타입으로 캔들 데이터를 조회합니다.
+
+                    **period 값:**
+                    - `D`: 일봉 (기본 startDate: 오늘 - 6개월)
+                    - `W`: 주봉 (기본 startDate: 오늘 - 2년)
+                    - `M`: 월봉 (기본 startDate: 오늘 - 5년)
+                    - `1`: 1분봉 (기본: 당일 데이터)
+                    - `5`: 5분봉 (기본: 당일 데이터)
+                    - `60`: 60분봉 (기본: 당일 데이터)
+
+                    - 응답은 과거순(오래된 것부터)으로 정렬됩니다.
+                    - `startDate`/`endDate` 미입력 시 period별 기본값이 적용됩니다.
+                    """
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "유효하지 않은 period 값",
+                    content = @Content(schema = @Schema(example = "{\"success\":false,\"message\":\"유효하지 않은 기간 타입입니다.\",\"errorCode\":\"MKT_003\"}"))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "인증 필요"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "502", description = "KIS 캔들 조회 실패")
+    })
+    @GetMapping("/stocks/{stockCode}/candles")
+    public ResponseEntity<ApiResponse<CandleListResponse>> getCandleData(
+            @Parameter(description = "종목코드 (6자리)", example = "005930")
+            @PathVariable String stockCode,
+
+            @Parameter(description = "기간 타입 (D/W/M/1/5/60)", example = "D")
+            @RequestParam String period,
+
+            @Parameter(description = "시작일 (YYYYMMDD). 없으면 period별 기본값", example = "20250301")
+            @RequestParam(required = false) String startDate,
+
+            @Parameter(description = "종료일 (YYYYMMDD). 없으면 오늘", example = "20250426")
+            @RequestParam(required = false) String endDate) {
+
+        CandleListResponse response = marketService.getCandleData(stockCode, period, startDate, endDate);
+        return ResponseEntity.ok(ApiResponse.success("차트 캔들 데이터를 성공적으로 조회했습니다.", response));
     }
 }
