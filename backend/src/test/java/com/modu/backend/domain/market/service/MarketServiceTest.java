@@ -1,8 +1,12 @@
 package com.modu.backend.domain.market.service;
 
+import com.modu.backend.domain.market.client.KisPriceClient;
+import com.modu.backend.domain.market.dto.StockDetailResponse;
 import com.modu.backend.domain.market.dto.StockListResponse;
 import com.modu.backend.domain.market.entity.StockMaster;
+import com.modu.backend.domain.market.exception.MarketErrorCode;
 import com.modu.backend.domain.market.repository.StockMasterRepository;
+import com.modu.backend.global.error.ApiException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -15,8 +19,10 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -26,6 +32,8 @@ import static org.mockito.Mockito.when;
 class MarketServiceTest {
 
     @Mock StockMasterRepository stockMasterRepository;
+    @Mock KisPlatformTokenService kisPlatformTokenService;
+    @Mock KisPriceClient kisPriceClient;
 
     @InjectMocks
     MarketService marketService;
@@ -152,5 +160,66 @@ class MarketServiceTest {
         assertThat(result.stocks().get(0).stockCode()).isEqualTo("005930");
         assertThat(result.stocks().get(0).stockName()).isEqualTo("삼성전자");
         assertThat(result.stocks().get(0).marketType()).isEqualTo("KOSPI");
+    }
+
+    // ── 종목 상세 조회 ──────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("종목 상세 조회 성공 - KIS API 호출 후 응답 반환")
+    void 종목_상세_조회_성공() {
+        // given
+        when(stockMasterRepository.findByStockCode("005930")).thenReturn(Optional.of(samsung));
+        when(kisPlatformTokenService.getAccessToken()).thenReturn("platform-token");
+
+        StockDetailResponse mockDetail = new StockDetailResponse(
+                "005930", "삼성전자", "KOSPI",
+                82000L, 1.23, "2", 15000000L,
+                489000000000000L, 81500L, 83000L, 81000L
+        );
+        when(kisPriceClient.getStockDetail("platform-token", "005930", "삼성전자", "KOSPI"))
+                .thenReturn(mockDetail);
+
+        // when
+        StockDetailResponse result = marketService.getStockDetail("005930");
+
+        // then
+        assertThat(result.stockCode()).isEqualTo("005930");
+        assertThat(result.stockName()).isEqualTo("삼성전자");
+        assertThat(result.currentPrice()).isEqualTo(82000L);
+        assertThat(result.compareRate()).isEqualTo(1.23);
+        assertThat(result.marketCap()).isEqualTo(489000000000000L);
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 종목코드로 상세 조회 시 STOCK_NOT_FOUND 예외")
+    void 존재하지_않는_종목코드_상세_조회_시_예외() {
+        // given
+        when(stockMasterRepository.findByStockCode("999999")).thenReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> marketService.getStockDetail("999999"))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode())
+                        .isEqualTo(MarketErrorCode.STOCK_NOT_FOUND));
+    }
+
+    @Test
+    @DisplayName("종목 상세 조회 시 플랫폼 토큰과 종목 정보가 KIS 클라이언트에 올바르게 전달")
+    void 종목_상세_조회_KIS_클라이언트_호출_확인() {
+        // given
+        when(stockMasterRepository.findByStockCode("005930")).thenReturn(Optional.of(samsung));
+        when(kisPlatformTokenService.getAccessToken()).thenReturn("platform-token");
+        when(kisPriceClient.getStockDetail(any(), any(), any(), any()))
+                .thenReturn(new StockDetailResponse(
+                        "005930", "삼성전자", "KOSPI",
+                        82000L, 1.23, "2", 15000000L,
+                        489000000000000L, 81500L, 83000L, 81000L
+                ));
+
+        // when
+        marketService.getStockDetail("005930");
+
+        // then
+        verify(kisPriceClient).getStockDetail("platform-token", "005930", "삼성전자", "KOSPI");
     }
 }

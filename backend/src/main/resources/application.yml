@@ -8,6 +8,10 @@ spring:
       enabled: true  # Java 21 가상 스레드 활성화 - 다수 봇의 동시 매매 처리를 위해 사용
   jpa:
     open-in-view: false  # HTTP 요청 전체 수명 동안 DB 커넥션을 점유하는 문제 방지
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
 
 # Actuator: K8s 헬스체크(/health, /readiness) 및 메트릭 수집용
 management:
@@ -43,6 +47,7 @@ kakao:
 # AES-256-GCM 암호화 설정 (KIS API 키 암호화용)
 encryption:
   kis-key: ${KIS_ENCRYPTION_KEY}
+
 
 # ================================================================
 # 로컬 개발 환경 (spring.profiles.active: local)
