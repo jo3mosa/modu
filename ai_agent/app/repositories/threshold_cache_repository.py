@@ -126,7 +126,7 @@ class MockThresholdCacheRepository:
         """
         메모리 dict에 threshold를 저장한다.
         """
-        self._store[(user_id, stock_code)] = threshold
+        self._store[(user_id, stock_code)] = copy.deepcopy(threshold)
 
     def get_threshold(
         self,

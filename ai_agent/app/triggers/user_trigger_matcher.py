@@ -74,18 +74,28 @@ _MOCK_PORTFOLIO_SNAPSHOT_BY_USER_ID: dict[int, dict] = {
     },
 }
 
+def get_position_index_repository() -> PositionIndexRepository:
+    """
+    현재 사용할 PositionIndexRepository 구현체를 반환한다.
+
+    지금은 Mock 구현체를 사용하지만,
+    이후 Redis 연동 시 이 함수 내부에서 RedisPositionIndexRepository를 반환하도록 바꾸면 된다.
+    """
+    return _POSITION_INDEX_REPOSITORY
+
+
 
 def get_holding_user_ids(
     stock_code: str,
-    repository: PositionIndexRepository = _POSITION_INDEX_REPOSITORY,
+    repository: PositionIndexRepository | None = None,
 ) -> list[int]:
     """
     특정 종목을 보유한 사용자 목록을 조회한다.
 
-    현재는 Mock Repository를 기본 구현체로 사용하지만,
-    이후 RedisPositionIndexRepository로 교체 가능하도록
-    repository interface 기반으로 분리한다.
+    repository가 직접 주입되면 해당 구현체를 사용하고,
+    없으면 현재 기본 repository를 조회한다.
     """
+    repository = repository or get_position_index_repository()
     return repository.get_user_ids_by_stock(stock_code)
 
 
