@@ -27,17 +27,19 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 public class WebSocketConfig implements WebSocketConfigurer {
 
     private final KisRealtimeSubscriptionManager subscriptionManager;
+    private final KisWebSocketProperties kisWebSocketProperties;
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         KisRealtimeFrontendWebSocketHandler handler = new KisRealtimeFrontendWebSocketHandler(subscriptionManager);
+        String[] allowedOriginPatterns = kisWebSocketProperties.getAllowedOriginPatterns().toArray(String[]::new);
 
         registry.addHandler(handler, "/ws/stocks/{stockCode}/price")
                 .addInterceptors(new StockCodeHandshakeInterceptor(KisRealtimeStreamType.PRICE))
-                .setAllowedOriginPatterns("*");
+                .setAllowedOriginPatterns(allowedOriginPatterns);
 
         registry.addHandler(handler, "/ws/stocks/{stockCode}/orderbook")
                 .addInterceptors(new StockCodeHandshakeInterceptor(KisRealtimeStreamType.ORDERBOOK))
-                .setAllowedOriginPatterns("*");
+                .setAllowedOriginPatterns(allowedOriginPatterns);
     }
 }

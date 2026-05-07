@@ -8,6 +8,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 import org.springframework.validation.annotation.Validated;
 
+import java.util.List;
+
 /**
  * KIS WebSocket 연결 설정
  *
@@ -31,4 +33,9 @@ public class KisWebSocketProperties {
 
     @Min(100)
     private long reconnectDelayMs = 1000;
+
+    @Min(100)
+    private long connectionTimeoutMs = 5000;
+
+    private List<String> allowedOriginPatterns = List.of("http://localhost:3000", "http://localhost:5173");
 }

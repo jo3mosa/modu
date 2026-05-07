@@ -16,6 +16,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * KIS 실시간 WebSocket upstream 클라이언트
@@ -92,6 +94,10 @@ public class KisRealtimeUpstreamClient {
         try {
             WebSocketSession session = ensureSession(key.type());
             session.sendMessage(new TextMessage(subscriptionMessage(key, trType)));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("KIS realtime subscription interrupted - trId: {}, stockCode: {}, error: {}",
+                    key.type().trId(), key.stockCode(), e.getMessage());
         } catch (Exception e) {
             log.error("KIS realtime subscription send failed - trId: {}, stockCode: {}, error: {}",
                     key.type().trId(), key.stockCode(), e.getMessage());
@@ -115,7 +121,16 @@ public class KisRealtimeUpstreamClient {
 
             CompletableFuture<WebSocketSession> future = new StandardWebSocketClient()
                     .execute(new UpstreamHandler(type), properties.getUrl());
-            WebSocketSession connectedSession = future.get();
+            WebSocketSession connectedSession;
+            try {
+                connectedSession = future.get(properties.getConnectionTimeoutMs(), TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw e;
+            } catch (TimeoutException e) {
+                future.cancel(true);
+                throw e;
+            }
             sessions.put(type, connectedSession);
             return connectedSession;
         }
