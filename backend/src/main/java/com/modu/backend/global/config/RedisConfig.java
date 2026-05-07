@@ -23,6 +23,7 @@ import java.util.Map;
  * [캐시 TTL 전략]
  * - stock:price       → 3초  (실시간 시세 데이터)
  * - kis:platform:token → 23시간 (플랫폼 KIS 토큰)
+ * - kis:platform:websocket-key → 23시간 (플랫폼 KIS 웹소켓 승인키)
  *
  * [Fail-open 전략]
  * - Redis 장애/타임아웃 시 캐시 예외를 흡수하고 원본 데이터 조회로 폴백
@@ -45,8 +46,9 @@ public class RedisConfig implements CachingConfigurer {
 
         // 캐시별 TTL 설정
         Map<String, RedisCacheConfiguration> cacheConfigurations = Map.of(
-                "stock:price",          defaultConfig.entryTtl(Duration.ofSeconds(3)),
-                "kis:platform:token",   defaultConfig.entryTtl(Duration.ofHours(23))
+                "stock:price",                  defaultConfig.entryTtl(Duration.ofSeconds(3)),
+                "kis:platform:token",           defaultConfig.entryTtl(Duration.ofHours(23)),
+                "kis:platform:websocket-key",   defaultConfig.entryTtl(Duration.ofHours(23))
         );
 
         return RedisCacheManager.builder(connectionFactory)
