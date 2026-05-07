@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { socialLogin } from '../api/auth';
 
 export default function KakaoCallbackPage() {
   const navigate = useNavigate();
@@ -16,31 +17,18 @@ export default function KakaoCallbackPage() {
 
     const fetchSocialLogin = async () => {
       try {
-        const response = await fetch('/api/v1/auth/social/kakao', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code }),
-        });
+        // POST /api/v1/auth/social/kakao → { onboarding: { isSurveyCompleted, isRuleSetCompleted } }
+        const data = await socialLogin(code);
+        const { isSurveyCompleted, isRuleSetCompleted } = data.onboarding;
 
-        const data = await response.json();
-
-        // success -> true 반환
-        if (response.ok && data.success) {
-          // data.onboarding 구조: { isSurveyCompleted: true, isRuleSetCompleted: false }
-          const { isSurveyCompleted, isRuleSetCompleted } = data.data.onboarding;
-
-          if (isSurveyCompleted && isRuleSetCompleted) {
-            navigate('/home'); // 둘 다 true -> 메인으로 이동
-          } else {
-            navigate('/onboarding'); // 하나라도 false -> 온보딩
-          }
+        if (isSurveyCompleted && isRuleSetCompleted) {
+          navigate('/home');
         } else {
-          setStatusText(`로그인 실패: ${data.message || '알 수 없는 에러'}`);
-          setTimeout(() => navigate('/login'), 2000);
+          navigate('/onboarding');
         }
       } catch (error) {
         console.error('소셜 로그인 처리 중 에러 발생:', error);
-        setStatusText('네트워크 에러가 발생했습니다.');
+        setStatusText(`로그인 실패: ${error.message || '네트워크 에러가 발생했습니다.'}`);
         setTimeout(() => navigate('/login'), 2000);
       }
     };

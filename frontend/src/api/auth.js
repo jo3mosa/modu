@@ -15,7 +15,12 @@ import apiClient from './apiClient';
  * 4. 응답 쿠키로 accessToken(1시간), refreshToken(14일) 자동 저장
  *
  * @param {string} code - 카카오 인증 서버로부터 받은 인가 코드
- * @returns {{ onboarding: { isSurveyCompleted: boolean, isRuleSetCompleted: boolean } }}
+ * @returns {Promise<{
+ *   userId: number,
+ *   nickname: string,
+ *   email: string | null,
+ *   onboarding: { isSurveyCompleted: boolean, isRuleSetCompleted: boolean }
+ * }>}
  */
 export async function socialLogin(code) {
   const data = await apiClient('/auth/social/kakao', {
@@ -35,7 +40,12 @@ export async function socialLogin(code) {
  * - 응답 쿠키로 accessToken, refreshToken 자동 저장
  *
  * @param {number} userId - DB에 등록된 사용자 ID
- * @returns {{ onboarding: { isSurveyCompleted: boolean, isRuleSetCompleted: boolean } }}
+ * @returns {Promise<{
+ *   userId: number,
+ *   nickname: string,
+ *   email: string | null,
+ *   onboarding: { isSurveyCompleted: boolean, isRuleSetCompleted: boolean }
+ * }>}
  */
 export async function testLogin(userId) {
   const data = await apiClient('/auth/test/login', {

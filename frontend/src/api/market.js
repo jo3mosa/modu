@@ -16,12 +16,12 @@ import apiClient from './apiClient';
  *   keyword: 검색어 (종목명 or 종목코드)
  *   page: 페이지 번호 (1 이상, 기본 1)
  *   size: 페이지 크기 (1~100, 기본 20)
- * @returns {{
+ * @returns {Promise<{
  *   stocks: Array<{ stockCode: string, stockName: string, marketType: string }>,
  *   totalCount: number,
  *   page: number,
  *   size: number
- * }}
+ * }>}
  */
 export async function getStocks({ keyword, page, size } = {}) {
   const search = new URLSearchParams();
@@ -40,19 +40,19 @@ export async function getStocks({ keyword, page, size } = {}) {
  * GET /api/v1/markets/stocks/{stockCode}
  *
  * @param {string} stockCode - 종목 코드 (예: '005930')
- * @returns {{
+ * @returns {Promise<{
  *   stockCode: string,
  *   stockName: string,
- *   marketType: string,        // 'KOSPI' | 'KOSDAQ'
- *   currentPrice: number,      // 현재가 (원)
- *   compareRate: number,       // 전일 대비율 (%)
- *   compareSign: string,       // 전일 대비 부호 (1,2:상승 / 3:보합 / 4,5:하락)
- *   accumulatedVolume: number, // 누적 거래량
- *   marketCap: number,         // 시가총액 (원)
- *   openPrice: number,         // 당일 시가
- *   highPrice: number,         // 당일 고가
- *   lowPrice: number           // 당일 저가
- * }}
+ *   marketType: string,
+ *   currentPrice: number,
+ *   compareRate: number,
+ *   compareSign: string,
+ *   accumulatedVolume: number,
+ *   marketCap: number,
+ *   openPrice: number,
+ *   highPrice: number,
+ *   lowPrice: number
+ * }>}
  */
 export async function getStockDetail(stockCode) {
   const data = await apiClient(`/markets/stocks/${stockCode}`);
@@ -97,7 +97,7 @@ export async function getStockNews(stockCode) {
 }
 
 /**
- * 기업 정보 조회 (Non-MVP)
+ * 기업 정보 조회
  * GET /api/v1/markets/stocks/{stockCode}/company-info
  *
  * @param {string} stockCode - 종목 코드
