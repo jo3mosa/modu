@@ -112,6 +112,34 @@ class KisRealtimeSubscriptionManagerTest {
         verify(firstSession).sendMessage(any(TextMessage.class));
     }
 
+    @Test
+    @DisplayName("broadcast 시 단일 세션 전송 실패가 다른 세션에 영향 없음")
+    void broadcastIsolatesSessionFailures() throws Exception {
+        // given
+        KisRealtimeSubscriptionManager manager = new KisRealtimeSubscriptionManager(new ObjectMapper(), upstreamClient);
+        KisRealtimeStreamKey key = new KisRealtimeStreamKey(KisRealtimeStreamType.PRICE, "005930");
+        RealtimePayload payload = new RealtimePayload("005930", 71200L);
+
+        when(firstSession.getId()).thenReturn("session-1");
+        when(secondSession.getId()).thenReturn("session-2");
+        when(firstSession.isOpen()).thenReturn(true);
+        when(secondSession.isOpen()).thenReturn(true);
+
+        // firstSession 전송 시 예외 발생하도록 설정
+        org.mockito.Mockito.doThrow(new RuntimeException("전송 실패"))
+                .when(firstSession).sendMessage(any(TextMessage.class));
+
+        manager.register(firstSession, key);
+        manager.register(secondSession, key);
+
+        // when - 예외 전파 없이 완료되어야 함
+        org.assertj.core.api.Assertions.assertThatCode(() -> manager.broadcast(key, payload))
+                .doesNotThrowAnyException();
+
+        // then - secondSession은 정상 수신
+        verify(secondSession).sendMessage(any(TextMessage.class));
+    }
+
     private record RealtimePayload(
             String stockCode,
             Long currentPrice
