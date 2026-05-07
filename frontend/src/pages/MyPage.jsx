@@ -21,7 +21,8 @@ export default function MyPage() {
   const [profile] = useState(MOCK_PROFILE);
   const [apiKeys, setApiKeys] = useState({
     appKey: MOCK_KIS_STATUS.appKey,
-    appSecret: MOCK_KIS_STATUS.appSecret
+    appSecret: MOCK_KIS_STATUS.appSecret,
+    accountNo: ''
   });
   const [isConnected, setIsConnected] = useState(MOCK_KIS_STATUS.isConnected);
   const [showSecret, setShowSecret] = useState(false);
@@ -38,8 +39,12 @@ export default function MyPage() {
     //     await updateKisKey({ appKey: apiKeys.appKey, appSecret: apiKeys.appSecret });
     //     alert('한국투자증권 API 키가 수정되었습니다!');
     //   } else {
-    //     // 임시 계좌번호 (UI에 계좌번호 폼 추가 필요 시 확장)
-    //     await registerKisKey({ appKey: apiKeys.appKey, appSecret: apiKeys.appSecret, accountNo: '12345678-01' });
+    //     await registerKisKey({ 
+    //       appKey: apiKeys.appKey, 
+    //       appSecret: apiKeys.appSecret, 
+    //       accountNo: apiKeys.accountNo,
+    //       isRealAccount: true // 실전투자 고정
+    //     });
     //     alert('한국투자증권 API 키가 등록되었습니다!');
     //   }
     //   setIsConnected(true);
@@ -121,6 +126,15 @@ export default function MyPage() {
                 {showSecret ? <EyeOff size={20} /> : <Eye size={20} />}
               </button>
             </div>
+          </div>
+          <div className="input-group">
+            <label>종합계좌번호</label>
+            <input
+              type="text"
+              value={apiKeys.accountNo}
+              onChange={(e) => setApiKeys({ ...apiKeys, accountNo: e.target.value })}
+              placeholder="예: 50012345-01"
+            />
           </div>
           <button className="save-btn" onClick={handleSaveKeys}>
             연동 테스트 및 저장
