@@ -42,9 +42,10 @@ export default function MainLayout() {
   //   clearTimeout(debounceRef.current);
   //   debounceRef.current = setTimeout(async () => {
   //     try {
-  //       const data = await getStocks(query);  // GET /api/v1/markets/stocks?query=...
-  //       setResults(data);
-  //       setShowDropdown(data.length > 0);
+  //       // GET /api/v1/markets/stocks?keyword=... → { stocks, totalCount, page, size }
+  //       const data = await getStocks({ keyword: query, page: 1, size: 20 });
+  //       setResults(data.stocks);
+  //       setShowDropdown(data.stocks.length > 0);
   //     } catch { setResults([]); }
   //   }, 300);
   //   return () => clearTimeout(debounceRef.current);

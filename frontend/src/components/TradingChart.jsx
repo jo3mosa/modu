@@ -4,11 +4,11 @@ import { createChart } from 'lightweight-charts';
 import './TradingChart.css';
 
 const TIMEFRAME_OPTIONS = [
-  { label: '1분',  value: '1m'  },
-  { label: '5분',  value: '5m'  },
+  { label: '1분', value: '1m' },
+  { label: '5분', value: '5m' },
   { label: '15분', value: '15m' },
   { label: '60분', value: '60m' },
-  { label: '일봉', value: '1D'  },
+  { label: '일봉', value: '1D' },
 ];
 
 // ── MOCK 더미 데이터 (백엔드 연동 후 삭제 예정) ───────────────────────────────
@@ -87,15 +87,15 @@ export default function TradingChart({ stockCode }) {
     // ── MOCK 데이터 세팅 (연동 시 아래 블록 삭제) ──────────────────────────
     const data = generateDummyData();
     candlestickSeriesRef.current.setData(data);
-    
+
     // UI 표시용 가짜 AI 매매 내역 마커
     candlestickSeriesRef.current.setMarkers([
-      { time: data[data.length - 80].time, position: 'belowBar', color: '#ef4444', shape: 'arrowUp',   text: 'AI 매수' },
+      { time: data[data.length - 80].time, position: 'belowBar', color: '#ef4444', shape: 'arrowUp', text: 'AI 매수' },
       { time: data[data.length - 60].time, position: 'aboveBar', color: '#3b82f6', shape: 'arrowDown', text: 'AI 매도' },
-      { time: data[data.length - 45].time, position: 'belowBar', color: '#ef4444', shape: 'arrowUp',   text: 'AI 매수' },
-      { time: data[data.length - 25].time, position: 'belowBar', color: '#ef4444', shape: 'arrowUp',   text: '사용자 매수' },
+      { time: data[data.length - 45].time, position: 'belowBar', color: '#ef4444', shape: 'arrowUp', text: 'AI 매수' },
+      { time: data[data.length - 25].time, position: 'belowBar', color: '#ef4444', shape: 'arrowUp', text: '사용자 매수' },
       { time: data[data.length - 15].time, position: 'aboveBar', color: '#3b82f6', shape: 'arrowDown', text: 'AI 매도' },
-      { time: data[data.length - 5].time,  position: 'belowBar', color: '#ef4444', shape: 'arrowUp',   text: 'AI 매수' },
+      { time: data[data.length - 5].time, position: 'belowBar', color: '#ef4444', shape: 'arrowUp', text: 'AI 매수' },
     ]);
     volumeSeriesRef.current.setData(generateVolumeData(data));
     // ─────────────────────────────────────────────────────────────────────
@@ -139,7 +139,7 @@ export default function TradingChart({ stockCode }) {
   //   fetchCandles();
   // }, [stockCode, timeframe]);
 
-  // ── 연동 시 아래 블록 해제 (AI 매매 내역 차트 마커 시각화 - TASK 4) ──────
+  // ── 연동 시 아래 블록 해제 (AI 매매 내역 차트 마커 시각화) ──────
   // import { getAiDecisions } from '../api/aiAgent'; // 파일 상단 주석 해제 필요
   // useEffect(() => {
   //   if (!stockCode || !candlestickSeriesRef.current) return;

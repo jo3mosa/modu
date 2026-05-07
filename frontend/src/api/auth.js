@@ -1,7 +1,5 @@
 /**
  * 인증(Auth) 관련 API 함수
- *
- * 백엔드 컨트롤러: AuthController, TestAuthController
  * 베이스 경로: /api/v1/auth
  */
 import apiClient from './apiClient';

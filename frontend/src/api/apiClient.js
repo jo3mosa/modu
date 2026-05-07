@@ -2,7 +2,6 @@
  * 공통 API 클라이언트 유틸리티
  *
  * - 백엔드 베이스 URL: /api/v1 (vite.config.js의 proxy 설정으로 백엔드 8080으로 포워딩됨)
- * - 인증 방식: HttpOnly 쿠키 (accessToken, refreshToken) → credentials: 'include' 필수
  * - 401 응답 시 /auth/refresh로 토큰 재발급 후 원래 요청 1회 자동 재시도
  */
 
