@@ -1,3 +1,6 @@
+from datetime import datetime
+from typing import Any
+
 from app.repositories.position_cache_repository import PositionCacheRepository
 from app.repositories.position_index_repository import PositionIndexRepository
 from app.repositories.trade_rule_cache_repository import TradeRuleCacheRepository
@@ -6,7 +9,6 @@ from app.repositories.position_event_cooldown_repository import (
 )
 
 from app.position_monitoring.schemas import PositionEvent, PriceTick
-
 
 class PositionMonitor:
     """
@@ -20,7 +22,7 @@ class PositionMonitor:
     - 동일 이벤트 반복 발생은 cooldown으로 제한한다.
     """
 
-    COOLDOWN_SECONDS = 300 # 이벤트 재발생 방지 위해 5분 cooldown 적용
+    COOLDOWN_SECONDS = 300  # 이벤트 재발생 방지 위해 5분 cooldown 적용
 
     def __init__(
         self,
@@ -95,31 +97,16 @@ class PositionMonitor:
                 isinstance(take_profit_rate, (int, float))
                 and profit_rate >= take_profit_rate
             ):
-                if self.cooldown_repository.is_cooldown_active(
+                self._append_event_if_not_in_cooldown(
+                    events,
                     user_id=user_id,
                     stock_code=tick.stock_code,
                     event_type="TAKE_PROFIT_RATE_HIT",
-                ):
-                    continue
-
-                events.append(
-                    PositionEvent(
-                        user_id=user_id,
-                        stock_code=tick.stock_code,
-                        event_type="TAKE_PROFIT_RATE_HIT",
-                        current_price=tick.current_price,
-                        trade_rule=trade_rule,
-                        position=position,
-                        profit_rate=profit_rate,
-                        timestamp=tick.timestamp,
-                    )
-                )
-
-                self.cooldown_repository.activate_cooldown(
-                    user_id=user_id,
-                    stock_code=tick.stock_code,
-                    event_type="TAKE_PROFIT_RATE_HIT",
-                    ttl_seconds=self.COOLDOWN_SECONDS,
+                    current_price=tick.current_price,
+                    trade_rule=trade_rule,
+                    position=position,
+                    profit_rate=profit_rate,
+                    timestamp=tick.timestamp,
                 )
 
             # ==============================
@@ -130,31 +117,63 @@ class PositionMonitor:
                 isinstance(stop_loss_rate, (int, float))
                 and profit_rate <= stop_loss_rate
             ):
-                if self.cooldown_repository.is_cooldown_active(
+                self._append_event_if_not_in_cooldown(
+                    events,
                     user_id=user_id,
                     stock_code=tick.stock_code,
                     event_type="STOP_LOSS_RATE_HIT",
-                ):
-                    continue
-
-                events.append(
-                    PositionEvent(
-                        user_id=user_id,
-                        stock_code=tick.stock_code,
-                        event_type="STOP_LOSS_RATE_HIT",
-                        current_price=tick.current_price,
-                        trade_rule=trade_rule,
-                        position=position,
-                        profit_rate=profit_rate,
-                        timestamp=tick.timestamp,
-                    )
-                )
-
-                self.cooldown_repository.activate_cooldown(
-                    user_id=user_id,
-                    stock_code=tick.stock_code,
-                    event_type="STOP_LOSS_RATE_HIT",
-                    ttl_seconds=self.COOLDOWN_SECONDS,
+                    current_price=tick.current_price,
+                    trade_rule=trade_rule,
+                    position=position,
+                    profit_rate=profit_rate,
+                    timestamp=tick.timestamp,
                 )
 
         return events
+    
+    def _append_event_if_not_in_cooldown(
+        self,
+        events: list[PositionEvent],
+        *,
+        user_id: int,
+        stock_code: str,
+        event_type: str,
+        current_price: int,
+        trade_rule: dict[str, Any],
+        position: dict[str, Any],
+        profit_rate: float,
+        timestamp: datetime,
+    ) -> None:
+        """
+        cooldown이 아니면 PositionEvent를 생성하고 cooldown을 활성화한다.
+
+        cooldown 상태여도 detect_events의 사용자 루프 전체를 건너뛰지 않고,
+        해당 event_type 생성만 건너뛴다.
+        """
+
+        if self.cooldown_repository.is_cooldown_active(
+            user_id=user_id,
+            stock_code=stock_code,
+            event_type=event_type,
+        ):
+            return
+
+        events.append(
+            PositionEvent(
+                user_id=user_id,
+                stock_code=stock_code,
+                event_type=event_type,
+                current_price=current_price,
+                trade_rule=trade_rule,
+                position=position,
+                profit_rate=profit_rate,
+                timestamp=timestamp,
+            )
+        )
+
+        self.cooldown_repository.activate_cooldown(
+            user_id=user_id,
+            stock_code=stock_code,
+            event_type=event_type,
+            ttl_seconds=self.COOLDOWN_SECONDS,
+        )    
