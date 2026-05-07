@@ -35,7 +35,21 @@ spec:
 
 ---
 
-# 3. StatefulSet — KRaft 모드 3 브로커
+# 3. PodDisruptionBudget — 롤링 업데이트/노드 유지보수 시 최소 2개 브로커 보장
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: kafka-pdb
+  namespace: modu-apps
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: kafka
+
+---
+
+# 4. StatefulSet — KRaft 모드 3 브로커
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -52,9 +66,10 @@ spec:
       labels:
         app: kafka
     spec:
+      automountServiceAccountToken: false
       containers:
       - name: kafka
-        image: apache/kafka:latest
+        image: apache/kafka:3.9.0
         command:
           - sh
           - -c
@@ -88,6 +103,15 @@ spec:
           value: "3"
         - name: KAFKA_MIN_INSYNC_REPLICAS
           value: "2"
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          seccompProfile:
+            type: RuntimeDefault
+          capabilities:
+            drop:
+              - ALL
         resources:
           requests:
             memory: "512Mi"

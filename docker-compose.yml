@@ -117,8 +117,9 @@ services:
 
       # Kafka 브로커 1 (KRaft 모드)
   kafka-0:
-    image: apache/kafka:latest
+    image: apache/kafka:3.9.0
     container_name: modu-kafka-0
+    restart: on-failure
     ports:
       - "9092:9092"
     environment:
@@ -147,8 +148,9 @@ services:
 
   # Kafka 브로커 2 (KRaft 모드)
   kafka-1:
-    image: apache/kafka:latest
+    image: apache/kafka:3.9.0
     container_name: modu-kafka-1
+    restart: on-failure
     ports:
       - "9093:9092"
     environment:
@@ -177,8 +179,9 @@ services:
 
   # Kafka 브로커 3 (KRaft 모드)
   kafka-2:
-    image: apache/kafka:latest
+    image: apache/kafka:3.9.0
     container_name: modu-kafka-2
+    restart: on-failure
     ports:
       - "9094:9092"
     environment:
