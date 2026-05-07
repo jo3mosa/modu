@@ -254,88 +254,6 @@ def _find_asset_snapshot(
     return {}
 
 
-def _validate_stop_loss_take_profit(
-    *,
-    checks: list[dict[str, Any]],
-    decision: Any,
-) -> dict[str, Any] | None:
-    """
-    손절/익절 기준 충돌 여부를 검증한다.
-
-    현재 FinalDecision에는 take_profit_price 필드가 없고,
-    target_price를 목표가로 사용한다.
-
-    buy 기준:
-    - stop_loss_price는 target_price보다 낮아야 한다.
-    - stop_loss_price와 target_price가 같거나 역전되면 차단한다.
-
-    sell 기준:
-    - 매도는 리스크 축소 행위이므로, 가격 기준 충돌 검증을 강하게 적용하지 않는다.
-    """
-
-    side = get_value(decision, "side")
-    target_price = get_value(decision, "target_price")
-    stop_loss_price = get_value(decision, "stop_loss_price")
-
-    if side != "buy":
-        _add_check(
-            checks,
-            name="stop_loss_take_profit_conflict",
-            status="passed",
-            reason="매도 주문은 손절/익절 가격 충돌 검증 대상이 아닙니다.",
-        )
-        return None
-
-    if target_price is None or stop_loss_price is None:
-        _add_check(
-            checks,
-            name="stop_loss_take_profit_conflict",
-            status="hold",
-            reason="목표가 또는 손절가가 없어 가격 기준 검증을 할 수 없습니다.",
-            value={
-                "target_price": target_price,
-                "stop_loss_price": stop_loss_price,
-            },
-        )
-        return _make_result(
-            status="hold",
-            reason="목표가 또는 손절가 누락으로 주문을 보류합니다.",
-            checks=checks,
-        )
-
-    if stop_loss_price >= target_price:
-        _add_check(
-            checks,
-            name="stop_loss_take_profit_conflict",
-            status="blocked",
-            reason="손절가가 목표가보다 낮지 않아 리스크 기준이 충돌합니다.",
-            value={
-                "target_price": target_price,
-                "stop_loss_price": stop_loss_price,
-            },
-            limit="stop_loss_price < target_price",
-        )
-        return _make_result(
-            status="blocked",
-            reason="손절/익절 기준 충돌로 주문을 차단합니다.",
-            checks=checks,
-        )
-
-    _add_check(
-        checks,
-        name="stop_loss_take_profit_conflict",
-        status="passed",
-        reason="손절가와 목표가 기준이 정상입니다.",
-        value={
-            "target_price": target_price,
-            "stop_loss_price": stop_loss_price,
-        },
-        limit="stop_loss_price < target_price",
-    )
-
-    return None
-
-
 def risk_guard(state: InvestmentAgentState) -> dict[str, Any]:
     """
     Risk Guard Agent.
@@ -575,19 +493,7 @@ def risk_guard(state: InvestmentAgentState) -> dict[str, Any]:
     )
 
     # ==============================
-    # 5. 손절 / 익절 기준 충돌 검증
-    # ==============================
-
-    price_rule_result = _validate_stop_loss_take_profit(
-        checks=checks,
-        decision=decision,
-    )
-
-    if price_rule_result is not None:
-        return price_rule_result
-
-    # ==============================
-    # 6. 종목 위험 등급 / 거래정지 / 관리종목 검증
+    # 5. 종목 위험 등급 / 거래정지 / 관리종목 검증
     # ==============================
 
     asset_snapshot = _find_asset_snapshot(state, asset)
@@ -654,7 +560,7 @@ def risk_guard(state: InvestmentAgentState) -> dict[str, Any]:
     )
 
     # ==============================
-    # 7. 포트폴리오 스냅샷 검증
+    # 6. 포트폴리오 스냅샷 검증
     # ==============================
 
     total_asset = portfolio_snapshot.get("total_asset")
@@ -709,7 +615,7 @@ def risk_guard(state: InvestmentAgentState) -> dict[str, Any]:
     )
 
     # ==============================
-    # 8. 매수 전용 검증
+    # 7. 매수 전용 검증
     # ==============================
 
     if side == "buy":
@@ -875,7 +781,7 @@ def risk_guard(state: InvestmentAgentState) -> dict[str, Any]:
         )
 
     # ==============================
-    # 9. 매도 전용 검증
+    # 8. 매도 전용 검증
     # ==============================
 
     if side == "sell":
@@ -952,7 +858,7 @@ def risk_guard(state: InvestmentAgentState) -> dict[str, Any]:
             )
 
     # ==============================
-    # 10. 시장 상태 검증
+    # 9. 시장 상태 검증
     # ==============================
 
     market_open = market_snapshot.get("market_open")
@@ -1052,7 +958,7 @@ def risk_guard(state: InvestmentAgentState) -> dict[str, Any]:
         )
 
     # ==============================
-    # 11. 고위험 조건 사용자 승인 처리
+    # 10. 고위험 조건 사용자 승인 처리
     # ==============================
 
     critic_feedback = state.critic_feedback
@@ -1084,7 +990,7 @@ def risk_guard(state: InvestmentAgentState) -> dict[str, Any]:
     )
 
     # ==============================
-    # 12. 최종 통과
+    # 11. 최종 통과
     # ==============================
 
     return _make_result(
