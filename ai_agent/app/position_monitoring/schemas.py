@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field
 PositionEventType = Literal[
     "TAKE_PROFIT_RATE_HIT",
     "STOP_LOSS_RATE_HIT",
-    "PROFIT_RATE_SPIKE",
 ]
 
 
