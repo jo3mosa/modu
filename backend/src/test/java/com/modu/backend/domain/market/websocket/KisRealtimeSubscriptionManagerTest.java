@@ -10,6 +10,7 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -110,6 +111,31 @@ class KisRealtimeSubscriptionManagerTest {
 
         // then
         verify(firstSession).sendMessage(any(TextMessage.class));
+    }
+
+    @Test
+    @DisplayName("일부 세션 전송 실패가 나머지 세션 전송을 중단하지 않는다")
+    void continueBroadcastWhenOneSessionFails() throws Exception {
+        // given
+        KisRealtimeSubscriptionManager manager = new KisRealtimeSubscriptionManager(new ObjectMapper(), upstreamClient);
+        KisRealtimeStreamKey key = new KisRealtimeStreamKey(KisRealtimeStreamType.PRICE, "005930");
+        RealtimePayload payload = new RealtimePayload("005930", 71200L);
+
+        when(firstSession.getId()).thenReturn("session-1");
+        when(secondSession.getId()).thenReturn("session-2");
+        when(firstSession.isOpen()).thenReturn(true);
+        when(secondSession.isOpen()).thenReturn(true);
+        doThrow(new RuntimeException("send failed")).when(firstSession).sendMessage(any(TextMessage.class));
+
+        manager.register(firstSession, key);
+        manager.register(secondSession, key);
+
+        // when
+        manager.broadcast(key, payload);
+
+        // then
+        verify(firstSession).sendMessage(any(TextMessage.class));
+        verify(secondSession).sendMessage(any(TextMessage.class));
     }
 
     private record RealtimePayload(

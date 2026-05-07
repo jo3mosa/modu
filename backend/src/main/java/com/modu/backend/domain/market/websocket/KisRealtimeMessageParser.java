@@ -35,13 +35,23 @@ public class KisRealtimeMessageParser {
             return Optional.empty();
         }
 
-        KisRealtimeStreamType type = KisRealtimeStreamType.fromTrId(frame[1]);
+        KisRealtimeStreamType type;
+        try {
+            type = KisRealtimeStreamType.fromTrId(frame[1]);
+        } catch (IllegalArgumentException e) {
+            return Optional.empty();
+        }
+
         String[] fields = frame[3].split("\\^", -1);
+        if (fields.length == 0 || fields[0].isBlank()) {
+            return Optional.empty();
+        }
+
+        String stockCode = fields[0];
         Object payload = switch (type) {
             case PRICE -> parsePrice(fields);
             case ORDERBOOK -> parseOrderbook(fields);
         };
-        String stockCode = fields.length > 0 ? fields[0] : "";
 
         return Optional.of(new KisRealtimeParsedMessage(new KisRealtimeStreamKey(type, stockCode), payload));
     }

@@ -89,16 +89,25 @@ public class KisRealtimeSubscriptionManager {
             return;
         }
 
+        TextMessage message;
         try {
-            TextMessage message = new TextMessage(objectMapper.writeValueAsString(payload));
-            for (WebSocketSession session : sessions) {
-                if (session.isOpen()) {
-                    session.sendMessage(message);
-                }
-            }
+            message = new TextMessage(objectMapper.writeValueAsString(payload));
         } catch (Exception e) {
-            log.error("Realtime websocket broadcast failed - trId: {}, stockCode: {}, error: {}",
+            log.error("Realtime websocket message serialization failed - trId: {}, stockCode: {}, error: {}",
                     key.type().trId(), key.stockCode(), e.getMessage());
+            return;
+        }
+
+        for (WebSocketSession session : sessions) {
+            if (!session.isOpen()) {
+                continue;
+            }
+            try {
+                session.sendMessage(message);
+            } catch (Exception e) {
+                log.warn("Realtime websocket send failed - sessionId: {}, trId: {}, stockCode: {}, error: {}",
+                        session.getId(), key.type().trId(), key.stockCode(), e.getMessage());
+            }
         }
     }
 }

@@ -126,6 +126,36 @@ class KisRealtimeMessageParserTest {
         assertThat(payload.currentPrice()).isNull();
     }
 
+    @Test
+    @DisplayName("미지원 TR ID 메시지는 무시한다")
+    void ignoreUnsupportedTrId() {
+        // given
+        String[] fields = fields(47);
+        fields[0] = "005930";
+
+        // when
+        Optional<KisRealtimeMessageParser.KisRealtimeParsedMessage> result =
+                parser.parse(realtimeMessage("UNKNOWN", fields));
+
+        // then
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    @DisplayName("종목코드가 비어 있는 메시지는 무시한다")
+    void ignoreBlankStockCode() {
+        // given
+        String[] fields = fields(47);
+        fields[0] = " ";
+
+        // when
+        Optional<KisRealtimeMessageParser.KisRealtimeParsedMessage> result =
+                parser.parse(realtimeMessage("H0STCNT0", fields));
+
+        // then
+        assertThat(result).isEmpty();
+    }
+
     private String[] fields(int size) {
         String[] fields = new String[size];
         Arrays.fill(fields, "");
