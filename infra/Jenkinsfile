@@ -153,25 +153,39 @@ ${log}
         // 파이프라인 성공 시 Mattermost로 성공 알림 전송
         success {
             script {
-                // 기본 메시지 (배포 대상 외 브랜치일 경우)
-                def successMsg = "✅ 빌드/검증 성공 (배포 미대상 브랜치)"
-                // develop 브랜치 성공 메시지
-                if (env.BRANCH_NAME == 'develop') successMsg = "🚀 **SSAFY K3s** 배포 성공!"
-                // main 브랜치 성공 메시지
-                if (env.BRANCH_NAME == 'main')    successMsg = "🌟 **AWS EKS** 운영 환경 배포 성공!"
+                def author = sh(script: 'git log -1 --pretty=format:"%an"', returnStdout: true).trim()
 
-                // 성공 시 실패 추적 변수 초기화
+                def stageFlow = ""
+                def resultMsg = ""
+                if (env.BRANCH_NAME == 'develop') {
+                    stageFlow = "✅ 이미지 빌드 → 🚀 SSAFY K3s 배포"
+                    resultMsg = "🚀 **SSAFY K3s** 배포 성공!"
+                } else if (env.BRANCH_NAME == 'main') {
+                    stageFlow = "✅ 이미지 빌드 → 🌟 AWS EKS 배포"
+                    resultMsg = "🌟 **AWS EKS** 운영 환경 배포 성공!"
+                } else {
+                    stageFlow = "✅ 이미지 빌드"
+                    resultMsg = "✅ 빌드 성공 (배포 미대상 브랜치)"
+                }
+
                 env.FAILED_STAGE = ""
-                sendMattermostNotification("SUCCESS", "#00FF00", successMsg)
+                sendMattermostNotification("SUCCESS", "#00FF00", """${resultMsg}
+
+**진행 단계:** ${stageFlow}
+**작업자:** ${author}
+**브랜치:** ${env.BRANCH_NAME}""")
             }
         }
 
         // 파이프라인 실패 시 실패 지점과 상세 원인을 포함한 알림 전송
         failure {
             script {
+                def author = sh(script: 'git log -1 --pretty=format:"%an"', returnStdout: true).trim()
                 sendMattermostNotification("FAILURE", "#FF0000", """🚨 **공정 실패 리포트**
 
 **실패 지점:** `${env.FAILED_STAGE}`
+**작업자:** ${author}
+**브랜치:** ${env.BRANCH_NAME}
 
 **상세 원인:**
 ${env.ERROR_DETAILS}""")
@@ -299,22 +313,22 @@ def sendMattermostNotification(String status, String color, String message) {
     def decodedJobName = java.net.URLDecoder.decode(env.JOB_NAME, "UTF-8")
 
     withCredentials([string(credentialsId: 'MATTERMOST_WEBHOOK_URL', variable: 'WEBHOOK_URL')]) {
-        // 상태에 따른 알림 제목 설정
         def title = (status == "SUCCESS") ? "✅ 파이프라인 공정 성공" : "🚨 파이프라인 공정 실패"
 
-        // Mattermost Attachment 형식의 JSON 페이로드 구성
-        def payload = """
-        {
-            "attachments": [
-                {
-                    "color": "${color}",
-                    "title": "${title}",
-                    "text": "### **Project:** ${decodedJobName} (#${env.BUILD_NUMBER})\\n${message}\\n\\n---\\n[🔍 젠킨스 상세 로그 확인](${env.BUILD_URL}console)"
-                }
-            ]
-        }
-        """
-        // curl로 Webhook에 POST 요청 전송
-        sh "curl -i -X POST -H 'Content-Type: application/json' -d '${payload}' ${WEBHOOK_URL}"
+        def fullText = "### **Project:** ${decodedJobName} (#${env.BUILD_NUMBER})\n${message}\n\n---\n[🔍 젠킨스 상세 로그 확인](${env.BUILD_URL}console)"
+
+        // JSON 삽입 전 특수문자 이스케이프 (백슬래시 → 개행 → 따옴표 순서 중요)
+        def escapedText = fullText
+            .replace('\\', '\\\\')
+            .replace('"',  '\\"')
+            .replace('\n', '\\n')
+            .replace('\r', '\\r')
+            .replace('\t', '\\t')
+
+        def escapedTitle = title.replace('"', '\\"')
+
+        // JSON을 파일로 저장 후 전송 (인라인 -d 방식은 개행/특수문자로 JSON이 깨짐)
+        writeFile file: 'mm_payload.json', text: """{"attachments":[{"color":"${color}","title":"${escapedTitle}","text":"${escapedText}"}]}"""
+        sh 'curl -s -X POST -H "Content-Type: application/json" --data @mm_payload.json "$WEBHOOK_URL"'
     }
 }

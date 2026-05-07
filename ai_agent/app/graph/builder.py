@@ -1,10 +1,10 @@
 from langgraph.graph import END, StateGraph
 
-from app.agents.critic_agent import critic_agent
+from app.agents.critic.critic_agent import critic_agent
 from app.agents.memory.memory_agent import memory_agent
-from app.agents.risk_guard.risk_guard import risk_guard
-from app.agents.strategy_agent import strategy_agent
-from app.agents.supervisor_agent import supervisor_agent
+from app.action.risk_guard.risk_guard import risk_guard
+from app.agents.strategy.strategy_agent import strategy_agent
+from app.agents.supervisor.supervisor_agent import supervisor_agent
 from app.runtime.executor import executor
 from app.state.investment_state import InvestmentAgentState
 

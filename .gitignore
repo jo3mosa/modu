@@ -64,6 +64,8 @@ analysis_server/data/*.csv
 # KIS API 토큰 캐시 파일 (절대 공유 금지)
 kis_token.json
 **/kis_token.json
+dart_corp_code.json
+**/dart_corp_code.json
 
 .env
 
@@ -76,3 +78,5 @@ venv/
 .vscode/
 .idea/
 .env
+
+data/
