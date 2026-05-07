@@ -7,6 +7,7 @@ import com.modu.backend.domain.investment.repository.InvestmentProfileRepository
 import com.modu.backend.domain.investment.repository.ProfileHistoryRepository;
 import com.modu.backend.domain.strategy.dto.InvestmentRiskLevel;
 import com.modu.backend.domain.strategy.dto.ProfileAnswerRequest;
+import com.modu.backend.domain.strategy.dto.ProfileResponse;
 import com.modu.backend.domain.strategy.dto.ProfileUpdateRequest;
 import com.modu.backend.domain.strategy.dto.ProfileUpdateResponse;
 import com.modu.backend.domain.trading.repository.TradingRuleRepository;
@@ -50,6 +51,75 @@ class StrategyProfileServiceTest {
                 profileHistoryRepository,
                 tradingRuleRepository
         );
+    }
+
+    @Test
+    @DisplayName("투자 성향 프로필을 조회하면 저장된 스냅샷을 응답으로 반환한다")
+    void getProfile() {
+        // given
+        Long userId = 1L;
+        OffsetDateTime createdAt = OffsetDateTime.now().minusDays(1);
+        OffsetDateTime updatedAt = OffsetDateTime.now();
+        InvestmentProfile existingProfile = InvestmentProfile.builder()
+                .userId(userId)
+                .riskScore(68L)
+                .riskGrade("ACTIVE")
+                .profileSummary("active profile summary")
+                .investmentGoal("market average return")
+                .answersSnapshot(Map.of(
+                        "answers", List.of(
+                                Map.of(
+                                        "questionId", "AGE_GROUP",
+                                        "question", "age group question",
+                                        "optionId", "AGE_20_TO_40",
+                                        "answer", "20 to 40",
+                                        "scoringType", "SCORED"
+                                ),
+                                Map.of(
+                                        "questionId", "INVESTMENT_PERIOD",
+                                        "question", "investment period question",
+                                        "optionId", "OVER_3_YEARS",
+                                        "answer", "over 3 years",
+                                        "scoringType", "SCORED"
+                                )
+                        ),
+                        "freeText", "prefer dividend stocks",
+                        "riskScore", 68L,
+                        "riskLevel", "ACTIVE"
+                ))
+                .version(1L)
+                .createdAt(createdAt)
+                .updatedAt(updatedAt)
+                .build();
+
+        when(investmentProfileRepository.findById(userId)).thenReturn(Optional.of(existingProfile));
+
+        // when
+        ProfileResponse response = strategyProfileService.getProfile(userId);
+
+        // then
+        assertThat(response.riskLevel()).isEqualTo(InvestmentRiskLevel.ACTIVE);
+        assertThat(response.profileSummary()).isEqualTo("active profile summary");
+        assertThat(response.freeText()).isEqualTo("prefer dividend stocks");
+        assertThat(response.createdAt()).isEqualTo(createdAt);
+        assertThat(response.updatedAt()).isEqualTo(updatedAt);
+        assertThat(response.answers()).hasSize(2);
+        assertThat(response.answers().get(0).questionId()).isEqualTo("AGE_GROUP");
+        assertThat(response.answers().get(0).answer()).isEqualTo("20 to 40");
+    }
+
+    @Test
+    @DisplayName("투자 성향 프로필이 없으면 PROFILE_NOT_FOUND 예외를 던진다")
+    void getProfileNotFound() {
+        // given
+        Long userId = 1L;
+        when(investmentProfileRepository.findById(userId)).thenReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> strategyProfileService.getProfile(userId))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode())
+                        .isEqualTo(InvestmentErrorCode.PROFILE_NOT_FOUND));
     }
 
     @Test
