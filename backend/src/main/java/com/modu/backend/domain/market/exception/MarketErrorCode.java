@@ -21,7 +21,10 @@ public enum MarketErrorCode implements ErrorCode {
     KIS_PRICE_FETCH_FAILED("MKT_002", HttpStatus.BAD_GATEWAY, "종목 시세 조회에 실패했습니다."),
 
     /** 유효하지 않은 period 값 (D/W/M/1/5/60 외) */
-    INVALID_CANDLE_PERIOD("MKT_003", HttpStatus.BAD_REQUEST, "유효하지 않은 기간 타입입니다. (D/W/M/1/5/60)");
+    INVALID_CANDLE_PERIOD("MKT_003", HttpStatus.BAD_REQUEST, "유효하지 않은 기간 타입입니다. (D/W/M/1/5/60)"),
+
+    /** 유효하지 않은 캔들 조회 날짜 범위 */
+    INVALID_CANDLE_DATE_RANGE("MKT_004", HttpStatus.BAD_REQUEST, "유효하지 않은 캔들 조회 날짜 범위입니다.");
 
     private final String code;
     private final HttpStatus status;

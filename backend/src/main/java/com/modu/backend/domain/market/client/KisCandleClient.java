@@ -13,8 +13,11 @@ import org.springframework.web.client.RestClientException;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * KIS 캔들 데이터 조회 클라이언트
@@ -42,7 +45,7 @@ public class KisCandleClient {
     private static final String TR_INTRADAY = "FHKST03010200";
     private static final String TR_MINUTE = "FHKST03010230";
 
-    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
+    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.BASIC_ISO_DATE;
 
     private final RestClient kisRestClient;
     private final KisApiProperties kisApiProperties;
@@ -135,13 +138,13 @@ public class KisCandleClient {
         boolean isToday = startDate == null || startDate.equals(LocalDate.now().format(DATE_FMT));
 
         if (isToday) {
-            return getTodayMinuteCandles(accessToken, stockCode, endDate);
+            return getTodayMinuteCandles(accessToken, stockCode, period, endDate);
         } else {
-            return getHistoricalMinuteCandles(accessToken, stockCode, startDate);
+            return getHistoricalMinuteCandles(accessToken, stockCode, period, startDate, endDate);
         }
     }
 
-    private List<CandleResponse> getTodayMinuteCandles(String accessToken, String stockCode, String date) {
+    private List<CandleResponse> getTodayMinuteCandles(String accessToken, String stockCode, String period, String date) {
         String currentTime = LocalTime.now().format(DateTimeFormatter.ofPattern("HHmmss"));
 
         try {
@@ -183,7 +186,7 @@ public class KisCandleClient {
                     ))
                     .toList();
 
-            return candles.reversed();
+            return aggregateMinuteCandles(candles.reversed(), period);
 
         } catch (RestClientException e) {
             log.error("KIS 당일분봉 API 호출 실패 - stockCode: {}, error: {}", stockCode, e.getMessage());
@@ -191,7 +194,22 @@ public class KisCandleClient {
         }
     }
 
-    private List<CandleResponse> getHistoricalMinuteCandles(String accessToken, String stockCode, String date) {
+    private List<CandleResponse> getHistoricalMinuteCandles(String accessToken, String stockCode,
+                                                            String period, String startDate, String endDate) {
+        LocalDate start = LocalDate.parse(startDate, DATE_FMT);
+        LocalDate end = LocalDate.parse(endDate, DATE_FMT);
+        if (end.isBefore(start)) {
+            throw new ApiException(MarketErrorCode.INVALID_CANDLE_DATE_RANGE);
+        }
+
+        List<CandleResponse> candles = new ArrayList<>();
+        for (LocalDate date = start; !date.isAfter(end); date = date.plusDays(1)) {
+            candles.addAll(getHistoricalMinuteCandlesByDate(accessToken, stockCode, date.format(DATE_FMT)));
+        }
+        return aggregateMinuteCandles(candles, period);
+    }
+
+    private List<CandleResponse> getHistoricalMinuteCandlesByDate(String accessToken, String stockCode, String date) {
         try {
             MinuteChartResponse response = kisRestClient.get()
                     .uri(uriBuilder -> uriBuilder
@@ -223,7 +241,7 @@ public class KisCandleClient {
             List<CandleResponse> candles = response.output2().stream()
                     .filter(item -> item.stckCntgHour() != null && !item.stckCntgHour().isBlank())
                     .map(item -> new CandleResponse(
-                            item.stckCntgHour(),
+                            date + item.stckCntgHour(),
                             parseLong(item.stckOprc()),
                             parseLong(item.stckHgpr()),
                             parseLong(item.stckLwpr()),
@@ -241,6 +259,65 @@ public class KisCandleClient {
     }
 
     // ── 유틸 ────────────────────────────────────────────────────────────────────
+
+    private List<CandleResponse> aggregateMinuteCandles(List<CandleResponse> candles, String period) {
+        int intervalMinutes = Integer.parseInt(period);
+        if (intervalMinutes <= 1 || candles.isEmpty()) {
+            return candles;
+        }
+
+        Map<String, List<CandleResponse>> grouped = new LinkedHashMap<>();
+        for (CandleResponse candle : candles) {
+            grouped.computeIfAbsent(bucketTimestamp(candle.timestamp(), intervalMinutes), ignored -> new ArrayList<>())
+                    .add(candle);
+        }
+
+        return grouped.entrySet().stream()
+                .map(entry -> aggregateBucket(entry.getKey(), entry.getValue()))
+                .toList();
+    }
+
+    private String bucketTimestamp(String timestamp, int intervalMinutes) {
+        int timeStartIndex = timestamp.length() - 6;
+        String datePrefix = timestamp.substring(0, timeStartIndex);
+        String time = timestamp.substring(timeStartIndex);
+
+        int hour = Integer.parseInt(time.substring(0, 2));
+        int minute = Integer.parseInt(time.substring(2, 4));
+        int bucketMinute = (minute / intervalMinutes) * intervalMinutes;
+
+        return datePrefix + String.format("%02d%02d00", hour, bucketMinute);
+    }
+
+    private CandleResponse aggregateBucket(String timestamp, List<CandleResponse> bucket) {
+        CandleResponse first = bucket.get(0);
+        CandleResponse last = bucket.get(bucket.size() - 1);
+
+        long highPrice = bucket.stream()
+                .mapToLong(candle -> valueOrZero(candle.highPrice()))
+                .max()
+                .orElse(0L);
+        long lowPrice = bucket.stream()
+                .mapToLong(candle -> valueOrZero(candle.lowPrice()))
+                .min()
+                .orElse(0L);
+        long volume = bucket.stream()
+                .mapToLong(candle -> valueOrZero(candle.volume()))
+                .sum();
+
+        return new CandleResponse(
+                timestamp,
+                first.openPrice(),
+                highPrice,
+                lowPrice,
+                last.closePrice(),
+                volume
+        );
+    }
+
+    private long valueOrZero(Long value) {
+        return value == null ? 0L : value;
+    }
 
     private String defaultStartDate(String period) {
         return switch (period) {
