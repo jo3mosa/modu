@@ -99,7 +99,7 @@ class RedisPositionCacheRepository:
 
         try:
             return json.loads(raw_value)
-        except JSONDecodeError:
+        except (JSONDecodeError, UnicodeDecodeError, TypeError,):
             return None
 
     def delete_position(
