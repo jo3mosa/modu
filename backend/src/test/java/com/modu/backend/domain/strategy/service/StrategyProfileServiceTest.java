@@ -58,7 +58,7 @@ class StrategyProfileServiceTest {
         // given
         Long userId = 1L;
         when(investmentProfileRepository.findById(userId)).thenReturn(Optional.empty());
-        when(investmentProfileRepository.save(any(InvestmentProfile.class)))
+        when(investmentProfileRepository.saveAndFlush(any(InvestmentProfile.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
         when(tradingRuleRepository.existsByUserId(userId)).thenReturn(false);
 
@@ -74,13 +74,13 @@ class StrategyProfileServiceTest {
 
         ArgumentCaptor<InvestmentProfile> profileCaptor =
                 ArgumentCaptor.forClass(InvestmentProfile.class);
-        verify(investmentProfileRepository).save(profileCaptor.capture());
+        verify(investmentProfileRepository).saveAndFlush(profileCaptor.capture());
 
         InvestmentProfile savedProfile = profileCaptor.getValue();
         assertThat(savedProfile.getUserId()).isEqualTo(userId);
         assertThat(savedProfile.getRiskScore()).isEqualTo(68L);
         assertThat(savedProfile.getRiskGrade()).isEqualTo("ACTIVE");
-        assertThat(savedProfile.getVersion()).isEqualTo(1L);
+        assertThat(savedProfile.getVersion()).isEqualTo(0L);
         assertThat(savedProfile.getInvestmentGoal()).isEqualTo("시장 평균 이상의 수익을 기대해요");
         assertThat(savedProfile.getAnswersSnapshot())
                 .containsEntry("riskScore", 68L)
@@ -109,7 +109,7 @@ class StrategyProfileServiceTest {
                 .build();
 
         when(investmentProfileRepository.findById(userId)).thenReturn(Optional.of(existingProfile));
-        when(investmentProfileRepository.save(any(InvestmentProfile.class)))
+        when(investmentProfileRepository.saveAndFlush(any(InvestmentProfile.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
         when(tradingRuleRepository.existsByUserId(userId)).thenReturn(true);
 
@@ -123,14 +123,14 @@ class StrategyProfileServiceTest {
         assertThat(response.onboarding().isRuleSetCompleted()).isTrue();
         assertThat(existingProfile.getRiskScore()).isEqualTo(68L);
         assertThat(existingProfile.getRiskGrade()).isEqualTo("ACTIVE");
-        assertThat(existingProfile.getVersion()).isEqualTo(2L);
+        assertThat(existingProfile.getVersion()).isEqualTo(1L);
         assertThat(existingProfile.getCreatedAt()).isEqualTo(createdAt);
         assertThat(existingProfile.getUpdatedAt()).isAfter(createdAt);
 
         ArgumentCaptor<ProfileHistory> historyCaptor =
                 ArgumentCaptor.forClass(ProfileHistory.class);
         verify(profileHistoryRepository).save(historyCaptor.capture());
-        assertThat(historyCaptor.getValue().getVersionNo()).isEqualTo(2L);
+        assertThat(historyCaptor.getValue().getVersionNo()).isEqualTo(1L);
         assertThat(historyCaptor.getValue().getRiskScore()).isEqualTo(68L);
     }
 

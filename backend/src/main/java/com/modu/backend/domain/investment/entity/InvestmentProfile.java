@@ -4,6 +4,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -46,6 +47,7 @@ public class InvestmentProfile {
     @Column(name = "answers_snapshot", nullable = false, columnDefinition = "jsonb")
     private Map<String, Object> answersSnapshot;
 
+    @Version
     @Column(name = "version", nullable = false)
     private Long version;
 
@@ -73,7 +75,7 @@ public class InvestmentProfile {
         this.profileSummary = profileSummary;
         this.investmentGoal = investmentGoal;
         this.answersSnapshot = answersSnapshot;
-        this.version = version;
+        this.version = version == null ? 0L : version;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
     }
@@ -91,7 +93,6 @@ public class InvestmentProfile {
         this.profileSummary = profileSummary;
         this.investmentGoal = investmentGoal;
         this.answersSnapshot = answersSnapshot;
-        this.version += 1;
         this.updatedAt = updatedAt;
     }
 }

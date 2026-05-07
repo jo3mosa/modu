@@ -37,7 +37,7 @@ public class StrategyProfileService {
                 .map(existing -> updateExistingProfile(existing, assessment, answersSnapshot, now))
                 .orElseGet(() -> createProfile(userId, assessment, answersSnapshot, now));
 
-        investmentProfileRepository.save(profile);
+        investmentProfileRepository.saveAndFlush(profile);
         profileHistoryRepository.save(toHistory(profile, now));
 
         return new ProfileUpdateResponse(
@@ -79,7 +79,6 @@ public class StrategyProfileService {
                 .profileSummary(assessment.profileSummary())
                 .investmentGoal(assessment.investmentGoal())
                 .answersSnapshot(answersSnapshot)
-                .version(1L)
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
