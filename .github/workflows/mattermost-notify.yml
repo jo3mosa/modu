@@ -1,0 +1,105 @@
+name: Mattermost PR Notify
+
+# PR/리뷰 이벤트가 발생하면 Mattermost 채널로 알림 전송
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, review_requested, closed]
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  notify:
+    # Draft PR 단계에서는 알림 보내지 않음
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: 이벤트 종류별 메타데이터 결정
+        id: meta
+        run: |
+          EMOJI=""
+          COLOR=""
+          TITLE=""
+          case "${{ github.event_name }}-${{ github.event.action }}" in
+            "pull_request-opened")
+              EMOJI="🆕"; COLOR="#0366d6"; TITLE="새 PR 등록"
+              ;;
+            "pull_request-synchronize")
+              EMOJI="🔄"; COLOR="#aaaaaa"; TITLE="PR 변경사항 추가"
+              ;;
+            "pull_request-reopened")
+              EMOJI="↩️"; COLOR="#0366d6"; TITLE="PR 다시 열림"
+              ;;
+            "pull_request-ready_for_review")
+              EMOJI="👀"; COLOR="#0366d6"; TITLE="리뷰 요청 (Draft 해제)"
+              ;;
+            "pull_request-review_requested")
+              EMOJI="🙋"; COLOR="#0366d6"; TITLE="리뷰어 지정"
+              ;;
+            "pull_request_review-submitted")
+              STATE="${{ github.event.review.state }}"
+              if [ "$STATE" = "approved" ]; then
+                EMOJI="✅"; COLOR="#28a745"; TITLE="리뷰 승인"
+              elif [ "$STATE" = "changes_requested" ]; then
+                EMOJI="❌"; COLOR="#d73a49"; TITLE="수정 요청"
+              else
+                EMOJI="💬"; COLOR="#586069"; TITLE="리뷰 코멘트"
+              fi
+              ;;
+            "pull_request-closed")
+              if [ "${{ github.event.pull_request.merged }}" = "true" ]; then
+                EMOJI="🎉"; COLOR="#6f42c1"; TITLE="PR 머지 완료"
+              else
+                EMOJI="🚫"; COLOR="#586069"; TITLE="PR 닫힘 (머지 안됨)"
+              fi
+              ;;
+            *)
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+          esac
+          {
+            echo "skip=false"
+            echo "emoji=$EMOJI"
+            echo "color=$COLOR"
+            echo "title=$TITLE"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Mattermost 알림 전송
+        if: steps.meta.outputs.skip != 'true'
+        env:
+          WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}
+          EMOJI: ${{ steps.meta.outputs.emoji }}
+          COLOR: ${{ steps.meta.outputs.color }}
+          TITLE: ${{ steps.meta.outputs.title }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_HEAD: ${{ github.event.pull_request.head.ref }}
+          PR_BASE: ${{ github.event.pull_request.base.ref }}
+          PR_REVIEWERS: ${{ join(github.event.pull_request.requested_reviewers.*.login, ', ') }}
+        run: |
+          # jq로 안전하게 JSON 페이로드 구성 (PR 제목에 따옴표/특수문자가 있어도 문제없음)
+          PAYLOAD=$(jq -n \
+            --arg color "$COLOR" \
+            --arg attach_title "$EMOJI $TITLE" \
+            --arg link "$PR_URL" \
+            --arg text "**$PR_TITLE**" \
+            --arg author "$PR_AUTHOR" \
+            --arg branches "\`$PR_HEAD\` → \`$PR_BASE\`" \
+            --arg reviewers "$PR_REVIEWERS" \
+            '{
+              username: "GitHub",
+              icon_url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png",
+              attachments: [{
+                color: $color,
+                title: $attach_title,
+                title_link: $link,
+                text: $text,
+                fields: [
+                  { short: true, title: "작성자", value: $author },
+                  { short: true, title: "브랜치", value: $branches },
+                  { short: false, title: "리뷰어", value: (if $reviewers == "" then "(미지정)" else $reviewers end) }
+                ]
+              }]
+            }')
+          curl -sS -X POST -H "Content-Type: application/json" -d "$PAYLOAD" "$WEBHOOK_URL"
