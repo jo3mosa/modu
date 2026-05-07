@@ -13,8 +13,11 @@ import org.springframework.web.client.RestClientException;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * KIS 캔들 데이터 조회 클라이언트
@@ -134,11 +137,60 @@ public class KisCandleClient {
                                                     String period, String startDate, String endDate) {
         boolean isToday = startDate == null || startDate.equals(LocalDate.now().format(DATE_FMT));
 
-        if (isToday) {
-            return getTodayMinuteCandles(accessToken, stockCode, endDate);
-        } else {
-            return getHistoricalMinuteCandles(accessToken, stockCode, startDate);
+        // KIS API는 1분 단위 원시 데이터 반환 → period에 맞게 집계
+        List<CandleResponse> rawCandles = isToday
+                ? getTodayMinuteCandles(accessToken, stockCode, endDate)
+                : getHistoricalMinuteCandles(accessToken, stockCode, startDate);
+
+        int periodMinutes = Integer.parseInt(period);
+        return aggregateMinuteCandles(rawCandles, periodMinutes);
+    }
+
+    /**
+     * 1분봉 원시 데이터를 N분봉으로 집계
+     *
+     * period=1: 그대로 반환
+     * period=5: 5개 1분봉 → 1개 5분봉 (open=첫봉, high=최고, low=최저, close=마지막봉, volume=합계)
+     * period=60: 60개 1분봉 → 1개 60분봉
+     */
+    private List<CandleResponse> aggregateMinuteCandles(List<CandleResponse> candles, int periodMinutes) {
+        if (periodMinutes == 1 || candles.isEmpty()) {
+            return candles;
         }
+
+        // 윈도우 시작 시간(HHmm00) 기준으로 그룹핑 (순서 유지)
+        Map<String, List<CandleResponse>> groups = new LinkedHashMap<>();
+        for (CandleResponse candle : candles) {
+            String windowKey = minuteWindowKey(candle.timestamp(), periodMinutes);
+            groups.computeIfAbsent(windowKey, k -> new ArrayList<>()).add(candle);
+        }
+
+        return groups.values().stream()
+                .map(group -> {
+                    CandleResponse first = group.get(0);
+                    CandleResponse last = group.get(group.size() - 1);
+                    return new CandleResponse(
+                            first.timestamp(),
+                            first.openPrice(),
+                            group.stream().mapToLong(c -> c.highPrice() != null ? c.highPrice() : 0L).max().orElse(0L),
+                            group.stream().mapToLong(c -> c.lowPrice() != null ? c.lowPrice() : 0L).min().orElse(0L),
+                            last.closePrice(),
+                            group.stream().mapToLong(c -> c.volume() != null ? c.volume() : 0L).sum()
+                    );
+                })
+                .toList();
+    }
+
+    /**
+     * HHmmss 형태의 timestamp를 N분 윈도우 시작 시각(HHmm00)으로 변환
+     */
+    private String minuteWindowKey(String timestamp, int periodMinutes) {
+        if (timestamp == null || timestamp.length() < 4) return "000000";
+        int hh = Integer.parseInt(timestamp.substring(0, 2));
+        int mm = Integer.parseInt(timestamp.substring(2, 4));
+        int totalMinutes = hh * 60 + mm;
+        int windowStart = (totalMinutes / periodMinutes) * periodMinutes;
+        return String.format("%02d%02d00", windowStart / 60, windowStart % 60);
     }
 
     private List<CandleResponse> getTodayMinuteCandles(String accessToken, String stockCode, String date) {
