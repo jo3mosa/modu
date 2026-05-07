@@ -1,4 +1,6 @@
+import copy
 import json
+from json import JSONDecodeError
 from typing import Any, Protocol
 
 from app.config.redis import get_redis_client
@@ -88,7 +90,11 @@ class RedisThresholdCacheRepository:
         if raw_value is None:
             return None
 
-        return json.loads(raw_value)
+        try:
+            return json.loads(raw_value)
+        except JSONDecodeError:
+            return None
+
 
     def delete_threshold(
         self,
