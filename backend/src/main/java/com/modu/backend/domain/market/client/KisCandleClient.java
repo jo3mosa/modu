@@ -18,6 +18,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * KIS 캔들 데이터 조회 클라이언트
@@ -173,7 +174,8 @@ public class KisCandleClient {
                             first.timestamp(),
                             first.openPrice(),
                             group.stream().mapToLong(c -> c.highPrice() != null ? c.highPrice() : 0L).max().orElse(0L),
-                            group.stream().mapToLong(c -> c.lowPrice() != null ? c.lowPrice() : 0L).min().orElse(0L),
+                            // null을 필터링 후 min 계산: 0L 폴백 사용 시 실제 최저가가 0으로 오염되는 버그 방지
+                            group.stream().map(CandleResponse::lowPrice).filter(Objects::nonNull).mapToLong(Long::longValue).min().orElse(0L),
                             last.closePrice(),
                             group.stream().mapToLong(c -> c.volume() != null ? c.volume() : 0L).sum()
                     );
