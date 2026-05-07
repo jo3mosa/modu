@@ -2,28 +2,28 @@ package com.modu.backend.global.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modu.backend.domain.auth.exception.AuthErrorCode;
-import com.modu.backend.global.error.ErrorCode;
 import com.modu.backend.global.dto.ApiResponse;
+import com.modu.backend.global.error.ErrorCode;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-/**
- * Spring Security 설정
- *
- * [보안 정책]
- * - CSRF 비활성화: 쿠키에 SameSite=Strict 적용으로 대체
- * - 세션 비활성화: JWT 기반 stateless 인증 사용
- * - formLogin, httpBasic 비활성화: REST API 전용
- * - JwtAuthenticationFilter를 UsernamePasswordAuthenticationFilter 앞에 등록
- */
+import java.util.Arrays;
+import java.util.List;
+
 @Configuration
 @EnableWebSecurity
 @RequiredArgsConstructor
@@ -32,17 +32,19 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final ObjectMapper objectMapper;
 
+    @Value("${app.cors.allowed-origins:http://localhost:3000,http://localhost:5173}")
+    private String allowedOrigins;
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
+                .cors(Customizer.withDefaults())
                 .csrf(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
-                // 인증되지 않은 요청이 보호된 엔드포인트에 접근 시 ApiResponse 형식으로 401 반환
-                // JwtAuthenticationFilter에서 설정한 authErrorCode attribute로 만료/위조 구분
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((request, response, authException) -> {
                             ErrorCode errorCode = (ErrorCode) request.getAttribute("authErrorCode");
@@ -61,13 +63,13 @@ public class SecurityConfig {
 
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
-                                "/api/v1/auth/social/**",  // 소셜 로그인
-                                "/api/v1/auth/refresh",    // 토큰 재발급
-                                "/api/v1/auth/logout",     // 로그아웃 (만료된 Access Token으로도 가능해야 함)
-                                "/api/v1/auth/test/login", // 개발용 우회 로그인
-                                "/actuator/**",            // 헬스체크
-                                "/swagger-ui/**",          // Swagger UI
-                                "/v3/api-docs/**"          // Swagger API 문서
+                                "/api/v1/auth/social/**",
+                                "/api/v1/auth/refresh",
+                                "/api/v1/auth/logout",
+                                "/api/v1/auth/test/login",
+                                "/actuator/**",
+                                "/swagger-ui/**",
+                                "/v3/api-docs/**"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
@@ -75,5 +77,39 @@ public class SecurityConfig {
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
+    }
+
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowedOrigins(resolveAllowedOrigins());
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(List.of(
+                HttpHeaders.AUTHORIZATION,
+                HttpHeaders.CONTENT_TYPE,
+                HttpHeaders.ACCEPT,
+                "X-Requested-With"
+        ));
+        configuration.setExposedHeaders(List.of(HttpHeaders.SET_COOKIE));
+        configuration.setAllowCredentials(true);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
+    }
+
+    private List<String> parseAllowedOrigins() {
+        return Arrays.stream(allowedOrigins.split(","))
+                .map(String::trim)
+                .filter(origin -> !origin.isBlank())
+                .toList();
+    }
+
+    private List<String> resolveAllowedOrigins() {
+        List<String> origins = parseAllowedOrigins();
+        if (origins.isEmpty()) {
+            throw new IllegalStateException("app.cors.allowed-origins must contain at least one origin.");
+        }
+        return origins;
     }
 }

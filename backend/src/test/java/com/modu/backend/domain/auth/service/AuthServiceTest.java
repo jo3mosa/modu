@@ -3,6 +3,7 @@ package com.modu.backend.domain.auth.service;
 import com.modu.backend.domain.auth.client.KakaoOAuthClient;
 import com.modu.backend.domain.auth.client.KakaoUserInfo;
 import com.modu.backend.domain.auth.dto.LoginResponse;
+import com.modu.backend.domain.auth.dto.TokenResponse;
 import com.modu.backend.domain.auth.entity.RefreshToken;
 import com.modu.backend.domain.auth.exception.AuthErrorCode;
 import com.modu.backend.domain.auth.jwt.JwtProperties;
@@ -23,6 +24,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -34,6 +36,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -48,6 +51,7 @@ class AuthServiceTest {
     @Mock JwtProperties jwtProperties;
     @Mock InvestmentProfileRepository investmentProfileRepository;
     @Mock TradingRuleRepository tradingRuleRepository;
+    @Mock AccessTokenBlacklistService accessTokenBlacklistService;
     @Mock HttpServletRequest request;
     @Mock HttpServletResponse response;
 
@@ -61,66 +65,61 @@ class AuthServiceTest {
         testUser = User.builder()
                 .provider("kakao")
                 .providerId("123456789")
-                .nickname("테스트유저")
+                .nickname("modu")
                 .email("test@kakao.com")
                 .build();
         ReflectionTestUtils.setField(testUser, "id", 1L);
     }
 
-    // 토큰 발급 공통 Mock 세팅
     private void mockTokenIssuance() {
         when(jwtProvider.generateAccessToken(anyLong())).thenReturn("access-token");
         when(jwtProvider.generateRefreshToken()).thenReturn("refresh-token");
         when(jwtProvider.hashToken("refresh-token")).thenReturn("hashed-refresh-token");
         when(jwtProperties.getRefreshTokenExpiration()).thenReturn(1209600000L);
-        when(jwtProvider.createAccessTokenCookie("access-token"))
-                .thenReturn(ResponseCookie.from("accessToken", "access-token").build());
         when(jwtProvider.createRefreshTokenCookie("refresh-token"))
                 .thenReturn(ResponseCookie.from("refreshToken", "refresh-token").build());
-        when(investmentProfileRepository.existsByUserId(1L)).thenReturn(false);
-        when(tradingRuleRepository.existsByUserId(1L)).thenReturn(false);
     }
 
-    // ── 소셜 로그인 ────────────────────────────────────────────────────────────
+    private void mockOnboarding(boolean surveyCompleted, boolean ruleSetCompleted) {
+        when(investmentProfileRepository.existsByUserId(1L)).thenReturn(surveyCompleted);
+        when(tradingRuleRepository.existsByUserId(1L)).thenReturn(ruleSetCompleted);
+    }
 
     @Test
-    @DisplayName("신규 유저 소셜 로그인 시 User 저장 후 토큰 발급")
-    void 신규_유저_소셜_로그인_시_User_저장_후_토큰_발급() {
-        // given
-        KakaoUserInfo kakaoUserInfo = new KakaoUserInfo("123456789", "테스트유저", "test@kakao.com");
+    @DisplayName("social login creates user and returns access token in body")
+    void socialLoginCreatesUserAndReturnsAccessTokenInBody() {
+        KakaoUserInfo kakaoUserInfo = new KakaoUserInfo("123456789", "modu", "test@kakao.com");
         when(kakaoOAuthClient.getUserInfo("auth-code")).thenReturn(kakaoUserInfo);
         when(userRepository.findByProviderAndProviderId("kakao", "123456789")).thenReturn(Optional.empty());
         when(userRepository.save(any(User.class))).thenReturn(testUser);
         mockTokenIssuance();
+        mockOnboarding(false, false);
 
-        // when
         LoginResponse result = authService.socialLogin("kakao", "auth-code", response);
 
-        // then
-        verify(userRepository).save(any(User.class));  // 신규 유저 저장 호출 확인
+        verify(userRepository).save(any(User.class));
+        assertThat(result.accessToken()).isEqualTo("access-token");
         assertThat(result.userId()).isEqualTo(1L);
-        assertThat(result.nickname()).isEqualTo("테스트유저");
+        verify(response).addHeader(eqSetCookie(), anyString());
     }
 
     @Test
-    @DisplayName("기존 유저 소셜 로그인 시 User 저장 미호출")
-    void 기존_유저_소셜_로그인_시_User_저장_미호출() {
-        // given
-        KakaoUserInfo kakaoUserInfo = new KakaoUserInfo("123456789", "테스트유저", "test@kakao.com");
+    @DisplayName("social login reuses existing user")
+    void socialLoginReusesExistingUser() {
+        KakaoUserInfo kakaoUserInfo = new KakaoUserInfo("123456789", "modu", "test@kakao.com");
         when(kakaoOAuthClient.getUserInfo("auth-code")).thenReturn(kakaoUserInfo);
         when(userRepository.findByProviderAndProviderId("kakao", "123456789")).thenReturn(Optional.of(testUser));
         mockTokenIssuance();
+        mockOnboarding(false, false);
 
-        // when
         authService.socialLogin("kakao", "auth-code", response);
 
-        // then
-        verify(userRepository, never()).save(any(User.class));  // 기존 유저는 저장 미호출
+        verify(userRepository, never()).save(any(User.class));
     }
 
     @Test
-    @DisplayName("지원하지 않는 provider 입력 시 UNSUPPORTED_PROVIDER 예외")
-    void 지원하지_않는_provider_입력_시_UNSUPPORTED_PROVIDER_예외() {
+    @DisplayName("unsupported provider throws")
+    void unsupportedProviderThrows() {
         assertThatThrownBy(() -> authService.socialLogin("google", "auth-code", response))
                 .isInstanceOf(ApiException.class)
                 .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode())
@@ -128,30 +127,23 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("소셜 로그인 성공 시 onboarding 상태 응답에 포함")
-    void 소셜_로그인_성공_시_onboarding_상태_응답에_포함() {
-        // given
-        KakaoUserInfo kakaoUserInfo = new KakaoUserInfo("123456789", "테스트유저", "test@kakao.com");
+    @DisplayName("social login includes onboarding status")
+    void socialLoginIncludesOnboardingStatus() {
+        KakaoUserInfo kakaoUserInfo = new KakaoUserInfo("123456789", "modu", "test@kakao.com");
         when(kakaoOAuthClient.getUserInfo("auth-code")).thenReturn(kakaoUserInfo);
         when(userRepository.findByProviderAndProviderId("kakao", "123456789")).thenReturn(Optional.of(testUser));
         mockTokenIssuance();
-        when(investmentProfileRepository.existsByUserId(1L)).thenReturn(true);
-        when(tradingRuleRepository.existsByUserId(1L)).thenReturn(false);
+        mockOnboarding(true, false);
 
-        // when
         LoginResponse result = authService.socialLogin("kakao", "auth-code", response);
 
-        // then
         assertThat(result.onboarding().isSurveyCompleted()).isTrue();
         assertThat(result.onboarding().isRuleSetCompleted()).isFalse();
     }
 
-    // ── 토큰 재발급 ────────────────────────────────────────────────────────────
-
     @Test
-    @DisplayName("유효한 Refresh Token으로 Access/Refresh Token 재발급 성공 (토큰 로테이션)")
-    void 유효한_Refresh_Token으로_토큰_로테이션_성공() {
-        // given
+    @DisplayName("refresh rotates refresh token and returns new access token")
+    void refreshRotatesRefreshTokenAndReturnsNewAccessToken() {
         Cookie cookie = new Cookie("refreshToken", "raw-refresh-token");
         when(request.getCookies()).thenReturn(new Cookie[]{cookie});
         when(jwtProvider.hashToken("raw-refresh-token")).thenReturn("hashed-token");
@@ -167,27 +159,22 @@ class AuthServiceTest {
         when(jwtProvider.generateRefreshToken()).thenReturn("new-refresh-token");
         when(jwtProvider.hashToken("new-refresh-token")).thenReturn("new-hashed-token");
         when(jwtProperties.getRefreshTokenExpiration()).thenReturn(1209600000L);
-        when(jwtProvider.createAccessTokenCookie("new-access-token"))
-                .thenReturn(ResponseCookie.from("accessToken", "new-access-token").build());
         when(jwtProvider.createRefreshTokenCookie("new-refresh-token"))
                 .thenReturn(ResponseCookie.from("refreshToken", "new-refresh-token").build());
 
-        // when
-        authService.refresh(request, response);
+        TokenResponse result = authService.refresh(request, response);
 
-        // then
-        verify(refreshTokenRepository).delete(refreshToken);                          // 기존 토큰 삭제 확인
-        verify(refreshTokenRepository).save(any(RefreshToken.class));                 // 새 토큰 저장 확인
-        verify(response, org.mockito.Mockito.times(2)).addHeader(anyString(), anyString()); // Access + Refresh 쿠키 세팅
+        assertThat(result.accessToken()).isEqualTo("new-access-token");
+        verify(refreshTokenRepository).delete(refreshToken);
+        verify(refreshTokenRepository).save(any(RefreshToken.class));
+        verify(response).addHeader(eqSetCookie(), anyString());
     }
 
     @Test
-    @DisplayName("쿠키에 Refresh Token 없을 때 REFRESH_TOKEN_NOT_FOUND 예외")
-    void 쿠키에_Refresh_Token_없을_때_예외() {
-        // given
+    @DisplayName("refresh without cookie throws")
+    void refreshWithoutCookieThrows() {
         when(request.getCookies()).thenReturn(null);
 
-        // when & then
         assertThatThrownBy(() -> authService.refresh(request, response))
                 .isInstanceOf(ApiException.class)
                 .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode())
@@ -195,9 +182,8 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("revoke된 Refresh Token으로 재발급 시 REFRESH_TOKEN_NOT_FOUND 예외")
-    void revoke된_Refresh_Token으로_재발급_시_예외() {
-        // given
+    @DisplayName("refresh with revoked refresh token throws")
+    void refreshWithRevokedRefreshTokenThrows() {
         Cookie cookie = new Cookie("refreshToken", "raw-refresh-token");
         when(request.getCookies()).thenReturn(new Cookie[]{cookie});
         when(jwtProvider.hashToken("raw-refresh-token")).thenReturn("hashed-token");
@@ -208,10 +194,9 @@ class AuthServiceTest {
                 .issuedAt(OffsetDateTime.now().minusDays(1))
                 .expiresAt(OffsetDateTime.now().plusDays(13))
                 .build();
-        revokedToken.revoke();  // 무효화
+        revokedToken.revoke();
         when(refreshTokenRepository.findByTokenHash("hashed-token")).thenReturn(Optional.of(revokedToken));
 
-        // when & then
         assertThatThrownBy(() -> authService.refresh(request, response))
                 .isInstanceOf(ApiException.class)
                 .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode())
@@ -219,9 +204,8 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("만료된 Refresh Token으로 재발급 시 REFRESH_TOKEN_NOT_FOUND 예외")
-    void 만료된_Refresh_Token으로_재발급_시_예외() {
-        // given
+    @DisplayName("refresh with expired refresh token throws")
+    void refreshWithExpiredRefreshTokenThrows() {
         Cookie cookie = new Cookie("refreshToken", "raw-refresh-token");
         when(request.getCookies()).thenReturn(new Cookie[]{cookie});
         when(jwtProvider.hashToken("raw-refresh-token")).thenReturn("hashed-token");
@@ -230,26 +214,26 @@ class AuthServiceTest {
                 .userId(1L)
                 .tokenHash("hashed-token")
                 .issuedAt(OffsetDateTime.now().minusDays(15))
-                .expiresAt(OffsetDateTime.now().minusDays(1))  // 이미 만료
+                .expiresAt(OffsetDateTime.now().minusDays(1))
                 .build();
         when(refreshTokenRepository.findByTokenHash("hashed-token")).thenReturn(Optional.of(expiredToken));
 
-        // when & then
         assertThatThrownBy(() -> authService.refresh(request, response))
                 .isInstanceOf(ApiException.class)
                 .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode())
                         .isEqualTo(AuthErrorCode.REFRESH_TOKEN_NOT_FOUND));
     }
 
-    // ── 로그아웃 ───────────────────────────────────────────────────────────────
-
     @Test
-    @DisplayName("정상 로그아웃 시 Refresh Token revoke 및 쿠키 만료 처리")
-    void 정상_로그아웃_시_revoke_및_쿠키_만료() {
-        // given
+    @DisplayName("logout revokes refresh token blacklists access token and expires refresh cookie")
+    void logoutRevokesRefreshTokenBlacklistsAccessTokenAndExpiresRefreshCookie() {
         Cookie cookie = new Cookie("refreshToken", "raw-refresh-token");
         when(request.getCookies()).thenReturn(new Cookie[]{cookie});
+        when(request.getHeader(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer raw-access-token");
         when(jwtProvider.hashToken("raw-refresh-token")).thenReturn("hashed-token");
+        when(jwtProvider.getRemainingExpirationMillis("raw-access-token")).thenReturn(1000L);
+        when(jwtProvider.expireRefreshTokenCookie())
+                .thenReturn(ResponseCookie.from("refreshToken", "").maxAge(0).build());
 
         RefreshToken refreshToken = RefreshToken.builder()
                 .userId(1L)
@@ -258,61 +242,69 @@ class AuthServiceTest {
                 .expiresAt(OffsetDateTime.now().plusDays(14))
                 .build();
         when(refreshTokenRepository.findByTokenHash("hashed-token")).thenReturn(Optional.of(refreshToken));
-        when(jwtProvider.expireAccessTokenCookie())
-                .thenReturn(ResponseCookie.from("accessToken", "").maxAge(0).build());
-        when(jwtProvider.expireRefreshTokenCookie())
-                .thenReturn(ResponseCookie.from("refreshToken", "").maxAge(0).build());
 
-        // when
         authService.logout(request, response);
 
-        // then
-        assertThat(refreshToken.isRevoked()).isTrue();  // revoke 호출 확인
-        verify(response, org.mockito.Mockito.times(2)).addHeader(anyString(), anyString());
+        assertThat(refreshToken.isRevoked()).isTrue();
+        verify(jwtProvider).validateToken("raw-access-token");
+        verify(accessTokenBlacklistService).blacklist("raw-access-token", 1000L);
+        verify(response).addHeader(eqSetCookie(), anyString());
     }
 
     @Test
-    @DisplayName("쿠키 없어도 로그아웃 성공 처리")
-    void 쿠키_없어도_로그아웃_성공() {
-        // given
+    @DisplayName("logout without cookies still expires refresh cookie")
+    void logoutWithoutCookiesStillExpiresRefreshCookie() {
         when(request.getCookies()).thenReturn(null);
-        when(jwtProvider.expireAccessTokenCookie())
-                .thenReturn(ResponseCookie.from("accessToken", "").maxAge(0).build());
         when(jwtProvider.expireRefreshTokenCookie())
                 .thenReturn(ResponseCookie.from("refreshToken", "").maxAge(0).build());
 
-        // when & then - 예외 없이 정상 처리
         authService.logout(request, response);
-        verify(response, org.mockito.Mockito.times(2)).addHeader(anyString(), anyString());
+
+        verify(accessTokenBlacklistService, never()).blacklist(anyString(), anyLong());
+        verify(response).addHeader(eqSetCookie(), anyString());
     }
 
-    // ── 테스트 로그인 ──────────────────────────────────────────────────────────
+    @Test
+    @DisplayName("logout with expired access token still expires refresh cookie")
+    void logoutWithExpiredAccessTokenStillExpiresRefreshCookie() {
+        when(request.getHeader(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer expired-access-token");
+        doThrow(new ApiException(AuthErrorCode.EXPIRED_TOKEN))
+                .when(jwtProvider).validateToken("expired-access-token");
+        when(request.getCookies()).thenReturn(null);
+        when(jwtProvider.expireRefreshTokenCookie())
+                .thenReturn(ResponseCookie.from("refreshToken", "").maxAge(0).build());
+
+        authService.logout(request, response);
+
+        verify(accessTokenBlacklistService, never()).blacklist(anyString(), anyLong());
+        verify(response).addHeader(eqSetCookie(), anyString());
+    }
 
     @Test
-    @DisplayName("테스트 로그인 성공 시 LoginResponse 반환")
-    void 테스트_로그인_성공() {
-        // given
+    @DisplayName("test login returns access token in body")
+    void testLoginReturnsAccessTokenInBody() {
         when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
         mockTokenIssuance();
+        mockOnboarding(false, false);
 
-        // when
         LoginResponse result = authService.testLogin(1L, response);
 
-        // then
+        assertThat(result.accessToken()).isEqualTo("access-token");
         assertThat(result.userId()).isEqualTo(1L);
-        assertThat(result.nickname()).isEqualTo("테스트유저");
     }
 
     @Test
-    @DisplayName("존재하지 않는 userId로 테스트 로그인 시 USER_NOT_FOUND 예외")
-    void 존재하지_않는_userId_테스트_로그인_시_예외() {
-        // given
+    @DisplayName("test login with missing user throws")
+    void testLoginWithMissingUserThrows() {
         when(userRepository.findById(999L)).thenReturn(Optional.empty());
 
-        // when & then
         assertThatThrownBy(() -> authService.testLogin(999L, response))
                 .isInstanceOf(ApiException.class)
                 .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode())
                         .isEqualTo(AuthErrorCode.USER_NOT_FOUND));
+    }
+
+    private String eqSetCookie() {
+        return org.mockito.ArgumentMatchers.eq(HttpHeaders.SET_COOKIE);
     }
 }
