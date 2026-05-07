@@ -176,12 +176,16 @@ def is_price_near_threshold(
             84150 <= current_price <= 85850
     """
 
+    if not isinstance(current_price, (int, float)):
+        return False
+
     target_price = threshold.get("target_price")
     stop_loss_price = threshold.get("stop_loss_price")
 
     prices_to_check = [
-        price for price in [target_price, stop_loss_price]
-        if price is not None
+        price
+        for price in [target_price, stop_loss_price]
+        if isinstance(price, (int, float))
     ]
 
     for base_price in prices_to_check:
