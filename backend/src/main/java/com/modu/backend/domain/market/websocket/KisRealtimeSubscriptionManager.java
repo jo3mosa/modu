@@ -82,6 +82,9 @@ public class KisRealtimeSubscriptionManager {
 
     /**
      * 구독 세션 대상 실시간 데이터 fan-out
+     *
+     * 직렬화를 루프 밖에서 1회 수행 후 세션별 개별 try-catch 적용
+     * 단일 세션 전송 실패가 다른 세션에 영향주지 않도록 격리
      */
     void broadcast(KisRealtimeStreamKey key, Object payload) {
         Set<WebSocketSession> sessions = sessionsByKey.get(key);
@@ -89,16 +92,25 @@ public class KisRealtimeSubscriptionManager {
             return;
         }
 
+        TextMessage message;
         try {
-            TextMessage message = new TextMessage(objectMapper.writeValueAsString(payload));
-            for (WebSocketSession session : sessions) {
-                if (session.isOpen()) {
-                    session.sendMessage(message);
-                }
-            }
+            message = new TextMessage(objectMapper.writeValueAsString(payload));
         } catch (Exception e) {
-            log.error("Realtime websocket broadcast failed - trId: {}, stockCode: {}, error: {}",
+            log.error("Realtime websocket payload 직렬화 실패 - trId: {}, stockCode: {}, error: {}",
                     key.type().trId(), key.stockCode(), e.getMessage());
+            return;
+        }
+
+        for (WebSocketSession session : sessions) {
+            if (!session.isOpen()) {
+                continue;
+            }
+            try {
+                session.sendMessage(message);
+            } catch (Exception e) {
+                log.error("Realtime websocket 세션 전송 실패 - sessionId: {}, trId: {}, stockCode: {}, error: {}",
+                        session.getId(), key.type().trId(), key.stockCode(), e.getMessage());
+            }
         }
     }
 }

@@ -2,6 +2,7 @@ package com.modu.backend.domain.market.websocket;
 
 import com.modu.backend.domain.market.dto.OrderbookResponse;
 import com.modu.backend.domain.market.dto.RealtimePriceResponse;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -19,6 +20,7 @@ import java.util.Optional;
  * - H0STCNT0: RealtimePriceResponse
  * - H0STASP0: OrderbookResponse
  */
+@Slf4j
 @Component
 public class KisRealtimeMessageParser {
 
@@ -35,7 +37,14 @@ public class KisRealtimeMessageParser {
             return Optional.empty();
         }
 
-        KisRealtimeStreamType type = KisRealtimeStreamType.fromTrId(frame[1]);
+        KisRealtimeStreamType type;
+        try {
+            type = KisRealtimeStreamType.fromTrId(frame[1]);
+        } catch (IllegalArgumentException e) {
+            // KIS에서 새 TR ID 추가 또는 예상치 못한 메시지 수신 시 메시지 손실 방지
+            log.warn("지원하지 않는 KIS TR ID 수신, 무시 - trId: {}", frame[1]);
+            return Optional.empty();
+        }
         String[] fields = frame[3].split("\\^", -1);
         Object payload = switch (type) {
             case PRICE -> parsePrice(fields);

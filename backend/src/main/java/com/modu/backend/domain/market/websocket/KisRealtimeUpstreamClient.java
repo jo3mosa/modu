@@ -16,6 +16,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * KIS 실시간 WebSocket upstream 클라이언트
@@ -115,7 +117,14 @@ public class KisRealtimeUpstreamClient {
 
             CompletableFuture<WebSocketSession> future = new StandardWebSocketClient()
                     .execute(new UpstreamHandler(type), properties.getUrl());
-            WebSocketSession connectedSession = future.get();
+            WebSocketSession connectedSession;
+            try {
+                connectedSession = future.get(properties.getConnectTimeoutMs(), TimeUnit.MILLISECONDS);
+            } catch (TimeoutException e) {
+                future.cancel(true);
+                throw new Exception("KIS WebSocket 연결 타임아웃 - trId: " + type.trId()
+                        + ", timeout: " + properties.getConnectTimeoutMs() + "ms");
+            }
             sessions.put(type, connectedSession);
             return connectedSession;
         }
@@ -174,7 +183,14 @@ public class KisRealtimeUpstreamClient {
                 return;
             }
 
-            parser.parse(payload).ifPresent(parsed -> subscriptionManager.broadcast(parsed.key(), parsed.payload()));
+            parser.parse(payload).ifPresent(parsed -> {
+                // subscriptionManager는 Spring 빈 초기화 완료 전 메시지 수신 방어
+                if (subscriptionManager == null) {
+                    log.warn("subscriptionManager 미초기화 상태 - 메시지 무시");
+                    return;
+                }
+                subscriptionManager.broadcast(parsed.key(), parsed.payload());
+            });
         }
 
         /**
@@ -184,7 +200,8 @@ public class KisRealtimeUpstreamClient {
         public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
             sessions.remove(type, session);
             if (hasActiveSubscriptions(type)) {
-                reconnect(type);
+                // 재연결 로직을 별도 가상 스레드에서 실행하여 WebSocket 이벤트 스레드 블로킹 방지
+                Thread.ofVirtual().start(() -> reconnect(type));
             }
         }
 

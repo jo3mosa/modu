@@ -35,6 +35,9 @@ kis:
     url: ${KIS_WEBSOCKET_URL:ws://ops.koreainvestment.com:21000/tryitout}
     reconnect-max-attempts: ${KIS_WEBSOCKET_RECONNECT_MAX_ATTEMPTS:3}
     reconnect-delay-ms: ${KIS_WEBSOCKET_RECONNECT_DELAY_MS:1000}
+    connect-timeout-ms: ${KIS_WEBSOCKET_CONNECT_TIMEOUT_MS:5000}
+    # 허용 Origin 목록 (쉼표 구분). 로컬 개발: * / 운영: 실제 도메인
+    allowed-origins: ${KIS_WEBSOCKET_ALLOWED_ORIGINS:*}
 
 # JWT 설정
 jwt:
