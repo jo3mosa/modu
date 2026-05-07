@@ -35,6 +35,12 @@ class ThresholdCacheRepository(Protocol):
     ) -> None:
         ...
 
+    def get_user_ids_by_stock(
+        self,
+        stock_code: str,
+    ) -> list[int]:
+        ...
+
 
 class RedisThresholdCacheRepository:
     """
@@ -77,6 +83,9 @@ class RedisThresholdCacheRepository:
             json.dumps(threshold, ensure_ascii=False),
         )
 
+        index_key = f"threshold:index:stock:{stock_code}"
+        self.redis_client.sadd(index_key, user_id)
+
     def get_threshold(
         self,
         user_id: int,
@@ -95,7 +104,6 @@ class RedisThresholdCacheRepository:
         except JSONDecodeError:
             return None
 
-
     def delete_threshold(
         self,
         user_id: int,
@@ -105,6 +113,30 @@ class RedisThresholdCacheRepository:
         사용자별 종목 threshold 캐시를 삭제한다.
         """
         self.redis_client.delete(self._key(user_id, stock_code))
+        
+        index_key = f"threshold:index:stock:{stock_code}"
+        self.redis_client.srem(index_key, user_id)
+
+    def get_user_ids_by_stock(
+        self,
+        stock_code: str,
+    ) -> list[int]:
+        """
+        특정 종목을 threshold로 감시 중인 사용자 ID 목록을 조회한다.
+        """
+
+        key = f"threshold:index:stock:{stock_code}"
+        raw_user_ids = self.redis_client.smembers(key)
+
+        user_ids: list[int] = []
+
+        for raw_user_id in raw_user_ids:
+            if isinstance(raw_user_id, bytes):
+                raw_user_id = raw_user_id.decode("utf-8")
+
+            user_ids.append(int(raw_user_id))
+
+        return user_ids
 
 
 class MockThresholdCacheRepository:
@@ -157,42 +189,15 @@ class MockThresholdCacheRepository:
         """
         self._store.pop((user_id, stock_code), None)
 
-
-def is_price_near_threshold(
-    current_price: int | float,
-    threshold: dict[str, Any],
-    tolerance_rate: float = 0.01,
-) -> bool:
-    """
-    현재가가 목표가 또는 손절가 근처인지 판단한다.
-
-    tolerance_rate=0.01이면 기준가의 ±1% 이내를 '근처'로 본다.
-
-    예시:
-        target_price = 85000
-        tolerance_rate = 0.01
-
-        허용 범위:
-            84150 <= current_price <= 85850
-    """
-
-    if not isinstance(current_price, (int, float)):
-        return False
-
-    target_price = threshold.get("target_price")
-    stop_loss_price = threshold.get("stop_loss_price")
-
-    prices_to_check = [
-        price
-        for price in [target_price, stop_loss_price]
-        if isinstance(price, (int, float))
-    ]
-
-    for base_price in prices_to_check:
-        lower_bound = base_price * (1 - tolerance_rate)
-        upper_bound = base_price * (1 + tolerance_rate)
-
-        if lower_bound <= current_price <= upper_bound:
-            return True
-
-    return False
+    def get_user_ids_by_stock(
+        self,
+        stock_code: str,
+    ) -> list[int]:
+        """
+        특정 종목을 threshold로 감시 중인 사용자 ID 목록을 조회한다.
+        """
+        return [
+            user_id
+            for user_id, stored_stock_code in self._store.keys()
+            if stored_stock_code == stock_code
+        ]    
