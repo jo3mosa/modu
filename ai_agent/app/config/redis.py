@@ -36,6 +36,8 @@ def get_redis_client() -> redis.Redis:
         db=db,
         password=password,
         decode_responses=True,
+        socket_connect_timeout=3.0,
+        socket_timeout=3.0,
     )
 
 
