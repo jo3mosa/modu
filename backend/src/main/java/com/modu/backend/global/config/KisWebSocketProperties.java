@@ -10,14 +10,6 @@ import org.springframework.validation.annotation.Validated;
 
 import java.util.List;
 
-/**
- * KIS WebSocket 연결 설정
- *
- * [설정 항목]
- * - url: KIS 실시간 WebSocket 접속 URL
- * - reconnectMaxAttempts: upstream 연결 종료 시 재연결 최대 횟수
- * - reconnectDelayMs: 재연결 시도 간 대기 시간(ms)
- */
 @Getter
 @Setter
 @Validated

@@ -12,6 +12,7 @@ import org.springframework.web.client.RestClientException;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -19,20 +20,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * KIS 캔들 데이터 조회 클라이언트
- *
- * [Period → KIS API 매핑]
- * - D/W/M : inquire-daily-itemchartprice (FHKST03010100) 기간별시세
- * - 1/5/60 (startDate 없음) : inquire-time-dailychartprice (FHKST03010200) 당일분봉
- * - 1/5/60 (startDate 있음) : 주식일별분봉조회 (FHKST03010230)
- *
- * [startDate 기본값]
- * - D  : 오늘 - 6개월
- * - W  : 오늘 - 2년
- * - M  : 오늘 - 5년
- * - 분봉: 오늘 (당일 API 사용)
- */
 @Slf4j
 @Component
 public class KisCandleClient {
@@ -46,6 +33,8 @@ public class KisCandleClient {
     private static final String TR_MINUTE = "FHKST03010230";
 
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.BASIC_ISO_DATE;
+    private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HHmmss");
+    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
     private final RestClient kisRestClient;
     private final KisApiProperties kisApiProperties;
@@ -55,18 +44,9 @@ public class KisCandleClient {
         this.kisApiProperties = kisApiProperties;
     }
 
-    /**
-     * 캔들 데이터 조회 (period에 따라 KIS API 자동 선택)
-     *
-     * @param accessToken 플랫폼 KIS 액세스 토큰
-     * @param stockCode   종목코드
-     * @param period      D/W/M/1/5/60
-     * @param startDate   시작일 (YYYYMMDD, null이면 period별 기본값)
-     * @param endDate     종료일 (YYYYMMDD, null이면 오늘)
-     */
     public List<CandleResponse> getCandles(String accessToken, String stockCode,
-                                            String period, String startDate, String endDate) {
-        String resolvedEnd = (endDate != null) ? endDate : LocalDate.now().format(DATE_FMT);
+                                           String period, String startDate, String endDate) {
+        String resolvedEnd = (endDate != null) ? endDate : LocalDate.now(KST).format(DATE_FMT);
 
         return switch (period) {
             case "D", "W", "M" -> getDailyCandles(accessToken, stockCode, period, startDate, resolvedEnd);
@@ -75,10 +55,8 @@ public class KisCandleClient {
         };
     }
 
-    // ── 일/주/월봉 ──────────────────────────────────────────────────────────────
-
     private List<CandleResponse> getDailyCandles(String accessToken, String stockCode,
-                                                   String period, String startDate, String endDate) {
+                                                 String period, String startDate, String endDate) {
         String resolvedStart = (startDate != null) ? startDate : defaultStartDate(period);
 
         try {
@@ -102,15 +80,17 @@ public class KisCandleClient {
                     .body(DailyChartResponse.class);
 
             if (response == null || !"0".equals(response.rtCd())) {
-                log.error("KIS 기간별시세 조회 실패 - stockCode: {}, rtCd: {}, msg: {}",
-                        stockCode, response != null ? response.rtCd() : "null",
+                log.error("KIS daily candle fetch failed - stockCode: {}, rtCd: {}, msg: {}",
+                        stockCode,
+                        response != null ? response.rtCd() : "null",
                         response != null ? response.msg1() : "null");
                 throw new ApiException(MarketErrorCode.KIS_PRICE_FETCH_FAILED);
             }
 
-            if (response.output2() == null) return Collections.emptyList();
+            if (response.output2() == null) {
+                return Collections.emptyList();
+            }
 
-            // KIS 응답은 최신순 → 과거순으로 역정렬
             List<CandleResponse> candles = response.output2().stream()
                     .filter(item -> item.stckBsopDate() != null && !item.stckBsopDate().isBlank())
                     .map(item -> new CandleResponse(
@@ -124,28 +104,25 @@ public class KisCandleClient {
                     .toList();
 
             return candles.reversed();
-
         } catch (RestClientException e) {
-            log.error("KIS 기간별시세 API 호출 실패 - stockCode: {}, error: {}", stockCode, e.getMessage());
+            log.error("KIS daily candle API call failed - stockCode: {}, error: {}", stockCode, e.getMessage());
             throw new ApiException(MarketErrorCode.KIS_PRICE_FETCH_FAILED);
         }
     }
 
-    // ── 분봉 ────────────────────────────────────────────────────────────────────
-
     private List<CandleResponse> getMinuteCandles(String accessToken, String stockCode,
-                                                    String period, String startDate, String endDate) {
-        boolean isToday = startDate == null || startDate.equals(LocalDate.now().format(DATE_FMT));
+                                                  String period, String startDate, String endDate) {
+        String today = LocalDate.now(KST).format(DATE_FMT);
+        String resolvedStart = startDate != null ? startDate : endDate;
 
-        if (isToday) {
+        if (resolvedStart.equals(today) && endDate.equals(today)) {
             return getTodayMinuteCandles(accessToken, stockCode, period, endDate);
-        } else {
-            return getHistoricalMinuteCandles(accessToken, stockCode, period, startDate, endDate);
         }
+        return getHistoricalMinuteCandles(accessToken, stockCode, period, resolvedStart, endDate);
     }
 
     private List<CandleResponse> getTodayMinuteCandles(String accessToken, String stockCode, String period, String date) {
-        String currentTime = LocalTime.now().format(DateTimeFormatter.ofPattern("HHmmss"));
+        String currentTime = LocalTime.now(KST).format(TIME_FMT);
 
         try {
             MinuteChartResponse response = kisRestClient.get()
@@ -167,12 +144,14 @@ public class KisCandleClient {
                     .body(MinuteChartResponse.class);
 
             if (response == null || !"0".equals(response.rtCd())) {
-                log.error("KIS 당일분봉 조회 실패 - stockCode: {}, msg: {}",
+                log.error("KIS today minute candle fetch failed - stockCode: {}, msg: {}",
                         stockCode, response != null ? response.msg1() : "null");
                 throw new ApiException(MarketErrorCode.KIS_PRICE_FETCH_FAILED);
             }
 
-            if (response.output2() == null) return Collections.emptyList();
+            if (response.output2() == null) {
+                return Collections.emptyList();
+            }
 
             List<CandleResponse> candles = response.output2().stream()
                     .filter(item -> item.stckCntgHour() != null && !item.stckCntgHour().isBlank())
@@ -187,9 +166,8 @@ public class KisCandleClient {
                     .toList();
 
             return aggregateMinuteCandles(candles.reversed(), period);
-
         } catch (RestClientException e) {
-            log.error("KIS 당일분봉 API 호출 실패 - stockCode: {}, error: {}", stockCode, e.getMessage());
+            log.error("KIS today minute candle API call failed - stockCode: {}, error: {}", stockCode, e.getMessage());
             throw new ApiException(MarketErrorCode.KIS_PRICE_FETCH_FAILED);
         }
     }
@@ -216,7 +194,7 @@ public class KisCandleClient {
                             .path(MINUTE_CHART_PATH)
                             .queryParam("FID_COND_MRKT_DIV_CODE", "J")
                             .queryParam("FID_INPUT_ISCD", stockCode)
-                            .queryParam("FID_INPUT_HOUR_1", "153000")  // 장 마감 시간 기준
+                            .queryParam("FID_INPUT_HOUR_1", "153000")
                             .queryParam("FID_INPUT_DATE_1", date)
                             .queryParam("FID_PW_DATA_INCU_YN", "Y")
                             .queryParam("FID_FAKE_TICK_INCU_YN", "")
@@ -231,12 +209,14 @@ public class KisCandleClient {
                     .body(MinuteChartResponse.class);
 
             if (response == null || !"0".equals(response.rtCd())) {
-                log.error("KIS 일별분봉 조회 실패 - stockCode: {}, msg: {}",
-                        stockCode, response != null ? response.msg1() : "null");
+                log.error("KIS historical minute candle fetch failed - stockCode: {}, date: {}, msg: {}",
+                        stockCode, date, response != null ? response.msg1() : "null");
                 throw new ApiException(MarketErrorCode.KIS_PRICE_FETCH_FAILED);
             }
 
-            if (response.output2() == null) return Collections.emptyList();
+            if (response.output2() == null) {
+                return Collections.emptyList();
+            }
 
             List<CandleResponse> candles = response.output2().stream()
                     .filter(item -> item.stckCntgHour() != null && !item.stckCntgHour().isBlank())
@@ -251,14 +231,12 @@ public class KisCandleClient {
                     .toList();
 
             return candles.reversed();
-
         } catch (RestClientException e) {
-            log.error("KIS 일별분봉 API 호출 실패 - stockCode: {}, error: {}", stockCode, e.getMessage());
+            log.error("KIS historical minute candle API call failed - stockCode: {}, date: {}, error: {}",
+                    stockCode, date, e.getMessage());
             throw new ApiException(MarketErrorCode.KIS_PRICE_FETCH_FAILED);
         }
     }
-
-    // ── 유틸 ────────────────────────────────────────────────────────────────────
 
     private List<CandleResponse> aggregateMinuteCandles(List<CandleResponse> candles, String period) {
         int intervalMinutes = Integer.parseInt(period);
@@ -298,7 +276,9 @@ public class KisCandleClient {
                 .max()
                 .orElse(0L);
         long lowPrice = bucket.stream()
-                .mapToLong(candle -> valueOrZero(candle.lowPrice()))
+                .map(CandleResponse::lowPrice)
+                .filter(value -> value != null)
+                .mapToLong(Long::longValue)
                 .min()
                 .orElse(0L);
         long volume = bucket.stream()
@@ -315,30 +295,30 @@ public class KisCandleClient {
         );
     }
 
-    private long valueOrZero(Long value) {
-        return value == null ? 0L : value;
-    }
-
     private String defaultStartDate(String period) {
         return switch (period) {
-            case "D" -> LocalDate.now().minusMonths(6).format(DATE_FMT);
-            case "W" -> LocalDate.now().minusYears(2).format(DATE_FMT);
-            case "M" -> LocalDate.now().minusYears(5).format(DATE_FMT);
-            default -> LocalDate.now().format(DATE_FMT);
+            case "D" -> LocalDate.now(KST).minusMonths(6).format(DATE_FMT);
+            case "W" -> LocalDate.now(KST).minusYears(2).format(DATE_FMT);
+            case "M" -> LocalDate.now(KST).minusYears(5).format(DATE_FMT);
+            default -> LocalDate.now(KST).format(DATE_FMT);
         };
     }
 
     private long parseLong(String value) {
-        if (value == null || value.isBlank()) return 0L;
+        if (value == null || value.isBlank()) {
+            return 0L;
+        }
         try {
             return Long.parseLong(value.trim());
         } catch (NumberFormatException e) {
-            log.error("KIS 캔들 응답 파싱 실패 - value: '{}'", value);
+            log.error("KIS candle number parse failed - value: '{}'", value);
             return 0L;
         }
     }
 
-    // ── KIS API 응답 파싱용 내부 레코드 ────────────────────────────────────────
+    private long valueOrZero(Long value) {
+        return value == null ? 0L : value;
+    }
 
     private record DailyChartResponse(
             @JsonProperty("rt_cd") String rtCd,
@@ -348,12 +328,12 @@ public class KisCandleClient {
     ) {}
 
     private record DailyOutput(
-            @JsonProperty("stck_bsop_date") String stckBsopDate,  // 영업일자
-            @JsonProperty("stck_oprc") String stckOprc,            // 시가
-            @JsonProperty("stck_hgpr") String stckHgpr,            // 고가
-            @JsonProperty("stck_lwpr") String stckLwpr,            // 저가
-            @JsonProperty("stck_clpr") String stckClpr,            // 종가
-            @JsonProperty("acml_vol") String acmlVol               // 누적 거래량
+            @JsonProperty("stck_bsop_date") String stckBsopDate,
+            @JsonProperty("stck_oprc") String stckOprc,
+            @JsonProperty("stck_hgpr") String stckHgpr,
+            @JsonProperty("stck_lwpr") String stckLwpr,
+            @JsonProperty("stck_clpr") String stckClpr,
+            @JsonProperty("acml_vol") String acmlVol
     ) {}
 
     private record MinuteChartResponse(
@@ -364,11 +344,11 @@ public class KisCandleClient {
     ) {}
 
     private record MinuteOutput(
-            @JsonProperty("stck_cntg_hour") String stckCntgHour,  // 체결시간 (HHmmss)
-            @JsonProperty("stck_oprc") String stckOprc,            // 시가
-            @JsonProperty("stck_hgpr") String stckHgpr,            // 고가
-            @JsonProperty("stck_lwpr") String stckLwpr,            // 저가
-            @JsonProperty("stck_prpr") String stckPrpr,            // 현재가 (종가)
-            @JsonProperty("cntg_vol") String cntgVol               // 체결 거래량
+            @JsonProperty("stck_cntg_hour") String stckCntgHour,
+            @JsonProperty("stck_oprc") String stckOprc,
+            @JsonProperty("stck_hgpr") String stckHgpr,
+            @JsonProperty("stck_lwpr") String stckLwpr,
+            @JsonProperty("stck_prpr") String stckPrpr,
+            @JsonProperty("cntg_vol") String cntgVol
     ) {}
 }

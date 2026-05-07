@@ -10,17 +10,6 @@ import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
 
-/**
- * 프론트 WebSocket 엔드포인트 설정
- *
- * [엔드포인트]
- * - /ws/stocks/{stockCode}/price: 실시간 체결가(H0STCNT0)
- * - /ws/stocks/{stockCode}/orderbook: 실시간 호가(H0STASP0)
- *
- * [방식]
- * - STOMP 미사용
- * - raw WebSocket 기반 중계
- */
 @Configuration
 @EnableWebSocket
 @RequiredArgsConstructor

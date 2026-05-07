@@ -110,6 +110,19 @@ class KisRealtimeMessageParserTest {
     }
 
     @Test
+    @DisplayName("미지원 TR ID 수신 시 Optional.empty() 반환 (메시지 손실 방지)")
+    void unknownTrIdReturnsEmpty() {
+        // given - KIS에서 새로 추가된 TR ID가 수신된 상황
+        String message = "0|H0STXXX|1|005930^093001^71200";
+
+        // when
+        Optional<KisRealtimeMessageParser.KisRealtimeParsedMessage> result = parser.parse(message);
+
+        // then
+        assertThat(result).isEmpty();
+    }
+
+    @Test
     @DisplayName("숫자 변환 실패 필드는 null로 처리")
     void invalidNumberReturnsNull() {
         // given
