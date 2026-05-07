@@ -138,7 +138,12 @@ class MockThresholdCacheRepository:
 
         없으면 None을 반환한다.
         """
-        return self._store.get((user_id, stock_code))
+        threshold = self._store.get((user_id, stock_code))
+
+        if threshold is None:
+            return None
+
+        return copy.deepcopy(threshold)
 
     def delete_threshold(
         self,
