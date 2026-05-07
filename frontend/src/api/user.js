@@ -1,7 +1,5 @@
 /**
  * 사용자(User) 관련 API 함수
- *
- * 백엔드 컨트롤러: UserController
  * 베이스 경로: /api/v1/users/me
  *
  * KIS API 연동 관리 (등록 / 수정 / 삭제)

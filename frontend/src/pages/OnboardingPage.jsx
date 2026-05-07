@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Check, ArrowRight, ArrowLeft } from 'lucide-react';
+// import { updateProfile, updateRules } from '../api/strategy';
 import './OnboardingPage.css';
 
 export default function OnboardingPage() {
@@ -30,59 +31,34 @@ export default function OnboardingPage() {
   const handleComplete = async () => {
     console.log("최종 데이터:", { survey, principle, rules, apiKeys });
 
-    /*
-    // API 연동 시 주석 해제 필요 !!
-    try {
-      const token = sessionStorage.getItem('tempToken'); // 로그인 시 받은 임시 토큰
+    // ── TODO: 백엔드 연동 시 아래 주석 블록 해제 (투자성향 및 룰셋 저장) ──
+    // try {
+    //   await Promise.all([
+    //     updateProfile({
+    //       horizon: survey.horizon,
+    //       goal: survey.goal,
+    //       riskTolerance: survey.risk
+    //     }),
+    //     updateRules({
+    //       principle: principle,
+    //       takeProfit: Number(rules.takeProfit),
+    //       stopLoss: Number(rules.stopLoss),
+    //       positionSize: rules.positionSize
+    //     })
+    //   ]);
+    //
+    //   // TODO: mypage로 이동하여 KIS 키 등록 유도 또는 바로 대시보드로 이동
+    //   navigate('/mypage');
+    // } catch (error) {
+    //   console.error("설정 저장 실패:", error);
+    //   alert("설정 저장 중 오류가 발생했습니다. 다시 시도해 주세요.");
+    // }
+    // ──────────────────────────────────────────────────────────────
 
-      // 1. 투자 성향 + 룰셋 저장 API
-      const profileResponse = await fetch('/api/v1/strategies/me/profiles', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          horizon: survey.horizon,
-          goal: survey.goal,
-          riskTolerance: survey.risk,
-          principle: principle,
-          takeProfit: rules.takeProfit,
-          stopLoss: rules.stopLoss,
-          positionSize: rules.positionSize
-        })
-      });
-
-      if (!profileResponse.ok) throw new Error('성향 저장에 실패했습니다.');
-
-      // 2. 한국투자증권 연동 API
-      const kisResponse = await fetch('/api/v1/users/me/kis-keys', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          appKey: apiKeys.appKey,
-          appSecret: apiKeys.appSecret
-        })
-      });
-
-      if (!kisResponse.ok) throw new Error('계좌 연동에 실패했습니다.');
-
-      // 3. 완료 시 메인 페이지로 이동
-      alert('설정이 완료되었습니다! 매매를 시작해 보세요.');
+    // 임시 더미 처리
+    setTimeout(() => {
       navigate('/home');
-      return;
-    } catch (error) {
-      console.error(error);
-      alert('오류가 발생했습니다: ' + error.message);
-      return;
-    }
-    */
-
-    // 임시 -> 클릭 시 메인으로 이동
-    navigate('/home');
+    }, 500);
   };
 
   return (

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
+import { registerKisKey, updateKisKey, deleteKisKey } from '../api/user';
 import './MyPage.css';
 
 // 더미
@@ -30,8 +31,26 @@ export default function MyPage() {
     riskNoti: true
   });
 
-  const handleSaveKeys = () => {
-    alert('한국투자증권 API 키가 저장되었습니다!');
+  const handleSaveKeys = async () => {
+    // ── TODO: 백엔드 연동 시 아래 주석 블록 해제 (KIS API 연동) ──
+    // try {
+    //   if (isConnected) {
+    //     await updateKisKey({ appKey: apiKeys.appKey, appSecret: apiKeys.appSecret });
+    //     alert('한국투자증권 API 키가 수정되었습니다!');
+    //   } else {
+    //     // 임시 계좌번호 (UI에 계좌번호 폼 추가 필요 시 확장)
+    //     await registerKisKey({ appKey: apiKeys.appKey, appSecret: apiKeys.appSecret, accountNo: '12345678-01' });
+    //     alert('한국투자증권 API 키가 등록되었습니다!');
+    //   }
+    //   setIsConnected(true);
+    // } catch (e) {
+    //   console.error('API 연동 실패', e);
+    //   alert('API 연동에 실패했습니다. 키 값을 확인해주세요.');
+    // }
+    // ──────────────────────────────────────────────────────────────
+    
+    // 임시 더미 로직
+    alert('한국투자증권 API 키가 임시 저장되었습니다!');
     setIsConnected(true);
   };
 
@@ -145,12 +164,22 @@ export default function MyPage() {
         <button className="logout-btn" onClick={() => alert('로그아웃 되었습니다.')}>
           로그아웃
         </button>
-        <button className="withdraw-btn" onClick={() => {
-          if (window.confirm('정말 회원탈퇴를 진행하시겠습니까?\n가지마세요 ㅜㅜ')) {
-            alert('회원탈퇴가 완료되었습니다.');
+        <button className="withdraw-btn" onClick={async () => {
+          if (window.confirm('정말 연동을 해제하시겠습니까? 자동매매가 중단됩니다.')) {
+            // ── TODO: 백엔드 연동 시 아래 주석 블록 해제 (KIS API 해제) ──
+            // try {
+            //   await deleteKisKey();
+            //   alert('한국투자증권 연동이 해제되었습니다.');
+            //   setIsConnected(false);
+            // } catch (e) {
+            //   console.error('연동 해제 실패', e);
+            // }
+            // ──────────────────────────────────────────────────────────────
+            alert('연동이 임시 해제되었습니다.');
+            setIsConnected(false);
           }
         }}>
-          회원탈퇴
+          연동 해제
         </button>
       </div>
 

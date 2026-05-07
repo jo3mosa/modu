@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MessageCircle } from 'lucide-react';
-// TODO: 백엔드 연동 시 아래 주석 해제
-// import { testLogin } from '../api/auth';
+import { testLogin } from '../api/auth';
 import './LoginPage.css';
 
 export default function LoginPage() {
@@ -27,32 +26,23 @@ export default function LoginPage() {
     setIsLoading(true);
     setErrorMsg('');
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // TODO: 백엔드 연동 시 아래 주석 블록 해제 후, 하단 임시 코드 제거
-    // ─────────────────────────────────────────────────────────────────────────
-    // try {
-    //   // POST /api/v1/auth/test/login
-    //   // 로컬 환경(Spring Profile: local)에서만 동작
-    //   const loginData = await testLogin(Number(userId));
-    //
-    //   // 응답의 onboarding 상태에 따라 라우팅 분기
-    //   const { isSurveyCompleted, isRuleSetCompleted } = loginData.onboarding;
-    //   if (isSurveyCompleted && isRuleSetCompleted) {
-    //     navigate('/home');       // 온보딩 완료 → 대시보드
-    //   } else {
-    //     navigate('/onboarding'); // 온보딩 미완료 → 온보딩 페이지
-    //   }
-    // } catch (error) {
-    //   setErrorMsg(error.message || '로그인에 실패했습니다. 사용자 ID를 확인해주세요.');
-    // } finally {
-    //   setIsLoading(false);
-    // }
+    try {
+      // POST /api/v1/auth/test/login
+      // 로컬 환경(Spring Profile: local)에서만 동작
+      const loginData = await testLogin(Number(userId));
 
-    // 임시: 백엔드 연동 전 온보딩으로 직행
-    setTimeout(() => {
-      navigate('/onboarding');
+      // 응답의 onboarding 상태에 따라 라우팅 분기
+      const { isSurveyCompleted, isRuleSetCompleted } = loginData.onboarding;
+      if (isSurveyCompleted && isRuleSetCompleted) {
+        navigate('/home');       // 온보딩 완료 → 대시보드
+      } else {
+        navigate('/onboarding'); // 온보딩 미완료 → 온보딩 페이지
+      }
+    } catch (error) {
+      setErrorMsg(error.message || '로그인에 실패했습니다. 사용자 ID를 확인해주세요.');
+    } finally {
       setIsLoading(false);
-    }, 300);
+    }
   };
 
   return (
