@@ -143,12 +143,16 @@ public class AuthService {
     }
 
     private void blacklistAccessTokenIfPresent(HttpServletRequest request) {
-        Optional<String> accessToken = extractAccessTokenFromAuthorizationHeader(request);
-        accessToken.ifPresent(token -> {
-            jwtProvider.validateToken(token);
-            long ttlMillis = jwtProvider.getRemainingExpirationMillis(token);
-            accessTokenBlacklistService.blacklist(token, ttlMillis);
-        });
+        try {
+            Optional<String> accessToken = extractAccessTokenFromAuthorizationHeader(request);
+            accessToken.ifPresent(token -> {
+                jwtProvider.validateToken(token);
+                long ttlMillis = jwtProvider.getRemainingExpirationMillis(token);
+                accessTokenBlacklistService.blacklist(token, ttlMillis);
+            });
+        } catch (ApiException ignored) {
+            // Expired or invalid access tokens do not need blacklist registration during logout.
+        }
     }
 
     private Optional<String> extractAccessTokenFromAuthorizationHeader(HttpServletRequest request) {

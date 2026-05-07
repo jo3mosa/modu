@@ -82,7 +82,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(parseAllowedOrigins());
+        configuration.setAllowedOrigins(resolveAllowedOrigins());
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of(
                 HttpHeaders.AUTHORIZATION,
@@ -103,5 +103,13 @@ public class SecurityConfig {
                 .map(String::trim)
                 .filter(origin -> !origin.isBlank())
                 .toList();
+    }
+
+    private List<String> resolveAllowedOrigins() {
+        List<String> origins = parseAllowedOrigins();
+        if (origins.isEmpty()) {
+            throw new IllegalStateException("app.cors.allowed-origins must contain at least one origin.");
+        }
+        return origins;
     }
 }

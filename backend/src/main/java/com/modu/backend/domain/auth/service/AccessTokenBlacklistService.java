@@ -2,11 +2,13 @@ package com.modu.backend.domain.auth.service;
 
 import com.modu.backend.domain.auth.jwt.JwtProvider;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AccessTokenBlacklistService {
@@ -20,14 +22,25 @@ public class AccessTokenBlacklistService {
         if (accessToken == null || accessToken.isBlank() || ttlMillis <= 0) {
             return;
         }
-        redisTemplate.opsForValue().set(key(accessToken), "1", Duration.ofMillis(ttlMillis));
+        String key = key(accessToken);
+        try {
+            redisTemplate.opsForValue().set(key, "1", Duration.ofMillis(ttlMillis));
+        } catch (RuntimeException e) {
+            log.warn("Access token blacklist save failed - key: {}, error: {}", key, e.getMessage(), e);
+        }
     }
 
     public boolean isBlacklisted(String accessToken) {
         if (accessToken == null || accessToken.isBlank()) {
             return false;
         }
-        return Boolean.TRUE.equals(redisTemplate.hasKey(key(accessToken)));
+        String key = key(accessToken);
+        try {
+            return Boolean.TRUE.equals(redisTemplate.hasKey(key));
+        } catch (RuntimeException e) {
+            log.warn("Access token blacklist lookup failed - key: {}, error: {}", key, e.getMessage(), e);
+            return false;
+        }
     }
 
     private String key(String accessToken) {
