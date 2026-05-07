@@ -1,4 +1,7 @@
-from app.cache.threshold_cache_repository import ThresholdCacheRepository
+from app.repositories.position_cache_repository import PositionCacheRepository
+from app.repositories.position_index_repository import PositionIndexRepository
+from app.repositories.trade_rule_cache_repository import TradeRuleCacheRepository
+
 from app.position_monitoring.schemas import PositionEvent, PriceTick
 
 
@@ -8,15 +11,20 @@ class PositionMonitor:
 
     핵심 원칙:
     - 모든 사용자를 조회하지 않는다.
-    - 현재가가 들어온 종목을 감시 중인 사용자만 Redis index로 찾는다.
-    - 목표가/손절가 도달은 AI 판단이 아니라 Position Event로 만든다.
+    - 현재가가 들어온 종목을 실제 보유 중인 사용자만 Redis index로 찾는다.
+    - 사용자의 평균단가 기준 손익률을 계산한다.
+    - 익절/손절 조건 도달 시 Position Event를 생성한다.
     """
 
     def __init__(
         self,
-        threshold_repository: ThresholdCacheRepository,
+        position_index_repository: PositionIndexRepository,
+        position_cache_repository: PositionCacheRepository,
+        trade_rule_repository: TradeRuleCacheRepository,
     ) -> None:
-        self.threshold_repository = threshold_repository
+        self.position_index_repository = position_index_repository
+        self.position_cache_repository = position_cache_repository
+        self.trade_rule_repository = trade_rule_repository
 
     def detect_events(
         self,
@@ -28,42 +36,71 @@ class PositionMonitor:
 
         events: list[PositionEvent] = []
 
-        user_ids = self.threshold_repository.get_user_ids_by_stock(
+        user_ids = self.position_index_repository.get_user_ids_by_stock(
             tick.stock_code
         )
 
         for user_id in user_ids:
-            threshold = self.threshold_repository.get_threshold(
+            position = self.position_cache_repository.get_position(
                 user_id=user_id,
                 stock_code=tick.stock_code,
             )
 
-            if threshold is None:
+            if position is None:
                 continue
 
-            target_price = threshold.get("target_price")
-            stop_loss_price = threshold.get("stop_loss_price")
+            trade_rule = self.trade_rule_repository.get_trade_rule(
+                user_id=user_id,
+            )
 
-            if isinstance(target_price, (int, float)) and tick.current_price >= target_price:
+            if trade_rule is None:
+                continue
+
+            average_price = position.get("average_price")
+
+            if not isinstance(average_price, (int, float)):
+                continue
+
+            if average_price <= 0:
+                continue
+
+            profit_rate = (
+                (tick.current_price - average_price) / average_price
+            ) * 100
+
+            take_profit_rate = trade_rule.get("take_profit_rate")
+            stop_loss_rate = trade_rule.get("stop_loss_rate")
+
+            if (
+                isinstance(take_profit_rate, (int, float))
+                and profit_rate >= take_profit_rate
+            ):
                 events.append(
                     PositionEvent(
                         user_id=user_id,
                         stock_code=tick.stock_code,
-                        event_type="TARGET_PRICE_HIT",
+                        event_type="TAKE_PROFIT_RATE_HIT",
                         current_price=tick.current_price,
-                        threshold=threshold,
+                        trade_rule=trade_rule,
+                        position=position,
+                        profit_rate=round(profit_rate, 2),
                         timestamp=tick.timestamp,
                     )
                 )
 
-            if isinstance(stop_loss_price, (int, float)) and tick.current_price <= stop_loss_price:
+            if (
+                isinstance(stop_loss_rate, (int, float))
+                and profit_rate <= stop_loss_rate
+            ):
                 events.append(
                     PositionEvent(
                         user_id=user_id,
                         stock_code=tick.stock_code,
-                        event_type="STOP_LOSS_PRICE_HIT",
+                        event_type="STOP_LOSS_RATE_HIT",
                         current_price=tick.current_price,
-                        threshold=threshold,
+                        trade_rule=trade_rule,
+                        position=position,
+                        profit_rate=round(profit_rate, 2),
                         timestamp=tick.timestamp,
                     )
                 )

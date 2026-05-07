@@ -5,8 +5,8 @@ from pydantic import BaseModel, Field
 
 
 PositionEventType = Literal[
-    "TARGET_PRICE_HIT",
-    "STOP_LOSS_PRICE_HIT",
+    "TAKE_PROFIT_RATE_HIT",
+    "STOP_LOSS_RATE_HIT",
     "PROFIT_RATE_SPIKE",
 ]
 
@@ -28,16 +28,44 @@ class PositionEvent(BaseModel):
     """
     사용자 보유 포지션에서 발생한 이벤트.
 
-    목표가/손절가 도달처럼 즉시 주문 후보 생성이 필요한 이벤트와,
-    손익률 급변처럼 Reasoning Layer 판단이 필요한 이벤트를 함께 표현한다.
+    사용자의 평균단가 기준 손익률을 계산하여
+    익절/손절 규칙 도달 여부를 판단한다.
     """
 
     user_id: int = Field(..., description="사용자 ID")
-    stock_code: str = Field(..., description="종목 코드")
-    event_type: PositionEventType = Field(..., description="포지션 이벤트 타입")
-    current_price: int = Field(..., gt=0, description="이벤트 발생 당시 현재가")
-    threshold: dict[str, Any] = Field(
-        default_factory=dict,
-        description="사용자가 설정한 목표가/손절가/기준 수익률 정보",
+
+    stock_code: str = Field(
+        ...,
+        description="종목 코드",
     )
-    timestamp: datetime = Field(..., description="이벤트 발생 시각")
+
+    event_type: PositionEventType = Field(
+        ...,
+        description="포지션 이벤트 타입",
+    )
+
+    current_price: int = Field(
+        ...,
+        gt=0,
+        description="이벤트 발생 당시 현재가",
+    )
+
+    profit_rate: float = Field(
+        ...,
+        description="현재 수익률(%)",
+    )
+
+    trade_rule: dict[str, Any] = Field(
+        default_factory=dict,
+        description="사용자별 자동매매 규칙",
+    )
+
+    position: dict[str, Any] = Field(
+        default_factory=dict,
+        description="사용자의 현재 보유 포지션 정보",
+    )
+
+    timestamp: datetime = Field(
+        ...,
+        description="이벤트 발생 시각",
+    )
