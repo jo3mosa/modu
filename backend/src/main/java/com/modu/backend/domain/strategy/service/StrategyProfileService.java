@@ -1,11 +1,13 @@
 package com.modu.backend.domain.strategy.service;
 
+import com.modu.backend.domain.auth.dto.OnboardingStatus;
 import com.modu.backend.domain.investment.entity.InvestmentProfile;
 import com.modu.backend.domain.investment.entity.ProfileHistory;
 import com.modu.backend.domain.investment.repository.InvestmentProfileRepository;
 import com.modu.backend.domain.investment.repository.ProfileHistoryRepository;
 import com.modu.backend.domain.strategy.dto.ProfileUpdateRequest;
 import com.modu.backend.domain.strategy.dto.ProfileUpdateResponse;
+import com.modu.backend.domain.trading.repository.TradingRuleRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,6 +23,7 @@ public class StrategyProfileService {
     private final StrategyProfileQuestionService strategyProfileQuestionService;
     private final InvestmentProfileRepository investmentProfileRepository;
     private final ProfileHistoryRepository profileHistoryRepository;
+    private final TradingRuleRepository tradingRuleRepository;
 
     @Transactional
     public ProfileUpdateResponse updateProfile(Long userId, ProfileUpdateRequest request) {
@@ -41,7 +44,8 @@ public class StrategyProfileService {
                 assessment.riskLevel(),
                 assessment.riskScore(),
                 assessment.profileSummary(),
-                profile.getUpdatedAt()
+                profile.getUpdatedAt(),
+                new OnboardingStatus(true, tradingRuleRepository.existsByUserId(userId))
         );
     }
 
