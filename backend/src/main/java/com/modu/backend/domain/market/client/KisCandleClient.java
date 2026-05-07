@@ -12,6 +12,7 @@ import org.springframework.web.client.RestClientException;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -47,6 +48,8 @@ public class KisCandleClient {
     private static final String TR_MINUTE = "FHKST03010230";
 
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
+    /** 국내 주식 장 기준 타임존 — UTC 배포 환경에서도 날짜/시간 판정을 KST 기준으로 고정 */
+    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
     private final RestClient kisRestClient;
     private final KisApiProperties kisApiProperties;
@@ -67,7 +70,7 @@ public class KisCandleClient {
      */
     public List<CandleResponse> getCandles(String accessToken, String stockCode,
                                             String period, String startDate, String endDate) {
-        String resolvedEnd = (endDate != null) ? endDate : LocalDate.now().format(DATE_FMT);
+        String resolvedEnd = (endDate != null) ? endDate : LocalDate.now(KST).format(DATE_FMT);
 
         return switch (period) {
             case "D", "W", "M" -> getDailyCandles(accessToken, stockCode, period, startDate, resolvedEnd);
@@ -136,12 +139,21 @@ public class KisCandleClient {
 
     private List<CandleResponse> getMinuteCandles(String accessToken, String stockCode,
                                                     String period, String startDate, String endDate) {
-        boolean isToday = startDate == null || startDate.equals(LocalDate.now().format(DATE_FMT));
+        String today = LocalDate.now(KST).format(DATE_FMT);
+
+        // 다일자 분봉 요청 거절: KIS API는 하루치만 지원
+        if (startDate != null && endDate != null && !startDate.equals(endDate)) {
+            throw new ApiException(MarketErrorCode.MINUTE_CANDLE_MULTI_DAY_NOT_SUPPORTED);
+        }
+
+        // 단일 기준일 결정: startDate → endDate → 오늘 순서로 우선
+        String queryDate = startDate != null ? startDate : (endDate != null ? endDate : today);
+        boolean isToday = queryDate.equals(today);
 
         // KIS API는 1분 단위 원시 데이터 반환 → period에 맞게 집계
         List<CandleResponse> rawCandles = isToday
-                ? getTodayMinuteCandles(accessToken, stockCode, endDate)
-                : getHistoricalMinuteCandles(accessToken, stockCode, startDate);
+                ? getTodayMinuteCandles(accessToken, stockCode, queryDate)
+                : getHistoricalMinuteCandles(accessToken, stockCode, queryDate);
 
         int periodMinutes = Integer.parseInt(period);
         return aggregateMinuteCandles(rawCandles, periodMinutes);
@@ -196,7 +208,7 @@ public class KisCandleClient {
     }
 
     private List<CandleResponse> getTodayMinuteCandles(String accessToken, String stockCode, String date) {
-        String currentTime = LocalTime.now().format(DateTimeFormatter.ofPattern("HHmmss"));
+        String currentTime = LocalTime.now(KST).format(DateTimeFormatter.ofPattern("HHmmss"));
 
         try {
             MinuteChartResponse response = kisRestClient.get()
@@ -298,10 +310,10 @@ public class KisCandleClient {
 
     private String defaultStartDate(String period) {
         return switch (period) {
-            case "D" -> LocalDate.now().minusMonths(6).format(DATE_FMT);
-            case "W" -> LocalDate.now().minusYears(2).format(DATE_FMT);
-            case "M" -> LocalDate.now().minusYears(5).format(DATE_FMT);
-            default -> LocalDate.now().format(DATE_FMT);
+            case "D" -> LocalDate.now(KST).minusMonths(6).format(DATE_FMT);
+            case "W" -> LocalDate.now(KST).minusYears(2).format(DATE_FMT);
+            case "M" -> LocalDate.now(KST).minusYears(5).format(DATE_FMT);
+            default -> LocalDate.now(KST).format(DATE_FMT);
         };
     }
 
