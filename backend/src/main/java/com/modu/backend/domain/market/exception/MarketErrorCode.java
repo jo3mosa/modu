@@ -5,26 +5,19 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 
-/**
- * 시장/종목 도메인 에러 코드
- *
- * 코드 체계: MKT_001 ~
- */
 @Getter
 @RequiredArgsConstructor
 public enum MarketErrorCode implements ErrorCode {
 
-    /** 존재하지 않는 종목코드로 조회 시 */
     STOCK_NOT_FOUND("MKT_001", HttpStatus.NOT_FOUND, "존재하지 않는 종목코드입니다."),
 
-    /** KIS 시세 조회 API 호출 실패 */
     KIS_PRICE_FETCH_FAILED("MKT_002", HttpStatus.BAD_GATEWAY, "종목 시세 조회에 실패했습니다."),
 
-    /** 유효하지 않은 period 값 (D/W/M/1/5/60 외) */
     INVALID_CANDLE_PERIOD("MKT_003", HttpStatus.BAD_REQUEST, "유효하지 않은 기간 타입입니다. (D/W/M/1/5/60)"),
 
-    /** 분봉 다일자 범위 요청 (startDate != endDate) — 미지원 */
-    MINUTE_CANDLE_MULTI_DAY_NOT_SUPPORTED("MKT_004", HttpStatus.BAD_REQUEST,
+    INVALID_CANDLE_DATE_RANGE("MKT_004", HttpStatus.BAD_REQUEST, "유효하지 않은 캔들 조회 날짜 범위입니다."),
+
+    MINUTE_CANDLE_MULTI_DAY_NOT_SUPPORTED("MKT_005", HttpStatus.BAD_REQUEST,
             "분봉은 하루치 데이터만 조회할 수 있습니다. startDate와 endDate를 동일하게 입력하세요.");
 
     private final String code;

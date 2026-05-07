@@ -18,12 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * 개발용 우회 로그인 컨트롤러
- *
- * local 프로파일에서만 활성화, 운영 환경에서는 빈 자체가 등록되지 않음
- */
-@Tag(name = "Auth", description = "인증 API (소셜 로그인, 토큰 재발급, 로그아웃)")
+@Tag(name = "Auth", description = "인증 API")
 @Profile("local")
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -33,21 +28,18 @@ public class TestAuthController {
     private final AuthService authService;
 
     @Operation(
-            summary = "[개발용] 테스트 로그인",
+            summary = "[로컬] 테스트 로그인",
             description = """
-                    **로컬 개발 환경 전용** API입니다. 운영 환경에서는 비활성화됩니다.
+                    로컬 프로필에서만 사용하는 개발용 로그인 API입니다.
 
-                    카카오 OAuth 없이 `userId`만으로 로그인 처리합니다.
-                    DB에 해당 `userId`의 사용자가 존재해야 합니다.
-
-                    **응답 쿠키**
-                    - `accessToken`: 1시간 유효
-                    - `refreshToken`: 14일 유효
+                    - OAuth 절차 없이 `userId`로 로그인합니다.
+                    - Access Token은 응답 본문의 `data.accessToken`으로 반환합니다.
+                    - Refresh Token은 `HttpOnly`, `Secure`, `SameSite=Strict` 쿠키로 발급합니다.
                     """
     )
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "테스트 로그인 성공"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "존재하지 않는 userId")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "존재하지 않는 사용자")
     })
     @SecurityRequirements
     @PostMapping("/test/login")
@@ -56,6 +48,6 @@ public class TestAuthController {
             HttpServletResponse response) {
 
         LoginResponse loginResponse = authService.testLogin(request.userId(), response);
-        return ResponseEntity.ok(ApiResponse.success("개발용 테스트 로그인 성공", loginResponse));
+        return ResponseEntity.ok(ApiResponse.success("테스트 로그인에 성공했습니다.", loginResponse));
     }
 }

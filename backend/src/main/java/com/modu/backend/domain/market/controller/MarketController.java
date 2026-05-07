@@ -3,8 +3,10 @@ package com.modu.backend.domain.market.controller;
 import com.modu.backend.domain.market.dto.CandleListResponse;
 import com.modu.backend.domain.market.dto.StockDetailResponse;
 import com.modu.backend.domain.market.dto.StockListResponse;
+import com.modu.backend.domain.market.exception.MarketErrorCode;
 import com.modu.backend.domain.market.service.MarketService;
 import com.modu.backend.global.dto.ApiResponse;
+import com.modu.backend.global.error.ApiException;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -13,6 +15,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
@@ -22,12 +25,18 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+
 @Tag(name = "Market", description = "종목/시세 API")
 @Validated
 @RestController
 @RequestMapping("/api/v1/markets")
 @RequiredArgsConstructor
 public class MarketController {
+
+    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.BASIC_ISO_DATE;
 
     private final MarketService marketService;
 
@@ -121,12 +130,29 @@ public class MarketController {
             @RequestParam String period,
 
             @Parameter(description = "시작일 (YYYYMMDD). 없으면 period별 기본값", example = "20250301")
-            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false)
+            @Pattern(regexp = "^\\d{8}$", message = "startDate는 YYYYMMDD 형식이어야 합니다.")
+            String startDate,
 
             @Parameter(description = "종료일 (YYYYMMDD). 없으면 오늘", example = "20250426")
-            @RequestParam(required = false) String endDate) {
+            @RequestParam(required = false)
+            @Pattern(regexp = "^\\d{8}$", message = "endDate는 YYYYMMDD 형식이어야 합니다.")
+            String endDate) {
 
+        validateDate(startDate);
+        validateDate(endDate);
         CandleListResponse response = marketService.getCandleData(stockCode, period, startDate, endDate);
         return ResponseEntity.ok(ApiResponse.success("차트 캔들 데이터를 성공적으로 조회했습니다.", response));
+    }
+
+    private void validateDate(String date) {
+        if (date == null) {
+            return;
+        }
+        try {
+            LocalDate.parse(date, DATE_FMT);
+        } catch (DateTimeParseException e) {
+            throw new ApiException(MarketErrorCode.INVALID_CANDLE_DATE_RANGE);
+        }
     }
 }
