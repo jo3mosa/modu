@@ -36,6 +36,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -253,6 +254,22 @@ class AuthServiceTest {
     @Test
     @DisplayName("logout without cookies still expires refresh cookie")
     void logoutWithoutCookiesStillExpiresRefreshCookie() {
+        when(request.getCookies()).thenReturn(null);
+        when(jwtProvider.expireRefreshTokenCookie())
+                .thenReturn(ResponseCookie.from("refreshToken", "").maxAge(0).build());
+
+        authService.logout(request, response);
+
+        verify(accessTokenBlacklistService, never()).blacklist(anyString(), anyLong());
+        verify(response).addHeader(eqSetCookie(), anyString());
+    }
+
+    @Test
+    @DisplayName("logout with expired access token still expires refresh cookie")
+    void logoutWithExpiredAccessTokenStillExpiresRefreshCookie() {
+        when(request.getHeader(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer expired-access-token");
+        doThrow(new ApiException(AuthErrorCode.EXPIRED_TOKEN))
+                .when(jwtProvider).validateToken("expired-access-token");
         when(request.getCookies()).thenReturn(null);
         when(jwtProvider.expireRefreshTokenCookie())
                 .thenReturn(ResponseCookie.from("refreshToken", "").maxAge(0).build());
