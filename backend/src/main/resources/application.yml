@@ -13,6 +13,10 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
 
+app:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
+
 # Actuator: K8s 헬스체크(/health, /readiness) 및 메트릭 수집용
 management:
   endpoints:
