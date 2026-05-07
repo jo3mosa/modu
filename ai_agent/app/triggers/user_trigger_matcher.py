@@ -1,21 +1,23 @@
 from uuid import uuid4
 
 from app.triggers.schemas import MarketTriggerEvent, UserTriggerEvent
-
+from app.repositories.position_index_repository import (
+    MockPositionIndexRepository,
+    PositionIndexRepository,
+)
 
 # ==============================
 # 1. Mock repository
 # ==============================
 # 초기 구현에서는 DB/Redis를 붙이지 않고,
 # stock_code 기준으로 해당 종목을 보유한 user_id 목록을 반환한다.
-#
-# 이후 실제 구현에서는 아래 mock dict 대신
-# PortfolioRepository / Redis cache / DB query 등으로 교체
-_MOCK_HOLDERS_BY_STOCK_CODE: dict[str, list[int]] = {
-    "005930": [1, 2],  # 삼성전자 보유 사용자
-    "000660": [3],            # SK하이닉스 보유 사용자
-}
+# 추후 Redis 연결 시 MockPositionIndexRepository 대신 RedisPositionIndexRepository로 교체 예정
 
+_POSITION_INDEX_REPOSITORY: PositionIndexRepository = MockPositionIndexRepository()
+
+_POSITION_INDEX_REPOSITORY.add_user("005930", 1)
+_POSITION_INDEX_REPOSITORY.add_user("005930", 2)
+_POSITION_INDEX_REPOSITORY.add_user("000660", 3)
 
 _MOCK_USER_CONTEXT_BY_USER_ID: dict[int, dict] = {
     1: {
@@ -73,14 +75,18 @@ _MOCK_PORTFOLIO_SNAPSHOT_BY_USER_ID: dict[int, dict] = {
 }
 
 
-def get_holding_user_ids(stock_code: str) -> list[int]:
+def get_holding_user_ids(
+    stock_code: str,
+    repository: PositionIndexRepository = _POSITION_INDEX_REPOSITORY,
+) -> list[int]:
     """
     특정 종목을 보유한 사용자 목록을 조회한다.
 
-    현재는 mock 데이터 기반으로 동작한다.
-    추후 DB/Redis 연동 시 이 함수 내부만 repository 호출로 교체하면 된다.
+    현재는 Mock Repository를 기본 구현체로 사용하지만,
+    이후 RedisPositionIndexRepository로 교체 가능하도록
+    repository interface 기반으로 분리한다.
     """
-    return _MOCK_HOLDERS_BY_STOCK_CODE.get(stock_code, [])
+    return repository.get_user_ids_by_stock(stock_code)
 
 
 def get_user_context(user_id: int) -> dict:
