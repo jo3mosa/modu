@@ -28,16 +28,21 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     private final KisRealtimeSubscriptionManager subscriptionManager;
 
+    private final KisWebSocketProperties properties;
+
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         KisRealtimeFrontendWebSocketHandler handler = new KisRealtimeFrontendWebSocketHandler(subscriptionManager);
+        // 허용 Origin은 환경변수(KIS_WEBSOCKET_ALLOWED_ORIGINS)로 관리
+        // 로컬: * / 운영: https://moduinvestment.co.kr,https://k14b106.p.ssafy.io
+        String[] origins = properties.getAllowedOrigins().split(",");
 
         registry.addHandler(handler, "/ws/stocks/{stockCode}/price")
                 .addInterceptors(new StockCodeHandshakeInterceptor(KisRealtimeStreamType.PRICE))
-                .setAllowedOriginPatterns("*");
+                .setAllowedOriginPatterns(origins);
 
         registry.addHandler(handler, "/ws/stocks/{stockCode}/orderbook")
                 .addInterceptors(new StockCodeHandshakeInterceptor(KisRealtimeStreamType.ORDERBOOK))
-                .setAllowedOriginPatterns("*");
+                .setAllowedOriginPatterns(origins);
     }
 }
