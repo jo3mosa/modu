@@ -1,6 +1,7 @@
 package com.modu.backend.global.error;
 
 import com.modu.backend.global.dto.ApiResponse;
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
@@ -29,6 +30,20 @@ public class GlobalExceptionHandler {
                 .orElse(CommonErrorCode.VALIDATION_ERROR.getDefaultMessage());
 
         log.warn("[ValidationError] TraceId: {}, Message: {}", traceId, message);
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.fail(message, CommonErrorCode.VALIDATION_ERROR, traceId));
+    }
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleConstraintViolationException(ConstraintViolationException e) {
+        String traceId = MDC.get(TRACE_ID_KEY);
+        String message = e.getConstraintViolations().stream()
+                .map(violation -> violation.getMessage())
+                .findFirst()
+                .orElse(CommonErrorCode.VALIDATION_ERROR.getDefaultMessage());
+
+        log.warn("[ConstraintViolation] TraceId: {}, Message: {}", traceId, message);
 
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiResponse.fail(message, CommonErrorCode.VALIDATION_ERROR, traceId));
