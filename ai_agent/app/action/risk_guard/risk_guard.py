@@ -990,7 +990,7 @@ def risk_guard(state: InvestmentAgentState) -> dict[str, Any]:
     )
 
     # ==============================
-    # 12. 최종 통과
+    # 11. 최종 통과
     # ==============================
 
     return _make_result(
