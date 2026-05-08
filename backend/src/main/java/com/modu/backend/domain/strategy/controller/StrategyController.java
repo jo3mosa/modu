@@ -1,6 +1,7 @@
 package com.modu.backend.domain.strategy.controller;
 
 import com.modu.backend.domain.strategy.dto.ProfileQuestionListResponse;
+import com.modu.backend.domain.strategy.dto.ProfileResponse;
 import com.modu.backend.domain.strategy.dto.ProfileUpdateRequest;
 import com.modu.backend.domain.strategy.dto.ProfileUpdateResponse;
 import com.modu.backend.domain.strategy.service.StrategyProfileQuestionService;
@@ -49,6 +50,29 @@ public class StrategyController {
     }
 
     @Operation(
+            summary = "내 투자 성향 조회",
+            description = """
+                    인증된 사용자의 최신 투자 성향 프로필을 조회합니다.
+
+                    - 투자 성향은 기존 5단계 등급을 그대로 반환합니다.
+                    - 설문 답변과 자유 입력 투자 원칙은 investment_profiles.answers_snapshot 기준으로 반환합니다.
+                    - 저장된 투자 성향 프로필이 없으면 INVEST_001 에러를 반환합니다.
+                    """
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "투자 성향 조회 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "인증 필요"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "투자 성향 프로필 없음")
+    })
+    @GetMapping("/me/profiles")
+    public ResponseEntity<ApiResponse<ProfileResponse>> getProfile(
+            @AuthenticationPrincipal Long userId) {
+
+        ProfileResponse response = strategyProfileService.getProfile(userId);
+        return ResponseEntity.ok(ApiResponse.success("투자 성향을 조회했습니다.", response));
+    }
+
+    @Operation(
             summary = "투자 성향 입력/수정",
             description = """
                     투자 성향 설문 답변을 제출해 사용자 투자 성향을 저장하거나 수정합니다.
@@ -61,7 +85,7 @@ public class StrategyController {
     )
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "투자 성향 저장 성공"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "유효하지 않은 설문 답변"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "잘못된 설문 답변"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "인증 필요")
     })
     @PatchMapping("/me/profiles")
