@@ -1,11 +1,14 @@
 package com.modu.backend.domain.strategy.service;
 
+import com.modu.backend.domain.strategy.dto.RuleResponse;
 import com.modu.backend.domain.strategy.dto.RuleUpdateRequest;
 import com.modu.backend.domain.strategy.dto.RuleUpdateResponse;
+import com.modu.backend.domain.strategy.exception.StrategyErrorCode;
 import com.modu.backend.domain.trading.entity.TradingRule;
 import com.modu.backend.domain.trading.entity.TradingRuleHistory;
 import com.modu.backend.domain.trading.repository.TradingRuleHistoryRepository;
 import com.modu.backend.domain.trading.repository.TradingRuleRepository;
+import com.modu.backend.global.error.ApiException;
 import com.modu.backend.global.error.ValidationException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -25,6 +28,21 @@ public class StrategyRuleService {
 
     private final TradingRuleRepository tradingRuleRepository;
     private final TradingRuleHistoryRepository tradingRuleHistoryRepository;
+
+    @Transactional(readOnly = true)
+    public RuleResponse getRules(Long userId) {
+        TradingRule rule = tradingRuleRepository.findById(userId)
+                .orElseThrow(() -> new ApiException(StrategyErrorCode.RULE_NOT_FOUND));
+
+        return new RuleResponse(
+                rule.getStopLossPct().intValue(),
+                rule.getTakeProfitPct().intValue(),
+                rule.getMaxDailyOrderCount(),
+                rule.getDailyLossLimitAmount(),
+                rule.getUpdatedAt(),
+                rule.getVersion()
+        );
+    }
 
     @Transactional
     public RuleUpdateResponse updateRules(Long userId, RuleUpdateRequest request) {

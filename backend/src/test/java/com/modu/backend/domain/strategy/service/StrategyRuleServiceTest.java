@@ -2,10 +2,12 @@ package com.modu.backend.domain.strategy.service;
 
 import com.modu.backend.domain.strategy.dto.RuleUpdateRequest;
 import com.modu.backend.domain.strategy.dto.RuleUpdateResponse;
+import com.modu.backend.domain.strategy.exception.StrategyErrorCode;
 import com.modu.backend.domain.trading.entity.TradingRule;
 import com.modu.backend.domain.trading.entity.TradingRuleHistory;
 import com.modu.backend.domain.trading.repository.TradingRuleHistoryRepository;
 import com.modu.backend.domain.trading.repository.TradingRuleRepository;
+import com.modu.backend.global.error.ApiException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -41,6 +43,51 @@ class StrategyRuleServiceTest {
                 tradingRuleRepository,
                 tradingRuleHistoryRepository
         );
+    }
+
+    @Test
+    @DisplayName("get trading risk rules")
+    void getRules() {
+        // given
+        Long userId = 1L;
+        OffsetDateTime updatedAt = OffsetDateTime.now();
+        TradingRule existingRule = TradingRule.builder()
+                .userId(userId)
+                .stopLossPct(3L)
+                .takeProfitPct(5L)
+                .maxDailyOrderCount(10L)
+                .dailyLossLimitAmount(500000L)
+                .version(2L)
+                .createdAt(updatedAt.minusDays(1))
+                .updatedAt(updatedAt)
+                .build();
+
+        when(tradingRuleRepository.findById(userId)).thenReturn(Optional.of(existingRule));
+
+        // when
+        var response = strategyRuleService.getRules(userId);
+
+        // then
+        assertThat(response.stopLossRate()).isEqualTo(3);
+        assertThat(response.takeProfitRate()).isEqualTo(5);
+        assertThat(response.maxDailyOrderCount()).isEqualTo(10L);
+        assertThat(response.maxDailyLossAmount()).isEqualTo(500000L);
+        assertThat(response.updatedAt()).isEqualTo(updatedAt);
+        assertThat(response.version()).isEqualTo(2L);
+    }
+
+    @Test
+    @DisplayName("risk rules not found")
+    void getRulesNotFound() {
+        // given
+        Long userId = 1L;
+        when(tradingRuleRepository.findById(userId)).thenReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> strategyRuleService.getRules(userId))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode())
+                        .isEqualTo(StrategyErrorCode.RULE_NOT_FOUND));
     }
 
     @Test
