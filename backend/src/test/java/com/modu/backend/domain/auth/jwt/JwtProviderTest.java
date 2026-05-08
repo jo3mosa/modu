@@ -19,14 +19,12 @@ class JwtProviderTest {
 
     @BeforeEach
     void setUp() {
-        // 정상 토큰용 (만료 1시간)
         JwtProperties properties = new JwtProperties();
         properties.setSecret("test-secret-key-must-be-at-least-32-bytes!!");
         properties.setAccessTokenExpiration(3600000L);
         properties.setRefreshTokenExpiration(1209600000L);
         jwtProvider = new JwtProvider(properties);
 
-        // 만료 토큰 테스트용 (만료 -1초 → 생성 즉시 만료)
         JwtProperties expiredProperties = new JwtProperties();
         expiredProperties.setSecret("test-secret-key-must-be-at-least-32-bytes!!");
         expiredProperties.setAccessTokenExpiration(-1000L);
@@ -34,29 +32,22 @@ class JwtProviderTest {
         expiredJwtProvider = new JwtProvider(expiredProperties);
     }
 
-    // ── Access Token ────────────────────────────────────────────────────────────
-
     @Test
-    @DisplayName("Access Token 생성 후 userId 추출 성공")
-    void Access_Token_생성_후_userId_추출_성공() {
-        // given
+    @DisplayName("access token contains user id")
+    void accessTokenContainsUserId() {
         Long userId = 1L;
 
-        // when
         String token = jwtProvider.generateAccessToken(userId);
         Long extractedUserId = jwtProvider.getUserIdFromToken(token);
 
-        // then
         assertThat(extractedUserId).isEqualTo(userId);
     }
 
     @Test
-    @DisplayName("만료된 토큰 검증 시 EXPIRED_TOKEN 예외 발생")
-    void 만료된_토큰_검증_시_EXPIRED_TOKEN_예외() {
-        // given
+    @DisplayName("expired access token throws EXPIRED_TOKEN")
+    void expiredAccessTokenThrowsExpiredToken() {
         String expiredToken = expiredJwtProvider.generateAccessToken(1L);
 
-        // when & then
         assertThatThrownBy(() -> jwtProvider.validateToken(expiredToken))
                 .isInstanceOf(ApiException.class)
                 .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode())
@@ -64,12 +55,10 @@ class JwtProviderTest {
     }
 
     @Test
-    @DisplayName("위조된 토큰 검증 시 INVALID_TOKEN 예외 발생")
-    void 위조된_토큰_검증_시_INVALID_TOKEN_예외() {
-        // given
+    @DisplayName("invalid access token throws INVALID_TOKEN")
+    void invalidAccessTokenThrowsInvalidToken() {
         String invalidToken = "invalid.token.value";
 
-        // when & then
         assertThatThrownBy(() -> jwtProvider.validateToken(invalidToken))
                 .isInstanceOf(ApiException.class)
                 .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode())
@@ -77,9 +66,8 @@ class JwtProviderTest {
     }
 
     @Test
-    @DisplayName("다른 secret으로 서명된 토큰 검증 시 INVALID_TOKEN 예외 발생")
-    void 다른_secret으로_서명된_토큰_검증_시_INVALID_TOKEN_예외() {
-        // given - 다른 secret으로 만든 JwtProvider
+    @DisplayName("token signed with other secret throws INVALID_TOKEN")
+    void tokenSignedWithOtherSecretThrowsInvalidToken() {
         JwtProperties otherProperties = new JwtProperties();
         otherProperties.setSecret("completely-different-secret-key-32bytes!!");
         otherProperties.setAccessTokenExpiration(3600000L);
@@ -88,56 +76,49 @@ class JwtProviderTest {
 
         String tokenFromOtherProvider = otherProvider.generateAccessToken(1L);
 
-        // when & then
         assertThatThrownBy(() -> jwtProvider.validateToken(tokenFromOtherProvider))
                 .isInstanceOf(ApiException.class)
                 .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode())
                         .isEqualTo(AuthErrorCode.INVALID_TOKEN));
     }
 
-    // ── Refresh Token ───────────────────────────────────────────────────────────
+    @Test
+    @DisplayName("remaining expiration millis is positive for valid token")
+    void remainingExpirationMillisIsPositiveForValidToken() {
+        String token = jwtProvider.generateAccessToken(1L);
+
+        assertThat(jwtProvider.getRemainingExpirationMillis(token)).isPositive();
+    }
 
     @Test
-    @DisplayName("동일 입력값에 대한 hashToken 결과 일관성")
-    void 동일_입력값_hashToken_결과_일관성() {
-        // given
+    @DisplayName("same refresh token hashes to same value")
+    void sameRefreshTokenHashesToSameValue() {
         String token = "some-refresh-token-uuid";
 
-        // when
         String hash1 = jwtProvider.hashToken(token);
         String hash2 = jwtProvider.hashToken(token);
 
-        // then
         assertThat(hash1).isEqualTo(hash2);
     }
 
     @Test
-    @DisplayName("다른 입력값에 대한 hashToken 결과 상이")
-    void 다른_입력값_hashToken_결과_상이() {
-        // given
+    @DisplayName("different refresh tokens hash to different values")
+    void differentRefreshTokensHashToDifferentValues() {
         String token1 = "refresh-token-uuid-1";
         String token2 = "refresh-token-uuid-2";
 
-        // when
         String hash1 = jwtProvider.hashToken(token1);
         String hash2 = jwtProvider.hashToken(token2);
 
-        // then
         assertThat(hash1).isNotEqualTo(hash2);
     }
 
-    // ── 쿠키 ────────────────────────────────────────────────────────────────────
-
     @Test
-    @DisplayName("로그인 쿠키 보안 설정 확인 (HttpOnly, Secure, SameSite)")
-    void 로그인_쿠키_보안_설정_확인() {
-        // given
-        String token = jwtProvider.generateAccessToken(1L);
+    @DisplayName("refresh token cookie uses secure attributes")
+    void refreshTokenCookieUsesSecureAttributes() {
+        ResponseCookie cookie = jwtProvider.createRefreshTokenCookie("refresh-token");
 
-        // when
-        ResponseCookie cookie = jwtProvider.createAccessTokenCookie(token);
-
-        // then
+        assertThat(cookie.getName()).isEqualTo("refreshToken");
         assertThat(cookie.isHttpOnly()).isTrue();
         assertThat(cookie.isSecure()).isTrue();
         assertThat(cookie.getSameSite()).isEqualTo("Strict");
@@ -146,14 +127,10 @@ class JwtProviderTest {
     }
 
     @Test
-    @DisplayName("로그아웃 쿠키 maxAge가 0 (즉시 만료)")
-    void 로그아웃_쿠키_maxAge가_0() {
-        // when
-        ResponseCookie accessCookie = jwtProvider.expireAccessTokenCookie();
+    @DisplayName("expired refresh cookie maxAge is zero")
+    void expiredRefreshCookieMaxAgeIsZero() {
         ResponseCookie refreshCookie = jwtProvider.expireRefreshTokenCookie();
 
-        // then
-        assertThat(accessCookie.getMaxAge()).isEqualTo(Duration.ZERO);
         assertThat(refreshCookie.getMaxAge()).isEqualTo(Duration.ZERO);
     }
 }
