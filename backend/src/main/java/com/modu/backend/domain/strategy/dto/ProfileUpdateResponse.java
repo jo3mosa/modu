@@ -9,6 +9,7 @@ public record ProfileUpdateResponse(
         long riskScore,
         String profileSummary,
         OffsetDateTime createdAt,
+        Long version,
         OnboardingStatus onboarding
 ) {
 }
