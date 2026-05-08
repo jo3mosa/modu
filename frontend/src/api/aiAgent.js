@@ -1,6 +1,5 @@
 /**
  * AI 에이전트 관련 API 함수
- *
  * 베이스 경로: /api/v1/ai-agent
  */
 import apiClient from './apiClient';

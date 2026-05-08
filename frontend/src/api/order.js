@@ -1,7 +1,5 @@
 /**
  * 주문(Order) 관련 API 함수
- *
- * 백엔드 컨트롤러: OrderController
  * 베이스 경로: /api/v1/orders
  */
 import apiClient from './apiClient';

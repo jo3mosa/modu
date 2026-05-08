@@ -2,22 +2,6 @@ import { useState, useEffect } from 'react';
 // import { getBuyingPower, placeOrder, getPendingOrders, updateOrder } from '../api/order';
 import './OrderBook.css';
 
-const MOCK_ASKS = [
-  { price: '75,400', amount: '12,450' },
-  { price: '75,300', amount: '34,500' },
-  { price: '75,200', amount: '82,000' },
-  { price: '75,100', amount: '154,000' },
-  { price: '75,000', amount: '221,000' },
-];
-
-const MOCK_BIDS = [
-  { price: '74,900', amount: '121,000' },
-  { price: '74,800', amount: '53,000' },
-  { price: '74,700', amount: '32,000' },
-  { price: '74,600', amount: '11,000' },
-  { price: '74,500', amount: '8,500' },
-];
-
 export default function OrderBook({ stockCode }) {
   const [activeTab, setActiveTab] = useState('ORDER'); // 'ORDER' | 'PENDING'
   const [orderType, setOrderType] = useState('BUY'); // 'BUY' | 'SELL'

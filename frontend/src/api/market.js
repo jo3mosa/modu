@@ -1,32 +1,36 @@
 /**
  * 시장/종목(Market) 관련 API 함수
- *
- * 백엔드 컨트롤러: MarketController
  * 베이스 경로: /api/v1/markets/stocks
  */
 import apiClient from './apiClient';
 
 /**
  * 종목 전체 조회 / 종목 검색
- * GET /api/v1/markets/stocks
- * GET /api/v1/markets/stocks?query={검색어}
+ * GET /api/v1/markets/stocks?keyword={검색어}&page={페이지}&size={크기}
  *
- * - query 없으면 전체 종목 목록 반환
- * - query 있으면 종목명 또는 종목코드로 검색
+ * - keyword 없으면 전체 종목 목록 반환
+ * - keyword 있으면 종목명 또는 종목코드 부분 일치 검색
+ * - 응답 항목에는 stockCode/stockName/marketType만 포함 (시세는 미포함)
  *
- * @param {string} [query] - 검색어 (종목명 or 종목코드), 생략 시 전체 조회
- * @returns {Array<{
- *   stockCode: string,     // 종목 코드
- *   stockName: string,     // 종목명
- *   currentPrice: number,  // 현재가
- *   changeRate: number,    // 등락률 (%)
- *   volume: number         // 거래량
+ * @param {{ keyword?: string, page?: number, size?: number }} [params]
+ *   keyword: 검색어 (종목명 or 종목코드)
+ *   page: 페이지 번호 (1 이상, 기본 1)
+ *   size: 페이지 크기 (1~100, 기본 20)
+ * @returns {Promise<{
+ *   stocks: Array<{ stockCode: string, stockName: string, marketType: string }>,
+ *   totalCount: number,
+ *   page: number,
+ *   size: number
  * }>}
  */
-export async function getStocks(query) {
-  const endpoint = query
-    ? `/markets/stocks?query=${encodeURIComponent(query)}`
-    : '/markets/stocks';
+export async function getStocks({ keyword, page, size } = {}) {
+  const search = new URLSearchParams();
+  if (keyword) search.set('keyword', keyword);
+  if (page != null) search.set('page', String(page));
+  if (size != null) search.set('size', String(size));
+
+  const queryString = search.toString();
+  const endpoint = queryString ? `/markets/stocks?${queryString}` : '/markets/stocks';
   const data = await apiClient(endpoint);
   return data.data;
 }
@@ -36,16 +40,19 @@ export async function getStocks(query) {
  * GET /api/v1/markets/stocks/{stockCode}
  *
  * @param {string} stockCode - 종목 코드 (예: '005930')
- * @returns {{
+ * @returns {Promise<{
  *   stockCode: string,
  *   stockName: string,
+ *   marketType: string,
  *   currentPrice: number,
- *   changeRate: number,
- *   volume: number,
- *   high: number,    // 당일 고가
- *   low: number,     // 당일 저가
- *   open: number     // 당일 시가
- * }}
+ *   compareRate: number,
+ *   compareSign: string,
+ *   accumulatedVolume: number,
+ *   marketCap: number,
+ *   openPrice: number,
+ *   highPrice: number,
+ *   lowPrice: number
+ * }>}
  */
 export async function getStockDetail(stockCode) {
   const data = await apiClient(`/markets/stocks/${stockCode}`);
@@ -54,21 +61,42 @@ export async function getStockDetail(stockCode) {
 
 /**
  * 캔들 차트 데이터 조회
- * GET /api/v1/markets/stocks/{stockCode}/candles?timeframe={timeframe}
+ * GET /api/v1/markets/stocks/{stockCode}/candles?period={period}&startDate={YYYYMMDD}&endDate={YYYYMMDD}
  *
- * @param {string} stockCode - 종목 코드
- * @param {string} [timeframe='1D'] - 봉 단위 ('1m' | '5m' | '15m' | '60m' | '1D' | '1W')
- * @returns {Array<{
- *   time: string,   // 'YYYY-MM-DD' 또는 'YYYY-MM-DD HH:mm'
- *   open: number,
- *   high: number,
- *   low: number,
- *   close: number,
- *   volume: number
+ * 응답은 백엔드 raw 형식 그대로 반환된다 (timestamp/openPrice 등). 차트 라이브러리 호환
+ * 형식으로의 매핑은 호출자(TradingChart)에서 처리한다.
+ *
+ * @param {string} stockCode - 종목 코드 (6자리)
+ * @param {{
+ *   period: 'D' | 'W' | 'M' | '1' | '5' | '60',
+ *   startDate?: string,
+ *   endDate?: string
+ * }} params
+ *   period: 일봉(D), 주봉(W), 월봉(M), 분봉(1/5/60). 필수.
+ *   startDate/endDate: YYYYMMDD 형식. 생략 시 백엔드의 period별 기본값 적용.
+ * @returns {Promise<{
+ *   stockCode: string,
+ *   period: string,
+ *   candles: Array<{
+ *     timestamp: string,
+ *     openPrice: number,
+ *     highPrice: number,
+ *     lowPrice: number,
+ *     closePrice: number,
+ *     volume: number
+ *   }>
  * }>}
  */
-export async function getStockCandles(stockCode, timeframe = '1D') {
-  const data = await apiClient(`/markets/stocks/${stockCode}/candles?timeframe=${timeframe}`);
+export async function getStockCandles(stockCode, { period, startDate, endDate } = {}) {
+  const search = new URLSearchParams();
+  if (period) search.set('period', period);
+  if (startDate) search.set('startDate', startDate);
+  if (endDate) search.set('endDate', endDate);
+  const queryString = search.toString();
+  const endpoint = queryString
+    ? `/markets/stocks/${stockCode}/candles?${queryString}`
+    : `/markets/stocks/${stockCode}/candles`;
+  const data = await apiClient(endpoint);
   return data.data;
 }
 
@@ -90,7 +118,7 @@ export async function getStockNews(stockCode) {
 }
 
 /**
- * 기업 정보 조회 (Non-MVP)
+ * 기업 정보 조회
  * GET /api/v1/markets/stocks/{stockCode}/company-info
  *
  * @param {string} stockCode - 종목 코드
