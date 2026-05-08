@@ -3,7 +3,7 @@ name: Mattermost PR Notify
 # PR/리뷰 이벤트가 발생하면 Mattermost 채널로 알림 전송
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, review_requested, closed]
+    types: [opened, synchronize, reopened, ready_for_review, closed]
   pull_request_review:
     types: [submitted]
 
@@ -32,9 +32,6 @@ jobs:
             "pull_request-ready_for_review")
               EMOJI="👀"; COLOR="#0366d6"; TITLE="리뷰 요청 (Draft 해제)"
               ;;
-            "pull_request-review_requested")
-              EMOJI="🙋"; COLOR="#0366d6"; TITLE="리뷰어 지정"
-              ;;
             "pull_request_review-submitted")
               STATE="${{ github.event.review.state }}"
               if [ "$STATE" = "approved" ]; then
@@ -42,7 +39,9 @@ jobs:
               elif [ "$STATE" = "changes_requested" ]; then
                 EMOJI="❌"; COLOR="#d73a49"; TITLE="수정 요청"
               else
-                EMOJI="💬"; COLOR="#586069"; TITLE="리뷰 코멘트"
+                # 단순 코멘트(state=commented)는 알림 제외
+                echo "skip=true" >> "$GITHUB_OUTPUT"
+                exit 0
               fi
               ;;
             "pull_request-closed")
