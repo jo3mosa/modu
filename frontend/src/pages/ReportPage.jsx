@@ -144,7 +144,7 @@ export default function ReportPage() {
   // }, [logTab]);
   // ─────────────────────────────────────────────────────────────────────────────
 
-  // ── TODO: 백엔드 연동 시 아래 주석 블록 해제 (전체 이력 조회) ──
+  // ── TODO: 백엔드 연동 시 아래 주석 블록 해제 ( 전체 이력 조회) ──
   // useEffect(() => {
   //   async function fetchLogs() {
   //     try {
@@ -317,14 +317,14 @@ export default function ReportPage() {
         <div className="report-panel-header">
           <h2>거래 이력 및 로그</h2>
           <div className="log-tabs">
-            <button
-              className={`log-tab-btn ${logTab === 'AI' ? 'active' : ''}`}
+            <button 
+              className={`log-tab-btn ${logTab === 'AI' ? 'active' : ''}`} 
               onClick={() => setLogTab('AI')}
             >
               AI 매매 로그
             </button>
-            <button
-              className={`log-tab-btn ${logTab === 'GENERAL' ? 'active' : ''}`}
+            <button 
+              className={`log-tab-btn ${logTab === 'GENERAL' ? 'active' : ''}`} 
               onClick={() => setLogTab('GENERAL')}
             >
               전체 거래 이력
