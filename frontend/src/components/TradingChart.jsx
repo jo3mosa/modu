@@ -53,6 +53,8 @@ export default function TradingChart({ stockCode }) {
   const chartContainerRef = useRef(null);
   const candlestickSeriesRef = useRef(null);
   const volumeSeriesRef = useRef(null);
+  // 실시간 틱으로 갱신할 마지막 캔들 (high/low 누적용)
+  const lastCandleRef = useRef(null);
   const [timeframe, setTimeframe] = useState('D');
 
   // 차트 생성 (마운트 1회)
@@ -131,6 +133,8 @@ export default function TradingChart({ stockCode }) {
             color: d.close >= d.open ? 'rgba(239,68,68,0.4)' : 'rgba(59,130,246,0.4)',
           }))
         );
+        // 실시간 틱이 들어올 때 합쳐 갱신할 기준 캔들 저장
+        lastCandleRef.current = adapted.length > 0 ? { ...adapted[adapted.length - 1] } : null;
         // 종목/기간이 바뀌면 이전 마커는 의미가 없으므로 비워둔다.
         candlestickSeriesRef.current?.setMarkers([]);
       } catch (error) {
@@ -173,16 +177,45 @@ export default function TradingChart({ stockCode }) {
   //   fetchAiDecisions();
   // }, [stockCode]);
 
-  // ── TODO: 실시간 현재가 WebSocket ──
-  // useEffect(() => {
-  //   if (!stockCode || !candlestickSeriesRef.current) return;
-  //   const ws = new WebSocket(`/ws/stocks/${stockCode}/price`);
-  //   ws.onmessage = (event) => {
-  //     const tick = JSON.parse(event.data);
-  //     candlestickSeriesRef.current.update(tick);
-  //   };
-  //   return () => ws.close();
-  // }, [stockCode]);
+  // 실시간 체결가 WebSocket: /ws/stocks/{code}/price
+  // 메시지(RealtimePriceResponse)의 currentPrice를 마지막 캔들에 누적해 update
+  useEffect(() => {
+    if (!stockCode || !candlestickSeriesRef.current) return;
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/stocks/${stockCode}/price`);
+
+    ws.onmessage = (event) => {
+      try {
+        const tick = JSON.parse(event.data);
+        const price = tick?.currentPrice;
+        const last = lastCandleRef.current;
+        if (price == null || !last || !candlestickSeriesRef.current) return;
+
+        const updated = {
+          time: last.time,
+          open: last.open,
+          high: Math.max(last.high ?? price, price),
+          low: Math.min(last.low ?? price, price),
+          close: price,
+        };
+        candlestickSeriesRef.current.update(updated);
+        lastCandleRef.current = { ...updated, volume: last.volume };
+      } catch (error) {
+        console.error('실시간 체결가 메시지 파싱 실패:', error);
+      }
+    };
+
+    ws.onerror = (event) => {
+      console.warn('실시간 체결가 WebSocket 오류:', event);
+    };
+
+    return () => {
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        ws.close();
+      }
+    };
+  }, [stockCode]);
 
   return (
     <div className="chart-wrapper">

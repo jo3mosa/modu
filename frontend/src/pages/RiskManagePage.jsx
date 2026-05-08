@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getProfileQuestions, updateProfile } from '../api/strategy';
+import { getProfile, getProfileQuestions, updateProfile, updateRules } from '../api/strategy';
 import './RiskManagePage.css';
 
 const RISK_LEVEL_LABEL = {
@@ -35,6 +35,10 @@ export default function RiskManagePage() {
     maxLossLimit: 500000,
   });
 
+  // 룰셋 낙관적 잠금용 version. 백엔드에 GET /me/rules가 없으므로 최초 PUT은 0으로,
+  // 이후엔 PUT 응답의 version을 보관 후 다음 요청에 재전송한다.
+  const [ruleVersion, setRuleVersion] = useState(0);
+
   // 재진단 모달 상태
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [questions, setQuestions] = useState([]);
@@ -43,6 +47,29 @@ export default function RiskManagePage() {
   const [modalPrinciple, setModalPrinciple] = useState('');
   const [submittingProfile, setSubmittingProfile] = useState(false);
   const [savingRules, setSavingRules] = useState(false);
+
+  // 페이지 진입 시 현재 투자 성향 초기 조회 (404 INVEST_001은 미진단 상태이므로 무시)
+  useEffect(() => {
+    let cancelled = false;
+    getProfile()
+      .then((data) => {
+        if (cancelled || !data) return;
+        setProfile({
+          riskLevel: data.riskLevel ?? null,
+          profileSummary: data.profileSummary ?? '',
+          principle: data.freeText ?? '',
+        });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        if (error.status !== 404 && error.errorCode !== 'INVEST_001') {
+          console.error('투자 성향 조회 실패:', error);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // 모달이 처음 열릴 때 설문 문항 로드
   useEffect(() => {
@@ -111,21 +138,44 @@ export default function RiskManagePage() {
     }
   };
 
-  // 룰셋 저장
-  // ⚠️ 백엔드 /strategies/me/rules 엔드포인트 미구현 — 머지 시 try 안 주석 해제
+  // 룰셋 저장: PUT /strategies/me/rules
   const handleSaveAll = async () => {
     if (savingRules) return;
+
+    // 백엔드 검증: 모든 값 @Min(1) 양수 정수. 손절률은 절대값으로 변환해 전송.
+    const stopLossRate = Math.abs(Number(rules.stopLoss));
+    const takeProfitRate = Number(rules.takeProfit);
+    const maxDailyOrderCount = Number(rules.maxDailyOrders);
+    const maxDailyLossAmount = Number(rules.maxLossLimit);
+
+    if (
+      !Number.isFinite(stopLossRate) || stopLossRate < 1 ||
+      !Number.isFinite(takeProfitRate) || takeProfitRate < 1 ||
+      !Number.isFinite(maxDailyOrderCount) || maxDailyOrderCount < 1 ||
+      !Number.isFinite(maxDailyLossAmount) || maxDailyLossAmount < 1
+    ) {
+      alert('모든 룰셋 값은 1 이상의 숫자여야 합니다.');
+      return;
+    }
+
     setSavingRules(true);
     try {
-      // ── TODO: 백엔드 /strategies/me/rules 엔드포인트 머지 후 아래 주석 해제 ──
-      // await updateRules({
-      //   principle: profile.principle,
-      //   takeProfit: Number(rules.takeProfit),
-      //   stopLoss: Number(rules.stopLoss),
-      //   positionSize: 'fixed',
-      // });
-      // ─────────────────────────────────────────────────────────────────────
-      alert('변경사항이 임시 저장되었습니다. (백엔드 룰셋 API 머지 후 실제 반영)');
+      const result = await updateRules({
+        stopLossRate,
+        takeProfitRate,
+        maxDailyOrderCount,
+        maxDailyLossAmount,
+        version: ruleVersion,
+      });
+      // 응답으로 받은 값으로 화면 동기화. 손절은 음수 표기로 유지.
+      setRules({
+        takeProfit: result?.takeProfitRate ?? takeProfitRate,
+        stopLoss: -(result?.stopLossRate ?? stopLossRate),
+        maxDailyOrders: result?.maxDailyOrderCount ?? maxDailyOrderCount,
+        maxLossLimit: result?.maxDailyLossAmount ?? maxDailyLossAmount,
+      });
+      setRuleVersion(result?.version ?? ruleVersion + 1);
+      alert('변경사항이 성공적으로 저장되었습니다.');
     } catch (error) {
       console.error('룰셋 저장 실패:', error);
       alert(error.message || '룰셋 저장 중 오류가 발생했습니다.');

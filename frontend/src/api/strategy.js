@@ -36,6 +36,30 @@ export async function getProfileQuestions() {
 }
 
 /**
+ * 내 투자 성향 조회
+ * GET /api/v1/strategies/me/profiles
+ *
+ * 현재 로그인 사용자의 최신 투자 성향 프로필을 반환한다.
+ * 저장된 프로필이 없으면 404 (errorCode: INVEST_001) 반환.
+ *
+ * @returns {Promise<{
+ *   riskLevel: 'STABLE' | 'STABLE_SEEKING' | 'RISK_NEUTRAL' | 'ACTIVE' | 'AGGRESSIVE',
+ *   profileSummary: string,
+ *   answers: Array<{ questionId: string, question: string, answer: string }>,
+ *   freeText: string,
+ *   createdAt: string,
+ *   updatedAt: string,
+ *   version: number
+ * }>}
+ */
+export async function getProfile() {
+  const response = await apiClient('/strategies/me/profiles', {
+    method: 'GET',
+  });
+  return response.data;
+}
+
+/**
  * 투자 성향 입력/수정
  * PATCH /api/v1/strategies/me/profiles
  *
@@ -43,7 +67,7 @@ export async function getProfileQuestions() {
  * 서버가 점수 산정 및 5단계 투자 성향 등급(InvestmentRiskLevel)을 계산해 응답한다.
  *
  * - answers는 정확히 9개 항목이어야 한다 (백엔드 @Size(min=9, max=9)).
- * - freeText는 자유 입력 (생략 가능).
+ * - freeText는 자유 입력 (생략 가능, 매매 원칙 등).
  *
  * @param {{
  *   answers: Array<{ questionId: string, optionId: string }>,
@@ -54,6 +78,7 @@ export async function getProfileQuestions() {
  *   riskScore: number,
  *   profileSummary: string,
  *   createdAt: string,
+ *   version: number,
  *   onboarding: { isSurveyCompleted: boolean, isRuleSetCompleted: boolean }
  * }>}
  */
@@ -66,17 +91,34 @@ export async function updateProfile(payload) {
 }
 
 /**
- * 투자 리스크 룰셋 설정 및 수정
+ * 리스크 룰셋 갱신
  * PUT /api/v1/strategies/me/rules
  *
- * ⚠️ 백엔드 strategies/me/rules 엔드포인트는 현재 미구현 상태.
- * 정의는 보존하되 호출 시 404가 반환된다.
+ * 백엔드 검증 (RuleUpdateRequest):
+ * - stopLossRate, takeProfitRate: @Min(1) 양수 정수 (% 단위, 절대값)
+ * - maxDailyOrderCount, maxDailyLossAmount: @Min(1) 양수
+ * - version: @Min(0) 낙관적 잠금. 최초 호출은 0, 이후엔 직전 응답의 version
  *
- * @param {{ principle: string, takeProfit: number, stopLoss: number, positionSize: string }} payload
+ * @param {{
+ *   stopLossRate: number,
+ *   takeProfitRate: number,
+ *   maxDailyOrderCount: number,
+ *   maxDailyLossAmount: number,
+ *   version: number
+ * }} payload
+ * @returns {Promise<{
+ *   stopLossRate: number,
+ *   takeProfitRate: number,
+ *   maxDailyOrderCount: number,
+ *   maxDailyLossAmount: number,
+ *   updatedAt: string,
+ *   version: number
+ * }>}
  */
 export async function updateRules(payload) {
-  await apiClient('/strategies/me/rules', {
+  const response = await apiClient('/strategies/me/rules', {
     method: 'PUT',
     body: JSON.stringify(payload),
   });
+  return response.data;
 }

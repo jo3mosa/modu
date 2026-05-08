@@ -28,7 +28,7 @@ export default function TradingPage() {
 
   const [stockDetail, setStockDetail] = useState(null);
 
-  // 종목 변경 시 상세 데이터 로드
+  // 종목 변경 시 상세 데이터 로드 (REST 초기값)
   useEffect(() => {
     let cancelled = false;
     async function fetchDetail() {
@@ -44,6 +44,45 @@ export default function TradingPage() {
     fetchDetail();
     return () => {
       cancelled = true;
+    };
+  }, [stockCode]);
+
+  // 실시간 체결가 WebSocket으로 종목 정보 스트립을 즉시 갱신
+  // 메시지: RealtimePriceResponse { currentPrice, priceChangeRate, highPrice, lowPrice, accumulatedVolume, ... }
+  useEffect(() => {
+    if (!stockCode) return;
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/stocks/${stockCode}/price`);
+
+    ws.onmessage = (event) => {
+      try {
+        const tick = JSON.parse(event.data);
+        setStockDetail((prev) =>
+          prev
+            ? {
+                ...prev,
+                currentPrice: tick.currentPrice ?? prev.currentPrice,
+                compareRate: tick.priceChangeRate ?? prev.compareRate,
+                highPrice: tick.highPrice ?? prev.highPrice,
+                lowPrice: tick.lowPrice ?? prev.lowPrice,
+                accumulatedVolume: tick.accumulatedVolume ?? prev.accumulatedVolume,
+              }
+            : prev
+        );
+      } catch (error) {
+        console.error('실시간 체결가 메시지 파싱 실패:', error);
+      }
+    };
+
+    ws.onerror = (event) => {
+      console.warn('실시간 체결가 WebSocket 오류:', event);
+    };
+
+    return () => {
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        ws.close();
+      }
     };
   }, [stockCode]);
 

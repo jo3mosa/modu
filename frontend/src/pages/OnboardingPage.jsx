@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, ArrowLeft } from 'lucide-react';
-import { getProfileQuestions, updateProfile } from '../api/strategy';
+import { getProfileQuestions, updateProfile, updateRules } from '../api/strategy';
 import './OnboardingPage.css';
 
 const RISK_LEVEL_LABEL = {
@@ -82,16 +82,46 @@ export default function OnboardingPage() {
 
   const handleComplete = async () => {
     if (submittingComplete) return;
+
+    // 백엔드 검증: 모든 값 @Min(1) 양수. stopLoss는 음수 입력이라 절대값.
+    const stopLossRate = Math.abs(Number(rules.stopLoss));
+    const takeProfitRate = Number(rules.takeProfit);
+
+    if (
+      !Number.isFinite(stopLossRate) || stopLossRate < 1 ||
+      !Number.isFinite(takeProfitRate) || takeProfitRate < 1
+    ) {
+      alert('익절/손절 기준은 1 이상의 숫자로 입력해 주세요.');
+      return;
+    }
+
     setSubmittingComplete(true);
     try {
-      // ── TODO: 백엔드 /strategies/me/rules 엔드포인트 머지 후 아래 주석 해제 ──
-      // await updateRules({
-      //   principle,
-      //   takeProfit: Number(rules.takeProfit),
-      //   stopLoss: Number(rules.stopLoss),
-      //   positionSize: rules.positionSize,
-      // });
-      // ─────────────────────────────────────────────────────────────────────
+      // 1) 매매 원칙(자유 입력)은 PATCH /strategies/me/profiles의 freeText로 별도 저장
+      if (principle?.trim()) {
+        try {
+          // 답변은 이전 단계(handleSurveySubmit)에서 이미 저장된 상태를 유지하기 위해
+          // 동일 답변 + freeText만 함께 보내는 방식. 백엔드는 9개 답변을 항상 요구한다.
+          const answersPayload = questions.map((q) => ({
+            questionId: q.questionId,
+            optionId: answers[q.questionId],
+          }));
+          await updateProfile({ answers: answersPayload, freeText: principle });
+        } catch (error) {
+          // 매매 원칙 저장 실패는 룰셋 저장을 막지 않는다 (UX 우선).
+          console.warn('매매 원칙 저장 실패:', error);
+        }
+      }
+
+      // 2) 룰셋 저장: 일일 한도는 사용자 입력이 없으므로 기본값. 추후 마이페이지에서 조정.
+      await updateRules({
+        stopLossRate,
+        takeProfitRate,
+        maxDailyOrderCount: 10,
+        maxDailyLossAmount: 500000,
+        version: 0,
+      });
+
       // TODO: KIS 키 등록은 별도 API 연동 후 처리 (POST /users/me/kis-keys)
       navigate('/mypage');
     } catch (error) {
