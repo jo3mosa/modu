@@ -3,22 +3,24 @@ import { useSearchParams } from 'react-router-dom';
 import TradingChart from '../components/TradingChart';
 import TradingNews from '../components/TradingNews';
 import OrderBook from '../components/OrderBook';
-// import { getStockDetail } from '../api/market';
+import { getStockDetail } from '../api/market';
 import './TradingPage.css';
 
-// ── MOCK 종목 상세 데이터 (백엔드 연동 후 삭제 예정) ──────────────────────────
-const MOCK_STOCK_DETAILS = {
-  '005930': { stockName: '삼성전자',          currentPrice: 74900,  changeAmount:   300, changeRate:  0.40, volume: 12345678, high: 75400, low: 74200 },
-  '000660': { stockName: 'SK하이닉스',        currentPrice: 197500, changeAmount: -2500, changeRate: -1.25, volume:  8234567, high: 201000, low: 196000 },
-  '035420': { stockName: 'NAVER',             currentPrice: 184500, changeAmount:  1500, changeRate:  0.82, volume:  1023456, high: 186000, low: 183000 },
-  '035720': { stockName: '카카오',            currentPrice: 45000,  changeAmount: -1000, changeRate: -2.17, volume:  5678901, high: 46200,  low: 44800  },
-  '012450': { stockName: '한화에어로스페이스', currentPrice: 85300,  changeAmount:  2800, changeRate:  3.45, volume:  2345678, high: 86000,  low: 83000  },
-  '005380': { stockName: '현대차',            currentPrice: 213500, changeAmount:  2500, changeRate:  1.17, volume:  3456789, high: 215000, low: 211000 },
-  '000270': { stockName: '기아',              currentPrice: 98200,  changeAmount:   600, changeRate:  0.62, volume:  4567890, high: 99000,  low: 97500  },
-  '068270': { stockName: '셀트리온',          currentPrice: 178000, changeAmount: -1000, changeRate: -0.56, volume:  1234567, high: 180000, low: 177000 },
-};
 const DEFAULT_STOCK_CODE = '005930';
-// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 백엔드 StockDetailResponse에는 `compareRate`(전일 대비율 %)는 있지만
+ * 절대 변화량(`changeAmount`)은 없다. currentPrice와 compareRate로 역산한다.
+ *
+ * 어제 종가 = currentPrice / (1 + compareRate/100)
+ * 변화량  = currentPrice - 어제 종가 = currentPrice * compareRate / (100 + compareRate)
+ */
+function computeChangeAmount(currentPrice, compareRate) {
+  if (currentPrice == null || compareRate == null) return 0;
+  const denom = 100 + compareRate;
+  if (denom === 0) return 0;
+  return Math.round((currentPrice * compareRate) / denom);
+}
 
 export default function TradingPage() {
   const [searchParams] = useSearchParams();
@@ -27,28 +29,30 @@ export default function TradingPage() {
   const [stockDetail, setStockDetail] = useState(null);
 
   // 종목 변경 시 상세 데이터 로드
-  // ── 연동 시 아래 MOCK 블록 → 주석 처리하고 아래 블록 해제 ─────────────────
-  // useEffect(() => {
-  //   async function fetchDetail() {
-  //     try {
-  //       const data = await getStockDetail(stockCode); // GET /api/v1/markets/stocks/{stockCode}
-  //       setStockDetail(data);
-  //     } catch (error) {
-  //       console.error('종목 상세 로드 실패:', error);
-  //     }
-  //   }
-  //   fetchDetail();
-  // }, [stockCode]);
-  // ─────────────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const detail = MOCK_STOCK_DETAILS[stockCode] ?? MOCK_STOCK_DETAILS[DEFAULT_STOCK_CODE];
-    setStockDetail(detail);
+    let cancelled = false;
+    async function fetchDetail() {
+      try {
+        const data = await getStockDetail(stockCode);
+        if (!cancelled) setStockDetail(data);
+      } catch (error) {
+        if (cancelled) return;
+        console.error('종목 상세 로드 실패:', error);
+        setStockDetail(null);
+      }
+    }
+    fetchDetail();
+    return () => {
+      cancelled = true;
+    };
   }, [stockCode]);
 
   if (!stockDetail) return null;
 
-  const isUp = stockDetail.changeRate >= 0;
+  const compareRate = stockDetail.compareRate ?? 0;
+  const isUp = compareRate >= 0;
   const changeColor = isUp ? 'up' : 'down';
+  const changeAmount = computeChangeAmount(stockDetail.currentPrice, compareRate);
 
   return (
     <div className="trading-container">
@@ -68,14 +72,14 @@ export default function TradingPage() {
         <div className="stock-price-group">
           <span className="stock-strip-price">{stockDetail.currentPrice.toLocaleString()}원</span>
           <span className={`stock-strip-change ${changeColor}`}>
-            {isUp ? '+' : ''}{stockDetail.changeAmount.toLocaleString()}원
-            &nbsp;({isUp ? '+' : ''}{stockDetail.changeRate}%)
+            {isUp ? '+' : ''}{changeAmount.toLocaleString()}원
+            &nbsp;({isUp ? '+' : ''}{compareRate}%)
           </span>
         </div>
         <div className="stock-meta-group">
-          <span className="meta-item"><em>거래량</em>{stockDetail.volume.toLocaleString()}</span>
-          <span className="meta-item"><em>고</em><span className="up">{stockDetail.high.toLocaleString()}</span></span>
-          <span className="meta-item"><em>저</em><span className="down">{stockDetail.low.toLocaleString()}</span></span>
+          <span className="meta-item"><em>거래량</em>{stockDetail.accumulatedVolume?.toLocaleString() ?? '-'}</span>
+          <span className="meta-item"><em>고</em><span className="up">{stockDetail.highPrice?.toLocaleString() ?? '-'}</span></span>
+          <span className="meta-item"><em>저</em><span className="down">{stockDetail.lowPrice?.toLocaleString() ?? '-'}</span></span>
         </div>
       </div>
 
