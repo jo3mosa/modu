@@ -19,6 +19,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -28,6 +29,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -128,7 +130,7 @@ class StrategyProfileServiceTest {
         // given
         Long userId = 1L;
         when(investmentProfileRepository.findById(userId)).thenReturn(Optional.empty());
-        when(investmentProfileRepository.saveAndFlush(any(InvestmentProfile.class)))
+        when(investmentProfileRepository.save(any(InvestmentProfile.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
         when(tradingRuleRepository.existsByUserId(userId)).thenReturn(false);
 
@@ -144,13 +146,13 @@ class StrategyProfileServiceTest {
 
         ArgumentCaptor<InvestmentProfile> profileCaptor =
                 ArgumentCaptor.forClass(InvestmentProfile.class);
-        verify(investmentProfileRepository).saveAndFlush(profileCaptor.capture());
+        verify(investmentProfileRepository).save(profileCaptor.capture());
 
         InvestmentProfile savedProfile = profileCaptor.getValue();
         assertThat(savedProfile.getUserId()).isEqualTo(userId);
         assertThat(savedProfile.getRiskScore()).isEqualTo(68L);
         assertThat(savedProfile.getRiskGrade()).isEqualTo("ACTIVE");
-        assertThat(savedProfile.getVersion()).isEqualTo(0L);
+        assertThat(savedProfile.getVersion()).isNull();
         assertThat(savedProfile.getInvestmentGoal()).isEqualTo("시장 평균 이상의 수익을 기대해요");
         assertThat(savedProfile.getAnswersSnapshot())
                 .containsEntry("riskScore", 68L)
@@ -179,8 +181,6 @@ class StrategyProfileServiceTest {
                 .build();
 
         when(investmentProfileRepository.findById(userId)).thenReturn(Optional.of(existingProfile));
-        when(investmentProfileRepository.saveAndFlush(any(InvestmentProfile.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
         when(tradingRuleRepository.existsByUserId(userId)).thenReturn(true);
 
         // when
@@ -196,12 +196,41 @@ class StrategyProfileServiceTest {
         assertThat(existingProfile.getVersion()).isEqualTo(1L);
         assertThat(existingProfile.getCreatedAt()).isEqualTo(createdAt);
         assertThat(existingProfile.getUpdatedAt()).isAfter(createdAt);
+        verify(investmentProfileRepository, never()).saveAndFlush(any(InvestmentProfile.class));
 
         ArgumentCaptor<ProfileHistory> historyCaptor =
                 ArgumentCaptor.forClass(ProfileHistory.class);
         verify(profileHistoryRepository).save(historyCaptor.capture());
-        assertThat(historyCaptor.getValue().getVersionNo()).isEqualTo(1L);
+        assertThat(historyCaptor.getValue().getVersionNo()).isEqualTo(2L);
         assertThat(historyCaptor.getValue().getRiskScore()).isEqualTo(68L);
+    }
+
+    @Test
+    @DisplayName("요청 버전이 현재 버전과 다르면 저장 전에 낙관적 락 예외를 던진다")
+    void updateProfileWithStaleVersion() {
+        // given
+        Long userId = 1L;
+        OffsetDateTime createdAt = OffsetDateTime.now().minusDays(1);
+        InvestmentProfile existingProfile = InvestmentProfile.builder()
+                .userId(userId)
+                .riskScore(30L)
+                .riskGrade("STABLE_SEEKING")
+                .profileSummary("기존 요약")
+                .investmentGoal("기존 목표")
+                .answersSnapshot(Map.of("riskScore", 30L))
+                .version(2L)
+                .createdAt(createdAt)
+                .updatedAt(createdAt)
+                .build();
+        ProfileUpdateRequest request = new ProfileUpdateRequest(validAnswers(), null, 1L);
+
+        when(investmentProfileRepository.findById(userId)).thenReturn(Optional.of(existingProfile));
+
+        // when & then
+        assertThatThrownBy(() -> strategyProfileService.updateProfile(userId, request))
+                .isInstanceOf(ObjectOptimisticLockingFailureException.class);
+        verify(investmentProfileRepository, never()).saveAndFlush(any(InvestmentProfile.class));
+        verify(profileHistoryRepository, never()).save(any(ProfileHistory.class));
     }
 
     @Test
@@ -210,6 +239,7 @@ class StrategyProfileServiceTest {
         // given
         ProfileUpdateRequest request = new ProfileUpdateRequest(
                 List.of(new ProfileAnswerRequest("AGE_GROUP", "AGE_20_TO_40")),
+                null,
                 null
         );
 
@@ -226,7 +256,7 @@ class StrategyProfileServiceTest {
         // given
         List<ProfileAnswerRequest> answers = validAnswers();
         answers.set(0, new ProfileAnswerRequest("AGE_GROUP", "INVALID_OPTION"));
-        ProfileUpdateRequest request = new ProfileUpdateRequest(answers, null);
+        ProfileUpdateRequest request = new ProfileUpdateRequest(answers, null, null);
 
         // when & then
         assertThatThrownBy(() -> strategyProfileService.updateProfile(1L, request))
@@ -241,7 +271,7 @@ class StrategyProfileServiceTest {
         // given
         List<ProfileAnswerRequest> answers = validAnswers();
         answers.set(1, new ProfileAnswerRequest("AGE_GROUP", "AGE_41_TO_50"));
-        ProfileUpdateRequest request = new ProfileUpdateRequest(answers, null);
+        ProfileUpdateRequest request = new ProfileUpdateRequest(answers, null, null);
 
         // when & then
         assertThatThrownBy(() -> strategyProfileService.updateProfile(1L, request))
@@ -253,7 +283,8 @@ class StrategyProfileServiceTest {
     private ProfileUpdateRequest requestForActiveProfile() {
         return new ProfileUpdateRequest(
                 validAnswers(),
-                "배당주 위주로 안정적으로 운용하고 싶습니다."
+                "배당주 위주로 안정적으로 운용하고 싶습니다.",
+                null
         );
     }
 

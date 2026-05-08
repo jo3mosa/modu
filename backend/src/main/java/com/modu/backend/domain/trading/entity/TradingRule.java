@@ -77,7 +77,7 @@ public class TradingRule {
         this.dailyLossLimitAmount = dailyLossLimitAmount;
         this.naturalLanguageRule = naturalLanguageRule;
         this.parsedRuleJson = parsedRuleJson;
-        this.version = version == null ? 0L : version;
+        this.version = version;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
     }

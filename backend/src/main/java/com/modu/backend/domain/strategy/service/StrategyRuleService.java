@@ -24,10 +24,13 @@ public class StrategyRuleService {
         OffsetDateTime now = OffsetDateTime.now();
 
         TradingRule rule = tradingRuleRepository.findById(userId)
-                .map(existing -> updateExistingRule(existing, request, now))
-                .orElseGet(() -> createRule(userId, request, now));
+                .map(existing -> {
+                    updateExistingRule(existing, request, now);
+                    tradingRuleRepository.flush();
+                    return existing;
+                })
+                .orElseGet(() -> tradingRuleRepository.saveAndFlush(createRule(userId, request, now)));
 
-        tradingRuleRepository.saveAndFlush(rule);
         tradingRuleHistoryRepository.save(toHistory(rule, now));
 
         return new RuleUpdateResponse(
@@ -39,7 +42,7 @@ public class StrategyRuleService {
         );
     }
 
-    private TradingRule updateExistingRule(
+    private void updateExistingRule(
             TradingRule rule,
             RuleUpdateRequest request,
             OffsetDateTime now
@@ -51,7 +54,6 @@ public class StrategyRuleService {
                 request.maxDailyLossAmount(),
                 now
         );
-        return rule;
     }
 
     private TradingRule createRule(

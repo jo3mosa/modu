@@ -19,6 +19,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -81,7 +82,7 @@ class StrategyRuleServiceTest {
         assertThat(savedHistory.getTakeProfitPct()).isEqualTo(5L);
         assertThat(savedHistory.getMaxDailyOrderCount()).isEqualTo(10L);
         assertThat(savedHistory.getDailyLossLimitAmount()).isEqualTo(500000L);
-        assertThat(savedHistory.getVersionNo()).isEqualTo(0L);
+        assertThat(savedHistory.getVersionNo()).isNull();
     }
 
     @Test
@@ -102,8 +103,6 @@ class StrategyRuleServiceTest {
                 .build();
 
         when(tradingRuleRepository.findById(userId)).thenReturn(Optional.of(existingRule));
-        when(tradingRuleRepository.saveAndFlush(any(TradingRule.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
 
         // when
         RuleUpdateResponse response = strategyRuleService.updateRules(userId, request());
@@ -120,6 +119,8 @@ class StrategyRuleServiceTest {
         assertThat(existingRule.getTakeProfitPct()).isEqualTo(5L);
         assertThat(existingRule.getMaxDailyOrderCount()).isEqualTo(10L);
         assertThat(existingRule.getDailyLossLimitAmount()).isEqualTo(500000L);
+        verify(tradingRuleRepository, never()).saveAndFlush(any(TradingRule.class));
+        verify(tradingRuleRepository).flush();
 
         ArgumentCaptor<TradingRuleHistory> historyCaptor =
                 ArgumentCaptor.forClass(TradingRuleHistory.class);

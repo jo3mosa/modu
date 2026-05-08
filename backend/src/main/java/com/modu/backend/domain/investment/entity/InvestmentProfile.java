@@ -75,7 +75,7 @@ public class InvestmentProfile {
         this.profileSummary = profileSummary;
         this.investmentGoal = investmentGoal;
         this.answersSnapshot = answersSnapshot;
-        this.version = version == null ? 0L : version;
+        this.version = version;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
     }
