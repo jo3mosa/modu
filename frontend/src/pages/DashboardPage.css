@@ -336,6 +336,13 @@
   padding: 1.2rem;
   border-radius: 12px;
   border: 1px solid rgba(255,255,255,0.02);
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.log-item:hover {
+  background: rgba(255,255,255,0.06);
+  transform: translateY(-2px);
 }
 
 .log-icon {
