@@ -5,7 +5,7 @@ import HighchartsReactPkg from 'highcharts-react-official';
 const HighchartsReact = HighchartsReactPkg.default || HighchartsReactPkg;
 import highcharts3d from 'highcharts/highcharts-3d';
 import TutorialOverlay from '../components/TutorialOverlay';
-// import { getAccountSummary, getPortfolio } from '../api/account';
+import { getAccountSummary, getPortfolio } from '../api/account';
 import './DashboardPage.css';
 
 if (typeof Highcharts === 'object') {
@@ -54,39 +54,39 @@ export default function DashboardPage() {
   const [showTutorial, setShowTutorial] = useState(false);
 
   // 더미 데이터 사용 중 — 연동 시 아래 주석 블록으로 교체
-  const [summary, setSummary] = useState(MOCK_SUMMARY);
-  const [holdings, setHoldings] = useState(MOCK_HOLDINGS);
-  // const [summary, setSummary] = useState(null);
-  // const [holdings, setHoldings] = useState([]);
-  // const [isLoading, setIsLoading] = useState(true);
-  // const [isKisConnected, setIsKisConnected] = useState(true);
-  const [aiStatus, setAiStatus] = useState(MOCK_AI_STATUS);
-  const [logs] = useState(MOCK_LOGS);
+  // const [summary, setSummary] = useState(MOCK_SUMMARY);
+  // const [holdings, setHoldings] = useState(MOCK_HOLDINGS);
+  const [summary, setSummary] = useState(null);
+  const [holdings, setHoldings] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isKisConnected, setIsKisConnected] = useState(true);
+  // const [aiStatus, setAiStatus] = useState(MOCK_AI_STATUS);
+  // const [logs] = useState(MOCK_LOGS);
 
   useEffect(() => {
     setShowTutorial(true);
 
     // ── TODO: 백엔드 연동 시 위 MOCK useState → 주석 처리하고 아래 블록 해제 ──
-    // async function fetchDashboardData() {
-    //   setIsLoading(true);
-    //   try {
-    //     const [summaryData, portfolioData] = await Promise.all([
-    //       getAccountSummary(),   // GET /api/v1/accounts/me/summary
-    //       getPortfolio(),        // GET /api/v1/accounts/me/holdings
-    //     ]);
-    //     setSummary(summaryData);
-    //     setHoldings(portfolioData.holdings ?? []);
-    //   } catch (error) {
-    //     if (error.message.includes('KIS_NOT_CONNECTED')) {
-    //       setIsKisConnected(false);
-    //     } else {
-    //       console.error('대시보드 데이터 로드 실패:', error);
-    //     }
-    //   } finally {
-    //     setIsLoading(false);
-    //   }
-    // }
-    // fetchDashboardData();
+    async function fetchDashboardData() {
+      setIsLoading(true);
+      try {
+        const [summaryData, portfolioData] = await Promise.all([
+          getAccountSummary(),   // GET /api/v1/accounts/me/summary
+          getPortfolio(),        // GET /api/v1/accounts/me/holdings
+        ]);
+        setSummary(summaryData);
+        setHoldings(portfolioData.holdings ?? []);
+      } catch (error) {
+        if (error.message.includes('KIS_NOT_CONNECTED')) {
+          setIsKisConnected(false);
+        } else {
+          console.error('대시보드 데이터 로드 실패:', error);
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    fetchDashboardData();
     // ─────────────────────────────────────────────────────────────────────────
   }, []);
 
@@ -178,9 +178,9 @@ export default function DashboardPage() {
   };
 
   // ── 연동 시 아래 주석 해제 (KIS 미연동/로딩 상태 처리) ──────────────────
-  // if (isLoading) return <div className="dashboard-container"><p style={{ padding: '2rem', color: '#aaa' }}>자산 정보를 불러오는 중...</p></div>;
-  // if (!isKisConnected) return <div className="dashboard-container"><p style={{ padding: '2rem', color: '#ef4444' }}>한국투자증권 API 연동이 필요합니다. 마이페이지에서 설정해주세요.</p></div>;
-  // if (!summary) return null;
+  if (isLoading) return <div className="dashboard-container"><p style={{ padding: '2rem', color: '#aaa' }}>자산 정보를 불러오는 중...</p></div>;
+  if (!isKisConnected) return <div className="dashboard-container"><p style={{ padding: '2rem', color: '#ef4444' }}>한국투자증권 API 연동이 필요합니다. 마이페이지에서 설정해주세요.</p></div>;
+  if (!summary) return null;
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
