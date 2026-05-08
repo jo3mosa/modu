@@ -19,6 +19,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
 import java.time.OffsetDateTime;
@@ -130,7 +131,7 @@ class StrategyProfileServiceTest {
         // given
         Long userId = 1L;
         when(investmentProfileRepository.findById(userId)).thenReturn(Optional.empty());
-        when(investmentProfileRepository.save(any(InvestmentProfile.class)))
+        when(investmentProfileRepository.saveAndFlush(any(InvestmentProfile.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
         when(tradingRuleRepository.existsByUserId(userId)).thenReturn(false);
 
@@ -146,7 +147,7 @@ class StrategyProfileServiceTest {
 
         ArgumentCaptor<InvestmentProfile> profileCaptor =
                 ArgumentCaptor.forClass(InvestmentProfile.class);
-        verify(investmentProfileRepository).save(profileCaptor.capture());
+        verify(investmentProfileRepository).saveAndFlush(profileCaptor.capture());
 
         InvestmentProfile savedProfile = profileCaptor.getValue();
         assertThat(savedProfile.getUserId()).isEqualTo(userId);
@@ -185,7 +186,7 @@ class StrategyProfileServiceTest {
 
         // when
         ProfileUpdateResponse response =
-                strategyProfileService.updateProfile(userId, requestForActiveProfile());
+                strategyProfileService.updateProfile(userId, requestForActiveProfile(1L));
 
         // then
         assertThat(response.riskLevel()).isEqualTo(InvestmentRiskLevel.ACTIVE);
@@ -230,6 +231,48 @@ class StrategyProfileServiceTest {
         assertThatThrownBy(() -> strategyProfileService.updateProfile(userId, request))
                 .isInstanceOf(ObjectOptimisticLockingFailureException.class);
         verify(investmentProfileRepository, never()).saveAndFlush(any(InvestmentProfile.class));
+        verify(profileHistoryRepository, never()).save(any(ProfileHistory.class));
+    }
+
+    @Test
+    @DisplayName("기존 프로필 수정 요청에 version이 없으면 저장 전에 예외를 던진다")
+    void updateProfileWithoutVersion() {
+        // given
+        Long userId = 1L;
+        OffsetDateTime createdAt = OffsetDateTime.now().minusDays(1);
+        InvestmentProfile existingProfile = InvestmentProfile.builder()
+                .userId(userId)
+                .riskScore(30L)
+                .riskGrade("STABLE_SEEKING")
+                .profileSummary("기존 요약")
+                .investmentGoal("기존 목표")
+                .answersSnapshot(Map.of("riskScore", 30L))
+                .version(2L)
+                .createdAt(createdAt)
+                .updatedAt(createdAt)
+                .build();
+
+        when(investmentProfileRepository.findById(userId)).thenReturn(Optional.of(existingProfile));
+
+        // when & then
+        assertThatThrownBy(() -> strategyProfileService.updateProfile(userId, requestForActiveProfile()))
+                .isInstanceOf(IllegalArgumentException.class);
+        verify(investmentProfileRepository, never()).saveAndFlush(any(InvestmentProfile.class));
+        verify(profileHistoryRepository, never()).save(any(ProfileHistory.class));
+    }
+
+    @Test
+    @DisplayName("동시 최초 생성 중복 키 충돌은 낙관적 락 예외로 변환한다")
+    void createProfileWithDuplicateKey() {
+        // given
+        Long userId = 1L;
+        when(investmentProfileRepository.findById(userId)).thenReturn(Optional.empty());
+        when(investmentProfileRepository.saveAndFlush(any(InvestmentProfile.class)))
+                .thenThrow(new DataIntegrityViolationException("duplicate key"));
+
+        // when & then
+        assertThatThrownBy(() -> strategyProfileService.updateProfile(userId, requestForActiveProfile()))
+                .isInstanceOf(ObjectOptimisticLockingFailureException.class);
         verify(profileHistoryRepository, never()).save(any(ProfileHistory.class));
     }
 
@@ -281,10 +324,14 @@ class StrategyProfileServiceTest {
     }
 
     private ProfileUpdateRequest requestForActiveProfile() {
+        return requestForActiveProfile(null);
+    }
+
+    private ProfileUpdateRequest requestForActiveProfile(Long version) {
         return new ProfileUpdateRequest(
                 validAnswers(),
                 "배당주 위주로 안정적으로 운용하고 싶습니다.",
-                null
+                version
         );
     }
 

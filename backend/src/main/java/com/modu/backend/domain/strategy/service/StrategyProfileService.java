@@ -14,6 +14,7 @@ import com.modu.backend.domain.strategy.dto.ProfileUpdateResponse;
 import com.modu.backend.domain.trading.repository.TradingRuleRepository;
 import com.modu.backend.global.error.ApiException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -67,7 +68,7 @@ public class StrategyProfileService {
             historyVersionNo = nextVersion(profile);
             updateExistingProfile(profile, request.version(), assessment, answersSnapshot, now);
         } else {
-            profile = investmentProfileRepository.save(createProfile(userId, assessment, answersSnapshot, now));
+            profile = createNewProfile(userId, assessment, answersSnapshot, now);
             historyVersionNo = 0L;
         }
 
@@ -102,13 +103,29 @@ public class StrategyProfileService {
     }
 
     private void validateVersion(InvestmentProfile profile, Long requestVersion) {
-        if (requestVersion != null && !requestVersion.equals(profile.getVersion())) {
+        if (requestVersion == null) {
+            throw new IllegalArgumentException("투자 성향 프로필 version은 필수입니다.");
+        }
+        if (!requestVersion.equals(profile.getVersion())) {
             throw new ObjectOptimisticLockingFailureException(InvestmentProfile.class, profile.getUserId());
         }
     }
 
     private Long nextVersion(InvestmentProfile profile) {
         return profile.getVersion() == null ? 0L : profile.getVersion() + 1;
+    }
+
+    private InvestmentProfile createNewProfile(
+            Long userId,
+            StrategyProfileQuestionService.ProfileAssessment assessment,
+            Map<String, Object> answersSnapshot,
+            OffsetDateTime now
+    ) {
+        try {
+            return investmentProfileRepository.saveAndFlush(createProfile(userId, assessment, answersSnapshot, now));
+        } catch (DataIntegrityViolationException e) {
+            throw new ObjectOptimisticLockingFailureException(InvestmentProfile.class, userId);
+        }
     }
 
     private InvestmentProfile createProfile(

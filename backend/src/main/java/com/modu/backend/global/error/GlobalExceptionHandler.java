@@ -83,6 +83,15 @@ public class GlobalExceptionHandler {
     }
 
     // 비즈니스 예외
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ApiResponse<Void>> handleIllegalArgumentException(IllegalArgumentException e) {
+        String traceId = MDC.get(TRACE_ID_KEY);
+        log.warn("[IllegalArgument] TraceId: {}, Message: {}", traceId, e.getMessage());
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.fail(e.getMessage(), CommonErrorCode.VALIDATION_ERROR, traceId));
+    }
+
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ApiResponse<Void>> handleApiException(ApiException e) {
         ErrorCode errorCode = e.getErrorCode();
