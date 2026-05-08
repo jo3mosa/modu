@@ -24,7 +24,7 @@ jobs:
               EMOJI="🆕"; COLOR="#0366d6"; TITLE="새 PR 등록"
               ;;
             "pull_request-synchronize")
-              EMOJI="🔄"; COLOR="#aaaaaa"; TITLE="PR 변경사항 추가"
+              EMOJI="🔄"; COLOR="#aaaaaa"; TITLE="PR 변경"
               ;;
             "pull_request-reopened")
               EMOJI="↩️"; COLOR="#0366d6"; TITLE="PR 다시 열림"
@@ -63,6 +63,19 @@ jobs:
             echo "title=$TITLE"
           } >> "$GITHUB_OUTPUT"
 
+      - name: 최신 커밋 메시지 조회
+        if: steps.meta.outputs.skip != 'true'
+        id: commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHA="${{ github.event.pull_request.head.sha }}"
+          # 커밋 메시지의 첫 줄(제목)만 사용 — body까지 넣으면 메시지가 너무 길어짐
+          MSG=$(gh api "repos/${{ github.repository }}/commits/$SHA" --jq '.commit.message' | head -1)
+          # 빈 값 방지
+          [ -z "$MSG" ] && MSG="(커밋 메시지 없음)"
+          echo "msg=$MSG" >> "$GITHUB_OUTPUT"
+
       - name: Mattermost 알림 전송
         if: steps.meta.outputs.skip != 'true'
         env:
@@ -75,9 +88,9 @@ jobs:
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           PR_HEAD: ${{ github.event.pull_request.head.ref }}
           PR_BASE: ${{ github.event.pull_request.base.ref }}
-          PR_REVIEWERS: ${{ join(github.event.pull_request.requested_reviewers.*.login, ', ') }}
+          PR_COMMIT_MSG: ${{ steps.commit.outputs.msg }}
         run: |
-          # jq로 안전하게 JSON 페이로드 구성 (PR 제목에 따옴표/특수문자가 있어도 문제없음)
+          # jq로 안전하게 JSON 페이로드 구성 (PR 제목/커밋 메시지에 따옴표/특수문자가 있어도 문제없음)
           PAYLOAD=$(jq -n \
             --arg color "$COLOR" \
             --arg attach_title "$EMOJI $TITLE" \
@@ -85,7 +98,7 @@ jobs:
             --arg text "**$PR_TITLE**" \
             --arg author "$PR_AUTHOR" \
             --arg branches "\`$PR_HEAD\` → \`$PR_BASE\`" \
-            --arg reviewers "$PR_REVIEWERS" \
+            --arg commit_msg "$PR_COMMIT_MSG" \
             '{
               username: "GitHub",
               icon_url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png",
@@ -97,7 +110,7 @@ jobs:
                 fields: [
                   { short: true, title: "작성자", value: $author },
                   { short: true, title: "브랜치", value: $branches },
-                  { short: false, title: "리뷰어", value: (if $reviewers == "" then "(미지정)" else $reviewers end) }
+                  { short: false, title: "커밋 메시지", value: $commit_msg }
                 ]
               }]
             }')

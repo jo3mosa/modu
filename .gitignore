@@ -12,7 +12,7 @@ desktop.ini
 /dataSources.local.xml
 
 ### Claude Code ###
-.claude/settings.local.json
+.claude/
 
 ### Environment Variables ###
 .env
