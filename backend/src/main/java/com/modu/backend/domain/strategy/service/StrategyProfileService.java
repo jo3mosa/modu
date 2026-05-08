@@ -16,10 +16,12 @@ import com.modu.backend.global.error.ApiException;
 import com.modu.backend.global.error.ValidationException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.sql.SQLException;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -28,6 +30,8 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 public class StrategyProfileService {
+
+    private static final String POSTGRES_DUPLICATE_KEY_SQL_STATE = "23505";
 
     private final StrategyProfileQuestionService strategyProfileQuestionService;
     private final InvestmentProfileRepository investmentProfileRepository;
@@ -125,8 +129,29 @@ public class StrategyProfileService {
         try {
             return investmentProfileRepository.saveAndFlush(createProfile(userId, assessment, answersSnapshot, now));
         } catch (DataIntegrityViolationException e) {
+            if (!isDuplicateKeyViolation(e)) {
+                throw e;
+            }
             throw new ObjectOptimisticLockingFailureException(InvestmentProfile.class, userId);
         }
+    }
+
+    private boolean isDuplicateKeyViolation(DataIntegrityViolationException e) {
+        if (e instanceof DuplicateKeyException) {
+            return true;
+        }
+
+        Throwable cause = e;
+        while (cause != null) {
+            if (cause instanceof SQLException sqlException
+                    && POSTGRES_DUPLICATE_KEY_SQL_STATE.equals(sqlException.getSQLState())) {
+                return true;
+            }
+            cause = cause.getCause();
+        }
+
+        String message = e.getMostSpecificCause().getMessage();
+        return message != null && message.toLowerCase().contains("duplicate key");
     }
 
     private InvestmentProfile createProfile(

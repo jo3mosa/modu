@@ -23,6 +23,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
+import java.sql.SQLException;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
@@ -274,6 +275,26 @@ class StrategyProfileServiceTest {
         // when & then
         assertThatThrownBy(() -> strategyProfileService.updateProfile(userId, requestForActiveProfile()))
                 .isInstanceOf(ObjectOptimisticLockingFailureException.class);
+        verify(profileHistoryRepository, never()).save(any(ProfileHistory.class));
+    }
+
+    @Test
+    @DisplayName("최초 프로필 생성 중 중복 키가 아닌 무결성 위반은 원본 예외를 유지한다")
+    void createProfileWithNonDuplicateIntegrityViolation() {
+        // given
+        Long userId = 1L;
+        DataIntegrityViolationException exception = new DataIntegrityViolationException(
+                "not null violation",
+                new SQLException("not null violation", "23502")
+        );
+
+        when(investmentProfileRepository.findById(userId)).thenReturn(Optional.empty());
+        when(investmentProfileRepository.saveAndFlush(any(InvestmentProfile.class)))
+                .thenThrow(exception);
+
+        // when & then
+        assertThatThrownBy(() -> strategyProfileService.updateProfile(userId, requestForActiveProfile()))
+                .isSameAs(exception);
         verify(profileHistoryRepository, never()).save(any(ProfileHistory.class));
     }
 

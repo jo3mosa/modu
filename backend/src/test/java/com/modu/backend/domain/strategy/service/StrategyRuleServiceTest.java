@@ -16,6 +16,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
+import java.sql.SQLException;
 import java.time.OffsetDateTime;
 import java.util.Optional;
 
@@ -175,6 +176,26 @@ class StrategyRuleServiceTest {
         // when & then
         assertThatThrownBy(() -> strategyRuleService.updateRules(userId, request()))
                 .isInstanceOf(ObjectOptimisticLockingFailureException.class);
+        verify(tradingRuleHistoryRepository, never()).save(any(TradingRuleHistory.class));
+    }
+
+    @Test
+    @DisplayName("non-duplicate integrity violation keeps original exception")
+    void createRulesWithNonDuplicateIntegrityViolation() {
+        // given
+        Long userId = 1L;
+        DataIntegrityViolationException exception = new DataIntegrityViolationException(
+                "not null violation",
+                new SQLException("not null violation", "23502")
+        );
+
+        when(tradingRuleRepository.findById(userId)).thenReturn(Optional.empty());
+        when(tradingRuleRepository.saveAndFlush(any(TradingRule.class)))
+                .thenThrow(exception);
+
+        // when & then
+        assertThatThrownBy(() -> strategyRuleService.updateRules(userId, request()))
+                .isSameAs(exception);
         verify(tradingRuleHistoryRepository, never()).save(any(TradingRuleHistory.class));
     }
 
