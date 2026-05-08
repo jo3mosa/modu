@@ -5,7 +5,7 @@ import HighchartsReactPkg from 'highcharts-react-official';
 const HighchartsReact = HighchartsReactPkg.default || HighchartsReactPkg;
 import highcharts3d from 'highcharts/highcharts-3d';
 import TutorialOverlay from '../components/TutorialOverlay';
-// import { getAccountSummary, getPortfolio } from '../api/account';
+import { getAccountSummary, getPortfolio } from '../api/account';
 import './DashboardPage.css';
 
 if (typeof Highcharts === 'object') {
@@ -53,15 +53,12 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const [showTutorial, setShowTutorial] = useState(false);
 
-  // 더미 데이터 사용 중 — 연동 시 아래 주석 블록으로 교체
-  const [summary, setSummary] = useState(MOCK_SUMMARY);
-  const [holdings, setHoldings] = useState(MOCK_HOLDINGS);
-  // const [summary, setSummary] = useState(null);
-  // const [holdings, setHoldings] = useState([]);
-  // const [isLoading, setIsLoading] = useState(true);
-  // const [isKisConnected, setIsKisConnected] = useState(true);
+  const [summary, setSummary] = useState(null);
+  const [holdings, setHoldings] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isKisConnected, setIsKisConnected] = useState(true);
   const [aiStatus, setAiStatus] = useState(MOCK_AI_STATUS);
-  const [logs] = useState(MOCK_LOGS);
+  const [logs, setLogs] = useState(MOCK_LOGS);
 
   useEffect(() => {
     setShowTutorial(true);
@@ -70,12 +67,14 @@ export default function DashboardPage() {
     // async function fetchDashboardData() {
     //   setIsLoading(true);
     //   try {
-    //     const [summaryData, portfolioData] = await Promise.all([
+    //     const [summaryData, portfolioData, decisionsData] = await Promise.all([
     //       getAccountSummary(),   // GET /api/v1/accounts/me/summary
     //       getPortfolio(),        // GET /api/v1/accounts/me/holdings
+    //       getAiDecisions()       // GET /api/v1/ai-agent/decisions
     //     ]);
     //     setSummary(summaryData);
     //     setHoldings(portfolioData.holdings ?? []);
+    //     setLogs(decisionsData.content ?? []); // 페이징 결과의 content 배열
     //   } catch (error) {
     //     if (error.message.includes('KIS_NOT_CONNECTED')) {
     //       setIsKisConnected(false);
@@ -178,9 +177,9 @@ export default function DashboardPage() {
   };
 
   // ── 연동 시 아래 주석 해제 (KIS 미연동/로딩 상태 처리) ──────────────────
-  // if (isLoading) return <div className="dashboard-container"><p style={{ padding: '2rem', color: '#aaa' }}>자산 정보를 불러오는 중...</p></div>;
-  // if (!isKisConnected) return <div className="dashboard-container"><p style={{ padding: '2rem', color: '#ef4444' }}>한국투자증권 API 연동이 필요합니다. 마이페이지에서 설정해주세요.</p></div>;
-  // if (!summary) return null;
+  if (isLoading) return <div className="dashboard-container"><p style={{ padding: '2rem', color: '#aaa' }}>자산 정보를 불러오는 중...</p></div>;
+  if (!isKisConnected) return <div className="dashboard-container"><p style={{ padding: '2rem', color: '#ef4444' }}>한국투자증권 API 연동이 필요합니다. 마이페이지에서 설정해주세요.</p></div>;
+  if (!summary) return null;
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
@@ -315,7 +314,7 @@ export default function DashboardPage() {
             <h2>최근 매매 로그</h2>
             <div className="logs-list">
               {logs.map((log) => (
-                <div key={log.id} className="log-item">
+                <div key={log.id} className="log-item" onClick={() => navigate(`/report?logId=${log.id}`)}>
                   <div className={`log-icon ${log.type.toLowerCase()}`}>
                     {log.type === 'BUY' ? '매수' : log.type === 'SELL' ? '매도' : '경고'}
                   </div>

@@ -1,21 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Search } from 'lucide-react';
-// import { getStocks } from '../api/market';
+import { getStocks } from '../api/market';
 import './MainLayout.css';
-
-// ── MOCK 종목 목록 (백엔드 연동 후 삭제 예정) ─────────────────────────────────
-const MOCK_STOCKS = [
-  { stockCode: '005930', stockName: '삼성전자',       currentPrice: 74900,  changeRate:  0.40 },
-  { stockCode: '000660', stockName: 'SK하이닉스',     currentPrice: 197500, changeRate: -1.25 },
-  { stockCode: '035420', stockName: 'NAVER',          currentPrice: 184500, changeRate:  0.82 },
-  { stockCode: '035720', stockName: '카카오',         currentPrice: 45000,  changeRate: -2.17 },
-  { stockCode: '012450', stockName: '한화에어로스페이스', currentPrice: 85300, changeRate:  3.45 },
-  { stockCode: '005380', stockName: '현대차',         currentPrice: 213500, changeRate:  1.17 },
-  { stockCode: '000270', stockName: '기아',           currentPrice: 98200,  changeRate:  0.62 },
-  { stockCode: '068270', stockName: '셀트리온',       currentPrice: 178000, changeRate: -0.56 },
-];
-// ─────────────────────────────────────────────────────────────────────────────
 
 export default function MainLayout() {
   const location = useLocation();
@@ -35,31 +22,22 @@ export default function MainLayout() {
     { path: '/mypage',      label: '마이페이지' },
   ];
 
-  // 검색어 변경 시 MOCK 필터링 (300ms debounce)
-  // ── 연동 시 아래 MOCK 필터 → 주석 처리하고 아래 블록 해제 ──────────────────
-  // useEffect(() => {
-  //   if (!query.trim()) { setResults([]); setShowDropdown(false); return; }
-  //   clearTimeout(debounceRef.current);
-  //   debounceRef.current = setTimeout(async () => {
-  //     try {
-  //       const data = await getStocks(query);  // GET /api/v1/markets/stocks?query=...
-  //       setResults(data);
-  //       setShowDropdown(data.length > 0);
-  //     } catch { setResults([]); }
-  //   }, 300);
-  //   return () => clearTimeout(debounceRef.current);
-  // }, [query]);
-  // ─────────────────────────────────────────────────────────────────────────
+  // 검색어 변경 시 API 호출 (300ms debounce)
   useEffect(() => {
     if (!query.trim()) { setResults([]); setShowDropdown(false); return; }
     clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      const q = query.toLowerCase();
-      const filtered = MOCK_STOCKS.filter(
-        s => s.stockName.toLowerCase().includes(q) || s.stockCode.includes(q)
-      );
-      setResults(filtered);
-      setShowDropdown(filtered.length > 0);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        // GET /api/v1/markets/stocks?keyword=... → { stocks, totalCount, page, size }
+        const data = await getStocks({ keyword: query, page: 1, size: 20 });
+        const stocks = data?.stocks ?? [];
+        setResults(stocks);
+        setShowDropdown(stocks.length > 0);
+      } catch (error) {
+        console.error('종목 검색 실패:', error);
+        setResults([]);
+        setShowDropdown(false);
+      }
     }, 300);
     return () => clearTimeout(debounceRef.current);
   }, [query]);
@@ -125,12 +103,7 @@ export default function MainLayout() {
                   <li key={stock.stockCode} className="search-dropdown-item" onMouseDown={() => handleSelect(stock)}>
                     <span className="sd-name">{stock.stockName}</span>
                     <span className="sd-code">{stock.stockCode}</span>
-                    <span className={`sd-price ${stock.changeRate >= 0 ? 'up' : 'down'}`}>
-                      {stock.currentPrice.toLocaleString()}원&nbsp;
-                      <span className="sd-rate">
-                        {stock.changeRate >= 0 ? '+' : ''}{stock.changeRate}%
-                      </span>
-                    </span>
+                    <span className="sd-code">{stock.marketType}</span>
                   </li>
                 ))}
               </ul>

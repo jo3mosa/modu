@@ -1,49 +1,61 @@
 import { useEffect, useRef, useState } from 'react';
 import { createChart } from 'lightweight-charts';
-// import { getStockCandles } from '../api/market';
+import { getStockCandles } from '../api/market';
 import './TradingChart.css';
 
+// timeframe 옵션은 백엔드 period 값과 일대일 대응 (D/W/M/1/5/60)
 const TIMEFRAME_OPTIONS = [
-  { label: '1분',  value: '1m'  },
-  { label: '5분',  value: '5m'  },
-  { label: '15분', value: '15m' },
-  { label: '60분', value: '60m' },
-  { label: '일봉', value: '1D'  },
+  { label: '1분', value: '1' },
+  { label: '5분', value: '5' },
+  { label: '60분', value: '60' },
+  { label: '일봉', value: 'D' },
+  { label: '주봉', value: 'W' },
+  { label: '월봉', value: 'M' },
 ];
 
-// ── MOCK 더미 데이터 (백엔드 연동 후 삭제 예정) ───────────────────────────────
-const generateDummyData = () => {
-  const initialDate = new Date();
-  initialDate.setUTCDate(initialDate.getUTCDate() - 100);
-  const data = [];
-  let currentPrice = 75000;
+const DAILY_PERIODS = new Set(['D', 'W', 'M']);
 
-  for (let i = 0; i < 100; i++) {
-    const open = currentPrice;
-    const high = open + Math.random() * 2000;
-    const low = open - Math.random() * 2000;
-    const close = low + Math.random() * (high - low);
-    const d = new Date(initialDate.getTime() + i * 86400000);
-    const timeStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    data.push({ time: timeStr, open, high, low, close });
-    currentPrice = close;
+/**
+ * 백엔드 CandleResponse → lightweight-charts 호환 형식으로 변환
+ * - 일/주/월봉: timestamp 'YYYYMMDD' → 'YYYY-MM-DD'
+ * - 분봉: timestamp 'HHmmss' → 오늘 날짜 + 해당 시각의 unix seconds
+ */
+function adaptCandle(period, c) {
+  const ts = c.timestamp ?? '';
+  if (DAILY_PERIODS.has(period)) {
+    const time = `${ts.slice(0, 4)}-${ts.slice(4, 6)}-${ts.slice(6, 8)}`;
+    return {
+      time,
+      open: c.openPrice,
+      high: c.highPrice,
+      low: c.lowPrice,
+      close: c.closePrice,
+      volume: c.volume,
+    };
   }
-  return data;
-};
-
-const generateVolumeData = (candleData) =>
-  candleData.map(d => ({
-    time: d.time,
-    value: Math.random() * 500000 + 100000,
-    color: d.close >= d.open ? 'rgba(239, 68, 68, 0.4)' : 'rgba(59, 130, 246, 0.4)',
-  }));
-// ─────────────────────────────────────────────────────────────────────────────
+  // 분봉: HHmmss를 오늘 날짜에 매핑
+  const now = new Date();
+  const hh = parseInt(ts.slice(0, 2), 10) || 0;
+  const mm = parseInt(ts.slice(2, 4), 10) || 0;
+  const ss = parseInt(ts.slice(4, 6), 10) || 0;
+  now.setHours(hh, mm, ss, 0);
+  return {
+    time: Math.floor(now.getTime() / 1000),
+    open: c.openPrice,
+    high: c.highPrice,
+    low: c.lowPrice,
+    close: c.closePrice,
+    volume: c.volume,
+  };
+}
 
 export default function TradingChart({ stockCode }) {
   const chartContainerRef = useRef(null);
   const candlestickSeriesRef = useRef(null);
   const volumeSeriesRef = useRef(null);
-  const [timeframe, setTimeframe] = useState('1D');
+  // 실시간 틱으로 갱신할 마지막 캔들 (high/low 누적용)
+  const lastCandleRef = useRef(null);
+  const [timeframe, setTimeframe] = useState('D');
 
   // 차트 생성 (마운트 1회)
   useEffect(() => {
@@ -84,22 +96,6 @@ export default function TradingChart({ stockCode }) {
       scaleMargins: { top: 0.8, bottom: 0 },
     });
 
-    // ── MOCK 데이터 세팅 (연동 시 아래 블록 삭제) ──────────────────────────
-    const data = generateDummyData();
-    candlestickSeriesRef.current.setData(data);
-    
-    // UI 표시용 가짜 AI 매매 내역 마커
-    candlestickSeriesRef.current.setMarkers([
-      { time: data[data.length - 80].time, position: 'belowBar', color: '#ef4444', shape: 'arrowUp',   text: 'AI 매수' },
-      { time: data[data.length - 60].time, position: 'aboveBar', color: '#3b82f6', shape: 'arrowDown', text: 'AI 매도' },
-      { time: data[data.length - 45].time, position: 'belowBar', color: '#ef4444', shape: 'arrowUp',   text: 'AI 매수' },
-      { time: data[data.length - 25].time, position: 'belowBar', color: '#ef4444', shape: 'arrowUp',   text: '사용자 매수' },
-      { time: data[data.length - 15].time, position: 'aboveBar', color: '#3b82f6', shape: 'arrowDown', text: 'AI 매도' },
-      { time: data[data.length - 5].time,  position: 'belowBar', color: '#ef4444', shape: 'arrowUp',   text: 'AI 매수' },
-    ]);
-    volumeSeriesRef.current.setData(generateVolumeData(data));
-    // ─────────────────────────────────────────────────────────────────────
-
     const handleResize = () => {
       chart.applyOptions({
         width: chartContainerRef.current.clientWidth,
@@ -117,53 +113,62 @@ export default function TradingChart({ stockCode }) {
     };
   }, []);
 
-  // ── 연동 시 아래 블록 해제 (과거 캔들 데이터 REST) ────────────────────────
-  // useEffect(() => {
-  //   if (!stockCode || !candlestickSeriesRef.current) return;
-  //   async function fetchCandles() {
-  //     try {
-  //       const candles = await getStockCandles(stockCode, timeframe);
-  //       // candles: [{ time, open, high, low, close, volume }, ...]
-  //       candlestickSeriesRef.current.setData(candles);
-  //       volumeSeriesRef.current.setData(
-  //         candles.map(d => ({
-  //           time: d.time,
-  //           value: d.volume,
-  //           color: d.close >= d.open ? 'rgba(239,68,68,0.4)' : 'rgba(59,130,246,0.4)',
-  //         }))
-  //       );
-  //     } catch (error) {
-  //       console.error('캔들 데이터 로드 실패:', error);
-  //     }
-  //   }
-  //   fetchCandles();
-  // }, [stockCode, timeframe]);
+  // 종목/기간 변경 시 캔들 데이터 fetch + 차트 갱신
+  useEffect(() => {
+    if (!stockCode || !candlestickSeriesRef.current) return;
+    let cancelled = false;
 
-  // ── 연동 시 아래 블록 해제 (AI 매매 내역 차트 마커 시각화 - TASK 4) ──────
-  // import { getAiDecisions } from '../api/aiAgent'; // 파일 상단 주석 해제 필요
+    async function fetchCandles() {
+      try {
+        const response = await getStockCandles(stockCode, { period: timeframe });
+        if (cancelled) return;
+        const period = response?.period ?? timeframe;
+        const adapted = (response?.candles ?? []).map((c) => adaptCandle(period, c));
+
+        candlestickSeriesRef.current?.setData(adapted);
+        volumeSeriesRef.current?.setData(
+          adapted.map((d) => ({
+            time: d.time,
+            value: d.volume ?? 0,
+            color: d.close >= d.open ? 'rgba(239,68,68,0.4)' : 'rgba(59,130,246,0.4)',
+          }))
+        );
+        // 실시간 틱이 들어올 때 합쳐 갱신할 기준 캔들 저장
+        lastCandleRef.current = adapted.length > 0 ? { ...adapted[adapted.length - 1] } : null;
+        // 종목/기간이 바뀌면 이전 마커는 의미가 없으므로 비워둔다.
+        candlestickSeriesRef.current?.setMarkers([]);
+      } catch (error) {
+        if (cancelled) return;
+        console.error('캔들 데이터 로드 실패:', error);
+      }
+    }
+    fetchCandles();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [stockCode, timeframe]);
+
+  // ── TODO: AI 매매 내역 마커 시각화 ──
   // useEffect(() => {
   //   if (!stockCode || !candlestickSeriesRef.current) return;
   //   async function fetchAiDecisions() {
   //     try {
   //       const decisions = await getAiDecisions();
-  //       // 해당 종목의 매매 내역만 필터링 (주문 내역과 캔들 데이터의 시간 형식 일치 필수)
-  //       const stockDecisions = decisions.filter(d => d.stockCode === stockCode && d.decisionType !== 'HOLD');
-  //       
-  //       const markers = stockDecisions.map(d => {
-  //         // 시간 문자열은 차트의 time 필드와 동일한 포맷이어야 함 (예: YYYY-MM-DD)
-  //         const timeFormatted = d.decidedAt.split('T')[0]; 
+  //       const stockDecisions = decisions.filter(
+  //         (d) => d.stockCode === stockCode && d.decisionType !== 'HOLD'
+  //       );
+  //       const markers = stockDecisions.map((d) => {
+  //         const timeFormatted = d.decidedAt.split('T')[0];
   //         const isBuy = d.decisionType === 'BUY';
-  //         
   //         return {
   //           time: timeFormatted,
   //           position: isBuy ? 'belowBar' : 'aboveBar',
   //           color: isBuy ? '#ef4444' : '#3b82f6',
   //           shape: isBuy ? 'arrowUp' : 'arrowDown',
-  //           text: `AI ${isBuy ? '매수' : '매도'}`
+  //           text: `AI ${isBuy ? '매수' : '매도'}`,
   //         };
   //       });
-  //       
-  //       // 주의: 캔들 데이터(setData)가 완료된 이후에 호출되어야 함
   //       candlestickSeriesRef.current.setMarkers(markers);
   //     } catch (error) {
   //       console.error('AI 판단 데이터 로드 실패:', error);
@@ -172,17 +177,45 @@ export default function TradingChart({ stockCode }) {
   //   fetchAiDecisions();
   // }, [stockCode]);
 
-  // ── 연동 시 아래 블록 해제 (실시간 현재가 WebSocket) ──────────────────────
-  // useEffect(() => {
-  //   if (!stockCode || !candlestickSeriesRef.current) return;
-  //   const ws = new WebSocket(`/ws/stocks/${stockCode}/price`);
-  //   ws.onmessage = (event) => {
-  //     const tick = JSON.parse(event.data);
-  //     // tick: { time, open, high, low, close }
-  //     candlestickSeriesRef.current.update(tick);
-  //   };
-  //   return () => ws.close();
-  // }, [stockCode]);
+  // 실시간 체결가 WebSocket: /ws/stocks/{code}/price
+  // 메시지(RealtimePriceResponse)의 currentPrice를 마지막 캔들에 누적해 update
+  useEffect(() => {
+    if (!stockCode || !candlestickSeriesRef.current) return;
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/stocks/${stockCode}/price`);
+
+    ws.onmessage = (event) => {
+      try {
+        const tick = JSON.parse(event.data);
+        const price = tick?.currentPrice;
+        const last = lastCandleRef.current;
+        if (price == null || !last || !candlestickSeriesRef.current) return;
+
+        const updated = {
+          time: last.time,
+          open: last.open,
+          high: Math.max(last.high ?? price, price),
+          low: Math.min(last.low ?? price, price),
+          close: price,
+        };
+        candlestickSeriesRef.current.update(updated);
+        lastCandleRef.current = { ...updated, volume: last.volume };
+      } catch (error) {
+        console.error('실시간 체결가 메시지 파싱 실패:', error);
+      }
+    };
+
+    ws.onerror = (event) => {
+      console.warn('실시간 체결가 WebSocket 오류:', event);
+    };
+
+    return () => {
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        ws.close();
+      }
+    };
+  }, [stockCode]);
 
   return (
     <div className="chart-wrapper">

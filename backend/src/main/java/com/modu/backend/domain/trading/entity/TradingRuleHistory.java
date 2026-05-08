@@ -2,9 +2,10 @@ package com.modu.backend.domain.trading.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import jakarta.persistence.Version;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -15,17 +16,17 @@ import org.hibernate.type.SqlTypes;
 import java.time.OffsetDateTime;
 import java.util.Map;
 
-/**
- * User trading risk rule entity mapped to trading_rules.
- */
 @Entity
-@Table(name = "trading_rules")
+@Table(name = "trading_rule_histories")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class TradingRule {
+public class TradingRuleHistory {
 
     @Id
-    @Column(name = "user_id")
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "user_id", nullable = false)
     private Long userId;
 
     @Column(name = "stop_loss_pct", nullable = false)
@@ -47,18 +48,14 @@ public class TradingRule {
     @Column(name = "parsed_rule_json", columnDefinition = "jsonb")
     private Map<String, Object> parsedRuleJson;
 
-    @Version
-    @Column(name = "version", nullable = false)
-    private Long version;
+    @Column(name = "version_no", nullable = false)
+    private Long versionNo;
 
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
 
-    @Column(name = "updated_at", nullable = false)
-    private OffsetDateTime updatedAt;
-
     @Builder
-    public TradingRule(
+    public TradingRuleHistory(
             Long userId,
             Long stopLossPct,
             Long takeProfitPct,
@@ -66,9 +63,8 @@ public class TradingRule {
             Long dailyLossLimitAmount,
             String naturalLanguageRule,
             Map<String, Object> parsedRuleJson,
-            Long version,
-            OffsetDateTime createdAt,
-            OffsetDateTime updatedAt
+            Long versionNo,
+            OffsetDateTime createdAt
     ) {
         this.userId = userId;
         this.stopLossPct = stopLossPct;
@@ -77,22 +73,7 @@ public class TradingRule {
         this.dailyLossLimitAmount = dailyLossLimitAmount;
         this.naturalLanguageRule = naturalLanguageRule;
         this.parsedRuleJson = parsedRuleJson;
-        this.version = version;
+        this.versionNo = versionNo;
         this.createdAt = createdAt;
-        this.updatedAt = updatedAt;
-    }
-
-    public void update(
-            Long stopLossPct,
-            Long takeProfitPct,
-            Long maxDailyOrderCount,
-            Long dailyLossLimitAmount,
-            OffsetDateTime updatedAt
-    ) {
-        this.stopLossPct = stopLossPct;
-        this.takeProfitPct = takeProfitPct;
-        this.maxDailyOrderCount = maxDailyOrderCount;
-        this.dailyLossLimitAmount = dailyLossLimitAmount;
-        this.updatedAt = updatedAt;
     }
 }

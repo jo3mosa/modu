@@ -1,7 +1,5 @@
 /**
  * 사용자(User) 관련 API 함수
- *
- * 백엔드 컨트롤러: UserController
  * 베이스 경로: /api/v1/users/me
  *
  * KIS API 연동 관리 (등록 / 수정 / 삭제)
@@ -16,7 +14,7 @@ import apiClient from './apiClient';
  * - 이미 연동된 경우 409(USER_001) 반환 → updateKisKey() 사용
  * - appKey, appSecret은 백엔드에서 AES-256-GCM으로 암호화 저장
  *
- * @param {{ appKey: string, appSecret: string, accountNo: string }} payload
+ * @param {{ appKey: string, appSecret: string, accountNo: string, isRealAccount: boolean }} payload
  *   accountNo 형식: "계좌번호-상품코드" (예: "50012345-01")
  */
 export async function registerKisKey(payload) {

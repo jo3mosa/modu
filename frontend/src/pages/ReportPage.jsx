@@ -3,6 +3,9 @@ import Highcharts from 'highcharts';
 import HighchartsReactPkg from 'highcharts-react-official';
 import highcharts3d from 'highcharts/highcharts-3d';
 import { ChevronDown, ChevronUp } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
+// import { getAiDecisions, getAiDecisionByOrder } from '../api/aiAgent';
+// import { getOrderHistory } from '../api/order';
 import './ReportPage.css';
 
 const HighchartsReact = HighchartsReactPkg.default || HighchartsReactPkg;
@@ -50,7 +53,13 @@ const MOCK_TRADE_LOGS = [
     price: 74500,
     qty: 10,
     time: '2026-05-03 10:30',
-    reason: 'RSI 지표가 30 이하로 과매도 구간에 진입하였으며, 외국인 순매수세가 3일 연속 유입되는 것을 확인하여 분할 매수 1차 진입을 결정했습니다.'
+    reason: 'RSI 지표가 30 이하로 과매도 구간에 진입하였으며, 외국인 순매수세가 3일 연속 유입되는 것을 확인하여 분할 매수 1차 진입을 결정했습니다.',
+    confidence: 85,
+    marketDataSnapshot: [
+      { label: 'RSI 28 (과매도)', type: 'positive' },
+      { label: '외국인 순매수', type: 'positive' },
+      { label: 'MACD 골든크로스 임박', type: 'info' }
+    ]
   },
   {
     id: 2,
@@ -59,7 +68,13 @@ const MOCK_TRADE_LOGS = [
     price: 149000,
     qty: 5,
     time: '2026-05-02 09:15',
-    reason: '설정된 목표 수익률 5%를 초과 달성하였으며, 볼린저 밴드 상단 이탈 및 단기 저항선 도달을 확인하여 수익 실현을 위해 매도 처리했습니다.'
+    reason: '설정된 목표 수익률 5%를 초과 달성하였으며, 볼린저 밴드 상단 이탈 및 단기 저항선 도달을 확인하여 수익 실현을 위해 매도 처리했습니다.',
+    confidence: 92,
+    marketDataSnapshot: [
+      { label: '목표 수익 달성 (+6.2%)', type: 'positive' },
+      { label: '볼린저 밴드 상단 돌파', type: 'negative' },
+      { label: 'RSI 75 (과매수)', type: 'negative' }
+    ]
   },
   {
     id: 3,
@@ -68,7 +83,13 @@ const MOCK_TRADE_LOGS = [
     price: 45000,
     qty: 20,
     time: '2026-05-01 14:20',
-    reason: '설정된 최대 허용 손실률(-3%)에 도달하여, 추가적인 하락 리스크를 방어하기 위해 설정된 리스크 관리 룰셋에 따라 기계적 손절매를 집행했습니다.'
+    reason: '설정된 최대 허용 손실률(-3%)에 도달하여, 추가적인 하락 리스크를 방어하기 위해 설정된 리스크 관리 룰셋에 따라 기계적 손절매를 집행했습니다.',
+    confidence: 99,
+    marketDataSnapshot: [
+      { label: '최대 손실률 도달 (-3.1%)', type: 'negative' },
+      { label: '20일선 하향 돌파', type: 'negative' },
+      { label: '기관 대량 매도', type: 'negative' }
+    ]
   }
 ];
 
@@ -86,14 +107,75 @@ const MOCK_HABIT_SUMMARY = {
   desc: "이번 달은 손절 원칙을 잘 지켜 전반적으로 안정적인 수익을 누적했습니다. 다만 지난주 급락장에서 하루 10회 이상 매매하는 등 일시적인 뇌동매매 징후가 포착되었습니다. 규칙적인 매매 빈도를 유지하세요."
 };
 
+const MOCK_GENERAL_HISTORY = [
+  { orderId: '1001', stockCode: '005930', stockName: '삼성전자', orderType: 'BUY', price: 74500, quantity: 10, status: 'FILLED', filledAt: '2026-05-03 10:30' },
+  { orderId: '1002', stockCode: '035420', stockName: 'NAVER', orderType: 'BUY', price: 184000, quantity: 5, status: 'CANCELLED', filledAt: '-' },
+  { orderId: '1003', stockCode: '000660', stockName: 'SK하이닉스', orderType: 'SELL', price: 149000, quantity: 5, status: 'FILLED', filledAt: '2026-05-02 09:15' },
+  { orderId: '1004', stockCode: '035720', stockName: '카카오', orderType: 'SELL', price: 45000, quantity: 20, status: 'FILLED', filledAt: '2026-05-01 14:20' }
+];
+
 export default function ReportPage() {
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const initialLogId = searchParams.get('logId');
+
+  const [logTab, setLogTab] = useState('AI'); // 'AI' | 'GENERAL'
+  const [generalLogs, setGeneralLogs] = useState(MOCK_GENERAL_HISTORY);
+
   const [period, setPeriod] = useState('1M');
   const [briefing] = useState(MOCK_MARKET_BRIEFING);
-  const [logs] = useState(MOCK_TRADE_LOGS);
-  const [expandedLogId, setExpandedLogId] = useState(null);
+  const [logs, setLogs] = useState(MOCK_TRADE_LOGS);
+  const [expandedLogId, setExpandedLogId] = useState(initialLogId ? parseInt(initialLogId, 10) : null);
+  const [detailedDecisions, setDetailedDecisions] = useState({});
 
-  const toggleLog = (id) => {
-    setExpandedLogId(prev => (prev === id ? null : id));
+  // ── TODO: 백엔드 연동 시 아래 주석 블록 해제 (전체 거래 이력 조회) ──
+  // useEffect(() => {
+  //   if (logTab === 'GENERAL') {
+  //     async function fetchGeneralLogs() {
+  //       try {
+  //         const res = await getOrderHistory();
+  //         setGeneralLogs(res);
+  //       } catch (e) {
+  //         console.error('거래 이력 조회 실패', e);
+  //       }
+  //     }
+  //     fetchGeneralLogs();
+  //   }
+  // }, [logTab]);
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  // ── TODO: 백엔드 연동 시 아래 주석 블록 해제 ( 전체 이력 조회) ──
+  // useEffect(() => {
+  //   async function fetchLogs() {
+  //     try {
+  //       const response = await getAiDecisions();
+  //       setLogs(response.content ?? []); // 응답 스펙에 맞게 변환 필요
+  //     } catch (error) {
+  //       console.error('AI 매매 이력을 불러오지 못했습니다.', error);
+  //     }
+  //   }
+  //   fetchLogs();
+  // }, []);
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  // 아코디언 토글 및 단건 상세 조회
+  const toggleLog = async (id) => {
+    if (expandedLogId === id) {
+      setExpandedLogId(null);
+      return;
+    }
+    setExpandedLogId(id);
+
+    // ── TODO: 백엔드 연동 시 아래 주석 블록 해제 (주문별 근거 조회) ──
+    // if (!detailedDecisions[id]) {
+    //   try {
+    //     const detail = await getAiDecisionByOrder(id);
+    //     setDetailedDecisions(prev => ({ ...prev, [id]: detail }));
+    //   } catch (error) {
+    //     console.error('상세 판단 근거를 불러오지 못했습니다.', error);
+    //   }
+    // }
+    // ─────────────────────────────────────────────────────────────────────────
   };
 
   // 1. 도넛 차트 -> 종목 비중
@@ -179,8 +261,8 @@ export default function ReportPage() {
         </div>
         <div className="period-filter">
           {PERIOD_OPTIONS.map(opt => (
-            <button 
-              key={opt.value} 
+            <button
+              key={opt.value}
               className={`period-btn ${period === opt.value ? 'active' : ''}`}
               onClick={() => setPeriod(opt.value)}
             >
@@ -230,54 +312,118 @@ export default function ReportPage() {
         </div>
       </div>
 
-      {/* 3. 매매 로그 + 근거 */}
+      {/* 3. 거래 내역 탭 영역 */}
       <div className="report-panel">
-        <h2>매매 로그 · AI 결정 근거</h2>
-
-        {/* AI 매매 습관 종합 요약 */}
-        <div className="habit-summary-box">
-          <div className="habit-pnl">
-            <span className="pnl-label">기간 내 실현 손익</span>
-            <span className="pnl-value">
-              +{MOCK_HABIT_SUMMARY.pnl.toLocaleString()}원 
-              <span className="pnl-rate">(+{MOCK_HABIT_SUMMARY.pnlRate}%)</span>
-            </span>
-          </div>
-          <div className="habit-text">
-            <h4>{MOCK_HABIT_SUMMARY.title}</h4>
-            <p>{MOCK_HABIT_SUMMARY.desc}</p>
+        <div className="report-panel-header">
+          <h2>거래 이력 및 로그</h2>
+          <div className="log-tabs">
+            <button 
+              className={`log-tab-btn ${logTab === 'AI' ? 'active' : ''}`} 
+              onClick={() => setLogTab('AI')}
+            >
+              AI 매매 로그
+            </button>
+            <button 
+              className={`log-tab-btn ${logTab === 'GENERAL' ? 'active' : ''}`} 
+              onClick={() => setLogTab('GENERAL')}
+            >
+              전체 거래 이력
+            </button>
           </div>
         </div>
 
-        <div className="trade-log-list">
-          {logs.map((log) => {
-            const isExpanded = expandedLogId === log.id;
-            return (
-              <div key={log.id} className={`trade-log-item ${isExpanded ? 'expanded' : ''}`}>
-                <div className="log-header" onClick={() => toggleLog(log.id)}>
-                  <div className="log-header-left">
-                    <span className={`log-badge ${log.type.toLowerCase()}`}>
-                      {log.type === 'BUY' ? '매수' : '매도'}
-                    </span>
-                    <span className="log-stock">{log.stock}</span>
-                    <span className="log-price">{log.price.toLocaleString()}원 · {log.qty}주</span>
+        {logTab === 'AI' && (
+          <>
+            {/* AI 매매 습관 종합 요약 */}
+            <div className="habit-summary-box">
+              <div className="habit-pnl">
+                <span className="pnl-label">기간 내 실현 손익</span>
+                <span className="pnl-value">
+                  +{MOCK_HABIT_SUMMARY.pnl.toLocaleString()}원
+                  <span className="pnl-rate">(+{MOCK_HABIT_SUMMARY.pnlRate}%)</span>
+                </span>
+              </div>
+              <div className="habit-text">
+                <h4>{MOCK_HABIT_SUMMARY.title}</h4>
+                <p>{MOCK_HABIT_SUMMARY.desc}</p>
+              </div>
+            </div>
+
+            <div className="trade-log-list">
+              {logs.map((log) => {
+                const isExpanded = expandedLogId === log.id;
+                return (
+                  <div key={log.id} className={`trade-log-item ${isExpanded ? 'expanded' : ''}`}>
+                    <div className="log-header" onClick={() => toggleLog(log.id)}>
+                      <div className="log-header-left">
+                        <span className={`log-badge ${log.type.toLowerCase()}`}>
+                          {log.type === 'BUY' ? '매수' : '매도'}
+                        </span>
+                        <span className="log-stock">{log.stock}</span>
+                        <span className="log-price">{log.price.toLocaleString()}원 · {log.qty}주</span>
+                      </div>
+                      <div className="log-header-right">
+                        <span className="log-time">{log.time}</span>
+                        {isExpanded ? <ChevronUp size={20} color="#888" /> : <ChevronDown size={20} color="#888" />}
+                      </div>
+                    </div>
+
+                    {isExpanded && (
+                      <div className="log-reason-box">
+                        <h4>AI 판단 근거</h4>
+                        <p className="reason-text">{log.reason}</p>
+
+                        {log.marketDataSnapshot && log.marketDataSnapshot.length > 0 && (
+                          <div className="market-snapshot">
+                            <div className="snapshot-tags">
+                              {log.marketDataSnapshot.map((tag, idx) => (
+                                <span key={idx} className={`snap-tag ${tag.type}`}>
+                                  {tag.label}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <div className="log-header-right">
-                    <span className="log-time">{log.time}</span>
-                    {isExpanded ? <ChevronUp size={20} color="#888" /> : <ChevronDown size={20} color="#888" />}
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {logTab === 'GENERAL' && (
+          <div className="general-history-list">
+            {generalLogs.length === 0 ? (
+              <div className="empty-state">거래 내역이 없습니다.</div>
+            ) : (
+              generalLogs.map(log => (
+                <div key={log.orderId} className="general-history-item">
+                  <div className="gh-left">
+                    <span className={`gh-badge ${log.orderType.toLowerCase()}`}>
+                      {log.orderType === 'BUY' ? '매수' : '매도'}
+                    </span>
+                    <div className="gh-info">
+                      <span className="gh-stock">{log.stockName}</span>
+                      <span className="gh-code">{log.stockCode}</span>
+                    </div>
+                  </div>
+                  <div className="gh-center">
+                    <span className="gh-amount">{(log.price * log.quantity).toLocaleString()}원</span>
+                    <span className="gh-details">{log.price.toLocaleString()}원 · {log.quantity}주</span>
+                  </div>
+                  <div className="gh-right">
+                    <span className={`gh-status ${log.status.toLowerCase()}`}>
+                      {log.status === 'FILLED' ? '체결 완료' : log.status === 'CANCELLED' ? '취소됨' : '주문 실패'}
+                    </span>
+                    <span className="gh-time">{log.filledAt}</span>
                   </div>
                 </div>
-
-                {isExpanded && (
-                  <div className="log-reason-box">
-                    <h4>AI 판단 근거</h4>
-                    <p>{log.reason}</p>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+              ))
+            )}
+          </div>
+        )}
       </div>
 
     </div>

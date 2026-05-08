@@ -1,15 +1,15 @@
 package com.modu.backend.domain.strategy.dto;
 
-import com.modu.backend.domain.auth.dto.OnboardingStatus;
-
 import java.time.OffsetDateTime;
+import java.util.List;
 
-public record ProfileUpdateResponse(
+public record ProfileResponse(
         InvestmentRiskLevel riskLevel,
-        long riskScore,
         String profileSummary,
+        List<ProfileAnswerResponse> answers,
+        String freeText,
         OffsetDateTime createdAt,
-        Long version,
-        OnboardingStatus onboarding
+        OffsetDateTime updatedAt,
+        Long version
 ) {
 }
