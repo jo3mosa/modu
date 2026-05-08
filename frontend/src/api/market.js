@@ -61,21 +61,42 @@ export async function getStockDetail(stockCode) {
 
 /**
  * 캔들 차트 데이터 조회
- * GET /api/v1/markets/stocks/{stockCode}/candles?timeframe={timeframe}
+ * GET /api/v1/markets/stocks/{stockCode}/candles?period={period}&startDate={YYYYMMDD}&endDate={YYYYMMDD}
  *
- * @param {string} stockCode - 종목 코드
- * @param {string} [timeframe='1D'] - 봉 단위 ('1m' | '5m' | '15m' | '60m' | '1D' | '1W')
- * @returns {Array<{
- *   time: string,   // 'YYYY-MM-DD' 또는 'YYYY-MM-DD HH:mm'
- *   open: number,
- *   high: number,
- *   low: number,
- *   close: number,
- *   volume: number
+ * 응답은 백엔드 raw 형식 그대로 반환된다 (timestamp/openPrice 등). 차트 라이브러리 호환
+ * 형식으로의 매핑은 호출자(TradingChart)에서 처리한다.
+ *
+ * @param {string} stockCode - 종목 코드 (6자리)
+ * @param {{
+ *   period: 'D' | 'W' | 'M' | '1' | '5' | '60',
+ *   startDate?: string,
+ *   endDate?: string
+ * }} params
+ *   period: 일봉(D), 주봉(W), 월봉(M), 분봉(1/5/60). 필수.
+ *   startDate/endDate: YYYYMMDD 형식. 생략 시 백엔드의 period별 기본값 적용.
+ * @returns {Promise<{
+ *   stockCode: string,
+ *   period: string,
+ *   candles: Array<{
+ *     timestamp: string,
+ *     openPrice: number,
+ *     highPrice: number,
+ *     lowPrice: number,
+ *     closePrice: number,
+ *     volume: number
+ *   }>
  * }>}
  */
-export async function getStockCandles(stockCode, timeframe = '1D') {
-  const data = await apiClient(`/markets/stocks/${stockCode}/candles?timeframe=${timeframe}`);
+export async function getStockCandles(stockCode, { period, startDate, endDate } = {}) {
+  const search = new URLSearchParams();
+  if (period) search.set('period', period);
+  if (startDate) search.set('startDate', startDate);
+  if (endDate) search.set('endDate', endDate);
+  const queryString = search.toString();
+  const endpoint = queryString
+    ? `/markets/stocks/${stockCode}/candles?${queryString}`
+    : `/markets/stocks/${stockCode}/candles`;
+  const data = await apiClient(endpoint);
   return data.data;
 }
 
