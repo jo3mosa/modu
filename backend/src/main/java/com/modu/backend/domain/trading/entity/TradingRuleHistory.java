@@ -56,7 +56,6 @@ public class TradingRuleHistory {
 
     @Builder
     public TradingRuleHistory(
-            Long id,
             Long userId,
             Long stopLossPct,
             Long takeProfitPct,
@@ -67,7 +66,6 @@ public class TradingRuleHistory {
             Long versionNo,
             OffsetDateTime createdAt
     ) {
-        this.id = id;
         this.userId = userId;
         this.stopLossPct = stopLossPct;
         this.takeProfitPct = takeProfitPct;
