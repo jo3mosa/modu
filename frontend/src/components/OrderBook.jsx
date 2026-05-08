@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-// 주문/미체결 API는 백엔드 미구현 상태이므로 import 보류
+// 주문/미체결 API는 import 보류
 // import { getBuyingPower, placeOrder, getPendingOrders, updateOrder } from '../api/order';
 import './OrderBook.css';
 
