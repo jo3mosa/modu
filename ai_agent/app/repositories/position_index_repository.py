@@ -5,7 +5,7 @@ from app.config.redis import get_redis_client
 
 class PositionIndexRepository(Protocol):
     """
-    stock_code 기준으로 해당 종목을 보유한 user_id 목록을 관리하는 Repository 인터페이스.
+    stock_code 기준으로 해당 종목을 실제 보유 중인 user_id 목록을 관리하는 Repository 인터페이스
 
     실제 Redis 구현체와 Mock 구현체가 같은 메서드 이름을 갖도록 맞추기 위한 용도.
     """
@@ -49,17 +49,26 @@ class RedisPositionIndexRepository:
 
     def add_user(self, stock_code: str, user_id: int) -> None:
         """
-        특정 종목을 보유한 사용자 목록에 user_id를 추가한다.
+        특정 종목을 실제 보유 중인 사용자 목록에 user_id를 추가한다
         """
         self.redis_client.sadd(self._key(stock_code), user_id)
 
     def get_user_ids_by_stock(self, stock_code: str) -> list[int]:
         """
-        특정 stock_code를 보유한 user_id 목록을 조회한다.
+        특정 stock_code를 실제 보유 중인 user_id 목록을 조회한다.
         """
-        user_ids = self.redis_client.smembers(self._key(stock_code))
-        return sorted(int(user_id) for user_id in user_ids)
+        raw_user_ids = self.redis_client.smembers(self._key(stock_code))
 
+        user_ids: list[int] = []
+
+        for raw_user_id in raw_user_ids:
+            if isinstance(raw_user_id, bytes):
+                raw_user_id = raw_user_id.decode("utf-8")
+
+            user_ids.append(int(raw_user_id))
+
+        return sorted(user_ids)
+    
     def remove_user(self, stock_code: str, user_id: int) -> None:
         """
         특정 종목의 보유 사용자 목록에서 user_id를 제거한다.
