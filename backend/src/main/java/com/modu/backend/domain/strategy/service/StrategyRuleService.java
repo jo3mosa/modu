@@ -7,6 +7,8 @@ import com.modu.backend.domain.trading.entity.TradingRuleHistory;
 import com.modu.backend.domain.trading.repository.TradingRuleHistoryRepository;
 import com.modu.backend.domain.trading.repository.TradingRuleRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,22 +25,29 @@ public class StrategyRuleService {
     public RuleUpdateResponse updateRules(Long userId, RuleUpdateRequest request) {
         OffsetDateTime now = OffsetDateTime.now();
 
-        TradingRule rule = tradingRuleRepository.findById(userId)
-                .map(existing -> {
-                    updateExistingRule(existing, request, now);
-                    tradingRuleRepository.flush();
-                    return existing;
-                })
-                .orElseGet(() -> tradingRuleRepository.saveAndFlush(createRule(userId, request, now)));
+        TradingRule rule;
+        Long historyVersionNo;
 
-        tradingRuleHistoryRepository.save(toHistory(rule, now));
+        var existingRule = tradingRuleRepository.findById(userId);
+        if (existingRule.isPresent()) {
+            rule = existingRule.get();
+            historyVersionNo = nextVersion(rule);
+            updateExistingRule(rule, request, now);
+            tradingRuleRepository.flush();
+        } else {
+            rule = createNewRule(userId, request, now);
+            historyVersionNo = 0L;
+        }
+
+        tradingRuleHistoryRepository.save(toHistory(rule, historyVersionNo, now));
 
         return new RuleUpdateResponse(
                 rule.getStopLossPct().intValue(),
                 rule.getTakeProfitPct().intValue(),
                 rule.getMaxDailyOrderCount(),
                 rule.getDailyLossLimitAmount(),
-                rule.getUpdatedAt()
+                rule.getUpdatedAt(),
+                historyVersionNo
         );
     }
 
@@ -47,6 +56,7 @@ public class StrategyRuleService {
             RuleUpdateRequest request,
             OffsetDateTime now
     ) {
+        validateVersion(rule, request.version());
         rule.update(
                 request.stopLossRate().longValue(),
                 request.takeProfitRate().longValue(),
@@ -54,6 +64,41 @@ public class StrategyRuleService {
                 request.maxDailyLossAmount(),
                 now
         );
+    }
+
+    private TradingRule createNewRule(
+            Long userId,
+            RuleUpdateRequest request,
+            OffsetDateTime now
+    ) {
+        validateNewRuleVersion(request.version());
+        try {
+            return tradingRuleRepository.saveAndFlush(createRule(userId, request, now));
+        } catch (DataIntegrityViolationException e) {
+            throw new ObjectOptimisticLockingFailureException(TradingRule.class, userId);
+        }
+    }
+
+    private void validateVersion(TradingRule rule, Long requestVersion) {
+        if (requestVersion == null) {
+            throw new IllegalArgumentException("리스크 룰셋 version은 필수입니다.");
+        }
+        if (!requestVersion.equals(rule.getVersion())) {
+            throw new ObjectOptimisticLockingFailureException(TradingRule.class, rule.getUserId());
+        }
+    }
+
+    private void validateNewRuleVersion(Long requestVersion) {
+        if (requestVersion == null) {
+            throw new IllegalArgumentException("리스크 룰셋 version은 필수입니다.");
+        }
+        if (requestVersion != 0L) {
+            throw new ObjectOptimisticLockingFailureException(TradingRule.class, null);
+        }
+    }
+
+    private Long nextVersion(TradingRule rule) {
+        return rule.getVersion() == null ? 0L : rule.getVersion() + 1;
     }
 
     private TradingRule createRule(
@@ -72,7 +117,7 @@ public class StrategyRuleService {
                 .build();
     }
 
-    private TradingRuleHistory toHistory(TradingRule rule, OffsetDateTime now) {
+    private TradingRuleHistory toHistory(TradingRule rule, Long versionNo, OffsetDateTime now) {
         return TradingRuleHistory.builder()
                 .userId(rule.getUserId())
                 .stopLossPct(rule.getStopLossPct())
@@ -81,7 +126,7 @@ public class StrategyRuleService {
                 .dailyLossLimitAmount(rule.getDailyLossLimitAmount())
                 .naturalLanguageRule(rule.getNaturalLanguageRule())
                 .parsedRuleJson(rule.getParsedRuleJson())
-                .versionNo(rule.getVersion())
+                .versionNo(versionNo)
                 .createdAt(now)
                 .build();
     }
