@@ -145,7 +145,7 @@ export default function TradingChart({ stockCode }) {
     };
   }, [stockCode, timeframe]);
 
-  // ── TODO: AI 매매 내역 마커 시각화 (백엔드 ai-agent API 머지 후 활성화) ──
+  // ── TODO: AI 매매 내역 마커 시각화 ──
   // useEffect(() => {
   //   if (!stockCode || !candlestickSeriesRef.current) return;
   //   async function fetchAiDecisions() {
@@ -173,7 +173,7 @@ export default function TradingChart({ stockCode }) {
   //   fetchAiDecisions();
   // }, [stockCode]);
 
-  // ── TODO: 실시간 현재가 WebSocket (백엔드 /ws/stocks/{code}/price 머지 후 활성화) ──
+  // ── TODO: 실시간 현재가 WebSocket ──
   // useEffect(() => {
   //   if (!stockCode || !candlestickSeriesRef.current) return;
   //   const ws = new WebSocket(`/ws/stocks/${stockCode}/price`);
