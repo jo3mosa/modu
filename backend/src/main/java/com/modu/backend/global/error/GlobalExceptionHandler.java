@@ -3,6 +3,7 @@ package com.modu.backend.global.error;
 import com.modu.backend.global.dto.ApiResponse;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.StaleObjectStateException;
 import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -93,13 +94,20 @@ public class GlobalExceptionHandler {
     }
 
     // 낙관적 락 충돌 (주문 동시성 제어)
-    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
-    public ResponseEntity<ApiResponse<Void>> handleOptimisticLockingFailureException(ObjectOptimisticLockingFailureException e) {
+    @ExceptionHandler({
+            ObjectOptimisticLockingFailureException.class,
+            StaleObjectStateException.class
+    })
+    public ResponseEntity<ApiResponse<Void>> handleOptimisticLockingFailureException(Exception e) {
         String traceId = MDC.get(TRACE_ID_KEY);
         log.warn("[OptimisticLockingFailure] TraceId: {}", traceId, e);
 
         return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(ApiResponse.fail(CommonErrorCode.CONCURRENT_CONFLICT.getDefaultMessage(), CommonErrorCode.CONCURRENT_CONFLICT, traceId));
+                .body(ApiResponse.fail(
+                        "다른 곳에서 데이터가 수정되었습니다. 새로고침 후 다시 시도해 주세요.",
+                        CommonErrorCode.CONCURRENT_CONFLICT,
+                        traceId
+                ));
     }
 
     // KIS 외부 API 호출 오류 - 내부 응답 바디는 로그에만 기록, 클라이언트에 노출 금지
