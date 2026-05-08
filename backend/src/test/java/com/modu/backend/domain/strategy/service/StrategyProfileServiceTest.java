@@ -12,6 +12,7 @@ import com.modu.backend.domain.strategy.dto.ProfileUpdateRequest;
 import com.modu.backend.domain.strategy.dto.ProfileUpdateResponse;
 import com.modu.backend.domain.trading.repository.TradingRuleRepository;
 import com.modu.backend.global.error.ApiException;
+import com.modu.backend.global.error.ValidationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -256,7 +257,7 @@ class StrategyProfileServiceTest {
 
         // when & then
         assertThatThrownBy(() -> strategyProfileService.updateProfile(userId, requestForActiveProfile()))
-                .isInstanceOf(IllegalArgumentException.class);
+                .isInstanceOf(ValidationException.class);
         verify(investmentProfileRepository, never()).saveAndFlush(any(InvestmentProfile.class));
         verify(profileHistoryRepository, never()).save(any(ProfileHistory.class));
     }

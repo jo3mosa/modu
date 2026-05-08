@@ -83,15 +83,6 @@ public class GlobalExceptionHandler {
     }
 
     // 비즈니스 예외
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<ApiResponse<Void>> handleIllegalArgumentException(IllegalArgumentException e) {
-        String traceId = MDC.get(TRACE_ID_KEY);
-        log.warn("[IllegalArgument] TraceId: {}, Message: {}", traceId, e.getMessage());
-
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(ApiResponse.fail(e.getMessage(), CommonErrorCode.VALIDATION_ERROR, traceId));
-    }
-
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ApiResponse<Void>> handleApiException(ApiException e) {
         ErrorCode errorCode = e.getErrorCode();
@@ -100,6 +91,16 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity.status(errorCode.getStatus())
                 .body(ApiResponse.fail(errorCode.getDefaultMessage(), errorCode, traceId));
+    }
+
+    @ExceptionHandler(ValidationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleBusinessValidationException(ValidationException e) {
+        ErrorCode errorCode = e.getErrorCode();
+        String traceId = MDC.get(TRACE_ID_KEY);
+        log.warn("[ValidationException] TraceId: {}, Code: {}, Message: {}", traceId, errorCode.getCode(), e.getMessage());
+
+        return ResponseEntity.status(errorCode.getStatus())
+                .body(ApiResponse.fail(e.getMessage(), errorCode, traceId));
     }
 
     // 낙관적 락 충돌 (주문 동시성 제어)

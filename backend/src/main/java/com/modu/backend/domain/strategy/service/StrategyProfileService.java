@@ -13,6 +13,7 @@ import com.modu.backend.domain.strategy.dto.ProfileUpdateRequest;
 import com.modu.backend.domain.strategy.dto.ProfileUpdateResponse;
 import com.modu.backend.domain.trading.repository.TradingRuleRepository;
 import com.modu.backend.global.error.ApiException;
+import com.modu.backend.global.error.ValidationException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -104,7 +105,7 @@ public class StrategyProfileService {
 
     private void validateVersion(InvestmentProfile profile, Long requestVersion) {
         if (requestVersion == null) {
-            throw new IllegalArgumentException("투자 성향 프로필 version은 필수입니다.");
+            throw new ValidationException("투자 성향 프로필 version은 필수입니다.");
         }
         if (!requestVersion.equals(profile.getVersion())) {
             throw new ObjectOptimisticLockingFailureException(InvestmentProfile.class, profile.getUserId());

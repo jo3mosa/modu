@@ -6,6 +6,7 @@ import com.modu.backend.domain.trading.entity.TradingRule;
 import com.modu.backend.domain.trading.entity.TradingRuleHistory;
 import com.modu.backend.domain.trading.repository.TradingRuleHistoryRepository;
 import com.modu.backend.domain.trading.repository.TradingRuleRepository;
+import com.modu.backend.global.error.ValidationException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -81,7 +82,7 @@ public class StrategyRuleService {
 
     private void validateVersion(TradingRule rule, Long requestVersion) {
         if (requestVersion == null) {
-            throw new IllegalArgumentException("리스크 룰셋 version은 필수입니다.");
+            throw new ValidationException("리스크 룰셋 version은 필수입니다.");
         }
         if (!requestVersion.equals(rule.getVersion())) {
             throw new ObjectOptimisticLockingFailureException(TradingRule.class, rule.getUserId());
@@ -90,7 +91,7 @@ public class StrategyRuleService {
 
     private void validateNewRuleVersion(Long requestVersion) {
         if (requestVersion == null) {
-            throw new IllegalArgumentException("리스크 룰셋 version은 필수입니다.");
+            throw new ValidationException("리스크 룰셋 version은 필수입니다.");
         }
         if (requestVersion != 0L) {
             throw new ObjectOptimisticLockingFailureException(TradingRule.class, null);
