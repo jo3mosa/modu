@@ -1,10 +1,8 @@
-import { useState } from 'react';
-// 백엔드 strategies 컨트롤러 미구현 상태이므로 일시적으로 mock 동작.
-// 백엔드 PR 머지 후 아래 import + 호출 블록 주석을 해제하면 즉시 실 API로 전환된다.
-// import { getProfileQuestions, updateProfile, updateRules } from '../api/strategy';
+import { useEffect, useState } from 'react';
+import { getProfileQuestions, updateProfile } from '../api/strategy';
 import './RiskManagePage.css';
 
-const RISK_GRADE_LABEL = {
+const RISK_LEVEL_LABEL = {
   STABLE: '안정형',
   STABLE_SEEKING: '안정추구형',
   RISK_NEUTRAL: '위험중립형',
@@ -12,7 +10,7 @@ const RISK_GRADE_LABEL = {
   AGGRESSIVE: '공격투자형',
 };
 
-const RISK_GRADE_COLOR = {
+const RISK_LEVEL_COLOR = {
   STABLE: '#84cc16',
   STABLE_SEEKING: '#a3e635',
   RISK_NEUTRAL: '#eab308',
@@ -20,52 +18,14 @@ const RISK_GRADE_COLOR = {
   AGGRESSIVE: '#ef4444',
 };
 
-// MOCK 설문 문항 (백엔드 strategies API 머지 후 서버 조회로 대체)
-const MOCK_QUESTIONS = [
-  {
-    questionId: 'INVESTMENT_PERIOD',
-    text: '투자 기간',
-    options: [
-      { optionId: 1, text: '단기 (1년 미만)' },
-      { optionId: 2, text: '중기 (1~3년)' },
-      { optionId: 3, text: '장기 (3년 이상)' },
-    ],
-  },
-  {
-    questionId: 'INVESTMENT_GOAL',
-    text: '투자 목표',
-    options: [
-      { optionId: 1, text: '단기 수익 실현' },
-      { optionId: 2, text: '장기 자산 증식' },
-      { optionId: 3, text: '노후/연금 준비' },
-    ],
-  },
-  {
-    questionId: 'RISK_TOLERANCE',
-    text: '위험 감수도',
-    options: [
-      { optionId: 1, text: '안정 추구' },
-      { optionId: 2, text: '위험 중립' },
-      { optionId: 3, text: '적극 투자' },
-    ],
-  },
-];
-
-// MOCK 분석 결과 (백엔드 머지 후 PATCH 응답으로 대체)
-const MOCK_PROFILE_RESULT = {
-  riskGrade: 'ACTIVE',
-  profileSummary: '공격적인 성향의 투자자입니다. 변동성 기반 매매 전략 수립이 적합합니다!',
-};
-
 export default function RiskManagePage() {
   const [isActive, setIsActive] = useState(true);
 
-  // 현재 투자 성향 (mock 초기값)
-  // TODO: 백엔드 GET /api/v1/strategies/me/profiles 연동 후 서버에서 조회
+  // 현재 투자 성향 (TODO: GET /strategies/me/profiles 엔드포인트 머지 후 서버에서 초기 조회)
   const [profile, setProfile] = useState({
-    riskGrade: 'ACTIVE',
-    profileSummary: '공격적인 성향의 투자자입니다. 변동성 기반 매매 전략 수립이 적합합니다!',
-    principle: 'RSI 70 이상에서는 추격 매수를 하지 않고, 시장 급락 시에는 분할 매수로 접근합니다.',
+    riskLevel: null,
+    profileSummary: '',
+    principle: '',
   });
 
   const [rules, setRules] = useState({
@@ -77,29 +37,31 @@ export default function RiskManagePage() {
 
   // 재진단 모달 상태
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const questions = MOCK_QUESTIONS;
-  const questionsError = null;
-  const [modalAnswers, setModalAnswers] = useState({});
+  const [questions, setQuestions] = useState([]);
+  const [questionsError, setQuestionsError] = useState(null);
+  const [modalAnswers, setModalAnswers] = useState({}); // { [questionId]: optionId(string) }
   const [modalPrinciple, setModalPrinciple] = useState('');
   const [submittingProfile, setSubmittingProfile] = useState(false);
   const [savingRules, setSavingRules] = useState(false);
 
-  // ── TODO: 백엔드 strategies API 머지 후 아래 블록 해제 (모달 첫 오픈 시 문항 로드) ──
-  // const [questions, setQuestions] = useState([]);
-  // const [questionsError, setQuestionsError] = useState(null);
-  // useEffect(() => {
-  //   if (!isModalOpen || questions.length > 0) return;
-  //   let cancelled = false;
-  //   getProfileQuestions()
-  //     .then((data) => { if (!cancelled) setQuestions(data?.questions ?? []); })
-  //     .catch((error) => {
-  //       if (cancelled) return;
-  //       console.error('설문 문항 조회 실패:', error);
-  //       setQuestionsError(error.message || '설문 문항을 불러오지 못했습니다.');
-  //     });
-  //   return () => { cancelled = true; };
-  // }, [isModalOpen, questions.length]);
-  // ────────────────────────────────────────────────────────────────────────────
+  // 모달이 처음 열릴 때 설문 문항 로드
+  useEffect(() => {
+    if (!isModalOpen || questions.length > 0) return;
+    let cancelled = false;
+    getProfileQuestions()
+      .then((data) => {
+        if (cancelled) return;
+        setQuestions(data?.questions ?? []);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error('설문 문항 조회 실패:', error);
+        setQuestionsError(error.message || '설문 문항을 불러오지 못했습니다.');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isModalOpen, questions.length]);
 
   const handleToggleAi = () => setIsActive(!isActive);
 
@@ -122,26 +84,22 @@ export default function RiskManagePage() {
   const isModalComplete =
     questions.length > 0 && questions.every((q) => modalAnswers[q.questionId] != null);
 
-  // 모달 저장 (백엔드 미구현이라 mock 동작)
+  // 모달 저장: PATCH /strategies/me/profiles (answers + freeText)
   const handleSaveModal = async () => {
     if (!isModalComplete || submittingProfile) return;
     setSubmittingProfile(true);
     try {
-      // ── TODO: 백엔드 strategies API 머지 후 아래 주석 블록 해제 ────────────
-      // const answersPayload = questions.map((q) => ({
-      //   questionId: q.questionId,
-      //   optionId: modalAnswers[q.questionId],
-      // }));
-      // const result = await updateProfile(answersPayload);
-      // setProfile({
-      //   riskGrade: result?.riskGrade ?? null,
-      //   profileSummary: result?.profileSummary ?? '',
-      //   principle: modalPrinciple,
-      // });
-      // ─────────────────────────────────────────────────────────────────────
+      const answersPayload = questions.map((q) => ({
+        questionId: q.questionId,
+        optionId: modalAnswers[q.questionId],
+      }));
+      const result = await updateProfile({
+        answers: answersPayload,
+        freeText: modalPrinciple || undefined,
+      });
       setProfile({
-        riskGrade: MOCK_PROFILE_RESULT.riskGrade,
-        profileSummary: MOCK_PROFILE_RESULT.profileSummary,
+        riskLevel: result?.riskLevel ?? null,
+        profileSummary: result?.profileSummary ?? '',
         principle: modalPrinciple,
       });
       setIsModalOpen(false);
@@ -153,12 +111,13 @@ export default function RiskManagePage() {
     }
   };
 
-  // 룰셋 저장 (백엔드 미구현이라 mock 동작)
+  // 룰셋 저장
+  // ⚠️ 백엔드 /strategies/me/rules 엔드포인트 미구현 — 머지 시 try 안 주석 해제
   const handleSaveAll = async () => {
     if (savingRules) return;
     setSavingRules(true);
     try {
-      // ── TODO: 백엔드 strategies API 머지 후 아래 주석 블록 해제 ────────────
+      // ── TODO: 백엔드 /strategies/me/rules 엔드포인트 머지 후 아래 주석 해제 ──
       // await updateRules({
       //   principle: profile.principle,
       //   takeProfit: Number(rules.takeProfit),
@@ -166,7 +125,7 @@ export default function RiskManagePage() {
       //   positionSize: 'fixed',
       // });
       // ─────────────────────────────────────────────────────────────────────
-      alert('변경사항이 임시 저장되었습니다. (백엔드 API 머지 후 실제 반영)');
+      alert('변경사항이 임시 저장되었습니다. (백엔드 룰셋 API 머지 후 실제 반영)');
     } catch (error) {
       console.error('룰셋 저장 실패:', error);
       alert(error.message || '룰셋 저장 중 오류가 발생했습니다.');
@@ -175,8 +134,8 @@ export default function RiskManagePage() {
     }
   };
 
-  const gradeLabel = profile.riskGrade ? RISK_GRADE_LABEL[profile.riskGrade] ?? profile.riskGrade : '미진단';
-  const gradeColor = profile.riskGrade ? RISK_GRADE_COLOR[profile.riskGrade] ?? '#888' : '#888';
+  const levelLabel = profile.riskLevel ? RISK_LEVEL_LABEL[profile.riskLevel] ?? profile.riskLevel : '미진단';
+  const levelColor = profile.riskLevel ? RISK_LEVEL_COLOR[profile.riskLevel] ?? '#888' : '#888';
 
   return (
     <div className="risk-container">
@@ -209,7 +168,7 @@ export default function RiskManagePage() {
         <div className="profile-cards">
           <div className="profile-card">
             <span className="profile-label">투자 성향 등급</span>
-            <span className="profile-value" style={{ color: gradeColor }}>{gradeLabel}</span>
+            <span className="profile-value" style={{ color: levelColor }}>{levelLabel}</span>
           </div>
           <div className="profile-card wide">
             <span className="profile-label">성향 요약</span>
@@ -286,7 +245,7 @@ export default function RiskManagePage() {
         </button>
       </div>
 
-      {/* 4. 투자 성향 재진단 모달 */}
+      {/* 4. 투자 성향 재진단 모달: 서버에서 받은 9개 문항 동적 렌더링 */}
       {isModalOpen && (
         <div className="modal-overlay">
           <div className="modal-content">
@@ -304,7 +263,7 @@ export default function RiskManagePage() {
 
               {questions.map((q, idx) => (
                 <div key={q.questionId} className="survey-section" style={idx > 0 ? { marginTop: '2rem' } : undefined}>
-                  <h3>{idx + 1}. {q.text}</h3>
+                  <h3>{idx + 1}. {q.question}</h3>
                   <div className="options-grid">
                     {q.options.map((opt) => (
                       <button
@@ -312,7 +271,7 @@ export default function RiskManagePage() {
                         className={`option-btn ${modalAnswers[q.questionId] === opt.optionId ? 'selected' : ''}`}
                         onClick={() => handleSelectOption(q.questionId, opt.optionId)}
                       >
-                        {opt.text}
+                        {opt.label}
                       </button>
                     ))}
                   </div>

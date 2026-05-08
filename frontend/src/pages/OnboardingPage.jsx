@@ -1,12 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, ArrowLeft } from 'lucide-react';
-// 백엔드 strategies 컨트롤러 미구현 상태이므로 일시적으로 mock 동작.
-// 백엔드 PR 머지 후 아래 import + 호출 블록 주석을 해제하면 즉시 실 API로 전환된다.
-// import { getProfileQuestions, updateProfile, updateRules } from '../api/strategy';
+import { getProfileQuestions, updateProfile } from '../api/strategy';
 import './OnboardingPage.css';
 
-const RISK_GRADE_LABEL = {
+const RISK_LEVEL_LABEL = {
   STABLE: '안정형',
   STABLE_SEEKING: '안정추구형',
   RISK_NEUTRAL: '위험중립형',
@@ -14,55 +12,18 @@ const RISK_GRADE_LABEL = {
   AGGRESSIVE: '공격투자형',
 };
 
-// MOCK 설문 문항 (백엔드 strategies API 머지 후 서버 조회로 대체)
-const MOCK_QUESTIONS = [
-  {
-    questionId: 'INVESTMENT_PERIOD',
-    text: '투자 기간은 어느 정도로 생각하시나요?',
-    options: [
-      { optionId: 1, text: '단기 (1년 미만)' },
-      { optionId: 2, text: '중기 (1~3년)' },
-      { optionId: 3, text: '장기 (3년 이상)' },
-    ],
-  },
-  {
-    questionId: 'INVESTMENT_GOAL',
-    text: '주요 투자 목표는 무엇인가요?',
-    options: [
-      { optionId: 1, text: '단기 수익 실현' },
-      { optionId: 2, text: '장기 자산 증식' },
-      { optionId: 3, text: '노후/연금 준비' },
-    ],
-  },
-  {
-    questionId: 'RISK_TOLERANCE',
-    text: '어느 정도의 위험을 감수하실 수 있나요?',
-    options: [
-      { optionId: 1, text: '안정 추구 (원금 보존)' },
-      { optionId: 2, text: '위험 중립 (적당한 변동성)' },
-      { optionId: 3, text: '적극 투자 (고위험 고수익)' },
-    ],
-  },
-];
-
-// MOCK 분석 결과 (백엔드 strategies API 머지 후 PATCH 응답으로 대체)
-const MOCK_PROFILE_RESULT = {
-  riskGrade: 'ACTIVE',
-  profileSummary: '공격적인 성향의 투자자입니다. 변동성 기반 매매 전략 수립이 적합합니다!',
-};
-
 export default function OnboardingPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
 
-  // 설문 문항 (백엔드 머지 후 서버 조회 결과로 교체)
-  const questions = MOCK_QUESTIONS;
-  const questionsError = null;
+  // 설문 문항 (서버 조회)
+  const [questions, setQuestions] = useState([]);
+  const [questionsError, setQuestionsError] = useState(null);
 
-  // 답변: { [questionId]: optionId }
+  // 답변: { [questionId]: optionId(string) }
   const [answers, setAnswers] = useState({});
 
-  // 투자 성향 분석 결과
+  // PATCH /profiles 응답 (riskLevel, profileSummary 등)
   const [profileResult, setProfileResult] = useState(null);
   const [submittingProfile, setSubmittingProfile] = useState(false);
 
@@ -78,43 +39,42 @@ export default function OnboardingPage() {
   });
   const [submittingComplete, setSubmittingComplete] = useState(false);
 
-  // ── TODO: 백엔드 strategies API 머지 후 아래 블록 해제 (설문 문항 서버 조회) ──
-  // const [questions, setQuestions] = useState([]);
-  // const [questionsError, setQuestionsError] = useState(null);
-  // useEffect(() => {
-  //   let cancelled = false;
-  //   getProfileQuestions()
-  //     .then((data) => { if (!cancelled) setQuestions(data?.questions ?? []); })
-  //     .catch((error) => {
-  //       if (cancelled) return;
-  //       console.error('설문 문항 조회 실패:', error);
-  //       setQuestionsError(error.message || '설문 문항을 불러오지 못했습니다.');
-  //     });
-  //   return () => { cancelled = true; };
-  // }, []);
-  // ──────────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    getProfileQuestions()
+      .then((data) => {
+        if (cancelled) return;
+        setQuestions(data?.questions ?? []);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error('설문 문항 조회 실패:', error);
+        setQuestionsError(error.message || '설문 문항을 불러오지 못했습니다.');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const nextStep = () => setStep((prev) => Math.min(prev + 1, 4));
   const prevStep = () => setStep((prev) => Math.max(prev - 1, 1));
 
-  // Step1 → Step2 진입 시 투자 성향 산정
+  // Step1 → Step2 진입 시 투자 성향을 서버에 PATCH 하고 응답을 보관한다.
+  // freeText(매매 원칙)는 Step2에서 입력받으므로 이 단계에선 보내지 않는다.
   const handleSurveySubmit = async () => {
     if (submittingProfile) return;
     setSubmittingProfile(true);
     try {
-      // ── TODO: 백엔드 strategies API 머지 후 아래 주석 블록 해제 ────────────
-      // const answersPayload = questions.map((q) => ({
-      //   questionId: q.questionId,
-      //   optionId: answers[q.questionId],
-      // }));
-      // const result = await updateProfile(answersPayload);
-      // setProfileResult(result);
-      // ─────────────────────────────────────────────────────────────────────
-      setProfileResult(MOCK_PROFILE_RESULT);
+      const answersPayload = questions.map((q) => ({
+        questionId: q.questionId,
+        optionId: answers[q.questionId],
+      }));
+      const result = await updateProfile({ answers: answersPayload });
+      setProfileResult(result);
       nextStep();
     } catch (error) {
       console.error('투자 성향 저장 실패:', error);
-      alert(error.message || '투자 성향 저장 중 오류가 발생했습니다.');
+      alert(error.message || '투자 성향 저장 중 오류가 발생했습니다. 다시 시도해 주세요.');
     } finally {
       setSubmittingProfile(false);
     }
@@ -124,7 +84,7 @@ export default function OnboardingPage() {
     if (submittingComplete) return;
     setSubmittingComplete(true);
     try {
-      // ── TODO: 백엔드 strategies API 머지 후 아래 주석 블록 해제 ────────────
+      // ── TODO: 백엔드 /strategies/me/rules 엔드포인트 머지 후 아래 주석 해제 ──
       // await updateRules({
       //   principle,
       //   takeProfit: Number(rules.takeProfit),
@@ -186,7 +146,7 @@ export default function OnboardingPage() {
   );
 }
 
-// 1단계 -> 9개 객관식 문항 표시 + 답변 수집 (현재 mock)
+// 1단계 -> 서버에서 받아온 9개 객관식 문항 표시 + 답변 수집
 function Step1Survey({ questions, questionsError, answers, setAnswers, onSubmit, submitting }) {
   const isComplete =
     questions.length > 0 && questions.every((q) => answers[q.questionId] != null);
@@ -208,7 +168,7 @@ function Step1Survey({ questions, questionsError, answers, setAnswers, onSubmit,
 
       {questions.map((q, idx) => (
         <div key={q.questionId} className="survey-group">
-          <h3>{idx + 1}. {q.text}</h3>
+          <h3>{idx + 1}. {q.question}</h3>
           <div className="options-grid">
             {q.options.map((opt) => (
               <button
@@ -216,7 +176,7 @@ function Step1Survey({ questions, questionsError, answers, setAnswers, onSubmit,
                 className={`option-btn ${answers[q.questionId] === opt.optionId ? 'selected' : ''}`}
                 onClick={() => handleSelect(q.questionId, opt.optionId)}
               >
-                {opt.text}
+                {opt.label}
               </button>
             ))}
           </div>
@@ -258,10 +218,10 @@ function Step2Principle({ principle, setPrinciple, nextStep, prevStep }) {
   );
 }
 
-// 3단계 -> 분석 결과 표시 + 룰셋 설정
+// 3단계 -> 서버 산정 결과(riskLevel, profileSummary) 표시 + 룰셋 설정
 function Step3Rules({ rules, setRules, profileResult, nextStep, prevStep }) {
-  const gradeLabel = profileResult?.riskGrade
-    ? RISK_GRADE_LABEL[profileResult.riskGrade] ?? profileResult.riskGrade
+  const levelLabel = profileResult?.riskLevel
+    ? RISK_LEVEL_LABEL[profileResult.riskLevel] ?? profileResult.riskLevel
     : null;
   const summary = profileResult?.profileSummary;
 
@@ -271,7 +231,7 @@ function Step3Rules({ rules, setRules, profileResult, nextStep, prevStep }) {
       <p className="step-subtitle">서버가 산정한 성향을 바탕으로 안전 장치를 설정합니다.</p>
 
       <div className="ai-summary-card">
-        <h3>{gradeLabel ? `${gradeLabel} 투자자` : '분석 완료!'}</h3>
+        <h3>{levelLabel ? `${levelLabel} 투자자` : '분석 완료!'}</h3>
         <p>{summary || '투자 성향이 산정되었습니다.'}</p>
       </div>
 
