@@ -360,3 +360,143 @@
     gap: 1rem;
   }
 }
+
+/* --- 거래 이력 탭 헤더 --- */
+.report-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.report-panel-header h2 {
+  margin: 0;
+}
+
+.log-tabs {
+  display: flex;
+  background: rgba(0,0,0,0.2);
+  border-radius: 8px;
+  padding: 0.3rem;
+  border: 1px solid rgba(255,255,255,0.05);
+}
+
+.log-tab-btn {
+  background: transparent;
+  border: none;
+  color: #888;
+  padding: 0.6rem 1.2rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.log-tab-btn.active {
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+}
+
+/* --- 일반 전체 거래 이력 리스트 --- */
+.general-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.general-history-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 1.2rem 1.5rem;
+  transition: transform 0.2s;
+}
+
+.general-history-item:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.gh-left {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  flex: 1;
+}
+
+.gh-badge {
+  font-size: 0.85rem;
+  font-weight: 800;
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  min-width: 60px;
+  text-align: center;
+}
+
+.gh-badge.buy { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+.gh-badge.sell { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+
+.gh-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.gh-stock {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.gh-code {
+  font-size: 0.8rem;
+  color: #666;
+  font-family: monospace;
+}
+
+.gh-center {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.3rem;
+  flex: 1;
+}
+
+.gh-amount {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.gh-details {
+  font-size: 0.85rem;
+  color: #aaa;
+}
+
+.gh-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4rem;
+  flex: 1;
+}
+
+.gh-status {
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+}
+
+.gh-status.filled { color: #10b981; background: rgba(16, 185, 129, 0.15); }
+.gh-status.cancelled { color: #ef4444; background: rgba(239, 68, 68, 0.15); }
+.gh-status.failed { color: #f59e0b; background: rgba(245, 158, 11, 0.15); }
+
+.gh-time {
+  font-size: 0.8rem;
+  color: #888;
+}
