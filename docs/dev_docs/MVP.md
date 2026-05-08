@@ -40,7 +40,7 @@ TradingAgents 논문은 Bull/Bear 토론 패턴을 핵심 차별점으로 제시
 
 ## 측정 인프라
 
-위 두 실험 모두 MVP 단계부터 LangSmith로 토큰/비용/latency를 자동 기록하고, 도메인 metadata(`memory_backend`, `history_context_tokens` 등)를 추가 태깅해두기 때문에 별도 측정 인프라 구축 없이 비교 분석이 가능합니다.
+위 두 실험 모두 MVP 단계부터 LangSmith로 토큰/비용/latency를 자동 기록하고, 도메인 metadata(`memory_backend`, `history_context_tokens` 등)를 추가 태깅해두기 때문에 별도 측정 인프라 구축 없이 비교 분석이 가능합니다.  
 
 ## MVP 아키텍처
 ```
