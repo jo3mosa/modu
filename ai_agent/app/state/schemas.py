@@ -95,6 +95,14 @@ class ResearchVerdict(BaseModel):
                 raise ValueError(
                     f"recommended_side가 {self.recommended_side}일 때 stop_loss_price는 필수입니다."
                 )
+            if self.target_price <= 0:
+                raise ValueError(
+                    f"recommended_side가 {self.recommended_side}일 때 target_price는 0보다 커야 합니다."
+                )
+            if self.stop_loss_price <= 0:
+                raise ValueError(
+                    f"recommended_side가 {self.recommended_side}일 때 stop_loss_price는 0보다 커야 합니다."
+                )
             if self.order_amount <= 0:
                 raise ValueError(
                     f"recommended_side가 {self.recommended_side}일 때 order_amount는 0보다 커야 합니다."
