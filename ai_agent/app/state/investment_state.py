@@ -2,7 +2,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from app.state.schemas import CriticFeedback, FinalDecision, StrategyDraft
+from app.state.schemas import (
+    BearThesis,
+    BullThesis,
+    CriticFeedback,
+    FinalDecision,
+    ResearchVerdict,
+    StrategyDraft,
+)
 
 
 class InvestmentAgentState(BaseModel):
@@ -63,7 +70,16 @@ class InvestmentAgentState(BaseModel):
     # 4. Reasoning Layer output
     # ==============================
 
-    # Strategy Agent가 생성한 투자 전략 초안
+    # Bull Researcher가 생성한 매수 우호 주장 (1라운드 토론)
+    bull_thesis: BullThesis | None = None
+
+    # Bear Researcher가 생성한 매도/보류 우호 주장 (1라운드 토론)
+    bear_thesis: BearThesis | None = None
+
+    # Strategy Manager(Research Manager)가 토론을 종합해 내린 판결
+    research_verdict: ResearchVerdict | None = None
+
+    # research_verdict를 후속 critic/supervisor가 사용할 수 있게 변환한 전략 초안
     strategy_draft: StrategyDraft | None = None
     
     # Critic Agent가 생성한 리스크 검토 결과

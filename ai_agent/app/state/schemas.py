@@ -3,6 +3,105 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 
+class BullThesis(BaseModel):
+    """
+    Bull Researcher가 토론 1라운드에서 생성하는 매수/상승 우호 주장.
+
+    역할:
+    - 후보 종목 중 가장 매력적인 매수 기회를 가진 종목을 선택해 매수 논거를 제시한다.
+    - 자신의 주장에 따르는 리스크도 함께 인정한다.
+      - asset: 주장 대상 종목 코드 (반드시 후보 종목 중 하나)
+      - recommended_side: "buy" 또는 "hold" (sell 금지)
+      - claim: 핵심 주장 요약
+      - evidence: 매수 근거 (기술/이벤트/감성/과거 사례 등)
+      - risks_acknowledged: 본인 주장에 따르는 리스크
+      - confidence: 주장 신뢰도 점수
+    """
+    asset: str
+    recommended_side: Literal["buy", "hold"]
+    claim: str = ""
+    evidence: list[str] = Field(default_factory=list)
+    risks_acknowledged: list[str] = Field(default_factory=list)
+    confidence: float = 0.0
+
+
+class BearThesis(BaseModel):
+    """
+    Bear Researcher가 토론 1라운드에서 생성하는 매도/보류/리스크 우호 주장.
+
+    역할:
+    - Bull Researcher의 주장을 반박하고 리스크 근거를 제시한다.
+    - bull_thesis가 비어 있어도 분석 결과만으로 독립적 리스크 분석을 수행한다.
+      - asset: 검토 대상 종목 코드
+      - recommended_side: "sell" 또는 "hold" (buy 금지)
+      - claim: 핵심 주장 요약
+      - evidence: 리스크 근거
+      - counterpoints_to_bull: Bull 주장에 대한 구체적 반박
+      - confidence: 주장 신뢰도 점수
+    """
+    asset: str
+    recommended_side: Literal["sell", "hold"]
+    claim: str = ""
+    evidence: list[str] = Field(default_factory=list)
+    counterpoints_to_bull: list[str] = Field(default_factory=list)
+    confidence: float = 0.0
+
+
+class ResearchVerdict(BaseModel):
+    """
+    Strategy Manager(Research Manager)가 Bull/Bear 토론을 종합해 내리는 판결.
+
+    역할:
+    - 양측 주장의 핵심 근거를 비교하고 어느 쪽 논리가 더 견고한지 판단한다.
+    - 단일 종목과 매매 방향을 결정하고, 매매 시 주문 파라미터까지 산출한다.
+    - 후속 Critic/Supervisor 단계는 이 판결을 StrategyDraft로 변환한 값을 받는다.
+      - winning_side: "bull" / "bear" / "balanced"
+      - asset: 최종 종목 코드 (반드시 후보 중 하나)
+      - recommended_side: "buy" / "sell" / "hold"
+      - rationale: 판결 근거 요약
+      - key_bull_points: Bull 주장 핵심 정리
+      - key_bear_points: Bear 주장 핵심 정리
+      - confidence: 판결 신뢰도 점수
+      - order_amount: 주문 금액 (hold일 때 0)
+      - target_price: 목표가 (buy/sell 필수)
+      - stop_loss_price: 손절가 (buy/sell 필수)
+    """
+    winning_side: Literal["bull", "bear", "balanced"]
+    asset: str
+    recommended_side: Literal["buy", "sell", "hold"]
+    rationale: str = ""
+    key_bull_points: list[str] = Field(default_factory=list)
+    key_bear_points: list[str] = Field(default_factory=list)
+    confidence: float = 0.0
+    order_amount: int = 0
+    target_price: int | None = None
+    stop_loss_price: int | None = None
+
+    @model_validator(mode="after")
+    def validate_trade_params(self) -> "ResearchVerdict":
+        if self.recommended_side == "hold":
+            if self.order_amount != 0:
+                raise ValueError("recommended_side가 hold일 때 order_amount는 0이어야 합니다.")
+            if self.target_price is not None:
+                raise ValueError("recommended_side가 hold일 때 target_price는 None이어야 합니다.")
+            if self.stop_loss_price is not None:
+                raise ValueError("recommended_side가 hold일 때 stop_loss_price는 None이어야 합니다.")
+        else:
+            if self.target_price is None:
+                raise ValueError(
+                    f"recommended_side가 {self.recommended_side}일 때 target_price는 필수입니다."
+                )
+            if self.stop_loss_price is None:
+                raise ValueError(
+                    f"recommended_side가 {self.recommended_side}일 때 stop_loss_price는 필수입니다."
+                )
+            if self.order_amount <= 0:
+                raise ValueError(
+                    f"recommended_side가 {self.recommended_side}일 때 order_amount는 0보다 커야 합니다."
+                )
+        return self
+
+
 class StrategyDraft(BaseModel):
     """
     Strategy Agent가 생성하는 투자 전략 초안

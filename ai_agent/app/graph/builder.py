@@ -3,7 +3,9 @@ from langgraph.graph import END, StateGraph
 from app.agents.critic.critic_agent import critic_agent
 from app.agents.memory.memory_agent import memory_agent
 from app.action.risk_guard.risk_guard import risk_guard
-from app.agents.strategy.strategy_agent import strategy_agent
+from app.agents.strategy.bear_researcher import bear_researcher
+from app.agents.strategy.bull_researcher import bull_researcher
+from app.agents.strategy.strategy_manager import strategy_manager
 from app.agents.supervisor.supervisor_agent import supervisor_agent
 from app.runtime.executor import executor
 from app.state.investment_state import InvestmentAgentState
@@ -44,7 +46,9 @@ def build_investment_graph():
 
     전체 흐름:
     memory_agent
-      → strategy_agent
+      → bull_researcher
+      → bear_researcher
+      → strategy_manager
       → critic_agent
       → supervisor_agent
       → 조건부 분기
@@ -52,13 +56,19 @@ def build_investment_graph():
       → 조건부 분기
       → executor
       → END
+
+    Bull/Bear/Manager 3단계는 TradingAgents 논문의 Researcher 토론 + Research Manager
+    구조를 1라운드(LLM 호출 3회)로 압축한 것이다. 라운드 수 변경 시 conditional edge로
+    토론 루프를 추가할 수 있다.
     """
 
     graph = StateGraph(InvestmentAgentState)
 
     # 그래프 노드 등록
     graph.add_node("memory_agent", memory_agent)
-    graph.add_node("strategy_agent", strategy_agent)
+    graph.add_node("bull_researcher", bull_researcher)
+    graph.add_node("bear_researcher", bear_researcher)
+    graph.add_node("strategy_manager", strategy_manager)
     graph.add_node("critic_agent", critic_agent)
     graph.add_node("supervisor_agent", supervisor_agent)
     graph.add_node("risk_guard", risk_guard)
@@ -68,8 +78,10 @@ def build_investment_graph():
     graph.set_entry_point("memory_agent")
 
     # 기본 직선 흐름
-    graph.add_edge("memory_agent", "strategy_agent")
-    graph.add_edge("strategy_agent", "critic_agent")
+    graph.add_edge("memory_agent", "bull_researcher")
+    graph.add_edge("bull_researcher", "bear_researcher")
+    graph.add_edge("bear_researcher", "strategy_manager")
+    graph.add_edge("strategy_manager", "critic_agent")
     graph.add_edge("critic_agent", "supervisor_agent")
 
     # Supervisor 결과에 따라 Risk Guard로 갈지 종료할지 결정
