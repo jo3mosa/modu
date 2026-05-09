@@ -92,7 +92,7 @@ def load_policy_context(user_id: int, engine: Engine) -> dict[str, Any]:
 
     return {
         "auto_trade_status": auto_trade_status,
-        # auto_trade_status == "active"일 때만 자동매매 허용
+        # TODO: auto_trade_status 허용 값을 백엔드 팀과 확인 필요 (ON/OFF/PAUSED 계열 가능성 있음)
         "allow_auto_trade": auto_trade_status == "active",
         "kill_switch": {
             "enabled": kill_switch_triggered_at is not None,
@@ -114,6 +114,7 @@ def load_history_context(user_id: int, key_signals: list[str]) -> dict[str, Any]
 
     MVP: stub 반환. 고도화 시 trade-history-wiki.md / llm-wiki.md 기반으로 구현.
     """
+    _ = user_id, key_signals  # 고도화 시 사용
     return {
         "trade_history_wiki": "",
         "relevant_indicator_guides": {},

@@ -9,6 +9,7 @@ def load_memory_context(
     sectors: list[str],
     key_signals: list[str],
     memory_store: MemoryStore,
+    days: int = 30,
 ) -> dict[str, Any]:
     """MemoryStore에서 과거 유사 판단 이력을 조회해 memory_context를 구성한다."""
     if not stock_codes and not sectors and not key_signals:
@@ -29,6 +30,7 @@ def load_memory_context(
         sectors=sectors,
         key_signals=key_signals,
         limit=10,
+        days=days,
     )
 
     # only_loss=True: 손실로 끝난 판단만 별도 조회해 Decision Manager가 반복 실수를 피하게 한다
@@ -38,6 +40,7 @@ def load_memory_context(
         sectors=sectors,
         key_signals=key_signals,
         limit=5,
+        days=days,
         only_loss=True,
     )
 
@@ -72,7 +75,11 @@ def extract_sectors(candidate_assets: list[dict[str, Any]]) -> list[str]:
 
 
 def extract_key_signals(analysis_snapshot: dict[str, Any]) -> list[str]:
-    """analysis_snapshot.signals에서 활성화된 신호 종류를 문자열 리스트로 반환한다."""
+    """
+    analysis_snapshot.signals에서 활성화된 신호 종류를 문자열 리스트로 반환한다.
+
+    TODO: 신호 문자열 값은 DA codebook enum으로 교체 필요
+    """
     signals = analysis_snapshot.get("signals", {})
     key_signals: set[str] = set()
 

@@ -61,6 +61,7 @@ class ContextLoader:
             sectors=sectors,
             key_signals=key_signals,
             memory_store=self.memory_store,
+            days=30,
         )
         history_context = load_history_context(user_id, key_signals)
 
@@ -111,9 +112,12 @@ def context_loader(state: InvestmentAgentState) -> dict[str, Any]:
 
     TODO: _NullMemoryStore를 DBMemoryStore로 교체.
     """
+    if state.user_id is None:
+        raise ValueError("InvestmentAgentState.user_id가 설정되지 않았습니다.")
+
     loader = ContextLoader(memory_store=_NullMemoryStore())
     ctx = loader.load(
-        user_id=state.user_id or 0,
+        user_id=state.user_id,
         analysis_snapshot=state.analysis_snapshot,
         candidate_assets=state.candidate_assets,
     )
