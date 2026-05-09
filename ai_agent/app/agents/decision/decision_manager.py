@@ -101,7 +101,7 @@ def decision_manager(state: InvestmentAgentState) -> dict[str, Any]:
 
     return {
         "final_decision": final_decision,
-        "flow_status": "trade" if final_decision.action == "trade" else "hold",
+        "flow_status": "running" if final_decision.action == "trade" else "hold",
     }
 
 
