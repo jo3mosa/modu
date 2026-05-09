@@ -14,7 +14,6 @@ from pydantic import ValidationError
 
 from app.graph.builder import build_investment_graph
 from app.state.schemas import (
-    CriticFeedback,
     FinalDecision,
     ResearchVerdict,
     StrategyDraft,
@@ -101,26 +100,16 @@ def _mock_strategy_manager(state):
     }
 
 
-def _mock_critic_agent(state):
-    return {
-        "critic_feedback": CriticFeedback(
-            approved=True,
-            risk_level="low",
-            comments=["RSI 지표 신뢰도 높음", "거래량 지지 확인"],
-        )
-    }
-
-
-def _mock_supervisor_hold(state):
-    """Supervisor가 보류 결정 → risk_guard/executor 미실행"""
+def _mock_decision_manager_hold(state):
+    """Decision Manager가 보류 결정 → risk_gate/executor 미실행"""
     return {
         "flow_status": "hold",
         "final_decision": FinalDecision(action="hold"),
     }
 
 
-def _mock_supervisor_trade(state):
-    """Supervisor가 매수 결정 → risk_guard로 전달"""
+def _mock_decision_manager_trade(state):
+    """Decision Manager가 매수 결정 → risk_gate로 전달"""
     return {
         "flow_status": "running",
         "final_decision": FinalDecision(
@@ -132,18 +121,19 @@ def _mock_supervisor_trade(state):
             stop_loss_price=67_000,
             reason_summary="RSI 과매도 + 거래량 급증 패턴",
             confidence=0.78,
+            risk_level="low",
         ),
     }
 
 
-def _mock_risk_guard_block(state):
+def _mock_risk_gate_block(state):
     return {
         "risk_cleared": False,
         "risk_check_result": {"status": "blocked", "reason": "포지션 비중 초과"},
     }
 
 
-def _mock_risk_guard_pass(state):
+def _mock_risk_gate_pass(state):
     return {
         "risk_cleared": True,
         "risk_check_result": {"status": "passed"},
@@ -216,7 +206,7 @@ class TestStateConversion:
         event = create_mock_user_trigger()
         state = build_state_from_user_trigger(event)
         assert state.strategy_draft is None
-        assert state.critic_feedback is None
+        assert state.research_verdict is None
         assert state.final_decision is None
         assert state.risk_cleared is False
         assert state.execution_result == {}
@@ -231,7 +221,6 @@ _BASE_PATCHES = {
     "app.graph.builder.bull_researcher": _mock_bull_researcher,
     "app.graph.builder.bear_researcher": _mock_bear_researcher,
     "app.graph.builder.strategy_manager": _mock_strategy_manager,
-    "app.graph.builder.critic_agent": _mock_critic_agent,
 }
 
 
@@ -248,21 +237,21 @@ class TestLangGraphFlow:
 
     def test_hold_path(self):
         """
-        [경로 A] supervisor hold → END
-        risk_guard, executor는 실행되지 않는다.
+        [경로 A] decision_manager hold → END
+        risk_gate, executor는 실행되지 않는다.
         """
-        result = self._invoke({"app.graph.builder.supervisor_agent": _mock_supervisor_hold})
+        result = self._invoke({"app.graph.builder.decision_manager": _mock_decision_manager_hold})
         assert result["flow_status"] == "hold"
         assert result["execution_result"] == {}
 
     def test_trade_risk_blocked_path(self):
         """
-        [경로 B] supervisor trade → risk_guard block → END
+        [경로 B] decision_manager trade → risk_gate block → END
         executor는 실행되지 않는다.
         """
         result = self._invoke({
-            "app.graph.builder.supervisor_agent": _mock_supervisor_trade,
-            "app.graph.builder.risk_guard": _mock_risk_guard_block,
+            "app.graph.builder.decision_manager": _mock_decision_manager_trade,
+            "app.graph.builder.risk_gate": _mock_risk_gate_block,
         })
         assert result["risk_cleared"] is False
         assert result["flow_status"] != "completed"
@@ -270,12 +259,12 @@ class TestLangGraphFlow:
 
     def test_trade_risk_passed_path(self):
         """
-        [경로 C] supervisor trade → risk_guard pass → executor → completed
+        [경로 C] decision_manager trade → risk_gate pass → executor → completed
         execution_result에 주문 결과가 담긴다.
         """
         result = self._invoke({
-            "app.graph.builder.supervisor_agent": _mock_supervisor_trade,
-            "app.graph.builder.risk_guard": _mock_risk_guard_pass,
+            "app.graph.builder.decision_manager": _mock_decision_manager_trade,
+            "app.graph.builder.risk_gate": _mock_risk_gate_pass,
         })
         assert result["risk_cleared"] is True
         assert result["flow_status"] == "completed"

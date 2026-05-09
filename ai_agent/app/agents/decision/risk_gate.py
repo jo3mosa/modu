@@ -982,9 +982,6 @@ def risk_gate(state: InvestmentAgentState) -> dict[str, Any]:
     # ==============================
 
     # Decision Manager가 FinalDecision에 채운 risk_level이 high이면 사용자 승인을 요구한다.
-    # critic_feedback이 아닌 final_decision.risk_level을 보는 이유:
-    # - Decision Manager가 사이즈/타이밍/시나리오를 결정하면서 함께 risk_level을 평가하므로
-    #   별도 critic 노드 없이도 종합 판단 신호를 받을 수 있다.
     decision_risk_level = get_value(decision, "risk_level")
 
     if decision_risk_level == "high":
