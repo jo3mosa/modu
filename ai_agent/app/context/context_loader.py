@@ -1,20 +1,24 @@
 from typing import Any
 
-from app.agents.memory.kb_loader import KnowledgeBaseLoader
-from app.agents.memory.trade_log_repository import TradeLogRepository
+from app.context.kb_loader import KnowledgeBaseLoader
+from app.context.trade_log_repository import TradeLogRepository
 from app.state.investment_state import InvestmentAgentState
 
 
-def memory_agent(state: InvestmentAgentState) -> dict[str, Any]:
+def context_loader(state: InvestmentAgentState) -> dict[str, Any]:
     """
-    Memory Agent는 투자 의사결정에 필요한 다양한 정보를 수집하여
-    종합적인 메모리 컨텍스트를 구축하는 역할을 합니다.
+    Context Loader.
 
-    - investment-profile.md 로드
-    - investment-strategy.md 로드
-    - trade-history-wiki.md 로드
-    - llm-wiki.md 로드
-    - trade_logs DB에서 현재 후보 종목/섹터/key_signal 기준 최근 거래 조회
+    LLM 미사용. 투자 의사결정에 필요한 정적/이력 자료를 수집해
+    state의 컨텍스트 필드로 분배한다.
+
+    - investment-profile.md 로드 → user_context
+    - investment-strategy.md 로드 → policy_context
+    - trade-history-wiki.md / llm-wiki.md 로드 → history_context
+    - trade_logs DB에서 후보 종목/섹터/key_signal 기준 최근 거래 조회 → memory_context
+
+    실제 retrieval/저장(MemoryStore Protocol 기반)은 별도 app/memory 모듈이 담당하며,
+    이 노드는 Decision Graph 진입 전 단순 컨텍스트 어셈블리만 수행한다.
     """
 
     # TODO:

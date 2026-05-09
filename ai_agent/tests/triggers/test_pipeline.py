@@ -29,7 +29,7 @@ from app.state.investment_state import InvestmentAgentState
 # LLM 호출 없이 결정론적인 결과를 반환한다.
 # ──────────────────────────────────────────
 
-def _mock_memory_agent(state):
+def _mock_context_loader(state):
     return {"memory_context": {"profile": "moderate risk taker"}}
 
 
@@ -217,7 +217,7 @@ class TestStateConversion:
 # ──────────────────────────────────────────
 
 _BASE_PATCHES = {
-    "app.graph.builder.memory_agent": _mock_memory_agent,
+    "app.graph.builder.context_loader": _mock_context_loader,
     "app.graph.builder.bull_researcher": _mock_bull_researcher,
     "app.graph.builder.bear_researcher": _mock_bear_researcher,
     "app.graph.builder.strategy_manager": _mock_strategy_manager,

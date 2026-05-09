@@ -2,10 +2,10 @@ from langgraph.graph import END, StateGraph
 
 from app.agents.decision.decision_manager import decision_manager
 from app.agents.decision.risk_gate import risk_gate
-from app.agents.memory.memory_agent import memory_agent
 from app.agents.strategy.bear_researcher import bear_researcher
 from app.agents.strategy.bull_researcher import bull_researcher
 from app.agents.strategy.strategy_manager import strategy_manager
+from app.context.context_loader import context_loader
 from app.runtime.executor import executor
 from app.state.investment_state import InvestmentAgentState
 
@@ -41,7 +41,7 @@ def build_investment_graph():
     투자 의사결정 LangGraph를 생성하고 compile한다.
 
     전체 흐름:
-    memory_agent
+    context_loader
       → bull_researcher
       → bear_researcher
       → strategy_manager
@@ -59,7 +59,7 @@ def build_investment_graph():
 
     graph = StateGraph(InvestmentAgentState)
 
-    graph.add_node("memory_agent", memory_agent)
+    graph.add_node("context_loader", context_loader)
     graph.add_node("bull_researcher", bull_researcher)
     graph.add_node("bear_researcher", bear_researcher)
     graph.add_node("strategy_manager", strategy_manager)
@@ -67,9 +67,9 @@ def build_investment_graph():
     graph.add_node("risk_gate", risk_gate)
     graph.add_node("executor", executor)
 
-    graph.set_entry_point("memory_agent")
+    graph.set_entry_point("context_loader")
 
-    graph.add_edge("memory_agent", "bull_researcher")
+    graph.add_edge("context_loader", "bull_researcher")
     graph.add_edge("bull_researcher", "bear_researcher")
     graph.add_edge("bear_researcher", "strategy_manager")
     graph.add_edge("strategy_manager", "decision_manager")
