@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-// 주문/미체결 API는 import 보류
+// 주문/미체결 API는 백엔드 미구현 상태이므로 import 보류
 // import { getBuyingPower, placeOrder, getPendingOrders, updateOrder } from '../api/order';
 import './OrderBook.css';
 
@@ -9,7 +9,7 @@ export default function OrderBook({ stockCode }) {
   const [price, setPrice] = useState(0);
   const [quantity, setQuantity] = useState(1);
 
-  // 실시간 호가  asks/bids는 OrderbookLevel[] = { level, price, quantity }
+  // 실시간 호가 (OrderbookResponse): asks/bids는 OrderbookLevel[] = { level, price, quantity }
   const [asks, setAsks] = useState([]);
   const [bids, setBids] = useState([]);
 
