@@ -13,7 +13,14 @@ import pytest
 from pydantic import ValidationError
 
 from app.graph.builder import build_investment_graph
-from app.state.schemas import CriticFeedback, FinalDecision, StrategyDraft
+from app.state.schemas import (
+    BearThesis,
+    BullThesis,
+    CriticFeedback,
+    FinalDecision,
+    ResearchVerdict,
+    StrategyDraft,
+)
 from app.triggers.mock_trigger import create_mock_user_trigger
 from app.triggers.schemas import TriggerType, UserTriggerEvent
 from app.triggers.state_factory import build_state_from_user_trigger
@@ -29,8 +36,50 @@ def _mock_memory_agent(state):
     return {"memory_context": {"profile": "moderate risk taker"}}
 
 
-def _mock_strategy_agent(state):
+def _mock_bull_researcher(state):
     return {
+        "bull_thesis": BullThesis(
+            asset="005930",
+            recommended_side="buy",
+            claim="RSI 과매도 + 거래량 급증",
+            evidence=["RSI 28", "거래량 평균 대비 2.3배"],
+            risks_acknowledged=["단기 변동성 확대"],
+            confidence=0.75,
+        )
+    }
+
+
+def _mock_bear_researcher(state):
+    return {
+        "bear_thesis": BearThesis(
+            asset="005930",
+            recommended_side="hold",
+            claim="단기 진입은 리스크가 있음",
+            evidence=["섹터 모멘텀 둔화"],
+            counterpoints_to_bull=["거래량 급증이 일회성일 가능성"],
+            confidence=0.5,
+        )
+    }
+
+
+def _mock_strategy_manager(state):
+    """
+    Manager는 StrategyDraft를 후속 critic/supervisor에 전달해야 한다.
+    실제 노드와 동일하게 research_verdict와 strategy_draft를 함께 반환한다.
+    """
+    return {
+        "research_verdict": ResearchVerdict(
+            winning_side="bull",
+            asset="005930",
+            recommended_side="buy",
+            rationale="RSI 과매도 + 거래량 급증 패턴",
+            key_bull_points=["RSI 28", "거래량 2.3배"],
+            key_bear_points=["거래량 급증의 일회성 가능성"],
+            confidence=0.7,
+            order_amount=500_000,
+            target_price=75_000,
+            stop_loss_price=67_000,
+        ),
         "strategy_draft": StrategyDraft(
             asset="005930",
             side="buy",
@@ -38,8 +87,8 @@ def _mock_strategy_agent(state):
             target_price=75_000,
             stop_loss_price=67_000,
             reason="RSI 과매도 + 거래량 급증",
-            confidence=0.75,
-        )
+            confidence=0.7,
+        ),
     }
 
 
@@ -170,7 +219,9 @@ class TestStateConversion:
 
 _BASE_PATCHES = {
     "app.graph.builder.memory_agent": _mock_memory_agent,
-    "app.graph.builder.strategy_agent": _mock_strategy_agent,
+    "app.graph.builder.bull_researcher": _mock_bull_researcher,
+    "app.graph.builder.bear_researcher": _mock_bear_researcher,
+    "app.graph.builder.strategy_manager": _mock_strategy_manager,
     "app.graph.builder.critic_agent": _mock_critic_agent,
 }
 
