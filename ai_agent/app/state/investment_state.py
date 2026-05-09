@@ -3,7 +3,6 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from app.state.schemas import (
-    CriticFeedback,
     FinalDecision,
     ResearchVerdict,
     StrategyDraft,
@@ -79,13 +78,10 @@ class InvestmentAgentState(BaseModel):
     # Strategy Manager(Research Manager)가 토론을 종합해 내린 판결
     research_verdict: ResearchVerdict | None = None
 
-    # research_verdict를 후속 critic/supervisor가 사용할 수 있게 변환한 전략 초안
+    # research_verdict를 후속 decision_manager가 입력으로 받는 전략 초안
     strategy_draft: StrategyDraft | None = None
-    
-    # Critic Agent가 생성한 리스크 검토 결과
-    critic_feedback: CriticFeedback | None = None
-    
-    # Supervisor Agent가 생성한 최종 투자 결정
+
+    # Decision Manager가 생성한 최종 투자 결정 (사이즈/타이밍/시나리오/risk_level 포함)
     final_decision: FinalDecision | None = None
 
     # ==============================

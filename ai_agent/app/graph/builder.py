@@ -1,38 +1,34 @@
 from langgraph.graph import END, StateGraph
 
-from app.agents.critic.critic_agent import critic_agent
-from app.agents.memory.memory_agent import memory_agent
-from app.action.risk_guard.risk_guard import risk_guard
+from app.agents.decision.decision_manager import decision_manager
+from app.agents.decision.risk_gate import risk_gate
 from app.agents.strategy.bear_researcher import bear_researcher
 from app.agents.strategy.bull_researcher import bull_researcher
 from app.agents.strategy.strategy_manager import strategy_manager
-from app.agents.supervisor.supervisor_agent import supervisor_agent
+from app.context.context_loader import context_loader
 from app.runtime.executor import executor
 from app.state.investment_state import InvestmentAgentState
 
 
-def route_after_supervisor(state: InvestmentAgentState) -> str:
+def route_after_decision_manager(state: InvestmentAgentState) -> str:
     """
-    Supervisor Agent 이후 다음 노드를 결정한다.
+    Decision Manager 이후 다음 노드를 결정한다.
 
     - flow_status가 hold이면 그래프 종료
-    - 그 외에는 Risk Guard로 이동
+    - 그 외에는 Risk Gate로 이동
     """
 
     if state.flow_status == "hold":
         return "end"
-    return "risk_guard"
+    return "risk_gate"
 
 
-def route_after_risk_guard(state: InvestmentAgentState) -> str:
+def route_after_risk_gate(state: InvestmentAgentState) -> str:
     """
-    Risk Guard 이후 다음 노드를 결정한다.
+    Risk Gate 이후 다음 노드를 결정한다.
 
     - risk_cleared=True이면 Executor로 이동
     - False이면 그래프 종료
-
-    이 조건부 라우팅으로 인해 Risk Guard를 통과하지 못한 결정은
-    Executor로 전달되지 않는다.
     """
 
     if state.risk_cleared:
@@ -45,66 +41,57 @@ def build_investment_graph():
     투자 의사결정 LangGraph를 생성하고 compile한다.
 
     전체 흐름:
-    memory_agent
+    context_loader
       → bull_researcher
       → bear_researcher
       → strategy_manager
-      → critic_agent
-      → supervisor_agent
+      → decision_manager
       → 조건부 분기
-      → risk_guard
+      → risk_gate
       → 조건부 분기
       → executor
       → END
 
-    Bull/Bear/Manager 3단계는 TradingAgents 논문의 Researcher 토론 + Research Manager
-    구조를 1라운드(LLM 호출 3회)로 압축한 것이다. 라운드 수 변경 시 conditional edge로
-    토론 루프를 추가할 수 있다.
+    Strategy Team(bull/bear/manager)이 BUY/SELL 방향과 1차 가격을 결정하고,
+    Decision Manager가 사이즈/타이밍/시나리오/risk_level까지 채워 실행 가능한 거래안을 만든다.
+    Risk Gate는 deterministic hard rule로 최종 게이트를 수행한다.
     """
 
     graph = StateGraph(InvestmentAgentState)
 
-    # 그래프 노드 등록
-    graph.add_node("memory_agent", memory_agent)
+    graph.add_node("context_loader", context_loader)
     graph.add_node("bull_researcher", bull_researcher)
     graph.add_node("bear_researcher", bear_researcher)
     graph.add_node("strategy_manager", strategy_manager)
-    graph.add_node("critic_agent", critic_agent)
-    graph.add_node("supervisor_agent", supervisor_agent)
-    graph.add_node("risk_guard", risk_guard)
+    graph.add_node("decision_manager", decision_manager)
+    graph.add_node("risk_gate", risk_gate)
     graph.add_node("executor", executor)
 
-    # 시작 노드 설정
-    graph.set_entry_point("memory_agent")
+    graph.set_entry_point("context_loader")
 
-    # 기본 직선 흐름
-    graph.add_edge("memory_agent", "bull_researcher")
+    graph.add_edge("context_loader", "bull_researcher")
     graph.add_edge("bull_researcher", "bear_researcher")
     graph.add_edge("bear_researcher", "strategy_manager")
-    graph.add_edge("strategy_manager", "critic_agent")
-    graph.add_edge("critic_agent", "supervisor_agent")
+    graph.add_edge("strategy_manager", "decision_manager")
 
-    # Supervisor 결과에 따라 Risk Guard로 갈지 종료할지 결정
     graph.add_conditional_edges(
-        "supervisor_agent",
-        route_after_supervisor,
+        "decision_manager",
+        route_after_decision_manager,
         {
-            "risk_guard": "risk_guard",
+            "risk_gate": "risk_gate",
             "end": END,
         },
     )
 
-    # Risk Guard 통과 여부에 따라 Executor로 갈지 종료할지 결정
     graph.add_conditional_edges(
-        "risk_guard",
-        route_after_risk_guard,
+        "risk_gate",
+        route_after_risk_gate,
         {
             "executor": "executor",
             "end": END,
         },
     )
 
-    # Executor 실행 후 종료
     graph.add_edge("executor", END)
 
     return graph.compile()

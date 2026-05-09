@@ -18,7 +18,7 @@ def _add_check(
     """
     개별 리스크 검증 결과를 checks 리스트에 누적한다.
 
-    Risk Guard는 단순히 True/False만 반환하면
+    Risk Gate는 단순히 True/False만 반환하면
     나중에 어떤 조건 때문에 주문이 막혔는지 알기 어렵다.
 
     그래서 각 검증 항목마다
@@ -50,7 +50,7 @@ def _make_result(
     approval_required: bool = False,
 ) -> dict[str, Any]:
     """
-    Risk Guard의 최종 반환 형식을 통일한다.
+    Risk Gate의 최종 반환 형식을 통일한다.
 
     LangGraph에서는 각 노드가 state 전체를 직접 수정하는 대신,
     업데이트할 필드만 dict로 반환한다.
@@ -228,7 +228,7 @@ def _find_asset_snapshot(
     """
     candidate_assets 또는 analysis_snapshot에서 특정 종목의 분석 정보를 찾는다.
 
-    Risk Guard는 외부 API를 직접 조회하지 않는다.
+    Risk Gate는 외부 API를 직접 조회하지 않는다.
     따라서 그래프 실행 전에 state에 들어온 스냅샷만 사용한다.
     """
 
@@ -254,9 +254,9 @@ def _find_asset_snapshot(
     return {}
 
 
-def risk_guard(state: InvestmentAgentState) -> dict[str, Any]:
+def risk_gate(state: InvestmentAgentState) -> dict[str, Any]:
     """
-    Risk Guard Agent.
+    Risk Gate.
 
     역할:
     - Supervisor Agent가 만든 final_decision을 실제 주문으로 넘겨도 되는지 검증한다.
@@ -264,8 +264,8 @@ def risk_guard(state: InvestmentAgentState) -> dict[str, Any]:
     - 검증 실패 시 Executor로 넘어가지 않도록 risk_cleared=False를 반환한다.
 
     중요한 원칙:
-    - Risk Guard는 주문 API를 호출하지 않는다.
-    - Risk Guard는 외부 broker API를 직접 조회하지 않는다.
+    - Risk Gate는 주문 API를 호출하지 않는다.
+    - Risk Gate는 외부 broker API를 직접 조회하지 않는다.
     - 이미 state에 주입된 portfolio_snapshot, market_snapshot, policy_context만 사용한다.
     - Executor는 risk_cleared=True일 때만 주문을 실행해야 한다.
     """
@@ -546,6 +546,26 @@ def risk_guard(state: InvestmentAgentState) -> dict[str, Any]:
             status="blocked",
             reason="고위험 또는 거래 제한 종목으로 매수 주문을 차단합니다.",
             checks=checks,
+        )
+
+    # Deterministic backup:
+    # LLM(Decision Manager) 평가와 무관하게 주의/경고종목 자동 매수는 항상 사용자 승인을 요구한다.
+    # - block 보다 약하지만 통과로는 부족한 영역에 대한 안전망.
+    # - 섹션 10의 LLM 기반 risk_level 평가가 false negative여도 이 분기가 잡아낸다.
+    if side == "buy" and stock_policy_key == "caution_or_warning_stock":
+        _add_check(
+            checks,
+            name="caution_stock_approval",
+            status="approval_required",
+            reason="주의/경고종목 자동 매수는 사용자 승인이 필요합니다.",
+            value=stock_policy_key,
+            limit="normal_listed_stock",
+        )
+        return _make_result(
+            status="approval_required",
+            reason="주의/경고종목 매수로 사용자 승인이 필요합니다.",
+            checks=checks,
+            approval_required=True,
         )
 
     _add_check(
@@ -961,16 +981,16 @@ def risk_guard(state: InvestmentAgentState) -> dict[str, Any]:
     # 10. 고위험 조건 사용자 승인 처리
     # ==============================
 
-    critic_feedback = state.critic_feedback
-    risk_level = get_value(critic_feedback, "risk_level")
+    # Decision Manager가 FinalDecision에 채운 risk_level이 high이면 사용자 승인을 요구한다.
+    decision_risk_level = get_value(decision, "risk_level")
 
-    if risk_level == "high":
+    if decision_risk_level == "high":
         _add_check(
             checks,
-            name="critic_risk_level",
+            name="decision_risk_level",
             status="approval_required",
-            reason="Critic Agent가 high risk로 평가하여 사용자 승인이 필요합니다.",
-            value=risk_level,
+            reason="Decision Manager가 high risk로 평가하여 사용자 승인이 필요합니다.",
+            value=decision_risk_level,
             limit="low | medium",
         )
         return _make_result(
@@ -982,10 +1002,10 @@ def risk_guard(state: InvestmentAgentState) -> dict[str, Any]:
 
     _add_check(
         checks,
-        name="critic_risk_level",
+        name="decision_risk_level",
         status="passed",
         reason="사용자 승인 없이 진행 가능한 리스크 수준입니다.",
-        value=risk_level,
+        value=decision_risk_level,
         limit="low | medium",
     )
 
@@ -995,7 +1015,7 @@ def risk_guard(state: InvestmentAgentState) -> dict[str, Any]:
 
     return _make_result(
         status="passed",
-        reason="Risk Guard 검증을 모두 통과했습니다.",
+        reason="Risk Gate 검증을 모두 통과했습니다.",
         checks=checks,
         risk_cleared=True,
     )
