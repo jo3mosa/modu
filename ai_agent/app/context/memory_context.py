@@ -10,9 +10,7 @@ def load_memory_context(
     key_signals: list[str],
     memory_store: MemoryStore,
 ) -> dict[str, Any]:
-    """
-    MemoryStore에서 과거 유사 판단 이력을 조회해 memory_context를 구성한다.
-    """
+    """MemoryStore에서 과거 유사 판단 이력을 조회해 memory_context를 구성한다."""
     if not stock_codes and not sectors and not key_signals:
         return {
             "query_basis": {
@@ -33,6 +31,7 @@ def load_memory_context(
         limit=10,
     )
 
+    # only_loss=True: 손실로 끝난 판단만 별도 조회해 Decision Manager가 반복 실수를 피하게 한다
     recent_loss_decisions = memory_store.get_similar_decisions(
         user_id=user_id,
         stock_codes=stock_codes,
@@ -55,6 +54,7 @@ def load_memory_context(
 
 
 def extract_stock_codes(candidate_assets: list[dict[str, Any]]) -> list[str]:
+    """후보 종목에서 stock_code(또는 ticker) 중복 없이 추출한다."""
     return list({
         asset.get("stock_code") or asset.get("ticker")
         for asset in candidate_assets
@@ -63,6 +63,7 @@ def extract_stock_codes(candidate_assets: list[dict[str, Any]]) -> list[str]:
 
 
 def extract_sectors(candidate_assets: list[dict[str, Any]]) -> list[str]:
+    """후보 종목에서 섹터 중복 없이 추출한다."""
     return list({
         asset["sector"]
         for asset in candidate_assets
@@ -71,6 +72,7 @@ def extract_sectors(candidate_assets: list[dict[str, Any]]) -> list[str]:
 
 
 def extract_key_signals(analysis_snapshot: dict[str, Any]) -> list[str]:
+    """analysis_snapshot.signals에서 활성화된 신호 종류를 문자열 리스트로 반환한다."""
     signals = analysis_snapshot.get("signals", {})
     key_signals: set[str] = set()
 

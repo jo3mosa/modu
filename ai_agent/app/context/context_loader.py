@@ -19,12 +19,7 @@ from app.state.investment_state import InvestmentAgentState
 
 
 class AgentContext(TypedDict):
-    """
-    Reasoning Layer 에이전트에게 전달되는 사전 수집 컨텍스트.
-
-    Context Loader가 그래프 실행 전에 조립하며,
-    LLM 노드는 이 값을 읽기만 한다.
-    """
+    """Reasoning Layer 에이전트에게 전달되는 사전 수집 컨텍스트."""
     user_context: dict[str, Any]
     policy_context: dict[str, Any]
     memory_context: dict[str, Any]
@@ -45,6 +40,7 @@ class ContextLoader:
         engine: Engine | None = None,
     ) -> None:
         self.memory_store = memory_store
+        # engine을 주입하지 않으면 DATABASE_URL 환경변수로 생성
         self.engine = engine or create_engine_from_env()
 
     def load(
@@ -58,7 +54,7 @@ class ContextLoader:
         key_signals = extract_key_signals(analysis_snapshot)
 
         user_context = load_user_context(user_id, self.engine)
-        policy_context = load_policy_context(user_id, self.engine, user_context)
+        policy_context = load_policy_context(user_id, self.engine)
         memory_context = load_memory_context(
             user_id=user_id,
             stock_codes=stock_codes,
@@ -113,14 +109,11 @@ def context_loader(state: InvestmentAgentState) -> dict[str, Any]:
     """
     LangGraph 노드 어댑터.
 
-    ContextLoader를 그래프에서 실행하기 위한 얇은 래퍼.
     TODO: _NullMemoryStore를 DBMemoryStore로 교체.
     """
-    user_id: int = state.user_id or 0
-
     loader = ContextLoader(memory_store=_NullMemoryStore())
     ctx = loader.load(
-        user_id=user_id,
+        user_id=state.user_id or 0,
         analysis_snapshot=state.analysis_snapshot,
         candidate_assets=state.candidate_assets,
     )
