@@ -100,8 +100,23 @@ def _to_strategy_draft(verdict: ResearchVerdict) -> StrategyDraft:
 
 
 def _hold(reason: str, detail: str) -> dict[str, Any]:
+    """
+    Manager 단계 실패 시 안전한 hold 상태로 강등한다.
+
+    critic/supervisor가 strategy_draft=None도 자체 fallback으로 처리하긴 하지만,
+    trace 일관성과 사용자 노출용 메시지 보존을 위해 hold verdict/draft를 명시적으로 채운다.
+    """
+    hold_verdict = ResearchVerdict(
+        winning_side="balanced",
+        asset="",
+        recommended_side="hold",
+        rationale=reason,
+        confidence=0.0,
+    )
     return {
         "flow_status": "hold",
+        "research_verdict": hold_verdict,
+        "strategy_draft": _to_strategy_draft(hold_verdict),
         "error_context": {
             "agent": "strategy_manager",
             "reason": reason,
