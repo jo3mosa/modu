@@ -9,7 +9,7 @@ export default function OrderBook({ stockCode }) {
   const [price, setPrice] = useState(0);
   const [quantity, setQuantity] = useState(1);
 
-  // 실시간 호가 (OrderbookResponse): asks/bids는 OrderbookLevel[] = { level, price, quantity }
+  // 실시간 호가  asks/bids는 OrderbookLevel[] = { level, price, quantity }
   const [asks, setAsks] = useState([]);
   const [bids, setBids] = useState([]);
 
