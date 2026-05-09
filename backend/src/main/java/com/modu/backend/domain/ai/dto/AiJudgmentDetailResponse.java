@@ -34,12 +34,14 @@ public record AiJudgmentDetailResponse(
 ) {
 
     public static AiJudgmentDetailResponse from(AiJudgment judgment) {
+        AiJudgmentResponseMapper.ValidatedJudgment validated = AiJudgmentResponseMapper.validate(judgment);
+
         return new AiJudgmentDetailResponse(
                 judgment.getId(),
                 judgment.getOrderId(),
                 judgment.getStockCode(),
-                judgment.getDecision(),
-                judgment.getConfidenceScore(),
+                validated.eventType(),
+                validated.confidenceScore(),
                 judgment.getIndicatorsSnapshot(),
                 judgment.getJudgmentReason(),
                 judgment.getJudgedAt()

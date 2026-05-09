@@ -89,7 +89,7 @@ class AiJudgmentServiceTest {
     @DisplayName("주문별 AI 판단 근거 조회 성공")
     void getJudgmentByOrder_success() {
         // given
-        AiJudgment judgment = judgment(101L, USER_ID, ORDER_ID, "005930", "PASSED");
+        AiJudgment judgment = judgment(101L, USER_ID, ORDER_ID, "005930", "passed");
         when(aiJudgmentRepository.findFirstByUserIdAndOrderIdOrderByJudgedAtDesc(USER_ID, ORDER_ID))
                 .thenReturn(Optional.of(judgment));
 
@@ -102,6 +102,36 @@ class AiJudgmentServiceTest {
         assertThat(result.stockCode()).isEqualTo("005930");
         assertThat(result.eventType()).isEqualTo("PASSED");
         assertThat(result.indicatorsSnapshot().get("rsi").asDouble()).isEqualTo(48.2);
+    }
+
+    @Test
+    @DisplayName("AI judgment mapping rejects unsupported event type")
+    void getJudgments_invalidEventType() {
+        // given
+        PageRequest pageable = PageRequest.of(0, 20, Sort.by("judgedAt").descending());
+        AiJudgment judgment = judgment(101L, USER_ID, ORDER_ID, "005930", "BUY");
+
+        when(aiJudgmentRepository.findByUserIdOrderByJudgedAtDesc(eq(USER_ID), eq(pageable)))
+                .thenReturn(new PageImpl<>(List.of(judgment), pageable, 1));
+
+        // when & then
+        assertThatThrownBy(() -> aiJudgmentService.getJudgments(USER_ID, 0, 20))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Unsupported AI judgment decision");
+    }
+
+    @Test
+    @DisplayName("AI judgment mapping rejects out-of-range confidence score")
+    void getJudgmentByOrder_invalidConfidenceScore() {
+        // given
+        AiJudgment judgment = judgment(101L, USER_ID, ORDER_ID, "005930", "PASSED", 101L);
+        when(aiJudgmentRepository.findFirstByUserIdAndOrderIdOrderByJudgedAtDesc(USER_ID, ORDER_ID))
+                .thenReturn(Optional.of(judgment));
+
+        // when & then
+        assertThatThrownBy(() -> aiJudgmentService.getJudgmentByOrder(USER_ID, ORDER_ID))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("confidenceScore must be between 0 and 100");
     }
 
     @Test
@@ -147,6 +177,10 @@ class AiJudgmentServiceTest {
     }
 
     private AiJudgment judgment(Long id, Long userId, Long orderId, String stockCode, String decision) {
+        return judgment(id, userId, orderId, stockCode, decision, 82L);
+    }
+
+    private AiJudgment judgment(Long id, Long userId, Long orderId, String stockCode, String decision, Long confidenceScore) {
         JsonNode indicatorsSnapshot = objectMapper.createObjectNode()
                 .put("rsi", 48.2)
                 .put("macd", "golden_cross")
@@ -157,7 +191,7 @@ class AiJudgmentServiceTest {
                 .stockCode(stockCode)
                 .orderId(orderId)
                 .decision(decision)
-                .confidenceScore(82L)
+                .confidenceScore(confidenceScore)
                 .indicatorsSnapshot(indicatorsSnapshot)
                 .judgmentReason("거래량 증가와 단기 추세 개선으로 매수 조건을 충족했습니다.")
                 .judgedAt(OffsetDateTime.parse("2026-05-08T09:00:00+09:00"))

@@ -30,12 +30,14 @@ public record AiJudgmentSummaryResponse(
 ) {
 
     public static AiJudgmentSummaryResponse from(AiJudgment judgment) {
+        AiJudgmentResponseMapper.ValidatedJudgment validated = AiJudgmentResponseMapper.validate(judgment);
+
         return new AiJudgmentSummaryResponse(
                 judgment.getId(),
                 judgment.getOrderId(),
                 judgment.getStockCode(),
-                judgment.getDecision(),
-                judgment.getConfidenceScore(),
+                validated.eventType(),
+                validated.confidenceScore(),
                 judgment.getJudgmentReason(),
                 judgment.getJudgedAt()
         );
