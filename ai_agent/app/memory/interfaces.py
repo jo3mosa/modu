@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal, Protocol, TypedDict
 
 # 공통 Enum 타입 정의
@@ -25,7 +26,7 @@ class PastDecision(TypedDict):
     """
     ai_judgment_id: int         # AI 판단 레코드 ID
     user_id: int                # 판단을 받은 사용자 ID
-    judged_at: str              # AI가 판단을 생성한 시각
+    judged_at: datetime         # AI가 판단을 생성한 시각 (timezone-aware)
     stock_code: str             # 종목 코드
     stock_name: str             # 종목명
     sector: str | None          # 업종/섹터
