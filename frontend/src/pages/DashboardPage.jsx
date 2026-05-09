@@ -63,26 +63,30 @@ export default function DashboardPage() {
   useEffect(() => {
     setShowTutorial(true);
 
-    async function fetchDashboardData() {
-      setIsLoading(true);
-      try {
-        const [summaryData, portfolioData] = await Promise.all([
-          getAccountSummary(),   // GET /api/v1/accounts/me/summary
-          getPortfolio()         // GET /api/v1/accounts/me/holdings
-        ]);
-        setSummary(summaryData);
-        setHoldings(portfolioData.holdings ?? []);
-      } catch (error) {
-        if (error.errorCode === 'KIS_NOT_CONNECTED' || error.errorCode === 'USER_002') {
-          setIsKisConnected(false);
-        } else {
-          console.error('대시보드 데이터 로드 실패:', error);
-        }
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    fetchDashboardData();
+    // ── TODO: 백엔드 연동 시 위 MOCK useState → 주석 처리하고 아래 블록 해제 ──
+    // async function fetchDashboardData() {
+    //   setIsLoading(true);
+    //   try {
+    //     const [summaryData, portfolioData, decisionsData] = await Promise.all([
+    //       getAccountSummary(),   // GET /api/v1/accounts/me/summary
+    //       getPortfolio(),        // GET /api/v1/accounts/me/holdings
+    //       getAiDecisions()       // GET /api/v1/ai-agent/decisions
+    //     ]);
+    //     setSummary(summaryData);
+    //     setHoldings(portfolioData.holdings ?? []);
+    //     setLogs(decisionsData.content ?? []); // 페이징 결과의 content 배열
+    //   } catch (error) {
+    //     if (error.message.includes('KIS_NOT_CONNECTED')) {
+    //       setIsKisConnected(false);
+    //     } else {
+    //       console.error('대시보드 데이터 로드 실패:', error);
+    //     }
+    //   } finally {
+    //     setIsLoading(false);
+    //   }
+    // }
+    // fetchDashboardData();
+    // ─────────────────────────────────────────────────────────────────────────
   }, []);
 
   const handleCloseTutorial = () => setShowTutorial(false);
