@@ -548,6 +548,26 @@ def risk_gate(state: InvestmentAgentState) -> dict[str, Any]:
             checks=checks,
         )
 
+    # Deterministic backup:
+    # LLM(Decision Manager) 평가와 무관하게 주의/경고종목 자동 매수는 항상 사용자 승인을 요구한다.
+    # - block 보다 약하지만 통과로는 부족한 영역에 대한 안전망.
+    # - 섹션 10의 LLM 기반 risk_level 평가가 false negative여도 이 분기가 잡아낸다.
+    if side == "buy" and stock_policy_key == "caution_or_warning_stock":
+        _add_check(
+            checks,
+            name="caution_stock_approval",
+            status="approval_required",
+            reason="주의/경고종목 자동 매수는 사용자 승인이 필요합니다.",
+            value=stock_policy_key,
+            limit="normal_listed_stock",
+        )
+        return _make_result(
+            status="approval_required",
+            reason="주의/경고종목 매수로 사용자 승인이 필요합니다.",
+            checks=checks,
+            approval_required=True,
+        )
+
     _add_check(
         checks,
         name="domestic_stock_risk_policy",
@@ -961,16 +981,19 @@ def risk_gate(state: InvestmentAgentState) -> dict[str, Any]:
     # 10. 고위험 조건 사용자 승인 처리
     # ==============================
 
-    critic_feedback = state.critic_feedback
-    risk_level = get_value(critic_feedback, "risk_level")
+    # Decision Manager가 FinalDecision에 채운 risk_level이 high이면 사용자 승인을 요구한다.
+    # critic_feedback이 아닌 final_decision.risk_level을 보는 이유:
+    # - Decision Manager가 사이즈/타이밍/시나리오를 결정하면서 함께 risk_level을 평가하므로
+    #   별도 critic 노드 없이도 종합 판단 신호를 받을 수 있다.
+    decision_risk_level = get_value(decision, "risk_level")
 
-    if risk_level == "high":
+    if decision_risk_level == "high":
         _add_check(
             checks,
-            name="critic_risk_level",
+            name="decision_risk_level",
             status="approval_required",
-            reason="Critic Agent가 high risk로 평가하여 사용자 승인이 필요합니다.",
-            value=risk_level,
+            reason="Decision Manager가 high risk로 평가하여 사용자 승인이 필요합니다.",
+            value=decision_risk_level,
             limit="low | medium",
         )
         return _make_result(
@@ -982,10 +1005,10 @@ def risk_gate(state: InvestmentAgentState) -> dict[str, Any]:
 
     _add_check(
         checks,
-        name="critic_risk_level",
+        name="decision_risk_level",
         status="passed",
         reason="사용자 승인 없이 진행 가능한 리스크 수준입니다.",
-        value=risk_level,
+        value=decision_risk_level,
         limit="low | medium",
     )
 
