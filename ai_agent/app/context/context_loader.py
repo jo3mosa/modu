@@ -94,8 +94,8 @@ class _NullMemoryStore:
         sectors: list[str],
         key_signals: list[str],
         limit: int = 5,
-        days: int = 30,
         only_loss: bool = False,
+        days: int = 30,
     ) -> list[PastDecision]:
         return []
 
