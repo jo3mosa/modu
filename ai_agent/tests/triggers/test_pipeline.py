@@ -320,3 +320,36 @@ class TestValidationError:
                 order_amount=500_000,
                 # target_price, stop_loss_price 누락
             )
+
+    def test_research_verdict_hold_with_nonzero_amount(self):
+        """recommended_side=hold인데 order_amount가 0이 아니면 ValidationError"""
+        with pytest.raises(ValidationError):
+            ResearchVerdict(
+                winning_side="bear",
+                asset="005930",
+                recommended_side="hold",
+                order_amount=100_000,
+            )
+
+    def test_research_verdict_buy_without_prices(self):
+        """recommended_side=buy인데 target_price/stop_loss_price 누락 시 ValidationError"""
+        with pytest.raises(ValidationError):
+            ResearchVerdict(
+                winning_side="bull",
+                asset="005930",
+                recommended_side="buy",
+                order_amount=500_000,
+                # target_price, stop_loss_price 누락
+            )
+
+    def test_research_verdict_buy_with_nonpositive_price(self):
+        """recommended_side=buy인데 target_price 또는 stop_loss_price가 0 이하이면 ValidationError"""
+        with pytest.raises(ValidationError):
+            ResearchVerdict(
+                winning_side="bull",
+                asset="005930",
+                recommended_side="buy",
+                order_amount=500_000,
+                target_price=0,
+                stop_loss_price=67_000,
+            )
