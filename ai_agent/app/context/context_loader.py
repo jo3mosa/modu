@@ -1,6 +1,7 @@
 from typing import Any, TypedDict
 
-from app.agents.memory.kb_loader import KnowledgeBaseLoader
+from sqlalchemy.engine import Engine
+
 from app.context.memory_context import (
     extract_key_signals,
     extract_sectors,
@@ -8,11 +9,13 @@ from app.context.memory_context import (
     load_memory_context,
 )
 from app.context.user_context import (
+    create_engine_from_env,
     load_history_context,
     load_policy_context,
     load_user_context,
 )
-from app.memory.interfaces import MemoryStore
+from app.memory.interfaces import MemoryStore, PastDecision
+from app.state.investment_state import InvestmentAgentState
 
 
 class AgentContext(TypedDict):
@@ -39,10 +42,10 @@ class ContextLoader:
     def __init__(
         self,
         memory_store: MemoryStore,
-        kb_loader: KnowledgeBaseLoader | None = None,
+        engine: Engine | None = None,
     ) -> None:
         self.memory_store = memory_store
-        self.kb_loader = kb_loader or KnowledgeBaseLoader()
+        self.engine = engine or create_engine_from_env()
 
     def load(
         self,
@@ -54,8 +57,8 @@ class ContextLoader:
         sectors = extract_sectors(candidate_assets)
         key_signals = extract_key_signals(analysis_snapshot)
 
-        user_context = load_user_context(user_id, self.kb_loader)
-        policy_context = load_policy_context(user_id, self.kb_loader, user_context)
+        user_context = load_user_context(user_id, self.engine)
+        policy_context = load_policy_context(user_id, self.engine, user_context)
         memory_context = load_memory_context(
             user_id=user_id,
             stock_codes=stock_codes,
@@ -63,7 +66,7 @@ class ContextLoader:
             key_signals=key_signals,
             memory_store=self.memory_store,
         )
-        history_context = load_history_context(user_id, self.kb_loader, key_signals)
+        history_context = load_history_context(user_id, key_signals)
 
         return AgentContext(
             user_context=user_context,
@@ -71,3 +74,62 @@ class ContextLoader:
             memory_context=memory_context,
             history_context=history_context,
         )
+
+
+class _NullMemoryStore:
+    """DBMemoryStore 구현 전 임시 stub. db_store.py 완성 후 교체."""
+
+    def get_recent_decisions(
+        self,
+        user_id: int,
+        stock_codes: list[str],
+        sectors: list[str],
+        key_signals: list[str],
+        limit: int = 10,
+        days: int = 30,
+    ) -> list[PastDecision]:
+        return []
+
+    def get_similar_decisions(
+        self,
+        user_id: int,
+        stock_codes: list[str],
+        sectors: list[str],
+        key_signals: list[str],
+        limit: int = 5,
+        days: int = 30,
+        only_loss: bool = False,
+    ) -> list[PastDecision]:
+        return []
+
+    def store_decision(self, log: Any) -> int:
+        return 0
+
+    def store_postmortem(self, report: Any) -> int:
+        return 0
+
+
+def context_loader(state: InvestmentAgentState) -> dict[str, Any]:
+    """
+    LangGraph 노드 어댑터.
+
+    ContextLoader를 그래프에서 실행하기 위한 얇은 래퍼.
+    TODO: user_id를 InvestmentAgentState에 추가한 뒤 state에서 읽도록 변경.
+    TODO: _NullMemoryStore를 DBMemoryStore로 교체.
+    """
+    # TODO: state에 user_id 필드 추가 후 제거
+    user_id: int = state.user_context.get("user_id", 0)
+
+    loader = ContextLoader(memory_store=_NullMemoryStore())
+    ctx = loader.load(
+        user_id=user_id,
+        analysis_snapshot=state.analysis_snapshot,
+        candidate_assets=state.candidate_assets,
+    )
+
+    return {
+        "user_context": ctx["user_context"],
+        "policy_context": ctx["policy_context"],
+        "memory_context": ctx["memory_context"],
+        "history_context": ctx["history_context"],
+    }

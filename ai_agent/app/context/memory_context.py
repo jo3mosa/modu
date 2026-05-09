@@ -96,5 +96,5 @@ def _summarize(
     return (
         f"유사 판단 {len(recent_decisions)}건, "
         f"최근 손실 판단 {len(recent_loss_decisions)}건이 확인되었습니다. "
-        "Supervisor Agent는 최근 손실 판단의 근거와 현재 신호의 중복 여부를 우선 확인해야 합니다."
+        "Decision Manager는 최근 손실 판단의 근거와 현재 신호의 중복 여부를 우선 확인해야 합니다."
     )
