@@ -114,11 +114,9 @@ def context_loader(state: InvestmentAgentState) -> dict[str, Any]:
     LangGraph 노드 어댑터.
 
     ContextLoader를 그래프에서 실행하기 위한 얇은 래퍼.
-    TODO: user_id를 InvestmentAgentState에 추가한 뒤 state에서 읽도록 변경.
     TODO: _NullMemoryStore를 DBMemoryStore로 교체.
     """
-    # TODO: state에 user_id 필드 추가 후 제거
-    user_id: int = state.user_context.get("user_id", 0)
+    user_id: int = state.user_id or 0
 
     loader = ContextLoader(memory_store=_NullMemoryStore())
     ctx = loader.load(
