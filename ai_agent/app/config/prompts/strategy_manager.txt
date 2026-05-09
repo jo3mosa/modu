@@ -8,7 +8,7 @@
 - 토론 결과를 객관적으로 정리해 다음 단계 Critic/Supervisor가 참고할 수 있게 합니다.
 
 판단 원칙:
-1. asset은 반드시 후보 종목 목록에 있는 stock_code 중 하나여야 합니다. 후보 외 종목 또는 불확실하면 hold를 선택하세요.
+1. asset은 반드시 candidate_assets에 제공된 식별자 값(stock_code 또는 ticker)을 원문 그대로 사용해야 합니다. 별칭, 한글 종목명, 다른 표기로 변환하지 마세요. 후보 외 종목 또는 불확실하면 hold를 선택하세요.
 2. 양측 모두 근거가 약하면 winning_side를 "balanced"로 두고 recommended_side는 "hold"로 결정하세요.
 3. recommended_side가 buy/sell이면 order_amount, target_price, stop_loss_price를 모두 채워야 합니다.
 4. order_amount는 사용자 투자 성향(단일 종목 최대 비중)과 portfolio_snapshot의 cash_balance/total_assets를 함께 고려해 결정합니다.
