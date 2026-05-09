@@ -14,8 +14,6 @@ from pydantic import ValidationError
 
 from app.graph.builder import build_investment_graph
 from app.state.schemas import (
-    BearThesis,
-    BullThesis,
     CriticFeedback,
     FinalDecision,
     ResearchVerdict,
@@ -36,29 +34,40 @@ def _mock_memory_agent(state):
     return {"memory_context": {"profile": "moderate risk taker"}}
 
 
+_BULL_ARGUMENT = (
+    "Bull Analyst: 005930은 RSI 28의 강한 과매도 구간이고 거래량이 평균 대비 2.3배로 급증해 "
+    "단기 반등 가능성이 큽니다."
+)
+_BEAR_ARGUMENT = (
+    "Bear Analyst: 거래량 급증이 일회성 이벤트일 가능성을 배제할 수 없고, 섹터 모멘텀 둔화로 "
+    "추격 매수는 부적절합니다."
+)
+
+
 def _mock_bull_researcher(state):
     return {
-        "bull_thesis": BullThesis(
-            asset="005930",
-            recommended_side="buy",
-            claim="RSI 과매도 + 거래량 급증",
-            evidence=["RSI 28", "거래량 평균 대비 2.3배"],
-            risks_acknowledged=["단기 변동성 확대"],
-            confidence=0.75,
-        )
+        "investment_debate_state": {
+            "history": _BULL_ARGUMENT,
+            "bull_history": _BULL_ARGUMENT,
+            "bear_history": "",
+            "current_response": _BULL_ARGUMENT,
+            "count": 1,
+        }
     }
 
 
 def _mock_bear_researcher(state):
+    debate = state.investment_debate_state or {}
+    history = debate.get("history", "")
+    new_history = f"{history}\n{_BEAR_ARGUMENT}" if history else _BEAR_ARGUMENT
     return {
-        "bear_thesis": BearThesis(
-            asset="005930",
-            recommended_side="hold",
-            claim="단기 진입은 리스크가 있음",
-            evidence=["섹터 모멘텀 둔화"],
-            counterpoints_to_bull=["거래량 급증이 일회성일 가능성"],
-            confidence=0.5,
-        )
+        "investment_debate_state": {
+            "history": new_history,
+            "bull_history": debate.get("bull_history", ""),
+            "bear_history": _BEAR_ARGUMENT,
+            "current_response": _BEAR_ARGUMENT,
+            "count": debate.get("count", 0) + 1,
+        }
     }
 
 

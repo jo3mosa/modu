@@ -3,50 +3,6 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 
-class BullThesis(BaseModel):
-    """
-    Bull Researcher가 토론 1라운드에서 생성하는 매수/상승 우호 주장.
-
-    역할:
-    - 후보 종목 중 가장 매력적인 매수 기회를 가진 종목을 선택해 매수 논거를 제시한다.
-    - 자신의 주장에 따르는 리스크도 함께 인정한다.
-      - asset: 주장 대상 종목 코드 (반드시 후보 종목 중 하나)
-      - recommended_side: "buy" 또는 "hold" (sell 금지)
-      - claim: 핵심 주장 요약
-      - evidence: 매수 근거 (기술/이벤트/감성/과거 사례 등)
-      - risks_acknowledged: 본인 주장에 따르는 리스크
-      - confidence: 주장 신뢰도 점수
-    """
-    asset: str
-    recommended_side: Literal["buy", "hold"]
-    claim: str = ""
-    evidence: list[str] = Field(default_factory=list)
-    risks_acknowledged: list[str] = Field(default_factory=list)
-    confidence: float = 0.0
-
-
-class BearThesis(BaseModel):
-    """
-    Bear Researcher가 토론 1라운드에서 생성하는 매도/보류/리스크 우호 주장.
-
-    역할:
-    - Bull Researcher의 주장을 반박하고 리스크 근거를 제시한다.
-    - bull_thesis가 비어 있어도 분석 결과만으로 독립적 리스크 분석을 수행한다.
-      - asset: 검토 대상 종목 코드
-      - recommended_side: "sell" 또는 "hold" (buy 금지)
-      - claim: 핵심 주장 요약
-      - evidence: 리스크 근거
-      - counterpoints_to_bull: Bull 주장에 대한 구체적 반박
-      - confidence: 주장 신뢰도 점수
-    """
-    asset: str
-    recommended_side: Literal["sell", "hold"]
-    claim: str = ""
-    evidence: list[str] = Field(default_factory=list)
-    counterpoints_to_bull: list[str] = Field(default_factory=list)
-    confidence: float = 0.0
-
-
 class ResearchVerdict(BaseModel):
     """
     Strategy Manager(Research Manager)가 Bull/Bear 토론을 종합해 내리는 판결.

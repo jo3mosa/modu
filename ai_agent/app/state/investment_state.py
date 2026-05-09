@@ -3,8 +3,6 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from app.state.schemas import (
-    BearThesis,
-    BullThesis,
     CriticFeedback,
     FinalDecision,
     ResearchVerdict,
@@ -70,11 +68,13 @@ class InvestmentAgentState(BaseModel):
     # 4. Reasoning Layer output
     # ==============================
 
-    # Bull Researcher가 생성한 매수 우호 주장 (1라운드 토론)
-    bull_thesis: BullThesis | None = None
-
-    # Bear Researcher가 생성한 매도/보류 우호 주장 (1라운드 토론)
-    bear_thesis: BearThesis | None = None
+    # Bull/Bear 토론 누적 상태 (TradingAgents 레포의 investment_debate_state와 동일 구조).
+    # - history: 전체 토론 누적 텍스트 (Bull/Bear 모두)
+    # - bull_history: Bull 발언만 누적
+    # - bear_history: Bear 발언만 누적
+    # - current_response: 직전 발언 (다음 화자가 반박 대상으로 사용)
+    # - count: 라운드 카운트 (1라운드 고정 환경에서도 향후 확장을 위해 보존)
+    investment_debate_state: dict[str, Any] = Field(default_factory=dict)
 
     # Strategy Manager(Research Manager)가 토론을 종합해 내린 판결
     research_verdict: ResearchVerdict | None = None
