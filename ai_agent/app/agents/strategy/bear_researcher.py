@@ -1,18 +1,12 @@
 from pathlib import Path
 from typing import Any
 
-from langchain_core.exceptions import OutputParserException
-from langchain_core.output_parsers import PydanticOutputParser
-
 from app.config.llm import get_strategy_llm
 from app.state.investment_state import InvestmentAgentState
-from app.state.schemas import BearThesis
 from app.utils.json_utils import to_json
 from app.utils.prompt_loader import load_prompt
 
 _PROMPT_PATH = Path(__file__).resolve().parents[2] / "config" / "prompts" / "bear_researcher.txt"
-
-_parser = PydanticOutputParser(pydantic_object=BearThesis)
 
 
 def bear_researcher(state: InvestmentAgentState) -> dict[str, Any]:
@@ -20,75 +14,60 @@ def bear_researcher(state: InvestmentAgentState) -> dict[str, Any]:
     Bear Researcher.
 
     역할:
-    - Bull Researcher의 주장을 반박하고 리스크 우호 주장을 생성한다.
-    - bull_thesis가 비어 있어도 분석 결과만으로 독립 리스크 분석을 수행한다.
-    - 출력은 BearThesis 스키마를 따른다.
+    - 매도/리스크 입장에서 자유 텍스트로 토론 발언을 생성한다.
+    - 직전 Bull 발언(current_response)을 받아 직접 반박한다.
+    - investment_debate_state.history에 "Bear Analyst:" 화자 prefix와 함께 누적한다.
 
     실패 시 정책:
-    - LLM 출력 파싱 실패 또는 호출 실패 시 hold 권고로 fallback한다.
-    - 후보 외 종목 선택 시 fallback thesis로 강등한다.
+    - LLM 호출이 실패하면 fallback 발언을 history에 남기고 다음 노드로 진행한다.
     """
 
-    chain = load_prompt(str(_PROMPT_PATH)) | get_strategy_llm() | _parser
+    chain = load_prompt(str(_PROMPT_PATH)) | get_strategy_llm()
+
+    debate_state = state.investment_debate_state or {}
+    history = debate_state.get("history", "")
+    bear_history = debate_state.get("bear_history", "")
+    last_bull_argument = debate_state.get("current_response", "")
+    count = debate_state.get("count", 0)
+
+    signals = state.analysis_snapshot.get("signals", {}) if state.analysis_snapshot else {}
 
     inputs = {
-        "bull_thesis": to_json(state.bull_thesis),
         "candidate_assets": to_json(state.candidate_assets),
-        "analysis_snapshot": to_json(state.analysis_snapshot),
+        "signals_technical": to_json(signals.get("technical", {})),
+        "signals_fundamental": to_json(signals.get("fundamental", {})),
+        "signals_event": to_json(signals.get("event", {})),
+        "signals_sentiment": to_json(signals.get("sentiment", {})),
         "portfolio_snapshot": to_json(state.portfolio_snapshot),
         "user_context": to_json(state.user_context),
         "policy_context": to_json(state.policy_context),
         "memory_context": to_json(state.memory_context),
         "history_context": to_json(state.history_context),
-        "format_instructions": _parser.get_format_instructions(),
+        "debate_history": history or "(토론 누적 없음 — 독립 분석 모드)",
+        "last_bull_argument": last_bull_argument or "(직전 Bull 주장 없음 — 독립 리스크 분석)",
     }
 
     try:
-        thesis = chain.invoke(inputs)
-    except OutputParserException:
-        try:
-            thesis = chain.invoke(inputs)
-        except OutputParserException as exc:
-            return _fallback_thesis("LLM 출력 파싱 2회 실패", str(exc), state)
+        response = chain.invoke(inputs)
+        argument = f"Bear Analyst: {response.content.strip()}"
     except Exception as exc:
-        return _fallback_thesis("LLM 호출 실패", str(exc), state)
-
-    valid_codes = _candidate_codes(state.candidate_assets)
-    if valid_codes and thesis.asset not in valid_codes:
-        return _fallback_thesis(
-            "후보 외 종목 선택",
-            f"Bear Researcher가 후보 목록에 없는 종목을 선택했습니다: {thesis.asset}",
-            state,
+        argument = (
+            f"Bear Analyst: (LLM 호출 실패로 리스크 우호 주장을 생성하지 못함: {exc}). "
+            "Manager가 사용 가능한 정보만으로 보수적으로 판결해야 합니다."
         )
-
-    return {"bear_thesis": thesis}
-
-
-def _fallback_thesis(reason: str, detail: str, state: InvestmentAgentState) -> dict[str, Any]:
-    """
-    Bear Researcher가 정상 분석을 완료하지 못했을 때 안전한 hold thesis를 반환한다.
-
-    Strategy Manager는 비어있다시피 한 양측 thesis를 종합해 보수적으로 판단해야 한다.
-    """
-
-    valid_codes = _candidate_codes(state.candidate_assets)
-    asset = next(iter(valid_codes), "") if valid_codes else ""
 
     return {
-        "bear_thesis": BearThesis(
-            asset=asset,
-            recommended_side="hold",
-            claim="Bear Researcher 정상 분석 실패로 hold를 권고합니다.",
-            evidence=[],
-            counterpoints_to_bull=[f"{reason}: {detail}"],
-            confidence=0.0,
-        )
+        "investment_debate_state": {
+            "history": _append(history, argument),
+            "bull_history": debate_state.get("bull_history", ""),
+            "bear_history": _append(bear_history, argument),
+            "current_response": argument,
+            "count": count + 1,
+        }
     }
 
 
-def _candidate_codes(candidate_assets: list[dict[str, Any]]) -> set[str]:
-    return {
-        asset.get("stock_code") or asset.get("ticker")
-        for asset in candidate_assets
-        if asset.get("stock_code") or asset.get("ticker")
-    }
+def _append(existing: str, new_line: str) -> str:
+    if not existing:
+        return new_line
+    return f"{existing}\n{new_line}"

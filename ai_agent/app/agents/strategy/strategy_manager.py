@@ -17,12 +17,12 @@ _parser = PydanticOutputParser(pydantic_object=ResearchVerdict)
 
 def strategy_manager(state: InvestmentAgentState) -> dict[str, Any]:
     """
-    Strategy Manager (Research Manager).
+    Strategy Manager (Research Manager / debate facilitator).
 
     역할:
-    - Bull Researcher와 Bear Researcher의 1라운드 토론을 종합해 최종 판결을 내린다.
-    - 출력은 ResearchVerdict 스키마를 따르며, 동일 결정을 StrategyDraft로 변환해
-      후속 critic/supervisor 단계에 전달한다.
+    - investment_debate_state.history(Bull/Bear 자유 텍스트 토론)를 비판적으로 평가한다.
+    - 출력은 ResearchVerdict 스키마(structured)이며, 동일 결정을 StrategyDraft로 변환해
+      후속 critic/supervisor 단계 계약을 유지한다.
 
     실패 시 정책:
     - 출력 파싱 또는 LLM 호출이 실패하면 flow_status="hold"로 강등한다.
@@ -31,16 +31,23 @@ def strategy_manager(state: InvestmentAgentState) -> dict[str, Any]:
 
     chain = load_prompt(str(_PROMPT_PATH)) | get_strategy_llm() | _parser
 
+    debate_state = state.investment_debate_state or {}
+    debate_history = debate_state.get("history") or "(토론 history 없음)"
+
+    signals = state.analysis_snapshot.get("signals", {}) if state.analysis_snapshot else {}
+
     inputs = {
-        "bull_thesis": to_json(state.bull_thesis),
-        "bear_thesis": to_json(state.bear_thesis),
         "candidate_assets": to_json(state.candidate_assets),
-        "analysis_snapshot": to_json(state.analysis_snapshot),
+        "signals_technical": to_json(signals.get("technical", {})),
+        "signals_fundamental": to_json(signals.get("fundamental", {})),
+        "signals_event": to_json(signals.get("event", {})),
+        "signals_sentiment": to_json(signals.get("sentiment", {})),
         "portfolio_snapshot": to_json(state.portfolio_snapshot),
         "user_context": to_json(state.user_context),
         "policy_context": to_json(state.policy_context),
         "memory_context": to_json(state.memory_context),
         "history_context": to_json(state.history_context),
+        "debate_history": debate_history,
         "format_instructions": _parser.get_format_instructions(),
     }
 
@@ -73,8 +80,6 @@ def strategy_manager(state: InvestmentAgentState) -> dict[str, Any]:
 def _to_strategy_draft(verdict: ResearchVerdict) -> StrategyDraft:
     """
     ResearchVerdict를 후속 critic/supervisor 단계가 사용하는 StrategyDraft로 변환한다.
-
-    StrategyDraft는 기존 그래프 하위 노드 계약을 깨지 않기 위해 그대로 유지한다.
     """
 
     if verdict.recommended_side == "hold":
