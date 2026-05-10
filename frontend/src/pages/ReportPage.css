@@ -141,9 +141,39 @@
   justify-content: space-between;
   align-items: center;
   padding: 1.2rem 1.5rem;
-  cursor: pointer;
+  cursor: default;
   user-select: none;
 }
+
+.log-header.clickable {
+  cursor: pointer;
+}
+
+.log-header.clickable:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* AI / 수동 뱃지 */
+.source-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  letter-spacing: 0.04em;
+}
+
+.source-badge.ai {
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.source-badge.manual {
+  background: rgba(107, 114, 128, 0.15);
+  color: #9ca3af;
+  border: 1px solid rgba(107, 114, 128, 0.3);
+}
+
 
 .log-header-left {
   display: flex;

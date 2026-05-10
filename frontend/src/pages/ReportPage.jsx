@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Highcharts from 'highcharts';
 import HighchartsReactPkg from 'highcharts-react-official';
 import highcharts3d from 'highcharts/highcharts-3d';
@@ -10,7 +10,7 @@ import {
   ACTION_DISPLAY,
   EXECUTION_STATUS_DISPLAY,
 } from '../api/aiAgent';
-// import { getOrderHistory } from '../api/order';
+
 import './ReportPage.css';
 
 const HighchartsReact = HighchartsReactPkg.default || HighchartsReactPkg;
@@ -110,30 +110,12 @@ export default function ReportPage() {
   const searchParams = new URLSearchParams(location.search);
   const initialLogId = searchParams.get('logId');
 
-  const [logTab, setLogTab] = useState('AI'); // 'AI' | 'GENERAL'
-  const [generalLogs, setGeneralLogs] = useState(MOCK_GENERAL_HISTORY);
 
   const [period, setPeriod] = useState('1M');
   const [briefing] = useState(MOCK_MARKET_BRIEFING);
   const [logs, setLogs] = useState(MOCK_TRADE_LOGS);
   const [expandedLogId, setExpandedLogId] = useState(initialLogId ? parseInt(initialLogId, 10) : null);
   const [detailedDecisions, setDetailedDecisions] = useState({});
-
-  // ── TODO: 백엔드 연동 시 아래 주석 블록 해제 (전체 거래 이력 조회) ──
-  // useEffect(() => {
-  //   if (logTab === 'GENERAL') {
-  //     async function fetchGeneralLogs() {
-  //       try {
-  //         const res = await getOrderHistory();
-  //         setGeneralLogs(res);
-  //       } catch (e) {
-  //         console.error('거래 이력 조회 실패', e);
-  //       }
-  //     }
-  //     fetchGeneralLogs();
-  //   }
-  // }, [logTab]);
-  // ─────────────────────────────────────────────────────────────────────────────
 
   // AI 판단 이력 조회. 실패 시 mock 그대로 표시.
   useEffect(() => {
@@ -155,6 +137,29 @@ export default function ReportPage() {
       cancelled = true;
     };
   }, []);
+
+  // AI+수동 이력 병합 (시간 내림차순)
+  const mergedLogs = useMemo(() => {
+    const aiItems = logs.map(log => ({ ...log, source: 'AI' }));
+    const manualItems = MOCK_GENERAL_HISTORY.map(log => ({
+      id: `manual-${log.orderId}`,
+      source: 'MANUAL',
+      stockCode: log.stockCode,
+      stockName: log.stockName,
+      action: log.orderType,
+      price: log.price,
+      quantity: log.quantity,
+      status: log.status,
+      decidedAt: log.filledAt,
+      executionStatus: log.status === 'FILLED' ? 'READY' : 'NONE',
+      confidence: null,
+      reason: null,
+      orderId: null,
+    }));
+    return [...aiItems, ...manualItems].sort(
+      (a, b) => new Date(b.decidedAt) - new Date(a.decidedAt)
+    );
+  }, [logs]);
 
   // 아코디언 토글 + 펼칠 때 단건 상세(indicatorsSnapshot 포함) 조회
   const toggleLog = async (id) => {
@@ -309,139 +314,88 @@ export default function ReportPage() {
         </div>
       </div>
 
-      {/* 3. 거래 내역 탭 영역 */}
+      {/* 3. 매매 이력 통합 */}
       <div className="report-panel">
         <div className="report-panel-header">
-          <h2>거래 이력 및 로그</h2>
-          <div className="log-tabs">
-            <button 
-              className={`log-tab-btn ${logTab === 'AI' ? 'active' : ''}`} 
-              onClick={() => setLogTab('AI')}
-            >
-              AI 매매 로그
-            </button>
-            <button 
-              className={`log-tab-btn ${logTab === 'GENERAL' ? 'active' : ''}`} 
-              onClick={() => setLogTab('GENERAL')}
-            >
-              전체 거래 이력
-            </button>
+          <h2>매매 이력</h2>
+        </div>
+
+        <div className="habit-summary-box">
+          <div className="habit-pnl">
+            <span className="pnl-label">기간 내 실현 손익</span>
+            <span className="pnl-value">
+              +{MOCK_HABIT_SUMMARY.pnl.toLocaleString()}원
+              <span className="pnl-rate">(+{MOCK_HABIT_SUMMARY.pnlRate}%)</span>
+            </span>
+          </div>
+          <div className="habit-text">
+            <h4>{MOCK_HABIT_SUMMARY.title}</h4>
+            <p>{MOCK_HABIT_SUMMARY.desc}</p>
           </div>
         </div>
 
-        {logTab === 'AI' && (
-          <>
-            {/* AI 매매 습관 종합 요약 */}
-            <div className="habit-summary-box">
-              <div className="habit-pnl">
-                <span className="pnl-label">기간 내 실현 손익</span>
-                <span className="pnl-value">
-                  +{MOCK_HABIT_SUMMARY.pnl.toLocaleString()}원
-                  <span className="pnl-rate">(+{MOCK_HABIT_SUMMARY.pnlRate}%)</span>
-                </span>
-              </div>
-              <div className="habit-text">
-                <h4>{MOCK_HABIT_SUMMARY.title}</h4>
-                <p>{MOCK_HABIT_SUMMARY.desc}</p>
-              </div>
-            </div>
+        <div className="trade-log-list">
+          {mergedLogs.map((log) => {
+            const isAI = log.source === 'AI';
+            const isExpanded = isAI && expandedLogId === log.id;
+            const actionDisplay = ACTION_DISPLAY[log.action] ?? ACTION_DISPLAY.UNKNOWN;
+            const statusDisplay = isAI ? EXECUTION_STATUS_DISPLAY[log.executionStatus] : null;
+            const detail = detailedDecisions[log.id];
+            return (
+              <div key={log.id} className={`trade-log-item ${isExpanded ? 'expanded' : ''}`}>
+                <div
+                  className={`log-header${isAI ? ' clickable' : ''}`}
+                  onClick={isAI ? () => toggleLog(log.id) : undefined}
+                >
+                  <div className="log-header-left">
+                    <span
+                      className={`log-badge ${(log.action ?? 'unknown').toLowerCase()}`}
+                      style={{ color: actionDisplay.color }}
+                    >
+                      {actionDisplay.label}
+                    </span>
+                    <span className="log-stock">{log.stockCode}</span>
+                    {log.stockName && (
+                      <span style={{ color: '#888', fontSize: '0.85em' }}>{log.stockName}</span>
+                    )}
+                    {statusDisplay && (
+                      <span className="log-status" style={{ color: statusDisplay.color, fontSize: '0.85em' }}>
+                        · {statusDisplay.label}
+                      </span>
+                    )}
+                    {log.confidence != null && (
+                      <span className="log-confidence" style={{ fontSize: '0.85em', color: '#aaa' }}>
+                        신뢰도 {log.confidence}
+                      </span>
+                    )}
+                  </div>
+                  <div className="log-header-right">
+                    <span className={`source-badge ${isAI ? 'ai' : 'manual'}`}>
+                      {isAI ? 'AI' : '수동'}
+                    </span>
+                    <span className="log-time">{log.decidedAt}</span>
+                    {isAI && (isExpanded ? <ChevronUp size={20} color="#888" /> : <ChevronDown size={20} color="#888" />)}
+                  </div>
+                </div>
 
-            <div className="trade-log-list">
-              {logs.map((log) => {
-                const isExpanded = expandedLogId === log.id;
-                const actionDisplay = ACTION_DISPLAY[log.action] ?? ACTION_DISPLAY.UNKNOWN;
-                const statusDisplay = EXECUTION_STATUS_DISPLAY[log.executionStatus];
-                const detail = detailedDecisions[log.id];
-                return (
-                  <div key={log.id} className={`trade-log-item ${isExpanded ? 'expanded' : ''}`}>
-                    <div className="log-header" onClick={() => toggleLog(log.id)}>
-                      <div className="log-header-left">
-                        <span
-                          className={`log-badge ${(log.action ?? 'unknown').toLowerCase()}`}
-                          style={{ color: actionDisplay.color }}
-                        >
-                          {actionDisplay.label}
-                        </span>
-                        <span className="log-stock">{log.stockCode}</span>
-                        {statusDisplay && (
-                          <span className="log-status" style={{ color: statusDisplay.color, fontSize: '0.85em' }}>
-                            · {statusDisplay.label}
-                          </span>
-                        )}
-                        {log.confidence != null && (
-                          <span className="log-confidence" style={{ fontSize: '0.85em', color: '#aaa' }}>
-                            신뢰도 {log.confidence}
-                          </span>
-                        )}
-                      </div>
-                      <div className="log-header-right">
-                        <span className="log-time">{log.decidedAt}</span>
-                        {isExpanded ? <ChevronUp size={20} color="#888" /> : <ChevronDown size={20} color="#888" />}
-                      </div>
-                    </div>
-
-                    {isExpanded && (
-                      <div className="log-reason-box">
-                        <h4>AI 판단 근거</h4>
-                        <p className="reason-text">{log.reason}</p>
-
-                        {detail?.indicatorsSnapshot && (
-                          <div className="market-snapshot">
-                            <h4 style={{ marginTop: '0.75rem' }}>판단 시점 지표 스냅샷</h4>
-                            <pre
-                              className="snapshot-json"
-                              style={{
-                                background: 'rgba(255,255,255,0.04)',
-                                padding: '0.75rem',
-                                borderRadius: '6px',
-                                fontSize: '0.85em',
-                                overflowX: 'auto',
-                              }}
-                            >
-                              {JSON.stringify(detail.indicatorsSnapshot, null, 2)}
-                            </pre>
-                          </div>
-                        )}
+                {isExpanded && (
+                  <div className="log-reason-box">
+                    <h4>AI 판단 근거</h4>
+                    <p className="reason-text">{log.reason}</p>
+                    {detail?.indicatorsSnapshot && (
+                      <div className="market-snapshot">
+                        <h4 style={{ marginTop: '0.75rem' }}>판단 시점 지표 스냅샷</h4>
+                        <pre className="snapshot-json" style={{ background: 'rgba(255,255,255,0.04)', padding: '0.75rem', borderRadius: '6px', fontSize: '0.85em', overflowX: 'auto' }}>
+                          {JSON.stringify(detail.indicatorsSnapshot, null, 2)}
+                        </pre>
                       </div>
                     )}
                   </div>
-                );
-              })}
-            </div>
-          </>
-        )}
-
-        {logTab === 'GENERAL' && (
-          <div className="general-history-list">
-            {generalLogs.length === 0 ? (
-              <div className="empty-state">거래 내역이 없습니다.</div>
-            ) : (
-              generalLogs.map(log => (
-                <div key={log.orderId} className="general-history-item">
-                  <div className="gh-left">
-                    <span className={`gh-badge ${log.orderType.toLowerCase()}`}>
-                      {log.orderType === 'BUY' ? '매수' : '매도'}
-                    </span>
-                    <div className="gh-info">
-                      <span className="gh-stock">{log.stockName}</span>
-                      <span className="gh-code">{log.stockCode}</span>
-                    </div>
-                  </div>
-                  <div className="gh-center">
-                    <span className="gh-amount">{(log.price * log.quantity).toLocaleString()}원</span>
-                    <span className="gh-details">{log.price.toLocaleString()}원 · {log.quantity}주</span>
-                  </div>
-                  <div className="gh-right">
-                    <span className={`gh-status ${log.status.toLowerCase()}`}>
-                      {log.status === 'FILLED' ? '체결 완료' : log.status === 'CANCELLED' ? '취소됨' : '주문 실패'}
-                    </span>
-                    <span className="gh-time">{log.filledAt}</span>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        )}
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
     </div>
