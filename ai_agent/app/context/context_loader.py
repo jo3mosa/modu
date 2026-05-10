@@ -17,6 +17,7 @@ from app.context.user_context import (
 )
 from app.memory.db_store import DBMemoryStore
 from app.memory.interfaces import MemoryStore
+from app.observability.langsmith_helpers import add_run_metadata
 from app.state.investment_state import InvestmentAgentState
 
 
@@ -87,7 +88,13 @@ def context_loader(state: InvestmentAgentState) -> dict[str, Any]:
         raise ValueError("InvestmentAgentState.user_id가 설정되지 않았습니다.")
 
     engine = _get_shared_engine()
-    loader = ContextLoader(memory_store=DBMemoryStore(engine), engine=engine)
+    memory_store = DBMemoryStore(engine)
+    add_run_metadata({
+        "node": "context_loader",
+        "memory_backend": memory_store.__class__.__name__,
+    })
+
+    loader = ContextLoader(memory_store=memory_store, engine=engine)
     ctx = loader.load(
         user_id=state.user_id,
         analysis_snapshot=state.analysis_snapshot,
