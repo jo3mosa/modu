@@ -5,6 +5,7 @@ from langchain_core.exceptions import OutputParserException
 from langchain_core.output_parsers import PydanticOutputParser
 
 from app.config.llm import get_strategy_llm
+from app.observability.langsmith_helpers import add_run_metadata, count_tokens
 from app.state.investment_state import InvestmentAgentState
 from app.state.schemas import ExpectedScenario, FinalDecision
 from app.utils.json_utils import to_json
@@ -98,6 +99,13 @@ def decision_manager(state: InvestmentAgentState) -> dict[str, Any]:
                     *(get_value(final_decision, "risk_summary") or []),
                 ],
             )
+
+    add_run_metadata({
+        "node": "decision_manager",
+        "action": final_decision.action,
+        "risk_level": final_decision.risk_level,
+        "history_context_tokens": count_tokens(to_json(state.history_context)),
+    })
 
     return {
         "final_decision": final_decision,
