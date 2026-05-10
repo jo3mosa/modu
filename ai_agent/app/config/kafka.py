@@ -34,10 +34,8 @@ def get_kafka_producer() -> KafkaProducer:
         key_serializer=lambda k: k.encode("utf-8") if k else None,
         value_serializer=lambda v: json.dumps(v, ensure_ascii=False, default=str).encode("utf-8"),
         acks="all",
-        enable_idempotence=True,
         request_timeout_ms=30_000,
-        delivery_timeout_ms=120_000,
-        compression_type="snappy",
+        compression_type="gzip",
     )
 
 

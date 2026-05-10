@@ -235,6 +235,7 @@ services:
       DB_NAME: ${DB_NAME}
       DB_USERNAME: ${DB_USERNAME}
       DB_PASSWORD: ${DB_PASSWORD:-localpassword}
+      DATABASE_URL: postgresql://${DB_USERNAME}:${DB_PASSWORD:-localpassword}@postgres:${DB_PORT:-5432}/${DB_NAME}
     depends_on:
       postgres:
         condition: service_healthy
