@@ -1,6 +1,49 @@
 from pydantic import ValidationError
 
-from app.triggers.schemas import TriggerType, UserTriggerEvent
+from app.config.kafka import KafkaTopic, get_kafka_producer
+from app.triggers.schemas import MarketTriggerEvent, TriggerType, UserTriggerEvent
+
+
+def produce_mock_market_signal() -> None:
+    """
+    market.signal.detected 토픽에 테스트용 MarketTriggerEvent를 발행한다.
+
+    실행 전 Redis에 포지션 데이터가 있어야 사용자 매칭이 동작한다:
+        SADD position:index:stock:005930 1 2
+    """
+    event = MarketTriggerEvent(
+        event_id="mock-market-event-001",
+        trigger_type=TriggerType.MARKET_EVENT,
+        trigger_reason=["RSI 과매도 구간 진입", "거래량 급증"],
+        stock_code="005930",
+        market_snapshot={
+            "market": "KOSPI",
+            "market_status": "OPEN",
+            "index_change_rate": -0.8,
+        },
+        analysis_snapshot={
+            "stock_code": "005930",
+            "rsi": 28.5,
+            "macd_signal": "BUY",
+            "volume_change_rate": 180.0,
+        },
+        candidate_assets=[
+            {
+                "stock_code": "005930",
+                "stock_name": "삼성전자",
+                "current_price": 71000,
+            }
+        ],
+    )
+
+    producer = get_kafka_producer()
+    producer.send(
+        KafkaTopic.MARKET_SIGNAL_DETECTED,
+        key=event.stock_code,
+        value=event.model_dump(),
+    )
+    producer.flush()
+    print(f"Produced market signal: {event.event_id} (stock_code={event.stock_code})")
 
 
 def create_mock_user_trigger() -> UserTriggerEvent:
@@ -87,3 +130,7 @@ def validate_invalid_trigger():
         return True
 
     return False
+
+
+if __name__ == "__main__":
+    produce_mock_market_signal()
