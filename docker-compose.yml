@@ -228,14 +228,14 @@ services:
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       KAFKA_BOOTSTRAP_SERVERS: kafka-0:9092,kafka-1:9092,kafka-2:9092
       REDIS_HOST: redis
-      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PORT: 6379
       REDIS_DB: ${REDIS_DB:-0}
       DB_HOST: postgres
-      DB_PORT: ${DB_PORT:-5432}
-      DB_NAME: ${DB_NAME}
-      DB_USERNAME: ${DB_USERNAME}
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-modu_db}
+      DB_USERNAME: ${DB_USERNAME:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-localpassword}
-      DATABASE_URL: postgresql://${DB_USERNAME}:${DB_PASSWORD:-localpassword}@postgres:${DB_PORT:-5432}/${DB_NAME}
+      DATABASE_URL: postgresql://${DB_USERNAME:-postgres}:${DB_PASSWORD:-localpassword}@postgres:5432/${DB_NAME:-modu_db}
     depends_on:
       postgres:
         condition: service_healthy

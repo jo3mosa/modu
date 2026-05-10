@@ -1,6 +1,9 @@
+import logging
 from typing import Protocol
 
 from app.config.redis import get_redis_client
+
+logger = logging.getLogger(__name__)
 
 
 class PositionIndexRepository(Protocol):
@@ -57,7 +60,11 @@ class RedisPositionIndexRepository:
         """
         특정 stock_code를 실제 보유 중인 user_id 목록을 조회한다.
         """
-        raw_user_ids = self.redis_client.smembers(self._key(stock_code))
+        try:
+            raw_user_ids = self.redis_client.smembers(self._key(stock_code))
+        except Exception:
+            logger.exception("Redis 조회 실패: stock_code=%s", stock_code)
+            return []
 
         user_ids: list[int] = []
 

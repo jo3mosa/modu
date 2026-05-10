@@ -48,7 +48,6 @@ def _consume_market_signals() -> None:
                 consumer.commit()
             except Exception:
                 logger.exception("market.signal.detected 처리 실패: offset=%s", message.offset)
-                consumer.commit()
     finally:
         consumer.close()
 
@@ -74,12 +73,12 @@ def _consume_user_triggers() -> None:
                 run_and_publish(event)
                 consumer.commit()
             except Exception:
+                user_id = message.value.get("user_id") if isinstance(message.value, dict) else None
                 logger.exception(
                     "ai.trigger.requested 처리 실패: user_id=%s, offset=%s",
-                    message.value.get("user_id"),
+                    user_id,
                     message.offset,
                 )
-                consumer.commit()
     finally:
         consumer.close()
 
