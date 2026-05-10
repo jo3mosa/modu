@@ -2,7 +2,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from app.state.schemas import CriticFeedback, FinalDecision, StrategyDraft
+from app.state.schemas import (
+    FinalDecision,
+    ResearchVerdict,
+    StrategyDraft,
+)
 
 
 class InvestmentAgentState(BaseModel):
@@ -12,10 +16,13 @@ class InvestmentAgentState(BaseModel):
     각 Agent는 이 State를 읽고, 자신이 담당하는 필드만 업데이트한다.
     """
 
+    # 그래프 실행 주체 사용자 ID
+    user_id: int | None = None
+
     # ==============================
     # 1. Analysis Layer output
     # ==============================
-    
+
     # 시장 전체 상태 요약 (KOSPI/KOSDAQ 등 지수 변화율, 장 운영 여부 정도)
     market_snapshot: dict[str, Any] = Field(default_factory=dict)
     
@@ -63,13 +70,21 @@ class InvestmentAgentState(BaseModel):
     # 4. Reasoning Layer output
     # ==============================
 
-    # Strategy Agent가 생성한 투자 전략 초안
+    # Bull/Bear 토론 누적 상태 (TradingAgents 레포의 investment_debate_state와 동일 구조).
+    # - history: 전체 토론 누적 텍스트 (Bull/Bear 모두)
+    # - bull_history: Bull 발언만 누적
+    # - bear_history: Bear 발언만 누적
+    # - current_response: 직전 발언 (다음 화자가 반박 대상으로 사용)
+    # - count: 라운드 카운트 (1라운드 고정 환경에서도 향후 확장을 위해 보존)
+    investment_debate_state: dict[str, Any] = Field(default_factory=dict)
+
+    # Strategy Manager(Research Manager)가 토론을 종합해 내린 판결
+    research_verdict: ResearchVerdict | None = None
+
+    # research_verdict를 후속 decision_manager가 입력으로 받는 전략 초안
     strategy_draft: StrategyDraft | None = None
-    
-    # Critic Agent가 생성한 리스크 검토 결과
-    critic_feedback: CriticFeedback | None = None
-    
-    # Supervisor Agent가 생성한 최종 투자 결정
+
+    # Decision Manager가 생성한 최종 투자 결정 (사이즈/타이밍/시나리오/risk_level 포함)
     final_decision: FinalDecision | None = None
 
     # ==============================

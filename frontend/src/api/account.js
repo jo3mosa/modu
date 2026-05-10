@@ -1,7 +1,5 @@
 /**
  * 자산/계좌(Account) 관련 API 함수
- *
- * 백엔드 컨트롤러: AccountController
  * 베이스 경로: /api/v1/accounts/me
  */
 import apiClient from './apiClient';

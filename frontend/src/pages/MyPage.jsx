@@ -1,8 +1,11 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
+import { registerKisKey, updateKisKey, deleteKisKey } from '../api/user';
+import { logout } from '../api/auth';
 import './MyPage.css';
 
-// 더미
+// TODO: GET /api/v1/users/me 연동 후 서버에서 조회
 const MOCK_PROFILE = {
   name: '김싸피',
   email: 'modu@kakao.com',
@@ -10,29 +13,81 @@ const MOCK_PROFILE = {
   joinedAt: '2026.5.2'
 };
 
-const MOCK_KIS_STATUS = {
-  isConnected: true,
-  appKey: 'xxx',
-  appSecret: 'xxx'
-};
-
 export default function MyPage() {
+  const navigate = useNavigate();
   const [profile] = useState(MOCK_PROFILE);
+
+  // TODO: GET /api/v1/users/me/kis-keys/status 연동 후 초기 연동 상태 조회
   const [apiKeys, setApiKeys] = useState({
-    appKey: MOCK_KIS_STATUS.appKey,
-    appSecret: MOCK_KIS_STATUS.appSecret
+    appKey: '',
+    appSecret: '',
+    accountNo: ''
   });
-  const [isConnected, setIsConnected] = useState(MOCK_KIS_STATUS.isConnected);
+  const [isConnected, setIsConnected] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
+  const [savingKeys, setSavingKeys] = useState(false);
 
   const [settings, setSettings] = useState({
     tradeNoti: true,
     riskNoti: true
   });
 
-  const handleSaveKeys = () => {
-    alert('한국투자증권 API 키가 저장되었습니다!');
-    setIsConnected(true);
+  const handleSaveKeys = async () => {
+    if (savingKeys) return;
+    setSavingKeys(true);
+    try {
+      if (isConnected) {
+        // 연동된 상태에서는 입력된 필드만 PATCH (빈 문자열은 제외)
+        const payload = {};
+        if (apiKeys.appKey) payload.appKey = apiKeys.appKey;
+        if (apiKeys.appSecret) payload.appSecret = apiKeys.appSecret;
+        if (apiKeys.accountNo) payload.accountNo = apiKeys.accountNo;
+
+        if (Object.keys(payload).length === 0) {
+          alert('변경할 항목을 입력해 주세요.');
+          return;
+        }
+        await updateKisKey(payload);
+        alert('한국투자증권 API 키가 수정되었습니다!');
+      } else {
+        await registerKisKey({
+          appKey: apiKeys.appKey,
+          appSecret: apiKeys.appSecret,
+          accountNo: apiKeys.accountNo,
+          isRealAccount: true // 실전투자 고정
+        });
+        alert('한국투자증권 API 키가 등록되었습니다!');
+        setIsConnected(true);
+      }
+    } catch (e) {
+      console.error('API 연동 실패', e);
+      alert(e.message || 'API 연동에 실패했습니다. 키 값을 확인해주세요.');
+    } finally {
+      setSavingKeys(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (e) {
+      console.error('로그아웃 실패', e);
+    } finally {
+      navigate('/login');
+    }
+  };
+
+  const handleDisconnectKis = async () => {
+    if (!window.confirm('정말 연동을 해제하시겠습니까? 자동매매가 중단됩니다.')) return;
+    try {
+      await deleteKisKey();
+      alert('한국투자증권 연동이 해제되었습니다.');
+      setIsConnected(false);
+      setApiKeys({ appKey: '', appSecret: '', accountNo: '' });
+    } catch (e) {
+      console.error('연동 해제 실패', e);
+      alert(e.message || '연동 해제에 실패했습니다.');
+    }
   };
 
   const handleToggleSetting = (key) => {
@@ -103,8 +158,16 @@ export default function MyPage() {
               </button>
             </div>
           </div>
-          <button className="save-btn" onClick={handleSaveKeys}>
-            연동 테스트 및 저장
+          <div className="input-group">
+            <label>종합계좌번호</label>
+            <input
+              type="text"
+              value={apiKeys.accountNo}
+              onChange={(e) => setApiKeys({ ...apiKeys, accountNo: e.target.value })}
+            />
+          </div>
+          <button className="save-btn" onClick={handleSaveKeys} disabled={savingKeys}>
+            {savingKeys ? '저장 중 …' : '연동 테스트 및 저장'}
           </button>
         </div>
       </div>
@@ -142,15 +205,11 @@ export default function MyPage() {
       </div>
 
       <div className="mypage-panel account-actions" style={{ background: 'transparent', border: 'none', boxShadow: 'none', padding: 0 }}>
-        <button className="logout-btn" onClick={() => alert('로그아웃 되었습니다.')}>
+        <button className="logout-btn" onClick={handleLogout}>
           로그아웃
         </button>
-        <button className="withdraw-btn" onClick={() => {
-          if (window.confirm('정말 회원탈퇴를 진행하시겠습니까?\n가지마세요 ㅜㅜ')) {
-            alert('회원탈퇴가 완료되었습니다.');
-          }
-        }}>
-          회원탈퇴
+        <button className="withdraw-btn" onClick={handleDisconnectKis}>
+          연동 해제
         </button>
       </div>
 

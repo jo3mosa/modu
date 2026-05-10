@@ -9,6 +9,7 @@ public record ProfileResponse(
         List<ProfileAnswerResponse> answers,
         String freeText,
         OffsetDateTime createdAt,
-        OffsetDateTime updatedAt
+        OffsetDateTime updatedAt,
+        Long version
 ) {
 }
