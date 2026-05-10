@@ -7,4 +7,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["python", "-m", "app.runners.kafka_runner"]
+CMD ["python", "-m", "app.consumer"]
