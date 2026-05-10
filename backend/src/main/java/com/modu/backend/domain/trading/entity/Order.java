@@ -107,8 +107,7 @@ public class Order {
     @Builder
     public Order(Long userId, String stockCode, OrderSide side, OrderType orderType,
                  Long quantity, Long limitPrice, OrderStatus status, OrderSource source,
-                 String kisOrderNo, String kisOrgNo, String idempotencyKey,
-                 OffsetDateTime submittedAt) {
+                 String idempotencyKey) {
         this.userId = userId;
         this.stockCode = stockCode;
         this.side = side;
@@ -118,13 +117,21 @@ public class Order {
         this.filledQuantity = 0L;
         this.status = status;
         this.source = source;
-        this.kisOrderNo = kisOrderNo;
-        this.kisOrgNo = kisOrgNo;
         this.idempotencyKey = idempotencyKey;
         this.commission = 0L;
         this.tax = 0L;
-        this.submittedAt = submittedAt;
         this.createdAt = OffsetDateTime.now();
+        this.updatedAt = OffsetDateTime.now();
+    }
+
+    /**
+     * KIS 주문 접수 성공 후 응답값 반영
+     * DB 저장(PENDING) 이후 KIS 호출 결과를 업데이트할 때 사용
+     */
+    public void updateKisInfo(String kisOrderNo, String kisOrgNo, OffsetDateTime submittedAt) {
+        this.kisOrderNo = kisOrderNo;
+        this.kisOrgNo = kisOrgNo;
+        this.submittedAt = submittedAt;
         this.updatedAt = OffsetDateTime.now();
     }
 }
