@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { placeOrder } from '../api/order';
 // 미체결/주문가능/정정취소 API는 백엔드 미구현 또는 워킹트리 미반영 상태
 // import { getBuyingPower, getPendingOrders, updateOrder } from '../api/order';
@@ -10,6 +10,8 @@ export default function OrderBook({ stockCode }) {
   const [price, setPrice] = useState(0);
   const [quantity, setQuantity] = useState(1);
   const [submittingOrder, setSubmittingOrder] = useState(false);
+  // 주문당 고유 키 생성 → 동일 키로 중복 호출 시 백엔드에서 멱등성 보호
+  const idempotencyKeyRef = useRef(crypto.randomUUID());
 
   // 실시간 호가 (OrderbookResponse): asks/bids는 OrderbookLevel[] = { level, price, quantity }
   const [asks, setAsks] = useState([]);
@@ -73,13 +75,18 @@ export default function OrderBook({ stockCode }) {
 
     setSubmittingOrder(true);
     try {
-      const result = await placeOrder({
-        stockCode,
-        side: orderType,
-        orderMethod: 'LIMIT',
-        quantity: Number(quantity),
-        price: Number(price),
-      });
+      const result = await placeOrder(
+        {
+          stockCode,
+          side: orderType,
+          orderMethod: 'LIMIT',
+          quantity: Number(quantity),
+          price: Number(price),
+        },
+        idempotencyKeyRef.current
+      );
+      // 성공 후 다음 주문을 위해 새 키 갱신
+      idempotencyKeyRef.current = crypto.randomUUID();
       alert(`주문이 접수되었습니다. (주문번호: ${result.orderId}, 상태: ${result.status})`);
     } catch (error) {
       console.error('주문 실패:', error);

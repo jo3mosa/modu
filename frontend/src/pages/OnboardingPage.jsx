@@ -134,7 +134,7 @@ export default function OnboardingPage() {
             isRealAccount: true,
           });
         } catch (kisError) {
-          console.warn('KIS 키 등록 실패 (마이페이지에서 재등록 가능):', kisError);
+          console.warn('KIS 키 등록 실패:', kisError);
           alert('KIS API 키 등록에 실패했습니다.\n마이페이지에서 다시 등록해 주세요.');
         }
       }
