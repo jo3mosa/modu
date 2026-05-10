@@ -62,7 +62,8 @@ class DecisionRetrieval:
         days: int,
         only_loss: bool,
     ) -> list[PastDecision]:
-        or_clauses: list[str] = []
+        # 그룹 내부(stock_codes / sectors / key_signals)는 OR, 그룹 간은 AND
+        and_clauses: list[str] = []
         params: dict[str, Any] = {
             "user_id": user_id,
             "limit": limit,
@@ -70,16 +71,16 @@ class DecisionRetrieval:
         }
 
         if stock_codes:
-            or_clauses.append("aj.stock_code = ANY(:stock_codes)")
+            and_clauses.append("aj.stock_code = ANY(:stock_codes)")
             params["stock_codes"] = stock_codes
 
         if sectors:
-            or_clauses.append("aj.sector = ANY(:sectors)")
+            and_clauses.append("aj.sector = ANY(:sectors)")
             params["sectors"] = sectors
 
         if key_signals:
             # key_signals는 JSONB 타입이므로 && 대신 jsonb_array_elements_text + ANY로 OR 매칭
-            or_clauses.append(
+            and_clauses.append(
                 "EXISTS ("
                 "SELECT 1 FROM jsonb_array_elements_text(aj.key_signals) AS ks "
                 "WHERE ks = ANY(:key_signals)"
@@ -87,13 +88,13 @@ class DecisionRetrieval:
             )
             params["key_signals"] = key_signals
 
-        if not or_clauses:
+        if not and_clauses:
             return []
 
         where_conditions = [
             "aj.user_id = :user_id",
             "aj.judged_at >= NOW() - (:days * INTERVAL '1 day')",
-            f"({' OR '.join(or_clauses)})",
+            *and_clauses,
         ]
 
         if only_loss:

@@ -44,13 +44,13 @@ class MemoryLog:
                 :target_price,
                 :stop_loss_price,
                 :judgment_reason,
-                :key_signals::jsonb,
+                CAST(:key_signals AS jsonb),
                 :confidence_score,
                 :bull_claim,
                 :bear_claim,
                 :winning_side,
                 :expected_scenario,
-                :indicators_snapshot::jsonb,
+                CAST(:indicators_snapshot AS jsonb),
                 NOW()
             )
             RETURNING id
@@ -72,11 +72,14 @@ class MemoryLog:
             "bear_claim": log.get("bear_claim"),
             "winning_side": log.get("winning_side"),
             "expected_scenario": log.get("expected_scenario"),
-            "indicators_snapshot": "{}",
+            "indicators_snapshot": json.dumps({}),
         }
 
         with self.engine.begin() as conn:
             row = conn.execute(query, params).mappings().first()
+
+        if row is None:
+            raise RuntimeError("ai_judgments INSERT failed: no id returned")
 
         return row["id"]
 
@@ -104,8 +107,8 @@ class MemoryLog:
                 :entry_timing_assessment,
                 :exit_rule_assessment,
                 :risk_prediction_accuracy,
-                :missed_signals::jsonb,
-                :lessons::jsonb,
+                CAST(:missed_signals AS jsonb),
+                CAST(:lessons AS jsonb),
                 :summary,
                 NOW()
             )
@@ -125,5 +128,8 @@ class MemoryLog:
 
         with self.engine.begin() as conn:
             row = conn.execute(query, params).mappings().first()
+
+        if row is None:
+            raise RuntimeError("post_mortem_reports INSERT failed: no id returned")
 
         return row["id"]
