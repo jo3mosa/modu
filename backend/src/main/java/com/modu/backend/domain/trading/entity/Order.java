@@ -134,4 +134,33 @@ public class Order {
         this.submittedAt = submittedAt;
         this.updatedAt = OffsetDateTime.now();
     }
+
+    /**
+     * 주문 정정 처리
+     * KIS 정정 후 새로 발급된 주문번호/KRX조직번호로 업데이트.
+     * 재정정·취소를 위해 kis_order_no, kis_org_no 를 반드시 갱신한다.
+     *
+     * @param newLimitPrice  변경할 가격 (null 이면 기존 가격 유지)
+     * @param newQuantity    변경할 수량 (null 이면 기존 수량 유지)
+     * @param newKisOrderNo  KIS 발급 새 주문번호 (ODNO)
+     * @param newKisOrgNo    KIS 발급 새 KRX 조직번호 (KRX_FWDG_ORD_ORGNO)
+     */
+    public void modify(Long newLimitPrice, Long newQuantity,
+                       String newKisOrderNo, String newKisOrgNo) {
+        if (newLimitPrice != null) this.limitPrice = newLimitPrice;
+        if (newQuantity   != null) this.quantity   = newQuantity;
+        this.kisOrderNo = newKisOrderNo;
+        this.kisOrgNo   = newKisOrgNo;
+        this.status     = OrderStatus.MODIFIED;
+        this.updatedAt  = OffsetDateTime.now();
+    }
+
+    /**
+     * 주문 취소 처리
+     */
+    public void cancel(OffsetDateTime cancelledAt) {
+        this.status      = OrderStatus.CANCELED;
+        this.cancelledAt = cancelledAt;
+        this.updatedAt   = OffsetDateTime.now();
+    }
 }
