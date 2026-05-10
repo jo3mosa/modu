@@ -126,6 +126,12 @@ def _hold(reason: str, detail: str) -> dict[str, Any]:
         rationale=reason,
         confidence=0.0,
     )
+    add_run_metadata({
+        "node": "strategy_manager",
+        "winning_side": hold_verdict.winning_side,
+        "recommended_side": hold_verdict.recommended_side,
+        "confidence": hold_verdict.confidence,
+    })
     return {
         "flow_status": "hold",
         "research_verdict": hold_verdict,
