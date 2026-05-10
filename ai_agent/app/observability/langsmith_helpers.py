@@ -17,9 +17,12 @@ LangSmith 측정 인프라 헬퍼.
 """
 from __future__ import annotations
 
+import logging
 import os
 from functools import lru_cache
 from typing import Any
+
+_logger = logging.getLogger(__name__)
 
 
 def is_tracing_enabled() -> bool:
@@ -53,8 +56,9 @@ def add_run_metadata(metadata: dict[str, Any]) -> None:
             run.metadata = dict(metadata)
         else:
             existing.update(metadata)
-    except Exception:
-        # 측정 인프라 실패는 운영을 막지 않는다.
+    except Exception as exc:
+        # 측정 인프라 실패는 운영을 막지 않는다 — 다만 진단 가능하게 debug 로그는 남긴다.
+        _logger.debug("LangSmith metadata 태깅 실패: %s", exc, exc_info=True)
         return
 
 
@@ -88,5 +92,6 @@ def count_tokens(text: str | None) -> int:
 
     try:
         return len(encoder.encode(text))
-    except Exception:
+    except Exception as exc:
+        _logger.debug("tiktoken 토큰 카운트 실패: %s", exc, exc_info=True)
         return 0
