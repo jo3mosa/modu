@@ -72,7 +72,7 @@ class MemoryLog:
             "bear_claim": log.get("bear_claim"),
             "winning_side": log.get("winning_side"),
             "expected_scenario": log.get("expected_scenario"),
-            "indicators_snapshot": json.dumps({}),
+            "indicators_snapshot": json.dumps(log["indicators_snapshot"]),
         }
 
         with self.engine.begin() as conn:

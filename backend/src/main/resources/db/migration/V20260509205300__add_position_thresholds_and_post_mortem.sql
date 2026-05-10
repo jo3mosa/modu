@@ -85,12 +85,12 @@ ALTER TABLE post_mortem_reports
 -- CHECK CONSTRAINTS
 -- =====================================================================
 
--- 감시 중인 레코드는 반드시 실제 모니터링 기준가를 보유해야 함 (target/stop 둘 다 필수)
+-- 감시 중인 레코드는 target/stop 중 하나 이상의 모니터링 기준가를 보유해야 함
 ALTER TABLE position_thresholds
     ADD CONSTRAINT CHK_ACTIVE_PRICES
         CHECK (is_active = FALSE OR (active_target_price IS NOT NULL OR active_stop_loss_price IS NOT NULL));
 
--- triggered_reason 허용 값 제한 (활성 상태일 때 NULL 허용)
+-- triggered_reason: 설정된 경우 허용 값만 저장 (비활성 레코드도 NULL 허용 — 수동 종료 등 예외 케이스 대응)
 ALTER TABLE position_thresholds
     ADD CONSTRAINT CHK_TRIGGERED_REASON
         CHECK (triggered_reason IS NULL OR triggered_reason IN ('USER_STOP_LOSS', 'USER_TAKE_PROFIT', 'AI_STOP_LOSS', 'AI_TAKE_PROFIT'));

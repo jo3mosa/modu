@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal, Protocol, TypedDict
+from typing import Any, Literal, Protocol, TypedDict
 
 # ============================================================
 # 공통 Enum 타입 정의
@@ -93,6 +93,8 @@ class DecisionLog(TypedDict):
 
     winning_side: DebateSide | None       # Bull/Bear/Balanced 중 최종 판단에 더 반영된 관점
     expected_scenario: ScenarioType | None # AI가 예상한 향후 시나리오
+
+    indicators_snapshot: dict[str, Any]   # 판단 당시 지표 스냅샷 (analysis_snapshot.signals 원본)
 
 
 # ============================================================
