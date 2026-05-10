@@ -14,6 +14,7 @@ import com.modu.backend.domain.user.exception.UserErrorCode;
 import com.modu.backend.domain.user.repository.KisCredentialRepository;
 import com.modu.backend.domain.user.service.KisTokenService;
 import com.modu.backend.global.error.ApiException;
+import com.modu.backend.global.error.CommonErrorCode;
 import com.modu.backend.global.util.AesGcmEncryptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -537,6 +538,30 @@ class OrderServiceTest {
         assertThat(item.orderId()).isNull();
         assertThat(item.source()).isNull();
         assertThat(item.createdAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("KIS 응답 수량 필드가 int 범위 초과 시 EXTERNAL_API_ERROR 예외")
+    void 미체결_주문_수량_int_overflow_예외() {
+        // given: quantity가 Integer.MAX_VALUE 초과 (toIntExact overflow 유발)
+        long overflowValue = (long) Integer.MAX_VALUE + 1;
+        KisPendingOrderClient.KisPendingItem kisItem = new KisPendingOrderClient.KisPendingItem(
+                "KIS_ORD001", "005930", "삼성전자",
+                "BUY", "LIMIT",
+                overflowValue, 80000L, 0L, 5L  // quantity overflow
+        );
+
+        setupKisCredentialStubs();
+        when(kisPendingOrderClient.getPendingOrders(any(), any(), any(), any(), any()))
+                .thenReturn(List.of(kisItem));
+        when(orderRepository.findByUserIdAndKisOrderNoIn(eq(1L), anyList()))
+                .thenReturn(Collections.emptyList());
+
+        // when & then: (int) 직접 캐스팅 시 잘못된 음수가 아닌 EXTERNAL_API_ERROR 발생
+        assertThatThrownBy(() -> orderService.getPendingOrders(1L))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode())
+                        .isEqualTo(CommonErrorCode.EXTERNAL_API_ERROR));
     }
 
     // ── 헬퍼 메서드 ───────────────────────────────────────────────────────────
