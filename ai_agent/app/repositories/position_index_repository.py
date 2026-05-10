@@ -64,7 +64,7 @@ class RedisPositionIndexRepository:
             raw_user_ids = self.redis_client.smembers(self._key(stock_code))
         except Exception:
             logger.exception("Redis 조회 실패: stock_code=%s", stock_code)
-            return []
+            raise
 
         user_ids: list[int] = []
 

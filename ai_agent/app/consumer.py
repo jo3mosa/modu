@@ -1,5 +1,10 @@
 import logging
+import os
 import threading
+from collections.abc import Callable
+
+from kafka import TopicPartition
+from kafka.structs import OffsetAndMetadata
 
 from app.config.kafka import KafkaTopic, get_kafka_producer, make_kafka_consumer
 from app.graph.runner import run_and_publish
@@ -7,6 +12,16 @@ from app.triggers.schemas import MarketTriggerEvent, UserTriggerEvent
 from app.triggers.user_trigger_matcher import match_market_event_to_users
 
 logger = logging.getLogger(__name__)
+
+
+def _guarded(fn: Callable[[], None]) -> Callable[[], None]:
+    def wrapper() -> None:
+        try:
+            fn()
+        except Exception:
+            logger.exception("%s 비정상 종료, 프로세스를 종료합니다", fn.__name__)
+            os._exit(1)
+    return wrapper
 
 
 def _consume_market_signals() -> None:
@@ -45,7 +60,9 @@ def _consume_market_signals() -> None:
                         event.stock_code,
                     )
 
-                consumer.commit()
+                consumer.commit({
+                    TopicPartition(message.topic, message.partition): OffsetAndMetadata(message.offset + 1, None)
+                })
             except Exception:
                 logger.exception("market.signal.detected 처리 실패: offset=%s", message.offset)
     finally:
@@ -71,7 +88,9 @@ def _consume_user_triggers() -> None:
             try:
                 event = UserTriggerEvent.model_validate(message.value)
                 run_and_publish(event)
-                consumer.commit()
+                consumer.commit({
+                    TopicPartition(message.topic, message.partition): OffsetAndMetadata(message.offset + 1, None)
+                })
             except Exception:
                 user_id = message.value.get("user_id") if isinstance(message.value, dict) else None
                 logger.exception(
@@ -89,8 +108,8 @@ def main() -> None:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
-    t1 = threading.Thread(target=_consume_market_signals, name="market-signal-consumer", daemon=True)
-    t2 = threading.Thread(target=_consume_user_triggers, name="user-trigger-consumer", daemon=True)
+    t1 = threading.Thread(target=_guarded(_consume_market_signals), name="market-signal-consumer", daemon=True)
+    t2 = threading.Thread(target=_guarded(_consume_user_triggers), name="user-trigger-consumer", daemon=True)
 
     t1.start()
     t2.start()
