@@ -55,11 +55,15 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-# 1. Analysis Server
+
+# nalysis Server
 analysis_server/.venv/
 analysis_server/__pycache__/
 analysis_server/data/*.db
 analysis_server/data/*.csv
+
+# 뉴스 크롤링 캐시 — 로컬 백업용
+**/news_data/
 
 # KIS API 토큰 캐시 파일 (절대 공유 금지)
 kis_token.json
