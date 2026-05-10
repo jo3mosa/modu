@@ -13,7 +13,11 @@ import pytest
 from pydantic import ValidationError
 
 from app.graph.builder import build_investment_graph
-from app.state.schemas import CriticFeedback, FinalDecision, StrategyDraft
+from app.state.schemas import (
+    FinalDecision,
+    ResearchVerdict,
+    StrategyDraft,
+)
 from app.triggers.mock_trigger import create_mock_user_trigger
 from app.triggers.schemas import TriggerType, UserTriggerEvent
 from app.triggers.state_factory import build_state_from_user_trigger
@@ -25,12 +29,65 @@ from app.state.investment_state import InvestmentAgentState
 # LLM 호출 없이 결정론적인 결과를 반환한다.
 # ──────────────────────────────────────────
 
-def _mock_memory_agent(state):
+def _mock_context_loader(state):
     return {"memory_context": {"profile": "moderate risk taker"}}
 
 
-def _mock_strategy_agent(state):
+_BULL_ARGUMENT = (
+    "Bull Analyst: 005930은 RSI 28의 강한 과매도 구간이고 거래량이 평균 대비 2.3배로 급증해 "
+    "단기 반등 가능성이 큽니다."
+)
+_BEAR_ARGUMENT = (
+    "Bear Analyst: 거래량 급증이 일회성 이벤트일 가능성을 배제할 수 없고, 섹터 모멘텀 둔화로 "
+    "추격 매수는 부적절합니다."
+)
+
+
+def _mock_bull_researcher(state):
     return {
+        "investment_debate_state": {
+            "history": _BULL_ARGUMENT,
+            "bull_history": _BULL_ARGUMENT,
+            "bear_history": "",
+            "current_response": _BULL_ARGUMENT,
+            "count": 1,
+        }
+    }
+
+
+def _mock_bear_researcher(state):
+    debate = state.investment_debate_state or {}
+    history = debate.get("history", "")
+    new_history = f"{history}\n{_BEAR_ARGUMENT}" if history else _BEAR_ARGUMENT
+    return {
+        "investment_debate_state": {
+            "history": new_history,
+            "bull_history": debate.get("bull_history", ""),
+            "bear_history": _BEAR_ARGUMENT,
+            "current_response": _BEAR_ARGUMENT,
+            "count": debate.get("count", 0) + 1,
+        }
+    }
+
+
+def _mock_strategy_manager(state):
+    """
+    Manager는 StrategyDraft를 후속 critic/supervisor에 전달해야 한다.
+    실제 노드와 동일하게 research_verdict와 strategy_draft를 함께 반환한다.
+    """
+    return {
+        "research_verdict": ResearchVerdict(
+            winning_side="bull",
+            asset="005930",
+            recommended_side="buy",
+            rationale="RSI 과매도 + 거래량 급증 패턴",
+            key_bull_points=["RSI 28", "거래량 2.3배"],
+            key_bear_points=["거래량 급증의 일회성 가능성"],
+            confidence=0.7,
+            order_amount=500_000,
+            target_price=75_000,
+            stop_loss_price=67_000,
+        ),
         "strategy_draft": StrategyDraft(
             asset="005930",
             side="buy",
@@ -38,31 +95,21 @@ def _mock_strategy_agent(state):
             target_price=75_000,
             stop_loss_price=67_000,
             reason="RSI 과매도 + 거래량 급증",
-            confidence=0.75,
-        )
+            confidence=0.7,
+        ),
     }
 
 
-def _mock_critic_agent(state):
-    return {
-        "critic_feedback": CriticFeedback(
-            approved=True,
-            risk_level="low",
-            comments=["RSI 지표 신뢰도 높음", "거래량 지지 확인"],
-        )
-    }
-
-
-def _mock_supervisor_hold(state):
-    """Supervisor가 보류 결정 → risk_guard/executor 미실행"""
+def _mock_decision_manager_hold(state):
+    """Decision Manager가 보류 결정 → risk_gate/executor 미실행"""
     return {
         "flow_status": "hold",
         "final_decision": FinalDecision(action="hold"),
     }
 
 
-def _mock_supervisor_trade(state):
-    """Supervisor가 매수 결정 → risk_guard로 전달"""
+def _mock_decision_manager_trade(state):
+    """Decision Manager가 매수 결정 → risk_gate로 전달"""
     return {
         "flow_status": "running",
         "final_decision": FinalDecision(
@@ -74,18 +121,19 @@ def _mock_supervisor_trade(state):
             stop_loss_price=67_000,
             reason_summary="RSI 과매도 + 거래량 급증 패턴",
             confidence=0.78,
+            risk_level="low",
         ),
     }
 
 
-def _mock_risk_guard_block(state):
+def _mock_risk_gate_block(state):
     return {
         "risk_cleared": False,
         "risk_check_result": {"status": "blocked", "reason": "포지션 비중 초과"},
     }
 
 
-def _mock_risk_guard_pass(state):
+def _mock_risk_gate_pass(state):
     return {
         "risk_cleared": True,
         "risk_check_result": {"status": "passed"},
@@ -158,7 +206,7 @@ class TestStateConversion:
         event = create_mock_user_trigger()
         state = build_state_from_user_trigger(event)
         assert state.strategy_draft is None
-        assert state.critic_feedback is None
+        assert state.research_verdict is None
         assert state.final_decision is None
         assert state.risk_cleared is False
         assert state.execution_result == {}
@@ -169,9 +217,10 @@ class TestStateConversion:
 # ──────────────────────────────────────────
 
 _BASE_PATCHES = {
-    "app.graph.builder.memory_agent": _mock_memory_agent,
-    "app.graph.builder.strategy_agent": _mock_strategy_agent,
-    "app.graph.builder.critic_agent": _mock_critic_agent,
+    "app.graph.builder.context_loader": _mock_context_loader,
+    "app.graph.builder.bull_researcher": _mock_bull_researcher,
+    "app.graph.builder.bear_researcher": _mock_bear_researcher,
+    "app.graph.builder.strategy_manager": _mock_strategy_manager,
 }
 
 
@@ -188,21 +237,21 @@ class TestLangGraphFlow:
 
     def test_hold_path(self):
         """
-        [경로 A] supervisor hold → END
-        risk_guard, executor는 실행되지 않는다.
+        [경로 A] decision_manager hold → END
+        risk_gate, executor는 실행되지 않는다.
         """
-        result = self._invoke({"app.graph.builder.supervisor_agent": _mock_supervisor_hold})
+        result = self._invoke({"app.graph.builder.decision_manager": _mock_decision_manager_hold})
         assert result["flow_status"] == "hold"
         assert result["execution_result"] == {}
 
     def test_trade_risk_blocked_path(self):
         """
-        [경로 B] supervisor trade → risk_guard block → END
+        [경로 B] decision_manager trade → risk_gate block → END
         executor는 실행되지 않는다.
         """
         result = self._invoke({
-            "app.graph.builder.supervisor_agent": _mock_supervisor_trade,
-            "app.graph.builder.risk_guard": _mock_risk_guard_block,
+            "app.graph.builder.decision_manager": _mock_decision_manager_trade,
+            "app.graph.builder.risk_gate": _mock_risk_gate_block,
         })
         assert result["risk_cleared"] is False
         assert result["flow_status"] != "completed"
@@ -210,12 +259,12 @@ class TestLangGraphFlow:
 
     def test_trade_risk_passed_path(self):
         """
-        [경로 C] supervisor trade → risk_guard pass → executor → completed
+        [경로 C] decision_manager trade → risk_gate pass → executor → completed
         execution_result에 주문 결과가 담긴다.
         """
         result = self._invoke({
-            "app.graph.builder.supervisor_agent": _mock_supervisor_trade,
-            "app.graph.builder.risk_guard": _mock_risk_guard_pass,
+            "app.graph.builder.decision_manager": _mock_decision_manager_trade,
+            "app.graph.builder.risk_gate": _mock_risk_gate_pass,
         })
         assert result["risk_cleared"] is True
         assert result["flow_status"] == "completed"
@@ -268,4 +317,49 @@ class TestValidationError:
                 side="buy",
                 order_amount=500_000,
                 # target_price, stop_loss_price 누락
+            )
+
+    def test_research_verdict_hold_with_nonzero_amount(self):
+        """recommended_side=hold인데 order_amount가 0이 아니면 ValidationError"""
+        with pytest.raises(ValidationError):
+            ResearchVerdict(
+                winning_side="bear",
+                asset="005930",
+                recommended_side="hold",
+                order_amount=100_000,
+            )
+
+    def test_research_verdict_buy_without_prices(self):
+        """recommended_side=buy인데 target_price/stop_loss_price 누락 시 ValidationError"""
+        with pytest.raises(ValidationError):
+            ResearchVerdict(
+                winning_side="bull",
+                asset="005930",
+                recommended_side="buy",
+                order_amount=500_000,
+                # target_price, stop_loss_price 누락
+            )
+
+    def test_research_verdict_buy_with_nonpositive_target(self):
+        """recommended_side=buy인데 target_price가 0 이하이면 ValidationError"""
+        with pytest.raises(ValidationError):
+            ResearchVerdict(
+                winning_side="bull",
+                asset="005930",
+                recommended_side="buy",
+                order_amount=500_000,
+                target_price=0,
+                stop_loss_price=67_000,
+            )
+
+    def test_research_verdict_buy_with_nonpositive_stop_loss(self):
+        """recommended_side=buy인데 stop_loss_price가 0 이하이면 ValidationError"""
+        with pytest.raises(ValidationError):
+            ResearchVerdict(
+                winning_side="bull",
+                asset="005930",
+                recommended_side="buy",
+                order_amount=500_000,
+                target_price=75_000,
+                stop_loss_price=0,
             )

@@ -40,7 +40,11 @@ def update_krx_master_db():
     # 1. 최신 데이터 수집 및 필터링
     # ====================================
     df_master = fdr.StockListing('KRX-DESC')
-    df_new = df_master.dropna(subset=['Sector']).copy()
+    # KRX-DESC는 지주회사·ETF 등 일부 종목에서 Sector가 NaN으로 내려와
+    # dropna 시 삼성전자(005930)·SK하이닉스(000660) 같은 시총 상위 종목이 누락됨.
+    # 결측은 'Unknown'으로 채워 보존.
+    df_new = df_master.copy()
+    df_new['Sector'] = df_new['Sector'].fillna('Unknown')
 
     # ====================================
     # 2. ERD 규격에 맞춰 컬럼명 변경
@@ -58,7 +62,17 @@ def update_krx_master_db():
     df_new = df_new[columns_to_keep]
 
     # ====================================
-    # 3. ERD 필수 필드 추가
+    # 3. 시장 필터링 — KOSPI / KOSDAQ / KOSDAQ GLOBAL 만 유지
+    # KONEX·ETF·ETN·ELW 등 분석 대상 외 종목 제거
+    # ====================================
+    allowed_markets = {'KOSPI', 'KOSDAQ', 'KOSDAQ GLOBAL'}
+    before_filter = len(df_new)
+    df_new = df_new[df_new['market_type'].isin(allowed_markets)].copy()
+    print(f"--------- 시장 필터: {before_filter} → {len(df_new)} 종목 "
+          f"(KOSPI/KOSDAQ/KOSDAQ GLOBAL 유지, 그 외 {before_filter - len(df_new)} 제외)")
+
+    # ====================================
+    # 4. ERD 필수 필드 추가
     # ====================================
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     df_new['is_active'] = True

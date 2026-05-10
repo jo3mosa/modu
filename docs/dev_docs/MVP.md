@@ -57,8 +57,8 @@ decision/
 │
 ├── agents/
 │   ├── strategy/              
-│   │   ├── bull_agent.py
-│   │   ├── bear_agent.py
+│   │   ├── bull_researcher.py
+│   │   ├── bear_researcher.py
 │   │   └── strategy_manager.py
 │   └── decision/             
 │       ├── decision_agent.py

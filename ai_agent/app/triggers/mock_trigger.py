@@ -41,8 +41,8 @@ def create_mock_user_trigger() -> UserTriggerEvent:
             }
         ],
         portfolio_snapshot={
-            "cash": 1_000_000,
-            "total_asset": 5_000_000,
+            "cash_balance": 1_000_000,
+            "total_assets": 5_000_000,
             "holdings": [
                 {
                     "stock_code": "005930",
