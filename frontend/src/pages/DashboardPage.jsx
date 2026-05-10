@@ -19,20 +19,20 @@ if (typeof Highcharts === 'object') {
 
 // ── MOCK 데이터 ──────────────────────────────────
 // 필드명은 백엔드 응답 스펙 기준으로 맞춰둠 → 연동 시 그대로 사용 가능
-const MOCK_SUMMARY = {
-  totalAsset: 600000,       // GET /api/v1/accounts/me/summary
-  totalBuyAmount: 570000,
-  totalEvalAmount: 400000,
-  totalPnl: 30000,
-  totalPnlPct: 5.26,
-  availableCash: 200000,
-};
+// const MOCK_SUMMARY = {
+//   totalAsset: 600000,       // GET /api/v1/accounts/me/summary
+//   totalBuyAmount: 570000,
+//   totalEvalAmount: 400000,
+//   totalPnl: 30000,
+//   totalPnlPct: 5.26,
+//   availableCash: 200000,
+// };
 
-const MOCK_HOLDINGS = [
-  { stockName: '삼성전자', stockCode: '005930', quantity: 3, avgBuyPrice: 70000, currentPrice: 74900, pnl: 14700, pnlPct: 7.00 },
-  { stockName: '한화에어로스페이스', stockCode: '012450', quantity: 1, avgBuyPrice: 60000, currentPrice: 85300, pnl: 25300, pnlPct: 42.16 },
-  { stockName: '카카오', stockCode: '035720', quantity: 2, avgBuyPrice: 50000, currentPrice: 45000, pnl: -10000, pnlPct: -10.00 },
-];
+// const MOCK_HOLDINGS = [
+//   { stockName: '삼성전자', stockCode: '005930', quantity: 3, avgBuyPrice: 70000, currentPrice: 74900, pnl: 14700, pnlPct: 7.00 },
+//   { stockName: '한화에어로스페이스', stockCode: '012450', quantity: 1, avgBuyPrice: 60000, currentPrice: 85300, pnl: 25300, pnlPct: 42.16 },
+//   { stockName: '카카오', stockCode: '035720', quantity: 2, avgBuyPrice: 50000, currentPrice: 45000, pnl: -10000, pnlPct: -10.00 },
+// ];
 
 const MOCK_AI_STATUS = {
   isActive: true,

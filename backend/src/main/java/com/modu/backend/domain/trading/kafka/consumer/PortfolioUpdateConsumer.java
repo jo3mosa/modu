@@ -1,10 +1,11 @@
-package com.modu.backend.domain.trading.kafka;
+package com.modu.backend.domain.trading.kafka.consumer;
 
 import com.modu.backend.global.kafka.constant.KafkaConsumerGroup;
 import com.modu.backend.global.kafka.constant.KafkaTopic;
 import com.modu.backend.global.kafka.dto.TradeOrderExecutedMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Component;
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Component;
 @Component
 @RequiredArgsConstructor
 public class PortfolioUpdateConsumer {
+    private final JdbcTemplate jdbcTemplate;
 
     @KafkaListener(
         topics = KafkaTopic.TRADE_ORDER_EXECUTED,
