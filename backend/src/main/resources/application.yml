@@ -44,7 +44,10 @@ spring:
 app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
-
+  kafka:
+    topic:
+      partitions: 3
+      replicas: 3
 # Actuator: K8s 헬스체크(/health, /readiness) 및 메트릭 수집용
 management:
   endpoints:
