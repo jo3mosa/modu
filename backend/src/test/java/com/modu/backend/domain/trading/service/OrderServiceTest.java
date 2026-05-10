@@ -1,8 +1,10 @@
 package com.modu.backend.domain.trading.service;
 
 import com.modu.backend.domain.trading.client.KisOrderClient;
+import com.modu.backend.domain.trading.client.KisPendingOrderClient;
 import com.modu.backend.domain.trading.dto.OrderRequest;
 import com.modu.backend.domain.trading.dto.OrderResponse;
+import com.modu.backend.domain.trading.dto.PendingOrdersResponse;
 import com.modu.backend.domain.trading.entity.*;
 import com.modu.backend.domain.trading.exception.OrderErrorCode;
 import com.modu.backend.domain.trading.repository.OrderRepository;
@@ -25,6 +27,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.*;
+import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.*;
@@ -40,6 +44,7 @@ class OrderServiceTest {
     @Mock TradingRuleRepository tradingRuleRepository;
     @Mock KisTokenService kisTokenService;
     @Mock KisOrderClient kisOrderClient;
+    @Mock KisPendingOrderClient kisPendingOrderClient;
     @Mock AesGcmEncryptor encryptor;
 
     @InjectMocks
@@ -120,13 +125,22 @@ class OrderServiceTest {
     @Test
     @DisplayName("동시 중복 요청으로 유니크 제약 충돌 시 기존 주문 반환 (KIS 미호출)")
     void 동시_중복_요청_유니크_충돌_기존_주문_반환() {
-        // given: 선조회는 empty → saveAndFlush 에서 유니크 충돌 발생 → 재조회로 기존 주문 반환
+        // given: 선조회는 empty → credential/잔고 검증 통과 → saveAndFlush 에서 유니크 충돌 → 재조회 반환
         Order existing = buildOrder(OrderSide.BUY, "key-001", 1L);
         when(orderRepository.findByUserIdAndIdempotencyKey(anyLong(), anyString()))
                 .thenReturn(Optional.empty())          // 1차 선조회: 없음 (동시 요청 통과)
                 .thenReturn(Optional.of(existing));    // 충돌 후 재조회: 기존 주문 반환
         when(kisCredentialRepository.findByUserId(1L)).thenReturn(Optional.of(realCredential));
         when(tradingRuleRepository.findById(1L)).thenReturn(Optional.empty());
+
+        // saveAndFlush 전 validateBalance 통과를 위한 stubs
+        // (decrypt → token → getBuyableAmount 순으로 호출됨)
+        when(encryptor.decrypt("enc-key")).thenReturn("real-key");
+        when(encryptor.decrypt("enc-secret")).thenReturn("real-secret");
+        when(kisTokenService.getOrIssueAccessToken(1L, "real-key", "real-secret")).thenReturn("token");
+        when(kisOrderClient.getBuyableAmount(any(), any(), any(), any(), any(), any(), anyLong()))
+                .thenReturn(10_000_000L);
+
         when(orderRepository.saveAndFlush(any(Order.class)))
                 .thenThrow(new DataIntegrityViolationException("duplicate key value"));
 
@@ -412,7 +426,130 @@ class OrderServiceTest {
         }
     }
 
+    // ── 미체결 주문 조회 ───────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("KIS 미연동 사용자 미체결 조회 시 KIS_NOT_CONNECTED 예외")
+    void 미체결_조회_KIS_미연동_예외() {
+        // given
+        when(kisCredentialRepository.findByUserId(1L)).thenReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> orderService.getPendingOrders(1L))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode())
+                        .isEqualTo(UserErrorCode.KIS_NOT_CONNECTED));
+    }
+
+    @Test
+    @DisplayName("모의투자 계좌로 미체결 조회 시 KIS_MOCK_ACCOUNT_NOT_SUPPORTED 예외")
+    void 미체결_조회_모의투자_계좌_예외() {
+        // given
+        when(kisCredentialRepository.findByUserId(1L)).thenReturn(Optional.of(mockCredential));
+
+        // when & then
+        assertThatThrownBy(() -> orderService.getPendingOrders(1L))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode())
+                        .isEqualTo(UserErrorCode.KIS_MOCK_ACCOUNT_NOT_SUPPORTED));
+    }
+
+    @Test
+    @DisplayName("KIS 미체결 없을 때 빈 리스트 반환")
+    void 미체결_주문_없을_때_빈_리스트_반환() {
+        // given
+        setupKisCredentialStubs();
+        when(kisPendingOrderClient.getPendingOrders(any(), any(), any(), any(), any()))
+                .thenReturn(Collections.emptyList());
+
+        // when
+        PendingOrdersResponse response = orderService.getPendingOrders(1L);
+
+        // then
+        assertThat(response.pendingOrders()).isEmpty();
+        verify(orderRepository, never()).findByUserIdAndKisOrderNoIn(anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("미체결 주문 조회 성공 - KIS 데이터와 DB 메타데이터 병합 확인")
+    void 미체결_주문_조회_성공_병합() {
+        // given: KIS 미체결 주문 1건, DB 매칭 주문 1건
+        KisPendingOrderClient.KisPendingItem kisItem = new KisPendingOrderClient.KisPendingItem(
+                "KIS_ORD001", "005930", "삼성전자",
+                "BUY", "LIMIT",
+                10L, 82000L, 3L, 7L
+        );
+        Order dbOrder = buildOrder(OrderSide.BUY, "idem-key", 1L);
+        ReflectionTestUtils.setField(dbOrder, "kisOrderNo", "KIS_ORD001");
+
+        setupKisCredentialStubs();
+        when(kisPendingOrderClient.getPendingOrders(any(), any(), any(), any(), any()))
+                .thenReturn(List.of(kisItem));
+        when(orderRepository.findByUserIdAndKisOrderNoIn(eq(1L), anyList()))
+                .thenReturn(List.of(dbOrder));
+
+        // when
+        PendingOrdersResponse response = orderService.getPendingOrders(1L);
+
+        // then
+        assertThat(response.pendingOrders()).hasSize(1);
+        PendingOrdersResponse.PendingOrderItem item = response.pendingOrders().get(0);
+
+        // KIS 실시간 데이터 검증
+        assertThat(item.stockCode()).isEqualTo("005930");
+        assertThat(item.stockName()).isEqualTo("삼성전자");
+        assertThat(item.side()).isEqualTo("BUY");
+        assertThat(item.orderType()).isEqualTo("LIMIT");
+        assertThat(item.quantity()).isEqualTo(10);
+        assertThat(item.price()).isEqualTo(82000L);
+        assertThat(item.filledQuantity()).isEqualTo(3);
+        assertThat(item.remainQuantity()).isEqualTo(7);
+
+        // DB 메타데이터 검증
+        assertThat(item.orderId()).isEqualTo("1");
+        assertThat(item.source()).isEqualTo("MANUAL");
+        assertThat(item.createdAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("KIS 주문이 DB 미매칭 시 orderId/source/createdAt 은 null 로 반환")
+    void 미체결_주문_DB_미매칭_null_필드_반환() {
+        // given: KIS 미체결 주문 1건, DB 매칭 없음
+        KisPendingOrderClient.KisPendingItem kisItem = new KisPendingOrderClient.KisPendingItem(
+                "EXTERNAL_ORD", "005930", "삼성전자",
+                "BUY", "LIMIT",
+                5L, 80000L, 0L, 5L
+        );
+
+        setupKisCredentialStubs();
+        when(kisPendingOrderClient.getPendingOrders(any(), any(), any(), any(), any()))
+                .thenReturn(List.of(kisItem));
+        when(orderRepository.findByUserIdAndKisOrderNoIn(eq(1L), anyList()))
+                .thenReturn(Collections.emptyList()); // DB 매칭 없음
+
+        // when
+        PendingOrdersResponse response = orderService.getPendingOrders(1L);
+
+        // then: KIS 데이터는 정상, DB 의존 필드는 null
+        assertThat(response.pendingOrders()).hasSize(1);
+        PendingOrdersResponse.PendingOrderItem item = response.pendingOrders().get(0);
+        assertThat(item.stockCode()).isEqualTo("005930");
+        assertThat(item.orderId()).isNull();
+        assertThat(item.source()).isNull();
+        assertThat(item.createdAt()).isNull();
+    }
+
     // ── 헬퍼 메서드 ───────────────────────────────────────────────────────────
+
+    /**
+     * KIS 자격증명 + 토큰 공통 stub (미체결 조회 등 단순 조회에 사용)
+     */
+    private void setupKisCredentialStubs() {
+        when(kisCredentialRepository.findByUserId(1L)).thenReturn(Optional.of(realCredential));
+        when(encryptor.decrypt("enc-key")).thenReturn("real-key");
+        when(encryptor.decrypt("enc-secret")).thenReturn("real-secret");
+        when(kisTokenService.getOrIssueAccessToken(1L, "real-key", "real-secret")).thenReturn("token");
+    }
 
     /**
      * 주문 성공 흐름에 필요한 공통 stub 설정
