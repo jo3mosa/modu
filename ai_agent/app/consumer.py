@@ -45,15 +45,18 @@ def _consume_market_signals() -> None:
                 event = MarketTriggerEvent.model_validate(message.value)
                 user_events = match_market_event_to_users(event)
 
-                for user_event in user_events:
+                futures = [
                     producer.send(
                         KafkaTopic.AI_TRIGGER_REQUESTED,
                         key=str(user_event.user_id),
                         value=user_event.model_dump(),
                     )
+                    for user_event in user_events
+                ]
+                for future in futures:
+                    future.get(timeout=30)
 
                 if user_events:
-                    producer.flush()
                     logger.info(
                         "ai.trigger.requested published: %d users, stock_code=%s",
                         len(user_events),
@@ -79,6 +82,7 @@ def _consume_user_triggers() -> None:
     consumer = make_kafka_consumer(
         KafkaTopic.AI_TRIGGER_REQUESTED,
         group_id="ai-agent-user-trigger",
+        max_poll_interval_ms=600_000,  # LLM 파이프라인 실행 시간 여유 확보 (10분)
     )
 
     logger.info("ai.trigger.requested consumer started")

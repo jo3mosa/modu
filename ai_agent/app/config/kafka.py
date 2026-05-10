@@ -43,6 +43,7 @@ def make_kafka_consumer(
     *topics: str,
     group_id: str,
     auto_offset_reset: str = "earliest",
+    max_poll_interval_ms: int = 300_000,
 ) -> KafkaConsumer:
     """
     KafkaConsumer를 생성해서 반환한다.
@@ -62,6 +63,7 @@ def make_kafka_consumer(
         auto_offset_reset=auto_offset_reset,
         session_timeout_ms=30_000,
         heartbeat_interval_ms=10_000,
+        max_poll_interval_ms=max_poll_interval_ms,
     )
 
 
