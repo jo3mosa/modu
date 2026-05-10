@@ -1,8 +1,10 @@
 package com.modu.backend.domain.trading.service;
 
 import com.modu.backend.domain.trading.client.KisOrderClient;
+import com.modu.backend.domain.trading.client.KisPendingOrderClient;
 import com.modu.backend.domain.trading.dto.OrderRequest;
 import com.modu.backend.domain.trading.dto.OrderResponse;
+import com.modu.backend.domain.trading.dto.PendingOrdersResponse;
 import com.modu.backend.domain.trading.entity.*;
 import com.modu.backend.domain.trading.exception.OrderErrorCode;
 import com.modu.backend.domain.trading.repository.OrderRepository;
@@ -21,7 +23,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.*;
+import java.time.format.DateTimeFormatter;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * 수동 주문 실행 서비스
@@ -63,6 +70,7 @@ public class OrderService {
     private final TradingRuleRepository tradingRuleRepository;
     private final KisTokenService kisTokenService;
     private final KisOrderClient kisOrderClient;
+    private final KisPendingOrderClient kisPendingOrderClient;
     private final AesGcmEncryptor encryptor;
 
     @Transactional
@@ -180,5 +188,87 @@ public class OrderService {
                 throw new ApiException(OrderErrorCode.INSUFFICIENT_BALANCE);
             }
         }
+    }
+
+    // ── 미체결 주문 조회 ───────────────────────────────────────────────────────
+
+    /**
+     * 미체결 주문 목록 조회
+     *
+     * [처리 흐름]
+     * 1. KIS 연동 확인
+     * 2. KIS inquire-psbl-rvsecncl 호출 → 실시간 미체결 주문 목록 수신
+     * 3. KIS odno 목록으로 우리 DB 주문 일괄 조회 (N+1 방지)
+     * 4. KIS 데이터 + DB 데이터 병합 → 응답 구성
+     *
+     * [병합 전략]
+     * KIS 응답 기준으로 목록을 구성하고, orders.kis_order_no = KIS odno 로 DB 주문을 조인.
+     * DB 미매칭 주문(우리 시스템 외부에서 접수된 주문 등)은 orderId/source/createdAt 을 null 로 반환.
+     *
+     * [트랜잭션]
+     * 읽기 전용 조회이므로 @Transactional 미사용. DB 커넥션 점유 최소화.
+     */
+    public PendingOrdersResponse getPendingOrders(Long userId) {
+        KisCredential credential = kisCredentialRepository.findByUserId(userId)
+                .orElseThrow(() -> new ApiException(UserErrorCode.KIS_NOT_CONNECTED));
+
+        if (!credential.isRealAccount()) {
+            throw new ApiException(UserErrorCode.KIS_MOCK_ACCOUNT_NOT_SUPPORTED);
+        }
+
+        String appKey      = encryptor.decrypt(credential.getAppKeyEnc());
+        String appSecret   = encryptor.decrypt(credential.getAppSecretEnc());
+        String accessToken = kisTokenService.getOrIssueAccessToken(userId, appKey, appSecret);
+
+        // KIS 실시간 미체결 주문 목록 조회 (최대 50건)
+        List<KisPendingOrderClient.KisPendingItem> kisItems = kisPendingOrderClient.getPendingOrders(
+                accessToken, appKey, appSecret,
+                credential.getAccountNo(), credential.getAccountPrdtCd()
+        );
+
+        if (kisItems.isEmpty()) {
+            return new PendingOrdersResponse(Collections.emptyList());
+        }
+
+        // KIS odno 목록으로 DB 주문 일괄 조회 → Map<kisOrderNo, Order> 구성
+        List<String> kisOrderNos = kisItems.stream()
+                .map(KisPendingOrderClient.KisPendingItem::odno)
+                .toList();
+
+        Map<String, Order> orderByKisOrderNo = orderRepository
+                .findByUserIdAndKisOrderNoIn(userId, kisOrderNos)
+                .stream()
+                .collect(Collectors.toMap(Order::getKisOrderNo, o -> o));
+
+        // KIS 데이터와 DB 메타데이터 병합하여 응답 항목 구성
+        List<PendingOrdersResponse.PendingOrderItem> items = kisItems.stream()
+                .map(kisItem -> buildPendingOrderItem(kisItem, orderByKisOrderNo.get(kisItem.odno())))
+                .toList();
+
+        return new PendingOrdersResponse(items);
+    }
+
+    /**
+     * KIS 미체결 항목 + DB 주문 메타데이터 → PendingOrderItem 변환
+     *
+     * @param kisItem KIS 응답 미체결 항목 (stockName, qty, filledQty 등 실시간 데이터)
+     * @param order   DB 주문 엔티티 (orderId, source, createdAt 등 메타데이터). 없으면 null
+     */
+    private PendingOrdersResponse.PendingOrderItem buildPendingOrderItem(
+            KisPendingOrderClient.KisPendingItem kisItem, Order order) {
+
+        return new PendingOrdersResponse.PendingOrderItem(
+                order != null ? String.valueOf(order.getId()) : null,
+                kisItem.stockCode(),
+                kisItem.stockName(),
+                kisItem.side(),
+                kisItem.orderType(),
+                (int) kisItem.quantity(),
+                kisItem.price(),
+                (int) kisItem.filledQuantity(),
+                (int) kisItem.remainQuantity(),
+                order != null ? order.getSource().name() : null,
+                order != null ? order.getCreatedAt().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME) : null
+        );
     }
 }

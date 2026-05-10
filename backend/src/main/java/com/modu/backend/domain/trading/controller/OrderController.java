@@ -2,6 +2,7 @@ package com.modu.backend.domain.trading.controller;
 
 import com.modu.backend.domain.trading.dto.OrderRequest;
 import com.modu.backend.domain.trading.dto.OrderResponse;
+import com.modu.backend.domain.trading.dto.PendingOrdersResponse;
 import com.modu.backend.domain.trading.service.OrderService;
 import com.modu.backend.global.dto.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -23,6 +24,33 @@ import org.springframework.web.bind.annotation.*;
 public class OrderController {
 
     private final OrderService orderService;
+
+    @Operation(
+            summary = "미체결 주문 조회",
+            description = """
+                    한국투자증권 API를 통해 현재 미체결 상태인 주문 목록을 조회합니다.
+
+                    - KIS API 미연동 시 404(KIS_NOT_CONNECTED)를 반환합니다.
+                    - 모의투자 계좌는 지원하지 않습니다.
+                    - 한 번에 최대 50건까지 조회됩니다. (KIS API 단일 페이지 제한)
+                    - filledQuantity(체결수량)와 remainQuantity(미체결잔량)는 KIS 실시간 데이터 기준입니다.
+                    - orderId/source/createdAt 은 우리 시스템에 기록된 주문에만 제공됩니다.
+                    """
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "미체결 주문 조회 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "인증 필요"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "KIS API 미연동",
+                    content = @Content(schema = @Schema(example = "{\"success\":false,\"message\":\"연동된 한국투자증권 API 정보가 없습니다.\",\"errorCode\":\"KIS_NOT_CONNECTED\"}"))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "502", description = "KIS API 호출 실패")
+    })
+    @GetMapping("/pending")
+    public ResponseEntity<ApiResponse<PendingOrdersResponse>> getPendingOrders(
+            @AuthenticationPrincipal Long userId
+    ) {
+        PendingOrdersResponse response = orderService.getPendingOrders(userId);
+        return ResponseEntity.ok(ApiResponse.success("미체결 주문을 조회했습니다.", response));
+    }
 
     @Operation(
             summary = "수동 주문 실행 (매수/매도)",
