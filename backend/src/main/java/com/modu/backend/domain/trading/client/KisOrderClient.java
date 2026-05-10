@@ -176,13 +176,19 @@ public class KisOrderClient {
         }
     }
 
+    /**
+     * KIS 응답 숫자 필드 파싱
+     * null/blank는 미제공 필드로 간주해 0 반환.
+     * 숫자가 아닌 값은 KIS API 포맷 오류로 EXTERNAL_API_ERROR 처리.
+     * (0 반환 시 잔고/수량 0으로 오판되어 정상 주문이 잔고 부족으로 오진될 수 있음)
+     */
     private long parseLong(String value) {
         if (value == null || value.isBlank()) return 0L;
         try {
             return Long.parseLong(value.trim());
         } catch (NumberFormatException e) {
-            log.error("KIS 응답 Long 파싱 실패 - value: '{}'", value);
-            return 0L;
+            log.error("KIS 응답 파싱 실패 - 숫자로 변환 불가한 값 수신: '{}'", value);
+            throw new ApiException(CommonErrorCode.EXTERNAL_API_ERROR);
         }
     }
 
