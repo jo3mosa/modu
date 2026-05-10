@@ -49,12 +49,19 @@ services:
       MONGO_PORT: 27017          # 추가
       # KIS_CANO: ${KIS_CANO:-}
       # KIS_ACNT_PRDT_CD: ${KIS_ACNT_PRDT_CD:-01}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       mongo:                          
+        condition: service_healthy
+      kafka-0:
+        condition: service_healthy
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
         condition: service_healthy
     networks:
       - modu-network
@@ -140,7 +147,7 @@ services:
     networks:
       - modu-network
     healthcheck:
-      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list > /dev/null 2>&1"]
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list > /dev/null 2>&1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -171,7 +178,7 @@ services:
     networks:
       - modu-network
     healthcheck:
-      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list > /dev/null 2>&1"]
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list > /dev/null 2>&1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -202,7 +209,7 @@ services:
     networks:
       - modu-network
     healthcheck:
-      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list > /dev/null 2>&1"]
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list > /dev/null 2>&1"]
       interval: 30s
       timeout: 10s
       retries: 5
