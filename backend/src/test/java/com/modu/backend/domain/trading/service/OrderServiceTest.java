@@ -1,7 +1,10 @@
 package com.modu.backend.domain.trading.service;
 
+import com.modu.backend.domain.trading.client.KisModifyOrderClient;
 import com.modu.backend.domain.trading.client.KisOrderClient;
 import com.modu.backend.domain.trading.client.KisPendingOrderClient;
+import com.modu.backend.domain.trading.dto.ModifyOrderRequest;
+import com.modu.backend.domain.trading.dto.ModifyOrderResponse;
 import com.modu.backend.domain.trading.dto.OrderRequest;
 import com.modu.backend.domain.trading.dto.OrderResponse;
 import com.modu.backend.domain.trading.dto.PendingOrdersResponse;
@@ -46,6 +49,7 @@ class OrderServiceTest {
     @Mock KisTokenService kisTokenService;
     @Mock KisOrderClient kisOrderClient;
     @Mock KisPendingOrderClient kisPendingOrderClient;
+    @Mock KisModifyOrderClient kisModifyOrderClient;
     @Mock AesGcmEncryptor encryptor;
 
     @InjectMocks
@@ -562,6 +566,121 @@ class OrderServiceTest {
                 .isInstanceOf(ApiException.class)
                 .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode())
                         .isEqualTo(CommonErrorCode.EXTERNAL_API_ERROR));
+    }
+
+    // ── 미체결 주문 정정/취소 ─────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("주문 없음 시 ORDER_NOT_FOUND 예외")
+    void 정정_취소_주문_없음_예외() {
+        // given
+        when(orderRepository.findById(99L)).thenReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> orderService.modifyOrCancelOrder(
+                1L, 99L, new ModifyOrderRequest(OrderModifyAction.CANCEL, null, null)))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode())
+                        .isEqualTo(OrderErrorCode.ORDER_NOT_FOUND));
+    }
+
+    @Test
+    @DisplayName("타인 주문 정정/취소 시 ORDER_FORBIDDEN 예외")
+    void 정정_취소_타인_주문_예외() {
+        // given: 주문의 userId=2, 요청 userId=1
+        Order otherOrder = buildOrder(OrderSide.BUY, "key", 1L);
+        ReflectionTestUtils.setField(otherOrder, "userId", 2L);
+        when(orderRepository.findById(1L)).thenReturn(Optional.of(otherOrder));
+
+        // when & then
+        assertThatThrownBy(() -> orderService.modifyOrCancelOrder(
+                1L, 1L, new ModifyOrderRequest(OrderModifyAction.CANCEL, null, null)))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode())
+                        .isEqualTo(OrderErrorCode.ORDER_FORBIDDEN));
+    }
+
+    @Test
+    @DisplayName("FILLED 상태 주문 정정 시 ORDER_ALREADY_FILLED 예외")
+    void 정정_체결된_주문_예외() {
+        // given
+        Order filledOrder = buildOrder(OrderSide.BUY, "key", 1L);
+        ReflectionTestUtils.setField(filledOrder, "status", OrderStatus.FILLED);
+        when(orderRepository.findById(1L)).thenReturn(Optional.of(filledOrder));
+
+        // when & then
+        assertThatThrownBy(() -> orderService.modifyOrCancelOrder(
+                1L, 1L, new ModifyOrderRequest(OrderModifyAction.MODIFY, 5, 65000L)))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode())
+                        .isEqualTo(OrderErrorCode.ORDER_ALREADY_FILLED));
+    }
+
+    @Test
+    @DisplayName("주문 취소 성공 - status=CANCELED, cancelled_at 기록")
+    void 주문_취소_성공() {
+        // given
+        Order order = buildOrder(OrderSide.BUY, "key", 1L);
+        when(orderRepository.findById(1L)).thenReturn(Optional.of(order));
+        setupKisCredentialStubs();
+        when(kisModifyOrderClient.execute(any(), any(), any(), any(), any(),
+                any(), any(), any(), eq(OrderModifyAction.CANCEL), anyLong(), anyLong(), any(), any()))
+                .thenReturn(new KisModifyOrderClient.KisModifyResult("NEW_ORD", "NEW_ORG"));
+
+        // when
+        ModifyOrderResponse response = orderService.modifyOrCancelOrder(
+                1L, 1L, new ModifyOrderRequest(OrderModifyAction.CANCEL, null, null));
+
+        // then
+        assertThat(response.status()).isEqualTo("CANCELED");
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELED);
+        assertThat(order.getCancelledAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("주문 정정 성공 - status=MODIFIED, 새 kis_order_no/kis_org_no 갱신")
+    void 주문_정정_성공() {
+        // given
+        Order order = buildOrder(OrderSide.BUY, "key", 1L);
+        ReflectionTestUtils.setField(order, "kisOrderNo", "OLD_ORD");
+        ReflectionTestUtils.setField(order, "kisOrgNo",   "OLD_ORG");
+        when(orderRepository.findById(1L)).thenReturn(Optional.of(order));
+        setupKisCredentialStubs();
+        when(kisModifyOrderClient.execute(any(), any(), any(), any(), any(),
+                any(), any(), any(), eq(OrderModifyAction.MODIFY), anyLong(), anyLong(), any(), any()))
+                .thenReturn(new KisModifyOrderClient.KisModifyResult("NEW_ORD", "NEW_ORG"));
+
+        // when
+        ModifyOrderResponse response = orderService.modifyOrCancelOrder(
+                1L, 1L, new ModifyOrderRequest(OrderModifyAction.MODIFY, 5, 65000L));
+
+        // then
+        assertThat(response.status()).isEqualTo("MODIFIED");
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.MODIFIED);
+        // 재정정을 위해 새 KIS 번호 갱신 확인
+        assertThat(order.getKisOrderNo()).isEqualTo("NEW_ORD");
+        assertThat(order.getKisOrgNo()).isEqualTo("NEW_ORG");
+        // 변경된 가격/수량 반영 확인
+        assertThat(order.getLimitPrice()).isEqualTo(65000L);
+        assertThat(order.getQuantity()).isEqualTo(5L);
+    }
+
+    @Test
+    @DisplayName("MODIFIED 상태 주문도 재정정 가능")
+    void 정정된_주문_재정정_가능() {
+        // given: 이미 정정된(MODIFIED) 주문
+        Order modifiedOrder = buildOrder(OrderSide.BUY, "key", 1L);
+        ReflectionTestUtils.setField(modifiedOrder, "status", OrderStatus.MODIFIED);
+        when(orderRepository.findById(1L)).thenReturn(Optional.of(modifiedOrder));
+        setupKisCredentialStubs();
+        when(kisModifyOrderClient.execute(any(), any(), any(), any(), any(),
+                any(), any(), any(), any(), anyLong(), anyLong(), any(), any()))
+                .thenReturn(new KisModifyOrderClient.KisModifyResult("NEW_ORD2", "NEW_ORG2"));
+
+        // when & then: 예외 없이 정상 처리
+        assertThatCode(() -> orderService.modifyOrCancelOrder(
+                1L, 1L, new ModifyOrderRequest(OrderModifyAction.MODIFY, 3, 60000L)))
+                .doesNotThrowAnyException();
     }
 
     // ── 헬퍼 메서드 ───────────────────────────────────────────────────────────
