@@ -12,14 +12,15 @@ import com.modu.backend.domain.user.exception.UserErrorCode;
 import com.modu.backend.domain.user.repository.KisCredentialRepository;
 import com.modu.backend.domain.user.service.KisTokenService;
 import com.modu.backend.global.error.ApiException;
+import com.modu.backend.global.error.CommonErrorCode;
 import com.modu.backend.global.util.AesGcmEncryptor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.*;
-import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -32,8 +33,18 @@ import java.util.UUID;
  * 4. 장 운영 시간 확인 (평일 09:00~15:30 KST)
  * 5. 일일 누적 매수 금액 한도 확인 (매수 주문에만 적용)
  * 6. 잔고 확인 (KIS inquire-psbl-order / inquire-psbl-sell)
- * 7. KIS 주문 실행
- * 8. DB 저장
+ * 7. DB에 PENDING 상태 주문 먼저 저장 (KIS 호출 전 로컬 기록 확보)
+ * 8. KIS 주문 실행
+ * 9. KIS 응답으로 주문 정보 업데이트
+ *
+ * [Idempotency 동시성 전략]
+ * - 순차 중복: 1단계 선조회로 처리
+ * - 동시 중복: orders(user_id, idempotency_key) DB 유니크 제약이 최후 방어선.
+ *   DataIntegrityViolationException 발생 시 기존 주문을 재조회해 반환.
+ *
+ * [DB 먼저 저장 이유]
+ * KIS 주문 성공 후 DB 저장 실패 시 외부 주문만 남는 불일치를 방지.
+ * 저장 실패 시 KIS 호출이 차단되므로 역방향 불일치는 발생하지 않음.
  *
  * [트랜잭션 설계]
  * 토큰 갱신: KisTokenService 자체 @Transactional에서 처리
@@ -60,12 +71,10 @@ public class OrderService {
                 ? idempotencyKey
                 : UUID.randomUUID().toString();
 
-        Optional<Order> existing = orderRepository.findByUserIdAndIdempotencyKey(userId, resolvedKey);
-        if (existing.isPresent()) {
-            return OrderResponse.from(existing.get());
-        }
-
-        return doPlaceOrder(userId, request, resolvedKey);
+        // 1단계: 선조회 — 순차 중복 요청 빠른 반환
+        return orderRepository.findByUserIdAndIdempotencyKey(userId, resolvedKey)
+                .map(OrderResponse::from)
+                .orElseGet(() -> doPlaceOrder(userId, request, resolvedKey));
     }
 
     private OrderResponse doPlaceOrder(Long userId, OrderRequest request, String idempotencyKey) {
@@ -86,32 +95,43 @@ public class OrderService {
         validateBalance(accessToken, appKey, appSecret,
                 credential.getAccountNo(), credential.getAccountPrdtCd(), request);
 
-        KisOrderClient.KisOrderResult result = kisOrderClient.placeOrder(
-                accessToken, appKey, appSecret,
-                credential.getAccountNo(), credential.getAccountPrdtCd(),
-                request.stockCode(), request.orderType(), request.orderMethod(),
-                request.quantity(), request.price()
-        );
-
-        OffsetDateTime now = OffsetDateTime.now();
+        // KIS 호출 전 PENDING 상태로 먼저 저장
+        // → DB 저장 성공 이후 KIS 호출하므로 "KIS 성공 + DB 저장 실패" 불일치 방지
         Order order = Order.builder()
                 .userId(userId)
                 .stockCode(request.stockCode())
-                .side(request.orderType())
+                .side(request.side())
                 .orderType(request.orderMethod())
                 .quantity((long) request.quantity())
                 .limitPrice(request.price())
                 .status(OrderStatus.PENDING)
                 .source(OrderSource.MANUAL)
-                .kisOrderNo(result.kisOrderNo())
-                .kisOrgNo(result.kisOrgNo())
                 .idempotencyKey(idempotencyKey)
-                .submittedAt(now)
                 .build();
 
-        orderRepository.save(order);
+        try {
+            orderRepository.saveAndFlush(order);
+        } catch (DataIntegrityViolationException e) {
+            // 동시 중복 요청이 유니크 제약 충돌 → 먼저 저장된 주문 반환
+            log.warn("Idempotency 중복 충돌 감지 - userId: {}, key: {}", userId, idempotencyKey);
+            return orderRepository.findByUserIdAndIdempotencyKey(userId, idempotencyKey)
+                    .map(OrderResponse::from)
+                    .orElseThrow(() -> new ApiException(CommonErrorCode.CONCURRENT_CONFLICT));
+        }
+
+        // KIS 주문 실행
+        KisOrderClient.KisOrderResult result = kisOrderClient.placeOrder(
+                accessToken, appKey, appSecret,
+                credential.getAccountNo(), credential.getAccountPrdtCd(),
+                request.stockCode(), request.side(), request.orderMethod(),
+                request.quantity(), request.price()
+        );
+
+        // KIS 응답으로 주문 정보 업데이트 (JPA dirty checking으로 자동 반영)
+        order.updateKisInfo(result.kisOrderNo(), result.kisOrgNo(), OffsetDateTime.now());
+
         log.info("수동 주문 접수 완료 - userId: {}, stockCode: {}, side: {}, kisOrderNo: {}",
-                userId, request.stockCode(), request.orderType(), result.kisOrderNo());
+                userId, request.stockCode(), request.side(), result.kisOrderNo());
 
         return OrderResponse.from(order);
     }
@@ -130,7 +150,7 @@ public class OrderService {
     }
 
     private void validateDailyOrderLimit(Long userId, OrderRequest request) {
-        if (request.orderType() != OrderSide.BUY) return;
+        if (request.side() != OrderSide.BUY) return;
 
         tradingRuleRepository.findById(userId).ifPresent(rule -> {
             long todayTotal     = orderRepository.sumTodayBuyAmount(userId);
@@ -144,7 +164,7 @@ public class OrderService {
 
     private void validateBalance(String accessToken, String appKey, String appSecret,
                                  String cano, String acntPrdtCd, OrderRequest request) {
-        if (request.orderType() == OrderSide.BUY) {
+        if (request.side() == OrderSide.BUY) {
             long buyable     = kisOrderClient.getBuyableAmount(
                     accessToken, appKey, appSecret, cano, acntPrdtCd,
                     request.stockCode(), request.price());

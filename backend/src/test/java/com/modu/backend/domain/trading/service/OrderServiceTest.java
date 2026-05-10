@@ -21,6 +21,7 @@ import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.*;
@@ -117,6 +118,33 @@ class OrderServiceTest {
     }
 
     @Test
+    @DisplayName("동시 중복 요청으로 유니크 제약 충돌 시 기존 주문 반환 (KIS 미호출)")
+    void 동시_중복_요청_유니크_충돌_기존_주문_반환() {
+        // given: 선조회는 empty → saveAndFlush 에서 유니크 충돌 발생 → 재조회로 기존 주문 반환
+        Order existing = buildOrder(OrderSide.BUY, "key-001", 1L);
+        when(orderRepository.findByUserIdAndIdempotencyKey(anyLong(), anyString()))
+                .thenReturn(Optional.empty())          // 1차 선조회: 없음 (동시 요청 통과)
+                .thenReturn(Optional.of(existing));    // 충돌 후 재조회: 기존 주문 반환
+        when(kisCredentialRepository.findByUserId(1L)).thenReturn(Optional.of(realCredential));
+        when(tradingRuleRepository.findById(1L)).thenReturn(Optional.empty());
+        when(orderRepository.saveAndFlush(any(Order.class)))
+                .thenThrow(new DataIntegrityViolationException("duplicate key value"));
+
+        try (MockedStatic<ZonedDateTime> mocked =
+                     mockStatic(ZonedDateTime.class, Answers.CALLS_REAL_METHODS)) {
+            mocked.when(() -> ZonedDateTime.now(any(ZoneId.class))).thenReturn(MARKET_OPEN);
+
+            // when
+            OrderResponse response = orderService.placeOrder(1L, buyRequest, "key-001");
+
+            // then: 기존 주문 응답 반환, KIS 주문 미실행
+            assertThat(response.orderId()).isEqualTo("1");
+            verify(kisOrderClient, never()).placeOrder(
+                    any(), any(), any(), any(), any(), any(), any(), any(), anyLong(), anyLong());
+        }
+    }
+
+    @Test
     @DisplayName("Idempotency-Key 미전송 시 서버에서 UUID 자동 생성 후 주문 진행")
     void idempotencyKey_null_자동_생성() {
         // given
@@ -132,7 +160,7 @@ class OrderServiceTest {
 
             // then: 주문이 정상적으로 처리됨 (UUID 자동 생성)
             assertThat(response).isNotNull();
-            verify(orderRepository).save(argThat(order ->
+            verify(orderRepository).saveAndFlush(argThat(order ->
                     order.getIdempotencyKey() != null && !order.getIdempotencyKey().isBlank()));
         }
     }
@@ -346,17 +374,17 @@ class OrderServiceTest {
             // then
             assertThat(response.orderId()).isEqualTo("1");
             assertThat(response.stockCode()).isEqualTo("005930");
-            assertThat(response.orderType()).isEqualTo("BUY");
+            assertThat(response.side()).isEqualTo("BUY");
             assertThat(response.quantity()).isEqualTo(10);
             assertThat(response.price()).isEqualTo(70000L);
             assertThat(response.status()).isEqualTo("PENDING");
 
-            verify(orderRepository).save(argThat(order ->
-                    order.getStatus()    == OrderStatus.PENDING   &&
-                    order.getSource()    == OrderSource.MANUAL    &&
-                    order.getSide()      == OrderSide.BUY         &&
-                    "ORD001".equals(order.getKisOrderNo())        &&
-                    "ORG001".equals(order.getKisOrgNo())
+            // saveAndFlush 시점엔 KIS 미호출이므로 kisOrderNo/kisOrgNo 는 null
+            // KIS 응답 후 updateKisInfo()로 반영됨
+            verify(orderRepository).saveAndFlush(argThat(order ->
+                    order.getStatus() == OrderStatus.PENDING &&
+                    order.getSource() == OrderSource.MANUAL  &&
+                    order.getSide()   == OrderSide.BUY
             ));
         }
     }
@@ -375,9 +403,9 @@ class OrderServiceTest {
             OrderResponse response = orderService.placeOrder(1L, sellRequest, "key-002");
 
             // then
-            assertThat(response.orderType()).isEqualTo("SELL");
+            assertThat(response.side()).isEqualTo("SELL");
             assertThat(response.quantity()).isEqualTo(5);
-            verify(orderRepository).save(argThat(order ->
+            verify(orderRepository).saveAndFlush(argThat(order ->
                     order.getSide()   == OrderSide.SELL   &&
                     order.getStatus() == OrderStatus.PENDING
             ));
@@ -409,7 +437,8 @@ class OrderServiceTest {
                 any(), any(), any(), any(), any(), any(), any(), any(), anyLong(), anyLong()))
                 .thenReturn(new KisOrderClient.KisOrderResult("ORD001", "ORG001"));
 
-        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> {
+        // 서비스가 saveAndFlush를 사용하므로 saveAndFlush 스텁
+        when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(inv -> {
             Order o = inv.getArgument(0);
             ReflectionTestUtils.setField(o, "id", 1L);
             return o;
@@ -426,10 +455,7 @@ class OrderServiceTest {
                 .limitPrice(70000L)
                 .status(OrderStatus.PENDING)
                 .source(OrderSource.MANUAL)
-                .kisOrderNo("ORD001")
-                .kisOrgNo("ORG001")
                 .idempotencyKey(idempotencyKey)
-                .submittedAt(OffsetDateTime.now())
                 .build();
         ReflectionTestUtils.setField(order, "id", id);
         return order;

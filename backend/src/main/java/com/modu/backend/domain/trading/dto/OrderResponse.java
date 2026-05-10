@@ -7,7 +7,8 @@ import java.time.format.DateTimeFormatter;
 public record OrderResponse(
         String orderId,
         String stockCode,
-        String orderType,
+        String side,       // BUY / SELL
+        String orderType,  // LIMIT / MARKET
         Integer quantity,
         Long price,
         String status,
@@ -18,6 +19,7 @@ public record OrderResponse(
                 String.valueOf(order.getId()),
                 order.getStockCode(),
                 order.getSide().name(),
+                order.getOrderType().name(),
                 order.getQuantity().intValue(),
                 order.getLimitPrice(),
                 order.getStatus().name(),
