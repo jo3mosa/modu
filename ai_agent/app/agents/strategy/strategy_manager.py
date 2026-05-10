@@ -5,6 +5,7 @@ from langchain_core.exceptions import OutputParserException
 from langchain_core.output_parsers import PydanticOutputParser
 
 from app.config.llm import get_strategy_llm
+from app.observability.langsmith_helpers import add_run_metadata
 from app.state.investment_state import InvestmentAgentState
 from app.state.schemas import ResearchVerdict, StrategyDraft
 from app.utils.json_utils import to_json
@@ -71,6 +72,13 @@ def strategy_manager(state: InvestmentAgentState) -> dict[str, Any]:
             f"Strategy Manager가 후보 목록에 없는 종목을 선택했습니다: {verdict.asset}",
         )
 
+    add_run_metadata({
+        "node": "strategy_manager",
+        "winning_side": verdict.winning_side,
+        "recommended_side": verdict.recommended_side,
+        "confidence": verdict.confidence,
+    })
+
     return {
         "research_verdict": verdict,
         "strategy_draft": _to_strategy_draft(verdict),
@@ -118,6 +126,12 @@ def _hold(reason: str, detail: str) -> dict[str, Any]:
         rationale=reason,
         confidence=0.0,
     )
+    add_run_metadata({
+        "node": "strategy_manager",
+        "winning_side": hold_verdict.winning_side,
+        "recommended_side": hold_verdict.recommended_side,
+        "confidence": hold_verdict.confidence,
+    })
     return {
         "flow_status": "hold",
         "research_verdict": hold_verdict,

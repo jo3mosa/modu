@@ -40,7 +40,7 @@ _MOCK_USER_CONTEXT_BY_USER_ID: dict[int, dict] = {
 
 _MOCK_PORTFOLIO_SNAPSHOT_BY_USER_ID: dict[int, dict] = {
     1: {
-        "cash": 1_000_000,
+        "cash_balance": 1_000_000,
         "positions": [
             {
                 "stock_code": "005930",
@@ -51,7 +51,7 @@ _MOCK_PORTFOLIO_SNAPSHOT_BY_USER_ID: dict[int, dict] = {
         ],
     },
     2: {
-        "cash": 500_000,
+        "cash_balance": 500_000,
         "positions": [
             {
                 "stock_code": "005930",
@@ -62,7 +62,7 @@ _MOCK_PORTFOLIO_SNAPSHOT_BY_USER_ID: dict[int, dict] = {
         ],
     },
     3: {
-        "cash": 2_000_000,
+        "cash_balance": 2_000_000,
         "positions": [
             {
                 "stock_code": "000660",

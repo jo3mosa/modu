@@ -142,8 +142,5 @@ class InvestmentAgentState(BaseModel):
     # 9. Optional human approval
     # ==============================
 
-    # 사용자 승인이 필요한지 여부
-    approval_required: bool = False
-
-    # 사용자 승인 결과
+    # 사용자 승인 결과 (백엔드가 고위험 조건 판단 후 주입)
     approval_result: dict[str, Any] = Field(default_factory=dict)
