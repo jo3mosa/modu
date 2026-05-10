@@ -40,7 +40,6 @@ def _make_result(
         "node": "risk_gate",
         "status": status,
         "risk_cleared": risk_cleared,
-        "approval_required": approval_required,
     })
 
     return {
