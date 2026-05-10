@@ -583,13 +583,15 @@ def risk_gate(state: InvestmentAgentState) -> dict[str, Any]:
     # 6. 포트폴리오 스냅샷 검증
     # ==============================
 
-    total_asset = portfolio_snapshot.get("total_asset")
+    # 표준 키: total_assets / cash_balance.
+    # 외부(KIS API/백엔드) 호환성을 위해 단축 키 fallback도 일단 유지한다.
+    total_asset = portfolio_snapshot.get("total_assets")
     if total_asset is None:
-        total_asset = portfolio_snapshot.get("total_assets")
+        total_asset = portfolio_snapshot.get("total_asset")
 
-    cash = portfolio_snapshot.get("cash")
+    cash = portfolio_snapshot.get("cash_balance")
     if cash is None:
-        cash = portfolio_snapshot.get("cash_balance")
+        cash = portfolio_snapshot.get("cash")
 
     positions = _get_positions(portfolio_snapshot)
     current_position = _find_position(positions, asset)
