@@ -1,5 +1,6 @@
 from typing import Any, Literal
 
+from app.observability.langsmith_helpers import add_run_metadata
 from app.state.investment_state import InvestmentAgentState
 from app.utils.object_utils import get_value
 
@@ -34,6 +35,13 @@ def _make_result(
     risk_cleared: bool = False,
 ) -> dict[str, Any]:
     flow_status = "running" if status == "passed" else status
+
+    add_run_metadata({
+        "node": "risk_gate",
+        "status": status,
+        "risk_cleared": risk_cleared,
+        "approval_required": approval_required,
+    })
 
     return {
         "risk_cleared": risk_cleared,

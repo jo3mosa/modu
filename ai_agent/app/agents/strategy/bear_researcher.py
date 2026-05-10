@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Any
 
 from app.config.llm import get_strategy_llm
+from app.observability.langsmith_helpers import add_run_metadata
 from app.state.investment_state import InvestmentAgentState
 from app.utils.json_utils import to_json
 from app.utils.prompt_loader import load_prompt
@@ -29,6 +30,8 @@ def bear_researcher(state: InvestmentAgentState) -> dict[str, Any]:
     bear_history = debate_state.get("bear_history", "")
     last_bull_argument = debate_state.get("current_response", "")
     count = debate_state.get("count", 0)
+
+    add_run_metadata({"node": "bear_researcher", "round": count + 1})
 
     signals = state.analysis_snapshot.get("signals", {}) if state.analysis_snapshot else {}
 
