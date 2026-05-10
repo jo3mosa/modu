@@ -16,10 +16,13 @@ class InvestmentAgentState(BaseModel):
     각 Agent는 이 State를 읽고, 자신이 담당하는 필드만 업데이트한다.
     """
 
+    # 그래프 실행 주체 사용자 ID
+    user_id: int | None = None
+
     # ==============================
     # 1. Analysis Layer output
     # ==============================
-    
+
     # 시장 전체 상태 요약 (KOSPI/KOSDAQ 등 지수 변화율, 장 운영 여부 정도)
     market_snapshot: dict[str, Any] = Field(default_factory=dict)
     
