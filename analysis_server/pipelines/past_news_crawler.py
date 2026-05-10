@@ -18,6 +18,7 @@ import random
 import logging
 import argparse
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, asdict
 from typing import Optional
@@ -165,7 +166,6 @@ class NaverNewsCrawler:
         - 레거시 URL: ...?oid=015&aid=0004931791
         - 신규 모바일 URL: .../article/015/0004931791  (또는 /mnews/article/...)
         """
-        import re
         match = re.search(r"oid=(\d+).*?aid=(\d+)", url)
         if match:
             return f"{match.group(1)}_{match.group(2)}"
@@ -256,7 +256,6 @@ class NaverNewsCrawler:
 
     def _parse_datetime(self, raw: str) -> str:
         """다양한 날짜 형식을 ISO 형식으로 변환"""
-        import re
         if not raw:
             return ""
         # 이미 ISO 형식
