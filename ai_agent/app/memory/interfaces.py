@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal, Protocol, TypedDict
+from typing import Any, Literal, Protocol, TypedDict
 
 # ============================================================
 # 공통 Enum 타입 정의
@@ -94,6 +94,8 @@ class DecisionLog(TypedDict):
     winning_side: DebateSide | None       # Bull/Bear/Balanced 중 최종 판단에 더 반영된 관점
     expected_scenario: ScenarioType | None # AI가 예상한 향후 시나리오
 
+    indicators_snapshot: dict[str, Any]   # 판단 당시 지표 스냅샷 (analysis_snapshot.signals 원본)
+
 
 # ============================================================
 # Post Mortem 저장용 타입
@@ -106,7 +108,7 @@ class PostMortemRecord(TypedDict):
     ai_judgment_id: int                 # 어떤 AI 판단에 대한 복기인지 연결
     trade_pnl_record_id: int | None     # 거래 손익 기록 ID
     entry_timing_assessment: str        # 진입 시점 평가
-    target_price_assessment: str        # 익절/손절 전략 평가
+    exit_rule_assessment: str           # 익절/손절 전략 평가
     risk_prediction_accuracy: str       # 리스크 예측 정확도 평가
     missed_signals: list[str]           # 당시 놓쳤던 signal 목록
     lessons: list[str]                  # 다음 판단에 반영할 교훈

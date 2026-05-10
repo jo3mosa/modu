@@ -15,8 +15,13 @@ from app.context.user_context import (
     load_policy_context,
     load_user_context,
 )
+<<<<<<< HEAD
 from app.memory.interfaces import MemoryStore, PastDecision
 from app.observability.langsmith_helpers import add_run_metadata
+=======
+from app.memory.db_store import DBMemoryStore
+from app.memory.interfaces import MemoryStore
+>>>>>>> a5f3401eb82e9e754fccb7c661192f54c4c185cb
 from app.state.investment_state import InvestmentAgentState
 
 
@@ -75,39 +80,6 @@ class ContextLoader:
         )
 
 
-class _NullMemoryStore:
-    """DBMemoryStore 구현 전 임시 stub. db_store.py 완성 후 교체."""
-
-    def get_recent_decisions(
-        self,
-        user_id: int,
-        stock_codes: list[str],
-        sectors: list[str],
-        key_signals: list[str],
-        limit: int = 10,
-        days: int = 30,
-    ) -> list[PastDecision]:
-        return []
-
-    def get_similar_decisions(
-        self,
-        user_id: int,
-        stock_codes: list[str],
-        sectors: list[str],
-        key_signals: list[str],
-        limit: int = 5,
-        only_loss: bool = False,
-        days: int = 30,
-    ) -> list[PastDecision]:
-        return []
-
-    def store_decision(self, log: Any) -> int:
-        return 0
-
-    def store_postmortem(self, report: Any) -> int:
-        return 0
-
-
 @lru_cache(maxsize=1)
 def _get_shared_engine() -> Engine:
     """프로세스 전체에서 Engine을 한 번만 생성해 connection pool을 재사용한다."""
@@ -115,14 +87,11 @@ def _get_shared_engine() -> Engine:
 
 
 def context_loader(state: InvestmentAgentState) -> dict[str, Any]:
-    """
-    LangGraph 노드 어댑터.
-
-    TODO: _NullMemoryStore를 DBMemoryStore로 교체.
-    """
+    """LangGraph 노드 어댑터."""
     if state.user_id is None:
         raise ValueError("InvestmentAgentState.user_id가 설정되지 않았습니다.")
 
+<<<<<<< HEAD
     memory_store = _NullMemoryStore()
     add_run_metadata({
         "node": "context_loader",
@@ -130,6 +99,10 @@ def context_loader(state: InvestmentAgentState) -> dict[str, Any]:
     })
 
     loader = ContextLoader(memory_store=memory_store, engine=_get_shared_engine())
+=======
+    engine = _get_shared_engine()
+    loader = ContextLoader(memory_store=DBMemoryStore(engine), engine=engine)
+>>>>>>> a5f3401eb82e9e754fccb7c661192f54c4c185cb
     ctx = loader.load(
         user_id=state.user_id,
         analysis_snapshot=state.analysis_snapshot,
