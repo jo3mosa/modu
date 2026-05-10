@@ -56,7 +56,7 @@ ENV/
 env.bak/
 venv.bak/
 
-# nalysis Server
+# analysis Server
 analysis_server/.venv/
 analysis_server/__pycache__/
 analysis_server/data/*.db
