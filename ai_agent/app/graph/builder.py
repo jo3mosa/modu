@@ -6,7 +6,7 @@ from app.agents.strategy.bear_researcher import bear_researcher
 from app.agents.strategy.bull_researcher import bull_researcher
 from app.agents.strategy.strategy_manager import strategy_manager
 from app.context.context_loader import context_loader
-from app.runtime.executor import executor
+from app.action.executor.executor import executor
 from app.state.investment_state import InvestmentAgentState
 
 
