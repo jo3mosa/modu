@@ -11,4 +11,10 @@ public class ApiException extends RuntimeException {
         super(errorCode.getDefaultMessage());
         this.errorCode = errorCode;
     }
+
+    /** cause 보존 생성자 — 외부 API 호출 실패 등 원인 예외가 있을 때 사용 */
+    public ApiException(ErrorCode errorCode, Throwable cause) {
+        super(errorCode.getDefaultMessage(), cause);
+        this.errorCode = errorCode;
+    }
 }

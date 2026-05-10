@@ -44,10 +44,11 @@ public class KisPendingOrderClient {
     private static final String PENDING_PATH   = "/uapi/domestic-stock/v1/trading/inquire-psbl-rvsecncl";
     private static final String TR_ID          = "TTTC0084R";
 
-    /** sll_buy_dvsn_cd: 01=매도, 02=매수 */
+    /** sll_buy_dvsn_cd: 01=매도(SELL), 02=매수(BUY) — 두 값만 유효 */
     private static final String SELL_CODE = "01";
+    private static final String BUY_CODE  = "02";
 
-    /** ord_dvsn_cd: 00=지정가, 그 외(01 시장가 등)=MARKET 으로 통일 처리 */
+    /** ord_dvsn_cd: 00=지정가(LIMIT), 그 외(01 시장가 등)=MARKET 으로 통일 처리 */
     private static final String LIMIT_CODE = "00";
 
     private final RestClient kisRestClient;
@@ -105,8 +106,8 @@ public class KisPendingOrderClient {
                     .toList();
 
         } catch (RestClientException e) {
-            log.error("KIS 미체결 주문 조회 API 호출 실패: {}", e.getMessage());
-            throw new ApiException(CommonErrorCode.EXTERNAL_API_ERROR);
+            log.error("KIS 미체결 주문 조회 API 호출 실패", e);
+            throw new ApiException(CommonErrorCode.EXTERNAL_API_ERROR, e);
         }
     }
 
@@ -119,7 +120,7 @@ public class KisPendingOrderClient {
                 raw.odno(),
                 raw.pdno(),
                 raw.prdtName(),
-                SELL_CODE.equals(raw.sllBuyDvsnCd()) ? "SELL" : "BUY",
+                parseSide(raw.sllBuyDvsnCd()),
                 LIMIT_CODE.equals(raw.ordDvsnCd()) ? "LIMIT" : "MARKET",
                 parseLong(raw.ordQty()),
                 parseLong(raw.ordUnpr()),
@@ -129,17 +130,29 @@ public class KisPendingOrderClient {
     }
 
     /**
+     * sll_buy_dvsn_cd → BUY/SELL 변환
+     * KIS 스펙상 허용 값: 01(매도), 02(매수) 두 가지만 유효.
+     * 그 외 값은 KIS 포맷 오류로 EXTERNAL_API_ERROR 처리.
+     */
+    private String parseSide(String sllBuyDvsnCd) {
+        if (SELL_CODE.equals(sllBuyDvsnCd)) return "SELL";
+        if (BUY_CODE.equals(sllBuyDvsnCd))  return "BUY";
+        log.error("KIS 응답 sll_buy_dvsn_cd 유효하지 않은 값: '{}'", sllBuyDvsnCd);
+        throw new ApiException(CommonErrorCode.EXTERNAL_API_ERROR);
+    }
+
+    /**
      * KIS 응답 숫자 문자열 파싱
      * null/blank: 0 반환 (미제공 필드)
-     * 숫자가 아닌 값: KIS API 포맷 오류로 EXTERNAL_API_ERROR 처리
+     * 숫자가 아닌 값: KIS API 포맷 오류로 EXTERNAL_API_ERROR 처리 (cause 보존)
      */
     private long parseLong(String value) {
         if (value == null || value.isBlank()) return 0L;
         try {
             return Long.parseLong(value.trim());
         } catch (NumberFormatException e) {
-            log.error("KIS 미체결 주문 응답 파싱 실패 - 숫자로 변환 불가한 값 수신: '{}'", value);
-            throw new ApiException(CommonErrorCode.EXTERNAL_API_ERROR);
+            log.error("KIS 미체결 주문 응답 파싱 실패 - 숫자로 변환 불가한 값 수신: '{}'", value, e);
+            throw new ApiException(CommonErrorCode.EXTERNAL_API_ERROR, e);
         }
     }
 
