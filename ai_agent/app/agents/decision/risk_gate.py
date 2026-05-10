@@ -57,7 +57,6 @@ def risk_gate(state: InvestmentAgentState) -> dict[str, Any]:
     검증 항목:
     1. final_decision 기본값 유효성 (action / asset / side / order_amount)
     2. 자동매매 허용 여부 (allow_auto_trade)
-    3. Kill-switch 상태
     """
 
     checks: list[dict[str, Any]] = []
@@ -202,34 +201,7 @@ def risk_gate(state: InvestmentAgentState) -> dict[str, Any]:
     )
 
     # ==============================
-    # 3. Kill-switch 검증
-    # ==============================
-
-    kill_switch = policy_context.get("kill_switch", {})
-
-    if isinstance(kill_switch, dict) and kill_switch.get("triggered", False):
-        _add_check(
-            checks,
-            name="kill_switch",
-            status="blocked",
-            reason=kill_switch.get("reason", "Kill-switch 조건이 충족되었습니다."),
-            value=kill_switch,
-        )
-        return _make_result(
-            status="blocked",
-            reason="Kill-switch가 발동되어 자동매매를 중단합니다.",
-            checks=checks,
-        )
-
-    _add_check(
-        checks,
-        name="kill_switch",
-        status="passed",
-        reason="Kill-switch 조건에 해당하지 않습니다.",
-    )
-
-    # ==============================
-    # 4. 최종 통과
+    # 3. 최종 통과
     # ==============================
 
     return _make_result(
