@@ -1,10 +1,15 @@
+import os
 import sqlite3
 import pandas as pd
 from pykrx import stock
 import time
 from datetime import datetime
 
-def update_daily_candles(db_path="../data/stock_master.db"):
+# scripts/backfill/ → analysis_server/data/stock_master.db
+_DEFAULT_DB = os.path.join(os.path.dirname(__file__), "..", "..", "data", "stock_master.db")
+
+
+def update_daily_candles(db_path=_DEFAULT_DB):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     

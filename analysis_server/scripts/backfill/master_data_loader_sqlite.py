@@ -7,7 +7,10 @@ from apscheduler.schedulers.background import BackgroundScheduler
 import time
 
 
-def update_krx_master_db(db_path="../data/stock_master.db"): # analysis/data/ DB 저장 추후 백엔드 DB 서버로 변경
+_DEFAULT_DB = os.path.join(os.path.dirname(__file__), "..", "..", "data", "stock_master.db")
+
+
+def update_krx_master_db(db_path=_DEFAULT_DB): # analysis/data/ DB 저장 추후 백엔드 DB 서버로 변경
     print("  [START] KRX 전 종목 마스터 데이터(최신) 수집")
 
     # ====================================

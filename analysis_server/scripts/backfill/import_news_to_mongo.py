@@ -27,7 +27,8 @@ COLLECTION_NAME = "news_articles"
 
 def get_mongo_collection():
     """MongoDB 연결 + collection 반환. 모노레포 루트의 .env 자동 로드."""
-    env_path = os.path.join(os.path.dirname(__file__), "../../.env")
+    # scripts/backfill/ → modu/ 루트로 3단계 상위
+    env_path = os.path.join(os.path.dirname(__file__), "../../../.env")
     load_dotenv(dotenv_path=env_path)
 
     uri = os.getenv("MONGO_URI")

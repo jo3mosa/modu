@@ -11,9 +11,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+_MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
 class DartApiClient:
     BASE_URL = "https://opendart.fss.or.kr/api"
-    CORP_CODE_CACHE = "dart_corp_code.json"
+    # CWD에 무관하게 clients/ 옆에 캐시 — gitignored
+    CORP_CODE_CACHE = os.path.join(_MODULE_DIR, "dart_corp_code.json")
     CORP_CODE_TTL_DAYS = 7
     HTTP_TIMEOUT = 10  # seconds — polling worker hang 방지
 
