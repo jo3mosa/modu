@@ -210,6 +210,25 @@ services:
 
 
 
+  # KRX 종목 마스터 데이터 파이프라인 (매일 08:00 자동 적재)
+  analysis-pipeline:
+    build:
+      context: ./analysis_server
+      dockerfile: Dockerfile
+    container_name: modu-analysis-pipeline
+    environment:
+      DB_HOST: postgres
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD:-localpassword}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - modu-network
+    restart: on-failure
+
 networks:
   modu-network:
     driver: bridge
