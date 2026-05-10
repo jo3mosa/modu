@@ -106,7 +106,7 @@ class PostMortemRecord(TypedDict):
     ai_judgment_id: int                 # 어떤 AI 판단에 대한 복기인지 연결
     trade_pnl_record_id: int | None     # 거래 손익 기록 ID
     entry_timing_assessment: str        # 진입 시점 평가
-    target_price_assessment: str        # 익절/손절 전략 평가
+    exit_rule_assessment: str           # 익절/손절 전략 평가
     risk_prediction_accuracy: str       # 리스크 예측 정확도 평가
     missed_signals: list[str]           # 당시 놓쳤던 signal 목록
     lessons: list[str]                  # 다음 판단에 반영할 교훈
