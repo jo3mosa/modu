@@ -1,3 +1,4 @@
+from functools import lru_cache
 from typing import Any, TypedDict
 
 from sqlalchemy.engine import Engine
@@ -106,6 +107,12 @@ class _NullMemoryStore:
         return 0
 
 
+@lru_cache(maxsize=1)
+def _get_shared_engine() -> Engine:
+    """프로세스 전체에서 Engine을 한 번만 생성해 connection pool을 재사용한다."""
+    return create_engine_from_env()
+
+
 def context_loader(state: InvestmentAgentState) -> dict[str, Any]:
     """
     LangGraph 노드 어댑터.
@@ -115,7 +122,7 @@ def context_loader(state: InvestmentAgentState) -> dict[str, Any]:
     if state.user_id is None:
         raise ValueError("InvestmentAgentState.user_id가 설정되지 않았습니다.")
 
-    loader = ContextLoader(memory_store=_NullMemoryStore())
+    loader = ContextLoader(memory_store=_NullMemoryStore(), engine=_get_shared_engine())
     ctx = loader.load(
         user_id=state.user_id,
         analysis_snapshot=state.analysis_snapshot,

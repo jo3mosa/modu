@@ -1,3 +1,4 @@
+import copy
 import os
 from typing import Any
 
@@ -80,7 +81,7 @@ def load_user_context(user_id: int, engine: Engine) -> dict[str, Any]:
             "take_profit_pct": rules.get("take_profit_pct"),
         },
         # TODO: 고도화 시 investment-strategy.md 기반 DB 테이블로 교체
-        "domestic_stock_risk_policy": _DOMESTIC_STOCK_RISK_POLICY,
+        "domestic_stock_risk_policy": copy.deepcopy(_DOMESTIC_STOCK_RISK_POLICY),
     }
 
 
@@ -101,10 +102,10 @@ def load_policy_context(user_id: int, engine: Engine) -> dict[str, Any]:
         },
         # TODO: 고도화 시 investment-strategy.md 기반 DB 테이블로 교체
         "max_order_amount": _DEFAULT_MAX_ORDER_AMOUNT,
-        "system_trading_constraints": _SYSTEM_TRADING_CONSTRAINTS,
-        "asset_allocation": _ASSET_ALLOCATION,
-        "market_rules": _MARKET_RULES,
-        "domestic_stock_risk_policy": _DOMESTIC_STOCK_RISK_POLICY,
+        "system_trading_constraints": copy.deepcopy(_SYSTEM_TRADING_CONSTRAINTS),
+        "asset_allocation": copy.deepcopy(_ASSET_ALLOCATION),
+        "market_rules": copy.deepcopy(_MARKET_RULES),
+        "domestic_stock_risk_policy": copy.deepcopy(_DOMESTIC_STOCK_RISK_POLICY),
     }
 
 

@@ -57,21 +57,21 @@ def load_memory_context(
 
 
 def extract_stock_codes(candidate_assets: list[dict[str, Any]]) -> list[str]:
-    """후보 종목에서 stock_code(또는 ticker) 중복 없이 추출한다."""
-    return list({
+    """후보 종목에서 stock_code(또는 ticker) 첫 등장 순서를 유지하며 중복 없이 추출한다."""
+    return list(dict.fromkeys(
         asset.get("stock_code") or asset.get("ticker")
         for asset in candidate_assets
         if asset.get("stock_code") or asset.get("ticker")
-    })
+    ))
 
 
 def extract_sectors(candidate_assets: list[dict[str, Any]]) -> list[str]:
-    """후보 종목에서 섹터 중복 없이 추출한다."""
-    return list({
+    """후보 종목에서 섹터를 첫 등장 순서를 유지하며 중복 없이 추출한다."""
+    return list(dict.fromkeys(
         asset["sector"]
         for asset in candidate_assets
         if asset.get("sector")
-    })
+    ))
 
 
 def extract_key_signals(analysis_snapshot: dict[str, Any]) -> list[str]:
