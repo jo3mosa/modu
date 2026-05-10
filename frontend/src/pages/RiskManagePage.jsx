@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getProfile, getProfileQuestions, updateProfile, updateRules } from '../api/strategy';
+import { getProfile, getProfileQuestions, getRules, updateProfile, updateRules } from '../api/strategy';
 import './RiskManagePage.css';
 
 const RISK_LEVEL_LABEL = {
@@ -35,8 +35,8 @@ export default function RiskManagePage() {
     maxLossLimit: 500000,
   });
 
-  // 룰셋 낙관적 잠금용 version. 백엔드에 GET /me/rules가 없으므로 최초 PUT은 0으로,
-  // 이후엔 PUT 응답의 version을 보관 후 다음 요청에 재전송한다.
+  // 룰셋 낙관적 잠금용 version. 페이지 진입 시 GET /me/rules로 초기화하고,
+  // 이후 PUT 응답의 version을 갱신 보관해 다음 요청에 재전송한다.
   const [ruleVersion, setRuleVersion] = useState(0);
 
   // 재진단 모달 상태
@@ -47,6 +47,31 @@ export default function RiskManagePage() {
   const [modalPrinciple, setModalPrinciple] = useState('');
   const [submittingProfile, setSubmittingProfile] = useState(false);
   const [savingRules, setSavingRules] = useState(false);
+
+  // 페이지 진입 시 현재 룰셋 초기 조회 (404는 룰셋 미설정 상태이므로 무시 → 기본값 + version 0 유지)
+  useEffect(() => {
+    let cancelled = false;
+    getRules()
+      .then((data) => {
+        if (cancelled || !data) return;
+        setRules({
+          takeProfit: data.takeProfitRate ?? 5,
+          stopLoss: -(data.stopLossRate ?? 3),
+          maxDailyOrders: data.maxDailyOrderCount ?? 10,
+          maxLossLimit: data.maxDailyLossAmount ?? 500000,
+        });
+        setRuleVersion(data.version ?? 0);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        if (error.status !== 404) {
+          console.error('룰셋 조회 실패:', error);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // 페이지 진입 시 현재 투자 성향 초기 조회 (404 INVEST_001은 미진단 상태이므로 무시)
   useEffect(() => {

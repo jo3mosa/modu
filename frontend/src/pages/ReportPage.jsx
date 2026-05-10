@@ -1,10 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Highcharts from 'highcharts';
 import HighchartsReactPkg from 'highcharts-react-official';
 import highcharts3d from 'highcharts/highcharts-3d';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
-// import { getAiDecisions, getAiDecisionByOrder } from '../api/aiAgent';
+import {
+  getAiDecisions,
+  getAiDecisionByOrder,
+  ACTION_DISPLAY,
+  EXECUTION_STATUS_DISPLAY,
+} from '../api/aiAgent';
 // import { getOrderHistory } from '../api/order';
 import './ReportPage.css';
 
@@ -45,52 +50,38 @@ const MOCK_TREND_DATA = {
   kospiYield: [0, 0.5, 0.2, 0.8, 1.1, 1.0, 1.5, 2.0]
 };
 
+// 백엔드 미연결/실패 시 fallback. 형식은 aiAgent.js의 표준 형식과 동일하게 맞춤.
 const MOCK_TRADE_LOGS = [
   {
     id: 1,
-    type: 'BUY',
-    stock: '삼성전자',
-    price: 74500,
-    qty: 10,
-    time: '2026-05-03 10:30',
-    reason: 'RSI 지표가 30 이하로 과매도 구간에 진입하였으며, 외국인 순매수세가 3일 연속 유입되는 것을 확인하여 분할 매수 1차 진입을 결정했습니다.',
+    orderId: 5001,
+    stockCode: '005930',
+    action: 'BUY',
+    executionStatus: 'READY',
     confidence: 85,
-    marketDataSnapshot: [
-      { label: 'RSI 28 (과매도)', type: 'positive' },
-      { label: '외국인 순매수', type: 'positive' },
-      { label: 'MACD 골든크로스 임박', type: 'info' }
-    ]
+    reason: 'RSI 지표가 30 이하로 과매도 구간에 진입하였으며, 외국인 순매수세가 3일 연속 유입되는 것을 확인하여 분할 매수 1차 진입을 결정했습니다.',
+    decidedAt: '2026-05-03 10:30',
   },
   {
     id: 2,
-    type: 'SELL',
-    stock: 'SK하이닉스',
-    price: 149000,
-    qty: 5,
-    time: '2026-05-02 09:15',
-    reason: '설정된 목표 수익률 5%를 초과 달성하였으며, 볼린저 밴드 상단 이탈 및 단기 저항선 도달을 확인하여 수익 실현을 위해 매도 처리했습니다.',
+    orderId: 5002,
+    stockCode: '000660',
+    action: 'SELL',
+    executionStatus: 'READY',
     confidence: 92,
-    marketDataSnapshot: [
-      { label: '목표 수익 달성 (+6.2%)', type: 'positive' },
-      { label: '볼린저 밴드 상단 돌파', type: 'negative' },
-      { label: 'RSI 75 (과매수)', type: 'negative' }
-    ]
+    reason: '설정된 목표 수익률 5%를 초과 달성하였으며, 볼린저 밴드 상단 이탈 및 단기 저항선 도달을 확인하여 수익 실현을 위해 매도 처리했습니다.',
+    decidedAt: '2026-05-02 09:15',
   },
   {
     id: 3,
-    type: 'SELL',
-    stock: '카카오',
-    price: 45000,
-    qty: 20,
-    time: '2026-05-01 14:20',
-    reason: '설정된 최대 허용 손실률(-3%)에 도달하여, 추가적인 하락 리스크를 방어하기 위해 설정된 리스크 관리 룰셋에 따라 기계적 손절매를 집행했습니다.',
+    orderId: 5003,
+    stockCode: '035720',
+    action: 'SELL',
+    executionStatus: 'BLOCKED',
     confidence: 99,
-    marketDataSnapshot: [
-      { label: '최대 손실률 도달 (-3.1%)', type: 'negative' },
-      { label: '20일선 하향 돌파', type: 'negative' },
-      { label: '기관 대량 매도', type: 'negative' }
-    ]
-  }
+    reason: '설정된 최대 허용 손실률(-3%)에 도달하여, 추가적인 하락 리스크를 방어하기 위해 설정된 리스크 관리 룰셋에 따라 기계적 손절매를 집행했습니다.',
+    decidedAt: '2026-05-01 14:20',
+  },
 ];
 
 const PERIOD_OPTIONS = [
@@ -144,21 +135,28 @@ export default function ReportPage() {
   // }, [logTab]);
   // ─────────────────────────────────────────────────────────────────────────────
 
-  // ── TODO: 백엔드 연동 시 아래 주석 블록 해제 ( 전체 이력 조회) ──
-  // useEffect(() => {
-  //   async function fetchLogs() {
-  //     try {
-  //       const response = await getAiDecisions();
-  //       setLogs(response.content ?? []); // 응답 스펙에 맞게 변환 필요
-  //     } catch (error) {
-  //       console.error('AI 매매 이력을 불러오지 못했습니다.', error);
-  //     }
-  //   }
-  //   fetchLogs();
-  // }, []);
-  // ─────────────────────────────────────────────────────────────────────────────
+  // AI 판단 이력 조회. 실패 시 mock 그대로 표시.
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchLogs() {
+      try {
+        const response = await getAiDecisions({ page: 0, size: 20 });
+        if (cancelled) return;
+        if (response?.content?.length) {
+          setLogs(response.content);
+        }
+      } catch (error) {
+        if (cancelled) return;
+        console.warn('AI 판단 이력 조회 실패 (mock 표시 유지):', error);
+      }
+    }
+    fetchLogs();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  // 아코디언 토글 및 단건 상세 조회
+  // 아코디언 토글 + 펼칠 때 단건 상세(indicatorsSnapshot 포함) 조회
   const toggleLog = async (id) => {
     if (expandedLogId === id) {
       setExpandedLogId(null);
@@ -166,16 +164,15 @@ export default function ReportPage() {
     }
     setExpandedLogId(id);
 
-    // ── TODO: 백엔드 연동 시 아래 주석 블록 해제 (주문별 근거 조회) ──
-    // if (!detailedDecisions[id]) {
-    //   try {
-    //     const detail = await getAiDecisionByOrder(id);
-    //     setDetailedDecisions(prev => ({ ...prev, [id]: detail }));
-    //   } catch (error) {
-    //     console.error('상세 판단 근거를 불러오지 못했습니다.', error);
-    //   }
-    // }
-    // ─────────────────────────────────────────────────────────────────────────
+    if (detailedDecisions[id]) return;
+    const log = logs.find((l) => l.id === id);
+    if (!log?.orderId) return;
+    try {
+      const detail = await getAiDecisionByOrder(log.orderId);
+      setDetailedDecisions((prev) => ({ ...prev, [id]: detail }));
+    } catch (error) {
+      console.warn('상세 판단 근거 조회 실패:', error);
+    }
   };
 
   // 1. 도넛 차트 -> 종목 비중
@@ -352,18 +349,33 @@ export default function ReportPage() {
             <div className="trade-log-list">
               {logs.map((log) => {
                 const isExpanded = expandedLogId === log.id;
+                const actionDisplay = ACTION_DISPLAY[log.action] ?? ACTION_DISPLAY.UNKNOWN;
+                const statusDisplay = EXECUTION_STATUS_DISPLAY[log.executionStatus];
+                const detail = detailedDecisions[log.id];
                 return (
                   <div key={log.id} className={`trade-log-item ${isExpanded ? 'expanded' : ''}`}>
                     <div className="log-header" onClick={() => toggleLog(log.id)}>
                       <div className="log-header-left">
-                        <span className={`log-badge ${log.type.toLowerCase()}`}>
-                          {log.type === 'BUY' ? '매수' : '매도'}
+                        <span
+                          className={`log-badge ${(log.action ?? 'unknown').toLowerCase()}`}
+                          style={{ color: actionDisplay.color }}
+                        >
+                          {actionDisplay.label}
                         </span>
-                        <span className="log-stock">{log.stock}</span>
-                        <span className="log-price">{log.price.toLocaleString()}원 · {log.qty}주</span>
+                        <span className="log-stock">{log.stockCode}</span>
+                        {statusDisplay && (
+                          <span className="log-status" style={{ color: statusDisplay.color, fontSize: '0.85em' }}>
+                            · {statusDisplay.label}
+                          </span>
+                        )}
+                        {log.confidence != null && (
+                          <span className="log-confidence" style={{ fontSize: '0.85em', color: '#aaa' }}>
+                            신뢰도 {log.confidence}
+                          </span>
+                        )}
                       </div>
                       <div className="log-header-right">
-                        <span className="log-time">{log.time}</span>
+                        <span className="log-time">{log.decidedAt}</span>
                         {isExpanded ? <ChevronUp size={20} color="#888" /> : <ChevronDown size={20} color="#888" />}
                       </div>
                     </div>
@@ -373,15 +385,21 @@ export default function ReportPage() {
                         <h4>AI 판단 근거</h4>
                         <p className="reason-text">{log.reason}</p>
 
-                        {log.marketDataSnapshot && log.marketDataSnapshot.length > 0 && (
+                        {detail?.indicatorsSnapshot && (
                           <div className="market-snapshot">
-                            <div className="snapshot-tags">
-                              {log.marketDataSnapshot.map((tag, idx) => (
-                                <span key={idx} className={`snap-tag ${tag.type}`}>
-                                  {tag.label}
-                                </span>
-                              ))}
-                            </div>
+                            <h4 style={{ marginTop: '0.75rem' }}>판단 시점 지표 스냅샷</h4>
+                            <pre
+                              className="snapshot-json"
+                              style={{
+                                background: 'rgba(255,255,255,0.04)',
+                                padding: '0.75rem',
+                                borderRadius: '6px',
+                                fontSize: '0.85em',
+                                overflowX: 'auto',
+                              }}
+                            >
+                              {JSON.stringify(detail.indicatorsSnapshot, null, 2)}
+                            </pre>
                           </div>
                         )}
                       </div>
