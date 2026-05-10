@@ -31,6 +31,7 @@ def decision_manager(state: InvestmentAgentState) -> dict[str, Any]:
     - ResearchVerdict가 hold를 권고했다면 LLM 호출 없이 즉시 hold FinalDecision을 반환한다.
     """
 
+    history_context_tokens = count_tokens(to_json(state.history_context))
     verdict = state.research_verdict
 
     if verdict is None:
@@ -38,6 +39,7 @@ def decision_manager(state: InvestmentAgentState) -> dict[str, Any]:
             reason="research_verdict가 없어 최종 판단을 보류합니다.",
             asset=None,
             risk_summary=["Strategy Team 결과 누락"],
+            history_context_tokens=history_context_tokens,
         )
 
     if verdict.recommended_side == "hold":
@@ -45,6 +47,7 @@ def decision_manager(state: InvestmentAgentState) -> dict[str, Any]:
             reason=verdict.rationale or "Strategy Manager가 hold를 권고했습니다.",
             asset=verdict.asset or None,
             confidence=verdict.confidence,
+            history_context_tokens=history_context_tokens,
         )
 
     chain = load_prompt(str(_PROMPT_PATH)) | get_strategy_llm() | _parser
@@ -74,12 +77,14 @@ def decision_manager(state: InvestmentAgentState) -> dict[str, Any]:
                 reason="LLM 출력 파싱 2회 실패",
                 asset=verdict.asset,
                 risk_summary=[str(exc)],
+                history_context_tokens=history_context_tokens,
             )
     except Exception as exc:
         return _hold(
             reason="LLM 호출 실패",
             asset=verdict.asset,
             risk_summary=[str(exc)],
+            history_context_tokens=history_context_tokens,
         )
 
     # action="trade"인 경우 실제 주문으로 이어지므로, 주문 필수 필드가 모두 채워졌는지
@@ -98,13 +103,14 @@ def decision_manager(state: InvestmentAgentState) -> dict[str, Any]:
                     "trade 결정에 필요한 주문 정보가 불완전합니다.",
                     *(get_value(final_decision, "risk_summary") or []),
                 ],
+                history_context_tokens=history_context_tokens,
             )
 
     add_run_metadata({
         "node": "decision_manager",
         "action": final_decision.action,
         "risk_level": final_decision.risk_level,
-        "history_context_tokens": count_tokens(to_json(state.history_context)),
+        "history_context_tokens": history_context_tokens,
     })
 
     return {
@@ -118,7 +124,14 @@ def _hold(
     asset: str | None = None,
     confidence: float | None = 0.0,
     risk_summary: list[str] | None = None,
+    history_context_tokens: int = 0,
 ) -> dict[str, Any]:
+    add_run_metadata({
+        "node": "decision_manager",
+        "action": "hold",
+        "risk_level": "low",
+        "history_context_tokens": history_context_tokens,
+    })
     return {
         "final_decision": FinalDecision(
             action="hold",
