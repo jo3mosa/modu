@@ -87,9 +87,9 @@ def extract_key_signals(analysis_snapshot: dict[str, Any]) -> list[str]:
         key_signals.add("technical_signal")
     if signals.get("fundamental"):
         key_signals.add("fundamental_signal")
-    if signals.get("event", {}).get("has_urgent_issue"):
+    if (signals.get("event") or {}).get("has_urgent_issue"):
         key_signals.add("event_signal")
-    if signals.get("sentiment", {}).get("daily_score") is not None:
+    if (signals.get("sentiment") or {}).get("daily_score") is not None:
         key_signals.add("sentiment_signal")
 
     return sorted(key_signals)
