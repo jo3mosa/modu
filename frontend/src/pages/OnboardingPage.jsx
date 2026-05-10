@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, ArrowLeft } from 'lucide-react';
 import { getProfileQuestions, updateProfile, updateRules } from '../api/strategy';
+import { registerKisKey } from '../api/user';
 import './OnboardingPage.css';
 
 const RISK_LEVEL_LABEL = {
@@ -36,6 +37,7 @@ export default function OnboardingPage() {
   const [apiKeys, setApiKeys] = useState({
     appKey: '',
     appSecret: '',
+    accountNo: '',
   });
   const [submittingComplete, setSubmittingComplete] = useState(false);
 
@@ -122,8 +124,22 @@ export default function OnboardingPage() {
         version: 0,
       });
 
-      // TODO: KIS 키 등록은 별도 API 연동 후 처리 (POST /users/me/kis-keys)
-      navigate('/mypage');
+      // 3) KIS 키 등록 (appKey, appSecret, accountNo 모두 있을 때만)
+      if (apiKeys.appKey && apiKeys.appSecret && apiKeys.accountNo) {
+        try {
+          await registerKisKey({
+            appKey: apiKeys.appKey,
+            appSecret: apiKeys.appSecret,
+            accountNo: apiKeys.accountNo,
+            isRealAccount: true,
+          });
+        } catch (kisError) {
+          console.warn('KIS 키 등록 실패 (마이페이지에서 재등록 가능):', kisError);
+          alert('KIS API 키 등록에 실패했습니다.\n마이페이지에서 다시 등록해 주세요.');
+        }
+      }
+
+      navigate('/home');
     } catch (error) {
       console.error('룰셋 저장 실패:', error);
       alert(error.message || '설정 저장 중 오류가 발생했습니다.');
@@ -312,7 +328,7 @@ function Step3Rules({ rules, setRules, profileResult, nextStep, prevStep }) {
 
 // 4단계 -> 계좌 연동
 function Step4ApiKeys({ apiKeys, setApiKeys, handleComplete, prevStep, submitting }) {
-  const isComplete = apiKeys.appKey && apiKeys.appSecret;
+  const isComplete = apiKeys.appKey && apiKeys.appSecret && apiKeys.accountNo;
 
   return (
     <div className="step-wrapper">
@@ -336,6 +352,15 @@ function Step4ApiKeys({ apiKeys, setApiKeys, handleComplete, prevStep, submittin
             value={apiKeys.appSecret}
             onChange={(e) => setApiKeys({ ...apiKeys, appSecret: e.target.value })}
             placeholder="한국투자증권 App Secret을 입력하세요"
+          />
+        </div>
+        <div className="input-box">
+          <label>계좌번호 (계좌번호-상품코드)</label>
+          <input
+            type="text"
+            value={apiKeys.accountNo}
+            onChange={(e) => setApiKeys({ ...apiKeys, accountNo: e.target.value })}
+            placeholder="예: 50012345-01"
           />
         </div>
       </div>
