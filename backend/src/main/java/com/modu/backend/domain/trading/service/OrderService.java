@@ -263,12 +263,26 @@ public class OrderService {
                 kisItem.stockName(),
                 kisItem.side(),
                 kisItem.orderType(),
-                (int) kisItem.quantity(),
+                toIntExact(kisItem.quantity(), "quantity"),
                 kisItem.price(),
-                (int) kisItem.filledQuantity(),
-                (int) kisItem.remainQuantity(),
+                toIntExact(kisItem.filledQuantity(), "filledQuantity"),
+                toIntExact(kisItem.remainQuantity(), "remainQuantity"),
                 order != null ? order.getSource().name() : null,
                 order != null ? order.getCreatedAt().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME) : null
         );
+    }
+
+    /**
+     * long → int 변환 (overflow 명시적 처리)
+     * 주식 수량이 Integer.MAX_VALUE(약 21억)를 초과하는 경우는 현실적으로 없지만,
+     * KIS API 응답 포맷 오류로 비정상적인 값이 올 경우를 방어
+     */
+    private int toIntExact(long value, String fieldName) {
+        try {
+            return Math.toIntExact(value);
+        } catch (ArithmeticException e) {
+            log.error("KIS 미체결 주문 수량 필드 int 범위 초과 - field: {}, value: {}", fieldName, value);
+            throw new ApiException(CommonErrorCode.EXTERNAL_API_ERROR, e);
+        }
     }
 }
