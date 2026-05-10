@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
-// 주문/미체결 API는 백엔드 미구현 상태이므로 import 보류
-// import { getBuyingPower, placeOrder, getPendingOrders, updateOrder } from '../api/order';
+import { placeOrder } from '../api/order';
+// 미체결/주문가능/정정취소 API는 백엔드 미구현 또는 워킹트리 미반영 상태
+// import { getBuyingPower, getPendingOrders, updateOrder } from '../api/order';
 import './OrderBook.css';
 
 export default function OrderBook({ stockCode }) {
@@ -8,6 +9,7 @@ export default function OrderBook({ stockCode }) {
 
   const [price, setPrice] = useState(0);
   const [quantity, setQuantity] = useState(1);
+  const [submittingOrder, setSubmittingOrder] = useState(false);
 
   // 실시간 호가 (OrderbookResponse): asks/bids는 OrderbookLevel[] = { level, price, quantity }
   const [asks, setAsks] = useState([]);
@@ -52,9 +54,39 @@ export default function OrderBook({ stockCode }) {
     if (typeof lvPrice === 'number') setPrice(lvPrice);
   };
 
-  // 매수/매도 주문 — 백엔드 Order API 미구현 상태라 임시 alert만 표시
-  const handleOrder = () => {
-    alert(`${orderType === 'BUY' ? '매수' : '매도'} 주문 폼은 백엔드 주문 API 머지 후 활성화됩니다.`);
+  // 수동 매수/매도 주문 (POST /api/v1/orders)
+  // 현재 화면이 단가 입력형이라 LIMIT 고정. 추후 시장가 옵션 추가 시 orderMethod 토글 필요.
+  const handleOrder = async () => {
+    if (submittingOrder) return;
+    if (!stockCode) {
+      alert('종목이 선택되지 않았습니다.');
+      return;
+    }
+    if (!Number.isFinite(Number(price)) || Number(price) <= 0) {
+      alert('단가를 입력해 주세요.');
+      return;
+    }
+    if (!Number.isFinite(Number(quantity)) || Number(quantity) < 1) {
+      alert('수량은 1 이상이어야 합니다.');
+      return;
+    }
+
+    setSubmittingOrder(true);
+    try {
+      const result = await placeOrder({
+        stockCode,
+        side: orderType,
+        orderMethod: 'LIMIT',
+        quantity: Number(quantity),
+        price: Number(price),
+      });
+      alert(`주문이 접수되었습니다. (주문번호: ${result.orderId}, 상태: ${result.status})`);
+    } catch (error) {
+      console.error('주문 실패:', error);
+      alert(error.message || '주문에 실패했습니다.');
+    } finally {
+      setSubmittingOrder(false);
+    }
   };
 
   return (
@@ -145,8 +177,12 @@ export default function OrderBook({ stockCode }) {
             <strong>{(price * quantity).toLocaleString()}원</strong>
           </div>
 
-          <button className={`submit-order-btn ${orderType.toLowerCase()}`} onClick={handleOrder}>
-            {orderType === 'BUY' ? '매수 주문' : '매도 주문'}
+          <button
+            className={`submit-order-btn ${orderType.toLowerCase()}`}
+            onClick={handleOrder}
+            disabled={submittingOrder}
+          >
+            {submittingOrder ? '접수 중…' : (orderType === 'BUY' ? '매수 주문' : '매도 주문')}
           </button>
         </div>
       </div>

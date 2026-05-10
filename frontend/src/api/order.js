@@ -8,31 +8,38 @@ import apiClient from './apiClient';
  * 미체결 주문 조회
  * GET /api/v1/orders/pending
  *
- * @returns {Array<{
- *   orderId: string,
+ * ⚠️ 백엔드 develop 브랜치에 추가됐지만, 워킹트리에 머지되기 전엔 404 가능.
+ *
+ * 응답 루트는 객체 `{ pendingOrders: [...] }`. 본 함수는 배열만 추출해 반환.
+ *
+ * @returns {Promise<Array<{
+ *   orderId: string | null,
  *   stockCode: string,
  *   stockName: string,
- *   orderType: string,   // 'BUY' | 'SELL'
- *   price: number,
+ *   side: 'BUY' | 'SELL',
+ *   orderType: 'LIMIT' | 'MARKET',
  *   quantity: number,
- *   orderedAt: string
- * }>}
+ *   price: number,
+ *   filledQuantity: number,
+ *   remainQuantity: number,
+ *   source: 'AUTO' | 'MANUAL' | null,
+ *   createdAt: string | null
+ * }>>}
  */
 export async function getPendingOrders() {
   const data = await apiClient('/orders/pending');
-  return data.data;
+  return data.data?.pendingOrders ?? [];
 }
 
 /**
  * 주문 가능 금액/수량 조회
  * GET /api/v1/orders/buying-power?stockCode={stockCode}&price={price}
  *
- * @param {string} stockCode - 종목 코드
- * @param {number} price - 주문 단가
- * @returns {{
- *   availableCash: number,    // 주문 가능 금액 (원)
- *   maxQuantity: number       // 최대 주문 가능 수량 (주)
- * }}
+ * ⚠️ 백엔드 미구현. 호출 시 404.
+ *
+ * @param {string} stockCode
+ * @param {number} price
+ * @returns {Promise<{ availableCash: number, maxQuantity: number }>}
  */
 export async function getBuyingPower(stockCode, price) {
   const data = await apiClient(
@@ -45,20 +52,41 @@ export async function getBuyingPower(stockCode, price) {
  * 수동 주문 실행 (매수/매도)
  * POST /api/v1/orders
  *
+ * 백엔드 검증 (OrderRequest):
+ * - stockCode: @NotBlank
+ * - side: 'BUY' | 'SELL' (OrderSide enum)
+ * - quantity: @Min(1) Integer
+ * - price: @Min(0) Long. orderMethod=LIMIT일 때 > 0 필수
+ * - orderMethod: 'LIMIT' | 'MARKET' (OrderType enum)
+ *
+ * Idempotency-Key 헤더로 중복 주문 방지 가능. 미전송 시 서버에서 자동 생성.
+ * 응답 코드: 201 Created. 응답 status는 PENDING/FILLED/CANCELED/MODIFIED/REJECTED.
+ *
  * @param {{
  *   stockCode: string,
- *   orderType: string,  // 'BUY' | 'SELL'
- *   price: number,
- *   quantity: number
+ *   side: 'BUY' | 'SELL',
+ *   orderMethod: 'LIMIT' | 'MARKET',
+ *   quantity: number,
+ *   price: number
  * }} payload
- * @returns {{
+ * @param {string} [idempotencyKey]
+ * @returns {Promise<{
  *   orderId: string,
- *   status: string      // 'PENDING' | 'FILLED' | 'FAILED'
- * }}
+ *   stockCode: string,
+ *   side: 'BUY' | 'SELL',
+ *   orderType: 'LIMIT' | 'MARKET',
+ *   quantity: number,
+ *   price: number,
+ *   status: 'PENDING' | 'FILLED' | 'CANCELED' | 'MODIFIED' | 'REJECTED',
+ *   createdAt: string
+ * }>}
  */
-export async function placeOrder(payload) {
+export async function placeOrder(payload, idempotencyKey) {
+  const headers = {};
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
   const data = await apiClient('/orders', {
     method: 'POST',
+    headers,
     body: JSON.stringify(payload),
   });
   return data.data;
@@ -68,9 +96,10 @@ export async function placeOrder(payload) {
  * 미체결 주문 정정/취소
  * PATCH /api/v1/orders/{orderId}
  *
- * @param {string} orderId - 주문 ID
+ * ⚠️ 백엔드 미구현 (별도 브랜치 작업 중). 호출 시 404.
+ *
+ * @param {string} orderId
  * @param {{ price?: number, quantity?: number, cancel?: boolean }} payload
- *   cancel: true 이면 취소, 아니면 정정
  */
 export async function updateOrder(orderId, payload) {
   const data = await apiClient(`/orders/${orderId}`, {
@@ -84,16 +113,19 @@ export async function updateOrder(orderId, payload) {
  * 전체 거래 이력 조회
  * GET /api/v1/orders/history
  *
- * @returns {Array<{
+ * ⚠️ 백엔드 미구현. 호출 시 404.
+ *
+ * @returns {Promise<Array<{
  *   orderId: string,
  *   stockCode: string,
  *   stockName: string,
- *   orderType: string,   // 'BUY' | 'SELL'
- *   price: number,
+ *   side: 'BUY' | 'SELL',
+ *   orderType: 'LIMIT' | 'MARKET',
  *   quantity: number,
- *   status: string,      // 'FILLED' | 'CANCELLED' | 'FAILED'
+ *   price: number,
+ *   status: string,
  *   filledAt: string
- * }>}
+ * }>>}
  */
 export async function getOrderHistory() {
   const data = await apiClient('/orders/history');
