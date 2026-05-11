@@ -1,7 +1,7 @@
 package com.modu.backend.domain.ai.kafka.consumer;
 
 import com.modu.backend.domain.ai.service.SignalHandlerService;
-import com.modu.backend.global.kafka.config.KafkaConsumerGroup;
+import com.modu.backend.global.kafka.constant.KafkaConsumerGroup;
 import com.modu.backend.global.kafka.constant.KafkaTopic;
 import com.modu.backend.global.kafka.dto.AiDecisionMessage;
 import lombok.RequiredArgsConstructor;
