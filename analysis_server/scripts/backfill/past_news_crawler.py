@@ -339,11 +339,14 @@ class NaverNewsCrawler:
             logger.info(f"[{idx}/{total_dates}] {source_name} {date} 수집 시작")
             day_articles = []
             date_complete = False   # 정상 종료 시에만 True → progress 갱신 조건
+            seen_ids = set()        # wrap-around 검출용 — 페이지별 article_id 누적
 
             try:
                 # 페이지 수를 미리 추정하지 않고 빈 페이지 도달 시 종료.
                 # 네이버 페이저는 10p 단위로 끊어 보여서 get_total_pages 가 11+ 페이지를
-                # 누락시키는 문제가 있었음.
+                # 누락시키는 문제가 있었음. 또한 마지막 페이지를 넘어가도 빈 결과가
+                # 아니라 같은 기사를 반복 반환하는 wrap-around 가 발생하므로,
+                # article_id 가 모두 직전까지 본 것이면 종료하는 검출 로직도 추가.
                 page = 1
                 while True:
                     if page > MAX_PAGES_PER_DAY:
@@ -358,6 +361,15 @@ class NaverNewsCrawler:
                     if not article_list:
                         # 빈 페이지 = 더 이상 기사 없음 (정상 종료)
                         break
+
+                    # wrap-around 검출 — 새 페이지가 모두 직전 본 기사면 종료
+                    page_ids = {a["article_id"] for a in article_list}
+                    if page_ids and page_ids.issubset(seen_ids):
+                        logger.info(
+                            f"  └ 페이지 {page}: 모두 기존 기사 — wrap-around 감지, 종료"
+                        )
+                        break
+                    seen_ids.update(page_ids)
 
                     for art_meta in article_list:
                         content_data = self.get_article_content(art_meta["naver_url"])

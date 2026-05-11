@@ -23,9 +23,6 @@ class InvestmentAgentState(BaseModel):
     # 1. Analysis Layer output
     # ==============================
 
-    # 시장 전체 상태 요약 (KOSPI/KOSDAQ 등 지수 변화율, 장 운영 여부 정도)
-    market_snapshot: dict[str, Any] = Field(default_factory=dict)
-    
     # 분석 서버에서 전달받은 종목 단위 분석 결과 (Kafka 메시지 포맷을 그대로 담는 영역)
     # {"stock_code": "005930", "timestamp": "...", "signals": {"technical": {...}, ...}}
     analysis_snapshot: dict[str, Any] = Field(default_factory=dict)

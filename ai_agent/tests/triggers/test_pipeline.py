@@ -154,24 +154,26 @@ class TestUserTriggerEventCreation:
         """필수 식별 필드가 올바른 값으로 채워진다"""
         event = create_mock_user_trigger()
         assert event.event_id == "mock-user-trigger-001"
-        assert event.trigger_type == TriggerType.MARKET_EVENT
+        assert event.event_type == TriggerType.MARKET_EVENT
         assert event.user_id == 1
         assert event.stock_code == "005930"
 
     def test_snapshots_not_empty(self):
-        """시장/분석/포트폴리오 스냅샷이 모두 채워진다"""
+        """분석/포트폴리오 스냅샷과 trigger 메타가 모두 채워진다"""
         event = create_mock_user_trigger()
-        assert event.market_snapshot
         assert event.analysis_snapshot
-        assert event.candidate_assets
         assert event.portfolio_snapshot
         assert event.user_context
+        assert event.trigger.rule_ids
+        assert event.trigger.trigger_reason
 
     def test_trigger_reason_is_list(self):
-        """trigger_reason이 비어 있지 않은 리스트다"""
+        """trigger.trigger_reason이 비어 있지 않은 리스트다 (DA 명세 nested 구조)"""
         event = create_mock_user_trigger()
-        assert isinstance(event.trigger_reason, list)
-        assert len(event.trigger_reason) > 0
+        assert isinstance(event.trigger.trigger_reason, list)
+        assert len(event.trigger.trigger_reason) > 0
+        assert isinstance(event.trigger.rule_ids, list)
+        assert len(event.trigger.rule_ids) > 0
 
 
 # ──────────────────────────────────────────
@@ -186,14 +188,14 @@ class TestStateConversion:
         assert isinstance(state, InvestmentAgentState)
 
     def test_snapshots_transferred(self):
-        """UserTriggerEvent의 스냅샷이 그대로 state로 복사된다"""
+        """UserTriggerEvent의 스냅샷이 state로 복사되고, candidate_assets는 stock_code 기반 자동 생성된다"""
         event = create_mock_user_trigger()
         state = build_state_from_user_trigger(event)
-        assert state.market_snapshot == event.market_snapshot
         assert state.analysis_snapshot == event.analysis_snapshot
-        assert state.candidate_assets == event.candidate_assets
         assert state.portfolio_snapshot == event.portfolio_snapshot
         assert state.user_context == event.user_context
+        # candidate_assets는 DA 명세에 없어서 state_factory가 stock_code 기반으로 구성
+        assert state.candidate_assets == [{"stock_code": event.stock_code}]
 
     def test_initial_flow_status_is_running(self):
         """그래프 실행 시작 전 flow_status는 'running'이다"""
@@ -278,26 +280,26 @@ class TestLangGraphFlow:
 
 class TestValidationError:
     def test_missing_user_id_and_stock_code(self):
-        """user_id, stock_code 없이 UserTriggerEvent 생성 시 ValidationError"""
+        """user_id, stock_code, timestamp 없이 UserTriggerEvent 생성 시 ValidationError"""
         with pytest.raises(ValidationError) as exc_info:
             UserTriggerEvent(
-                event_id="invalid-001",
-                trigger_type=TriggerType.MARKET_EVENT,
-                trigger_reason=["테스트"],
-                # user_id, stock_code 누락
+                event_type=TriggerType.MARKET_EVENT,
+                # user_id, stock_code, timestamp 누락
             )
         missing = {e["loc"][0] for e in exc_info.value.errors()}
         assert "user_id" in missing
         assert "stock_code" in missing
+        assert "timestamp" in missing
 
     def test_invalid_trigger_type(self):
-        """존재하지 않는 trigger_type 값은 ValidationError를 발생시킨다"""
+        """존재하지 않는 event_type 값은 ValidationError를 발생시킨다"""
+        from datetime import datetime, timezone
         with pytest.raises(ValidationError):
             UserTriggerEvent(
-                event_id="invalid-002",
-                trigger_type="INVALID_TYPE",
+                event_type="INVALID_TYPE",
                 user_id=1,
                 stock_code="005930",
+                timestamp=datetime.now(tz=timezone.utc),
             )
 
     def test_strategy_hold_with_nonzero_amount(self):
