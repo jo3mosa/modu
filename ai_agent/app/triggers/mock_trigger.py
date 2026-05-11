@@ -1,46 +1,72 @@
+from datetime import datetime, timezone
+
 from pydantic import ValidationError
 
 from app.config.kafka import KafkaTopic, get_kafka_producer
-from app.triggers.schemas import MarketTriggerEvent, TriggerType, UserTriggerEvent
+from app.triggers.schemas import (
+    MarketTrigger,
+    MarketTriggerEvent,
+    TriggerType,
+    UserTriggerEvent,
+)
 
 
 def produce_mock_market_signal() -> None:
     """
     market.signal.detected 토픽에 테스트용 MarketTriggerEvent를 발행한다.
 
+    Analysis Layer 명세에 맞춘 신규 schema:
+    - trigger: {rule_ids, trigger_reason} (nested)
+    - analysis_snapshot: signals.{technical, fundamental, event, sentiment} 4분할
+
     실행 전 Redis에 포지션 데이터가 있어야 사용자 매칭이 동작한다:
         SADD position:index:stock:005930 1 2
     """
     event = MarketTriggerEvent(
-        event_id="mock-market-event-001",
-        trigger_type=TriggerType.MARKET_EVENT,
-        trigger_reason=["RSI 과매도 구간 진입", "거래량 급증"],
         stock_code="005930",
-        market_snapshot={
-            "market": "KOSPI",
-            "market_status": "OPEN",
-            "index_change_rate": -0.8,
-        },
+        timestamp=datetime.now(tz=timezone.utc),
+        trigger=MarketTrigger(
+            rule_ids=["RSI-001", "VOL-001"],
+            trigger_reason=["RSI 과매도", "거래량 급증"],
+        ),
         analysis_snapshot={
-            "stock_code": "005930",
-            "rsi": 28.5,
-            "macd_signal": "BUY",
-            "volume_change_rate": 180.0,
+            "technical": {
+                "trend": {
+                    "sma_alignment": "mixed",
+                    "macd_state": "bullish_cross",
+                },
+                "momentum": {"rsi_14": 28.5},
+                "volatility": {
+                    "bollinger_position": "lower_breakout",
+                    "atr_ratio": 0.025,
+                },
+                "volume": {"mfi_14": 18.0},
+            },
+            "fundamental": {
+                "valuation": {"per": 12.5, "pbr": 1.1, "status": "undervalued"},
+                "profitability": {"roe": 15.2, "status": "high_margin"},
+                "growth": {"status": "steady_growth"},
+                "stability": {"status": "stable"},
+            },
+            "event": {
+                "has_urgent_issue": False,
+                "recent_disclosures": [],
+            },
+            "sentiment": {
+                "daily_score": 0.45,
+                "confidence_level": "medium",
+                "pos_prob": 0.55,
+                "neu_prob": 0.30,
+                "neg_prob": 0.15,
+            },
         },
-        candidate_assets=[
-            {
-                "stock_code": "005930",
-                "stock_name": "삼성전자",
-                "current_price": 71000,
-            }
-        ],
     )
 
     producer = get_kafka_producer()
     producer.send(
         KafkaTopic.MARKET_SIGNAL_DETECTED,
         key=event.stock_code,
-        value=event.model_dump(),
+        value=event.model_dump(mode="json"),
     )
     producer.flush()
     print(f"Produced market signal: {event.event_id} (stock_code={event.stock_code})")
@@ -58,31 +84,25 @@ def create_mock_user_trigger() -> UserTriggerEvent:
     return UserTriggerEvent(
         event_id="mock-user-trigger-001",
         source_event_id="mock-market-event-001",
-        trigger_type=TriggerType.MARKET_EVENT,
-        trigger_reason=[
-            "RSI 과매도 구간 진입",
-            "거래량 급증",
-        ],
+        event_type=TriggerType.MARKET_EVENT,
+        timestamp=datetime.now(tz=timezone.utc),
         user_id=1,
         stock_code="005930",
-        market_snapshot={
-            "market": "KOSPI",
-            "market_status": "OPEN",
-            "index_change_rate": -0.8,
-        },
+        trigger=MarketTrigger(
+            rule_ids=["RSI-001", "VOL-001"],
+            trigger_reason=["RSI 과매도", "거래량 급증"],
+        ),
         analysis_snapshot={
-            "stock_code": "005930",
-            "rsi": 28.5,
-            "macd_signal": "BUY",
-            "volume_change_rate": 180.0,
+            "technical": {
+                "momentum": {"rsi_14": 28.5},
+                "volume": {"mfi_14": 18.0},
+            },
+            "fundamental": {
+                "valuation": {"status": "undervalued"},
+            },
+            "event": {"has_urgent_issue": False, "recent_disclosures": []},
+            "sentiment": {"daily_score": 0.45, "confidence_level": "medium"},
         },
-        candidate_assets=[
-            {
-                "stock_code": "005930",
-                "stock_name": "삼성전자",
-                "current_price": 71000,
-            }
-        ],
         portfolio_snapshot={
             "cash_balance": 1_000_000,
             "total_assets": 5_000_000,
@@ -104,20 +124,17 @@ def create_mock_user_trigger() -> UserTriggerEvent:
             "stop_loss_rate": -5.0,
             "target_profit_rate": 8.0,
         },
-        source="mock_trigger",
     )
 
 
 def create_invalid_mock_user_trigger():
     """
     필수 필드 누락 시 Pydantic validation이 발생하는지 확인하기 위한 mock.
-    user_id, stock_code 등이 없으므로 ValidationError가 발생해야 한다.
+    user_id, stock_code, timestamp 등이 없으므로 ValidationError가 발생해야 한다.
     """
 
     return UserTriggerEvent(
-        event_id="invalid-trigger-001",
-        trigger_type=TriggerType.MARKET_EVENT,
-        trigger_reason=["필수 필드 누락 테스트"],
+        event_type=TriggerType.MARKET_EVENT,
     )
 
 

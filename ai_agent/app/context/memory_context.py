@@ -78,7 +78,7 @@ def extract_key_signals(analysis_snapshot: dict[str, Any]) -> list[str]:
     """
     analysis_snapshot.signals에서 활성화된 신호 종류를 문자열 리스트로 반환한다.
 
-    TODO: 신호 문자열 값은 DA codebook enum으로 교체 필요
+    TODO: 신호 문자열 값은 Analysis Layer codebook enum으로 교체 필요
     """
     signals = analysis_snapshot.get("signals", {})
     key_signals: set[str] = set()

@@ -1,6 +1,4 @@
-from uuid import uuid4
-
-from app.triggers.schemas import MarketTriggerEvent, UserTriggerEvent
+from app.triggers.schemas import MarketTriggerEvent, TriggerType, UserTriggerEvent
 from app.repositories.position_index_repository import (
     PositionIndexRepository,
     RedisPositionIndexRepository,
@@ -136,15 +134,13 @@ def match_market_event_to_users(
         # 같은 시장 이벤트가 동일 사용자에게 반복 실행되지 않도록 처리한다.
 
         user_trigger_event = UserTriggerEvent(
-            event_id=f"user_trigger_{uuid4()}",
             source_event_id=event.event_id,
-            trigger_type=event.trigger_type,
-            trigger_reason=event.trigger_reason,
+            event_type=TriggerType.MARKET_EVENT,
+            timestamp=event.timestamp,
             user_id=user_id,
             stock_code=event.stock_code,
-            market_snapshot=event.market_snapshot,
+            trigger=event.trigger,
             analysis_snapshot=event.analysis_snapshot,
-            candidate_assets=event.candidate_assets,
             portfolio_snapshot=portfolio_snapshot,
             user_context=user_context,
         )
