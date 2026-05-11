@@ -63,11 +63,8 @@ export async function getProfile() {
  * 투자 성향 입력/수정
  * PATCH /api/v1/strategies/me/profiles
  *
- * 프론트는 questionId + optionId 조합과 (선택) freeText를 제출한다.
- * 서버가 점수 산정 및 5단계 투자 성향 등급(InvestmentRiskLevel)을 계산해 응답한다.
+ * 서버가 점수 산정 및 5단계 투자 성향 등급(InvestmentRiskLevel)을 계산해 응답
  *
- * - answers는 정확히 9개 항목이어야 한다 (백엔드 @Size(min=9, max=9)).
- * - freeText는 자유 입력 (생략 가능, 매매 원칙 등).
  *
  * @param {{
  *   answers: Array<{ questionId: string, optionId: string }>,
@@ -86,6 +83,28 @@ export async function updateProfile(payload) {
   const response = await apiClient('/strategies/me/profiles', {
     method: 'PATCH',
     body: JSON.stringify(payload),
+  });
+  return response.data;
+}
+
+/**
+ * 내 리스크 룰셋 조회
+ * GET /api/v1/strategies/me/rules
+ *
+ * 저장된 룰셋이 없으면 404 응답. 화면 진입 시 호출하여 ruleVersion 보존에 사용.
+ *
+ * @returns {Promise<{
+ *   stopLossRate: number,
+ *   takeProfitRate: number,
+ *   maxDailyOrderCount: number,
+ *   maxDailyLossAmount: number,
+ *   updatedAt: string,
+ *   version: number
+ * }>}
+ */
+export async function getRules() {
+  const response = await apiClient('/strategies/me/rules', {
+    method: 'GET',
   });
   return response.data;
 }

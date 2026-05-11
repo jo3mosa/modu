@@ -2,23 +2,13 @@ from uuid import uuid4
 
 from app.triggers.schemas import MarketTriggerEvent, UserTriggerEvent
 from app.repositories.position_index_repository import (
-    MockPositionIndexRepository,
     PositionIndexRepository,
+    RedisPositionIndexRepository,
 )
 
-# ==============================
-# 1. Mock repository
-# ==============================
-# 초기 구현에서는 DB/Redis를 붙이지 않고,
-# stock_code 기준으로 해당 종목을 보유한 user_id 목록을 반환한다.
-# 추후 Redis 연결 시 MockPositionIndexRepository 대신 RedisPositionIndexRepository로 교체 예정
+_POSITION_INDEX_REPOSITORY: PositionIndexRepository = RedisPositionIndexRepository()
 
-_POSITION_INDEX_REPOSITORY: PositionIndexRepository = MockPositionIndexRepository()
-
-_POSITION_INDEX_REPOSITORY.add_user("005930", 1)
-_POSITION_INDEX_REPOSITORY.add_user("005930", 2)
-_POSITION_INDEX_REPOSITORY.add_user("000660", 3)
-
+# TODO: 백엔드 API 또는 DB에서 조회하도록 교체
 _MOCK_USER_CONTEXT_BY_USER_ID: dict[int, dict] = {
     1: {
         "investment_style": "balanced",
@@ -75,12 +65,6 @@ _MOCK_PORTFOLIO_SNAPSHOT_BY_USER_ID: dict[int, dict] = {
 }
 
 def get_position_index_repository() -> PositionIndexRepository:
-    """
-    현재 사용할 PositionIndexRepository 구현체를 반환한다.
-
-    지금은 Mock 구현체를 사용하지만,
-    이후 Redis 연동 시 이 함수 내부에서 RedisPositionIndexRepository를 반환하도록 바꾸면 된다.
-    """
     return _POSITION_INDEX_REPOSITORY
 
 

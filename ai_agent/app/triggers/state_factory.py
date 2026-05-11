@@ -16,20 +16,10 @@ def build_state_from_user_trigger(
     """
 
     return InvestmentAgentState(
+        user_id=event.user_id,
         market_snapshot=event.market_snapshot,
         analysis_snapshot=event.analysis_snapshot,
         candidate_assets=event.candidate_assets,
         portfolio_snapshot=event.portfolio_snapshot,
-
         user_context=event.user_context,
-
-        trigger_context={
-            "event_id": event.event_id,
-            "source_event_id": event.source_event_id,
-            "trigger_type": event.trigger_type,
-            "trigger_reason": event.trigger_reason,
-            "user_id": event.user_id,
-            "stock_code": event.stock_code,
-            "source": event.source,
-        },
     )

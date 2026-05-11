@@ -17,7 +17,7 @@ if (typeof Highcharts === 'object') {
 }
 
 
-// ── MOCK 데이터 (백엔드 연동 후 삭제 예정) ──────────────────────────────────
+// ── MOCK 데이터 ──────────────────────────────────
 // 필드명은 백엔드 응답 스펙 기준으로 맞춰둠 → 연동 시 그대로 사용 가능
 const MOCK_SUMMARY = {
   totalAsset: 600000,       // GET /api/v1/accounts/me/summary
@@ -33,7 +33,6 @@ const MOCK_HOLDINGS = [
   { stockName: '한화에어로스페이스', stockCode: '012450', quantity: 1, avgBuyPrice: 60000, currentPrice: 85300, pnl: 25300, pnlPct: 42.16 },
   { stockName: '카카오', stockCode: '035720', quantity: 2, avgBuyPrice: 50000, currentPrice: 45000, pnl: -10000, pnlPct: -10.00 },
 ];
-// ─────────────────────────────────────────────────────────────────────────────
 
 const MOCK_AI_STATUS = {
   isActive: true,
@@ -63,30 +62,26 @@ export default function DashboardPage() {
   useEffect(() => {
     setShowTutorial(true);
 
-    // ── TODO: 백엔드 연동 시 위 MOCK useState → 주석 처리하고 아래 블록 해제 ──
-    // async function fetchDashboardData() {
-    //   setIsLoading(true);
-    //   try {
-    //     const [summaryData, portfolioData, decisionsData] = await Promise.all([
-    //       getAccountSummary(),   // GET /api/v1/accounts/me/summary
-    //       getPortfolio(),        // GET /api/v1/accounts/me/holdings
-    //       getAiDecisions()       // GET /api/v1/ai-agent/decisions
-    //     ]);
-    //     setSummary(summaryData);
-    //     setHoldings(portfolioData.holdings ?? []);
-    //     setLogs(decisionsData.content ?? []); // 페이징 결과의 content 배열
-    //   } catch (error) {
-    //     if (error.message.includes('KIS_NOT_CONNECTED')) {
-    //       setIsKisConnected(false);
-    //     } else {
-    //       console.error('대시보드 데이터 로드 실패:', error);
-    //     }
-    //   } finally {
-    //     setIsLoading(false);
-    //   }
-    // }
-    // fetchDashboardData();
-    // ─────────────────────────────────────────────────────────────────────────
+    async function fetchDashboardData() {
+      setIsLoading(true);
+      try {
+        const [summaryData, portfolioData] = await Promise.all([
+          getAccountSummary(),   // GET /api/v1/accounts/me/summary
+          getPortfolio()         // GET /api/v1/accounts/me/holdings
+        ]);
+        setSummary(summaryData);
+        setHoldings(portfolioData.holdings ?? []);
+      } catch (error) {
+        if (error.errorCode === 'KIS_NOT_CONNECTED' || error.errorCode === 'USER_002') {
+          setIsKisConnected(false);
+        } else {
+          console.error('대시보드 데이터 로드 실패:', error);
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    fetchDashboardData();
   }, []);
 
   const handleCloseTutorial = () => setShowTutorial(false);

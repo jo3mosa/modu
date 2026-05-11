@@ -138,9 +138,3 @@ class InvestmentAgentState(BaseModel):
     # 예: LLM 파싱 실패, API 오류 등
     error_context: dict[str, Any] = Field(default_factory=dict)
 
-    # ==============================
-    # 9. Optional human approval
-    # ==============================
-
-    # 사용자 승인 결과 (백엔드가 고위험 조건 판단 후 주입)
-    approval_result: dict[str, Any] = Field(default_factory=dict)

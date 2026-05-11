@@ -35,27 +35,6 @@ class MarketTriggerEvent(BaseModel):
     source: str = Field(default="analysis_layer")
 
 
-class PositionTriggerEvent(BaseModel):
-    """
-    Position Monitoring에서 생성하는 사용자 포지션 이벤트.
-
-    목표가/손절가 근접, 포트폴리오 비중 초과 등
-    사용자별 포지션 조건에 의해 생성된다.
-    """
-
-    event_id: str = Field(..., description="트리거 이벤트 고유 ID")
-    trigger_type: TriggerType = Field(default=TriggerType.POSITION_EVENT)
-    trigger_reason: list[str] = Field(default_factory=list)
-
-    user_id: int = Field(..., description="이벤트 대상 사용자 ID")
-    stock_code: str = Field(..., description="이벤트 대상 종목 코드")
-
-    portfolio_snapshot: dict[str, Any] = Field(default_factory=dict)
-    position_snapshot: dict[str, Any] = Field(default_factory=dict)
-
-    source: str = Field(default="position_monitor")
-
-
 class UserTriggerEvent(BaseModel):
     """
     Reasoning Layer 실행 직전에 사용되는 사용자별 실행 이벤트.
