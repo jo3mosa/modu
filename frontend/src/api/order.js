@@ -8,8 +8,6 @@ import apiClient from './apiClient';
  * 미체결 주문 조회
  * GET /api/v1/orders/pending
  *
- * ⚠️ 백엔드 develop 브랜치에 추가됐지만, 워킹트리에 머지되기 전엔 404 가능.
- *
  * 응답 루트는 객체 `{ pendingOrders: [...] }`. 본 함수는 배열만 추출해 반환.
  *
  * @returns {Promise<Array<{
@@ -33,18 +31,33 @@ export async function getPendingOrders() {
 
 /**
  * 주문 가능 금액/수량 조회
- * GET /api/v1/orders/buying-power?stockCode={stockCode}&price={price}
+ * GET /api/v1/orders/buying-power?stockCode=&side=&orderPrice=
  *
- * ⚠️ 백엔드 미구현. 호출 시 404.
+ * 백엔드 명세:
+ * - stockCode (필수)
+ * - side: 'BUY' | 'SELL' (필수)
+ * - orderPrice (선택) — 주문 희망 가격
  *
- * @param {string} stockCode
- * @param {number} price
- * @returns {Promise<{ availableCash: number, maxQuantity: number }>}
+ * 응답:
+ * - maxBuyAmount: 최대 매수 가능 금액 (원, Long)
+ * - maxSellQuantity: 최대 매도 가능 수량 (Integer)
+ * - availableCash: 현재 예수금 (Long)
+ * - riskLimitAmount: 일일 누적 한도 기준 잔여 주문 가능 금액 (Long)
+ *
+ * @param {{ stockCode: string, side: 'BUY' | 'SELL', orderPrice?: number }} params
+ * @returns {Promise<{
+ *   maxBuyAmount: number,
+ *   maxSellQuantity: number,
+ *   availableCash: number,
+ *   riskLimitAmount: number
+ * }>}
  */
-export async function getBuyingPower(stockCode, price) {
-  const data = await apiClient(
-    `/orders/buying-power?stockCode=${encodeURIComponent(stockCode)}&price=${price}`
-  );
+export async function getBuyingPower({ stockCode, side, orderPrice } = {}) {
+  const search = new URLSearchParams();
+  if (stockCode) search.set('stockCode', stockCode);
+  if (side) search.set('side', side);
+  if (orderPrice != null) search.set('orderPrice', String(orderPrice));
+  const data = await apiClient(`/orders/buying-power?${search.toString()}`);
   return data.data;
 }
 
@@ -126,24 +139,52 @@ export async function updateOrder(orderId, payload) {
 }
 
 /**
- * 전체 거래 이력 조회
- * GET /api/v1/orders/history
+ * 전체 거래 이력 조회 (페이징)
+ * GET /api/v1/orders/history?source=&from=&to=&page=&size=
  *
- * ⚠️ 백엔드 미구현. 호출 시 404.
+ * 백엔드 명세:
+ * - source: 'AUTO' | 'MANUAL' (선택)
+ * - from: YYYYMMDD (선택)
+ * - to: YYYYMMDD (선택)
+ * - page: 1부터 (선택, 기본 1)
+ * - size: 페이지 크기 (선택, 기본 20)
  *
- * @returns {Promise<Array<{
- *   orderId: string,
- *   stockCode: string,
- *   stockName: string,
- *   side: 'BUY' | 'SELL',
- *   orderType: 'LIMIT' | 'MARKET',
- *   quantity: number,
- *   price: number,
- *   status: string,
- *   filledAt: string
- * }>>}
+ * 응답 루트는 객체. 본 함수는 raw 응답을 그대로 반환한다(orders 배열 + 페이징 메타).
+ *
+ * @param {{
+ *   source?: 'AUTO' | 'MANUAL',
+ *   from?: string,
+ *   to?: string,
+ *   page?: number,
+ *   size?: number
+ * }} [params]
+ * @returns {Promise<{
+ *   orders: Array<{
+ *     orderId: string,
+ *     stockCode: string,
+ *     stockName: string,
+ *     side: 'BUY' | 'SELL',
+ *     orderType: 'LIMIT' | 'MARKET',
+ *     quantity: number,
+ *     price: number,
+ *     status: 'FILLED' | 'CANCELED' | 'PENDING',
+ *     source: 'AUTO' | 'MANUAL',
+ *     createdAt: string
+ *   }>,
+ *   totalCount: number,
+ *   page: number,
+ *   size: number
+ * }>}
  */
-export async function getOrderHistory() {
-  const data = await apiClient('/orders/history');
+export async function getOrderHistory({ source, from, to, page, size } = {}) {
+  const search = new URLSearchParams();
+  if (source) search.set('source', source);
+  if (from) search.set('from', from);
+  if (to) search.set('to', to);
+  if (page != null) search.set('page', String(page));
+  if (size != null) search.set('size', String(size));
+  const queryString = search.toString();
+  const endpoint = queryString ? `/orders/history?${queryString}` : '/orders/history';
+  const data = await apiClient(endpoint);
   return data.data;
 }

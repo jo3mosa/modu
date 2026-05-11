@@ -10,6 +10,7 @@ import {
   ACTION_DISPLAY,
   EXECUTION_STATUS_DISPLAY,
 } from '../api/aiAgent';
+import { getOrderHistory } from '../api/order';
 
 import './ReportPage.css';
 
@@ -98,11 +99,12 @@ const MOCK_HABIT_SUMMARY = {
   desc: "이번 달은 손절 원칙을 잘 지켜 전반적으로 안정적인 수익을 누적했습니다. 다만 지난주 급락장에서 하루 10회 이상 매매하는 등 일시적인 뇌동매매 징후가 포착되었습니다. 규칙적인 매매 빈도를 유지하세요."
 };
 
+// 백엔드 getOrderHistory 응답 표준 형식과 동일 (side / orderType / createdAt / source / status).
 const MOCK_GENERAL_HISTORY = [
-  { orderId: '1001', stockCode: '005930', stockName: '삼성전자', orderType: 'BUY', price: 74500, quantity: 10, status: 'FILLED', filledAt: '2026-05-03 10:30' },
-  { orderId: '1002', stockCode: '035420', stockName: 'NAVER', orderType: 'BUY', price: 184000, quantity: 5, status: 'CANCELLED', filledAt: '-' },
-  { orderId: '1003', stockCode: '000660', stockName: 'SK하이닉스', orderType: 'SELL', price: 149000, quantity: 5, status: 'FILLED', filledAt: '2026-05-02 09:15' },
-  { orderId: '1004', stockCode: '035720', stockName: '카카오', orderType: 'SELL', price: 45000, quantity: 20, status: 'FILLED', filledAt: '2026-05-01 14:20' }
+  { orderId: '1001', stockCode: '005930', stockName: '삼성전자', side: 'BUY', orderType: 'LIMIT', price: 74500, quantity: 10, status: 'FILLED', source: 'MANUAL', createdAt: '2026-05-03 10:30' },
+  { orderId: '1002', stockCode: '035420', stockName: 'NAVER', side: 'BUY', orderType: 'LIMIT', price: 184000, quantity: 5, status: 'CANCELED', source: 'MANUAL', createdAt: '2026-05-03 09:50' },
+  { orderId: '1003', stockCode: '000660', stockName: 'SK하이닉스', side: 'SELL', orderType: 'LIMIT', price: 149000, quantity: 5, status: 'FILLED', source: 'MANUAL', createdAt: '2026-05-02 09:15' },
+  { orderId: '1004', stockCode: '035720', stockName: '카카오', side: 'SELL', orderType: 'LIMIT', price: 45000, quantity: 20, status: 'FILLED', source: 'MANUAL', createdAt: '2026-05-01 14:20' }
 ];
 
 export default function ReportPage() {
@@ -114,6 +116,8 @@ export default function ReportPage() {
   const [period, setPeriod] = useState('1M');
   const [briefing] = useState(MOCK_MARKET_BRIEFING);
   const [logs, setLogs] = useState(MOCK_TRADE_LOGS);
+  // 수동 매매 이력 (getOrderHistory). 연결 실패 시 mock 유지.
+  const [generalLogs, setGeneralLogs] = useState(MOCK_GENERAL_HISTORY);
   const [expandedLogId, setExpandedLogId] = useState(initialLogId ? parseInt(initialLogId, 10) : null);
   const [detailedDecisions, setDetailedDecisions] = useState({});
 
@@ -138,28 +142,51 @@ export default function ReportPage() {
     };
   }, []);
 
+  // 수동 매매 이력 조회 (getOrderHistory). 연결 실패 시 mock 유지.
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchHistory() {
+      try {
+        const response = await getOrderHistory({ page: 1, size: 20 });
+        if (cancelled) return;
+        if (response?.orders?.length) {
+          setGeneralLogs(response.orders);
+        }
+      } catch (error) {
+        if (cancelled) return;
+        if (error.status !== 404) {
+          console.warn('거래 이력 조회 실패 (mock 표시 유지):', error);
+        }
+      }
+    }
+    fetchHistory();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // AI+수동 이력 병합 (시간 내림차순)
   const mergedLogs = useMemo(() => {
     const aiItems = logs.map(log => ({ ...log, source: 'AI' }));
-    const manualItems = MOCK_GENERAL_HISTORY.map(log => ({
+    const manualItems = generalLogs.map(log => ({
       id: `manual-${log.orderId}`,
-      source: 'MANUAL',
+      source: log.source ?? 'MANUAL',
       stockCode: log.stockCode,
       stockName: log.stockName,
-      action: log.orderType,
+      action: log.side, // 'BUY' | 'SELL'
       price: log.price,
       quantity: log.quantity,
-      status: log.status,
-      decidedAt: log.filledAt,
+      status: log.status, // 'FILLED' | 'CANCELED' | 'PENDING'
+      decidedAt: log.createdAt,
       executionStatus: log.status === 'FILLED' ? 'READY' : 'NONE',
       confidence: null,
       reason: null,
-      orderId: null,
+      orderId: log.orderId ?? null,
     }));
     return [...aiItems, ...manualItems].sort(
       (a, b) => new Date(b.decidedAt) - new Date(a.decidedAt)
     );
-  }, [logs]);
+  }, [logs, generalLogs]);
 
   // 아코디언 토글 + 펼칠 때 단건 상세(indicatorsSnapshot 포함) 조회
   const toggleLog = async (id) => {

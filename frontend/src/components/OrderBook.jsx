@@ -1,7 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { placeOrder, getPendingOrders, updateOrder } from '../api/order';
-// 매수가능 조회는 백엔드 미구현
-// import { getBuyingPower } from '../api/order';
+import { placeOrder, getPendingOrders, updateOrder, getBuyingPower } from '../api/order';
 import './OrderBook.css';
 
 export default function OrderBook({ stockCode }) {
@@ -23,6 +21,11 @@ export default function OrderBook({ stockCode }) {
   const [loadingPending, setLoadingPending] = useState(false);
   // 주문별 취소 진행 상태 { [orderId]: true }
   const [canceling, setCanceling] = useState({});
+
+  // 매수가능 정보 (연결 실패 시 → null 시 영역 미표시)
+  // { maxBuyAmount, maxSellQuantity, availableCash, riskLimitAmount }
+  const [buyingPower, setBuyingPower] = useState(null);
+  const buyingPowerTimerRef = useRef(null);
 
   // 호가 WebSocket 연결: /ws/stocks/{code}/orderbook
   useEffect(() => {
@@ -52,7 +55,7 @@ export default function OrderBook({ stockCode }) {
     };
   }, [stockCode]);
 
-  // 미체결 주문 조회 (GET /api/v1/orders/pending). 현재 종목만 필터.
+  // 미체결 주문 조회 (GET /api/v1/orders/pending)
   const fetchPending = useCallback(async () => {
     setLoadingPending(true);
     try {
@@ -75,6 +78,37 @@ export default function OrderBook({ stockCode }) {
   useEffect(() => {
     if (activeTab === 'PENDING') fetchPending();
   }, [activeTab, fetchPending]);
+
+  // 매수가능 정보 조회: side/stockCode/price 변경 시 300ms debounce로 호출.
+  // 연결 실패 시 404 → null 유지 → 화면 영역 미표시.
+  useEffect(() => {
+    if (!stockCode) {
+      setBuyingPower(null);
+      return;
+    }
+    if (buyingPowerTimerRef.current) clearTimeout(buyingPowerTimerRef.current);
+
+    const numericPrice = Number(price);
+    buyingPowerTimerRef.current = setTimeout(async () => {
+      try {
+        const data = await getBuyingPower({
+          stockCode,
+          side: orderType,
+          orderPrice: numericPrice > 0 ? numericPrice : undefined,
+        });
+        setBuyingPower(data ?? null);
+      } catch (error) {
+        if (error.status !== 404) {
+          console.warn('매수가능 조회 실패:', error);
+        }
+        setBuyingPower(null);
+      }
+    }, 300);
+
+    return () => {
+      if (buyingPowerTimerRef.current) clearTimeout(buyingPowerTimerRef.current);
+    };
+  }, [stockCode, orderType, price]);
 
   const maxQuantity = useMemo(() => {
     const allQuantities = [...asks, ...bids].map((lv) => lv?.quantity ?? 0);
@@ -116,7 +150,7 @@ export default function OrderBook({ stockCode }) {
       );
       idempotencyKeyRef.current = crypto.randomUUID();
       alert(`주문이 접수되었습니다. (주문번호: ${result.orderId}, 상태: ${result.status})`);
-      // 주문 접수 직후 미체결 목록 갱신 (탭이 ORDER여도 백그라운드 갱신)
+      // 주문 접수 직후 미체결 목록 갱신
       fetchPending();
     } catch (error) {
       console.error('주문 실패:', error);
@@ -127,7 +161,7 @@ export default function OrderBook({ stockCode }) {
   };
 
   // 미체결 주문 취소 (PATCH /api/v1/orders/{orderId}, action=CANCEL)
-  // 우리 DB에 orderId가 있는 주문만 취소 가능 (KIS 외부 주문은 orderId가 null)
+  // DB에 orderId가 있는 주문만 취소 가능 (KIS 외부 주문은 orderId가 null)
   const handleCancelOrder = async (order) => {
     if (!order?.orderId) {
       alert('시스템에 기록된 주문만 취소할 수 있습니다.');
@@ -245,6 +279,21 @@ export default function OrderBook({ stockCode }) {
               </button>
             </div>
 
+            {/* 매수가능 정보 — 백엔드 미연결 시 표시 안 함 */}
+            {buyingPower && (
+              <div className="buying-power-info" style={{ fontSize: '0.85em', color: '#aaa', margin: '0.5rem 0' }}>
+                {orderType === 'BUY' ? (
+                  <>
+                    <div>주문 가능 금액: <strong style={{ color: '#fff' }}>{buyingPower.maxBuyAmount?.toLocaleString() ?? '-'}원</strong></div>
+                    <div>일일 한도 잔여: {buyingPower.riskLimitAmount?.toLocaleString() ?? '-'}원</div>
+                    <div>예수금: {buyingPower.availableCash?.toLocaleString() ?? '-'}원</div>
+                  </>
+                ) : (
+                  <div>매도 가능 수량: <strong style={{ color: '#fff' }}>{buyingPower.maxSellQuantity?.toLocaleString() ?? '-'}주</strong></div>
+                )}
+              </div>
+            )}
+
             <div className="input-group">
               <label>단가 (원)</label>
               <input type="number" value={price} onChange={(e) => setPrice(Number(e.target.value))} />
@@ -324,7 +373,7 @@ export default function OrderBook({ stockCode }) {
                         disabled={!order.orderId || !!canceling[order.orderId]}
                         title={!order.orderId ? '시스템에 기록된 주문만 취소 가능' : ''}
                       >
-                        {canceling[order.orderId] ? '취소 중…' : '취소'}
+                        {canceling[order.orderId] ? '취소 중 …' : '취소'}
                       </button>
                     </div>
                   </div>
