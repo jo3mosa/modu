@@ -7,4 +7,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["python", "pipelines/master_data_loader.py"]
+CMD ["python", "scripts/backfill/master_data_loader.py"]

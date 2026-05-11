@@ -12,6 +12,7 @@ import com.modu.backend.domain.trading.dto.OrderResponse;
 import com.modu.backend.domain.trading.dto.PendingOrdersResponse;
 import com.modu.backend.domain.trading.entity.*;
 import com.modu.backend.domain.trading.exception.OrderErrorCode;
+import com.modu.backend.domain.trading.kafka.producer.TradeOrderProducer;
 import com.modu.backend.domain.trading.repository.OrderRepository;
 import com.modu.backend.domain.trading.repository.TradingRuleRepository;
 import com.modu.backend.domain.user.entity.KisCredential;
@@ -20,6 +21,7 @@ import com.modu.backend.domain.user.repository.KisCredentialRepository;
 import com.modu.backend.domain.user.service.KisTokenService;
 import com.modu.backend.global.error.ApiException;
 import com.modu.backend.global.error.CommonErrorCode;
+import com.modu.backend.global.kafka.dto.TradeOrderMessage;
 import com.modu.backend.global.util.AesGcmEncryptor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -45,9 +47,9 @@ import java.util.stream.Collectors;
  * 4. 장 운영 시간 확인 (평일 09:00~15:30 KST)
  * 5. 일일 누적 매수 금액 한도 확인 (매수 주문에만 적용)
  * 6. 잔고 확인 (KIS inquire-psbl-order / inquire-psbl-sell)
- * 7. DB에 PENDING 상태 주문 먼저 저장 (KIS 호출 전 로컬 기록 확보)
- * 8. KIS 주문 실행
- * 9. KIS 응답으로 주문 정보 업데이트
+ * 7. DB에 PENDING 상태 주문 먼저 저장
+ * 8. Kafka에 주문 이벤트 발행 (동기 .get()) → 201 응답 반환
+ *    ↳ KisOrderConsumer가 KIS 호출 → DB 업데이트 → SSE로 결과 전달
  *
  * [Idempotency 동시성 전략]
  * - 순차 중복: 1단계 선조회로 처리
@@ -55,8 +57,9 @@ import java.util.stream.Collectors;
  *   DataIntegrityViolationException 발생 시 기존 주문을 재조회해 반환.
  *
  * [DB 먼저 저장 이유]
- * KIS 주문 성공 후 DB 저장 실패 시 외부 주문만 남는 불일치를 방지.
- * 저장 실패 시 KIS 호출이 차단되므로 역방향 불일치는 발생하지 않음.
+ * Kafka 발행이 동기(.get())이므로 발행 실패 시 @Transactional이 롤백되어
+ * DB 저장도 취소된다. 반대로 DB 저장 실패 시 Kafka 발행 자체가 차단된다.
+ * 따라서 "DB 저장 성공 + Kafka 미발행" 또는 "Kafka 발행 + DB 미저장" 불일치가 방지된다.
  *
  * [트랜잭션 설계]
  * 토큰 갱신: KisTokenService 자체 @Transactional에서 처리
@@ -74,11 +77,12 @@ public class OrderService {
     private final KisCredentialRepository kisCredentialRepository;
     private final TradingRuleRepository tradingRuleRepository;
     private final KisTokenService kisTokenService;
-    private final KisOrderClient kisOrderClient;
+    private final KisOrderClient kisOrderClient;          // validateBalance에서 매수/매도 가능 수량 조회에 사용
     private final KisPendingOrderClient kisPendingOrderClient;
     private final KisModifyOrderClient kisModifyOrderClient;
     private final KisBuyingPowerClient kisBuyingPowerClient;
     private final AesGcmEncryptor encryptor;
+    private final TradeOrderProducer tradeOrderProducer;  // 주문 접수 이벤트를 Kafka로 발행
 
     @Transactional
     public OrderResponse placeOrder(Long userId, OrderRequest request, String idempotencyKey) {
@@ -134,19 +138,28 @@ public class OrderService {
                     .orElseThrow(() -> new ApiException(CommonErrorCode.CONCURRENT_CONFLICT));
         }
 
-        // KIS 주문 실행
-        KisOrderClient.KisOrderResult result = kisOrderClient.placeOrder(
-                accessToken, appKey, appSecret,
-                credential.getAccountNo(), credential.getAccountPrdtCd(),
-                request.stockCode(), request.side(), request.orderMethod(),
-                request.quantity(), request.price()
-        );
+        // DB 저장 성공 후 Kafka에 주문 이벤트 발행
+        // - KIS API 호출은 KisOrderConsumer가 비동기로 처리하고 결과를 SSE로 사용자에게 전달
+        // - publishOrderSubmitted는 .get()으로 브로커 ACK를 기다리므로,
+        //   Kafka 발행 실패 시 예외가 전파되어 이 @Transactional이 롤백됨
+        //   → DB 저장 성공 + Kafka 발행 실패로 인한 미처리 PENDING 주문 방지
+        tradeOrderProducer.publishOrderSubmitted(new TradeOrderMessage(
+                idempotencyKey,         // orderId: Consumer가 idempotency_key로 기존 주문 조회에 사용
+                null,                   // parentOrderId: 수동 주문은 원주문 없음
+                userId,
+                request.stockCode(),
+                request.side().name(),
+                request.orderMethod().name(),
+                (long) request.quantity(),
+                request.price(),
+                "MANUAL",               // source: 수동 주문
+                null,                   // ruleHistoryId: 수동 주문은 매매 규칙 참조 없음
+                OffsetDateTime.now()
+        ));
 
-        // KIS 응답으로 주문 정보 업데이트 (JPA dirty checking으로 자동 반영)
-        order.updateKisInfo(result.kisOrderNo(), result.kisOrgNo(), OffsetDateTime.now());
-
-        log.info("수동 주문 접수 완료 - userId: {}, stockCode: {}, side: {}, kisOrderNo: {}",
-                userId, request.stockCode(), request.side(), result.kisOrderNo());
+        // kisOrderNo는 아직 null (KIS 접수 결과는 SSE로 비동기 전달됨)
+        log.info("수동 주문 Kafka 발행 완료 - userId: {}, stockCode: {}, side: {}, key: {}",
+                userId, request.stockCode(), request.side(), idempotencyKey);
 
         return OrderResponse.from(order);
     }

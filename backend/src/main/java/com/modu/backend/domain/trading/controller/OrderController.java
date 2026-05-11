@@ -8,6 +8,7 @@ import com.modu.backend.domain.trading.dto.OrderResponse;
 import com.modu.backend.domain.trading.dto.PendingOrdersResponse;
 import com.modu.backend.domain.trading.entity.OrderSide;
 import com.modu.backend.domain.trading.service.OrderService;
+import com.modu.backend.domain.trading.sse.OrderSseEmitterManager;
 import com.modu.backend.global.dto.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -22,6 +23,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.http.MediaType;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @Tag(name = "Orders", description = "주문 API")
 @Validated
@@ -31,6 +34,8 @@ import org.springframework.web.bind.annotation.*;
 public class OrderController {
 
     private final OrderService orderService;
+    // 필드 추가
+    private final OrderSseEmitterManager orderSseEmitterManager;
 
     @Operation(
             summary = "미체결 주문 조회",
@@ -166,4 +171,13 @@ public class OrderController {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success("주문이 접수되었습니다.", response));
     }
+    /**
+     * * SSE 연결 수립 엔드포인트
+     * * 프론트가 로그인 후 한 번 호출하여 연결 유지
+     * * produces: SSE 응답 형식 지정 (필수)
+     * */
+    @GetMapping(value = "/connect", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter connect(@AuthenticationPrincipal Long userId) {
+        return orderSseEmitterManager.connect(userId);
+    }    
 }

@@ -70,7 +70,7 @@ public class KafkaConsumerConfig {
     // KIS API 속도 제한으로 concurrency=1 순차 처리
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, Object> kisOrderFactory() {
-        return factory(KafkaConsumerGroup.KIS_ORDER, 1, 10, 30000);
+        return factory(KafkaConsumerGroup.KIS_ORDER, 3, 10, 30000);
     }
 
     // 체결 후 포트폴리오 업데이트 (병렬 처리)

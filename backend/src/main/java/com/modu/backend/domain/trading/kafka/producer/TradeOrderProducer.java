@@ -15,11 +15,23 @@ public class TradeOrderProducer {
 
     private final KafkaTemplate<String, Object> kafkaTemplate;
 
-    // Signal Handler, Position Monitor, REST API에서 호출
+    /**
+     * 주문 접수 이벤트 발행 (동기)
+     *
+     * .get()으로 브로커 수신 확인을 기다린다.
+     * 호출 측이 @Transactional 범위 안에 있을 때 Kafka 발행 실패 시
+     * 예외가 전파되어 DB 트랜잭션도 함께 롤백된다.
+     * → DB 저장 성공 + Kafka 발행 실패로 인한 미처리 PENDING 주문 방지
+     *
+     * 파티션 키: userId → 같은 사용자의 주문은 항상 같은 파티션에 순서대로 처리됨
+     */
     public void publishOrderSubmitted(TradeOrderMessage message) {
-        kafkaTemplate.send(KafkaTopic.TRADE_ORDER_SUBMITTED,
-            message.orderId(),
-            message);
+        try {
+            kafkaTemplate.send(KafkaTopic.TRADE_ORDER_SUBMITTED, String.valueOf(message.userId()), message)
+                    .get(); // 브로커 ACK 대기 — 실패 시 예외 발생 → @Transactional 롤백
+        } catch (Exception e) {
+            throw new RuntimeException("Kafka 주문 발행 실패 - orderId=" + message.orderId(), e);
+        }
         log.info("주문 발행: orderId={}, userId={}, source={}",
             message.orderId(), message.userId(), message.source());
     }
