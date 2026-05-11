@@ -8,9 +8,9 @@ def build_state_from_user_trigger(
     """
     UserTriggerEvent를 LangGraph 실행용 InvestmentAgentState로 변환한다.
 
-    DA 명세 정합화 후 변경 사항:
-    - `candidate_assets`는 DA 메시지에 없으므로 stock_code 기반으로 자체 구성한다.
-    - `market_snapshot`은 DA 메시지에 없으므로 빈 dict로 둔다 (별도 source에서 채울 예정).
+    Analysis Layer 명세 정합화 후 변경 사항:
+    - `candidate_assets`는 Analysis Layer 메시지에 없으므로 stock_code 기반으로 자체 구성한다.
+    - `market_snapshot`은 Analysis Layer 메시지에 없으므로 빈 dict로 둔다 (별도 source에서 채울 예정).
     - `trigger_reason`은 `event.trigger.trigger_reason`에서 참조한다.
     """
 

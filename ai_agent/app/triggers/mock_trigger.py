@@ -15,7 +15,7 @@ def produce_mock_market_signal() -> None:
     """
     market.signal.detected 토픽에 테스트용 MarketTriggerEvent를 발행한다.
 
-    DA 명세에 맞춘 신규 schema:
+    Analysis Layer 명세에 맞춘 신규 schema:
     - trigger: {rule_ids, trigger_reason} (nested)
     - analysis_snapshot: signals.{technical, fundamental, event, sentiment} 4분할
 

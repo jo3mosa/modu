@@ -1,8 +1,8 @@
 """
 Trigger 이벤트 스키마.
 
-DA 팀이 공유한 Event Trigger 명세를 단일 소스로 따른다.
-- MarketTriggerEvent: Analysis Layer가 발행하는 시장 단위 이벤트 (DA 명세 그대로)
+DA 팀이 합의해 준 Analysis Layer 명세를 단일 소스로 따른다.
+- MarketTriggerEvent: Analysis Layer가 발행하는 시장 단위 이벤트 (명세 그대로)
 - UserTriggerEvent: User Trigger Matcher가 사용자 정보와 결합한 실행 이벤트
 - PositionTriggerEvent: Position Monitoring이 발행하는 사용자 포지션 이벤트
 """
@@ -26,9 +26,9 @@ class TriggerType(StrEnum):
 
 class MarketTrigger(BaseModel):
     """
-    DA가 발행하는 Market Event의 trigger 메타데이터.
+    Analysis Layer가 발행하는 Market Event의 trigger 메타데이터.
 
-    - rule_ids: DA가 명세화한 rule ID 목록 (예: ["RSI-002"], ["DART-004"]).
+    - rule_ids: Analysis Layer 명세가 정의한 rule ID 목록 (예: ["RSI-002"], ["DART-004"]).
       코드/필터/로그 분석은 이 값을 정형 키로 사용한다.
     - trigger_reason: 사람이 읽는 한국어 사유 목록 (예: ["RSI 과매수"]).
       LangSmith / 사용자 노출 메시지 등에서 사용한다.
@@ -42,7 +42,7 @@ class MarketTriggerEvent(BaseModel):
     """
     Analysis Layer가 발행하는 시장 단위 이벤트.
 
-    DA 명세(Kafka 메시지 포맷)를 그대로 따른다. 아직 특정 사용자와 연결되지 않은
+    Analysis Layer 명세(Kafka 메시지 포맷)를 그대로 따른다. 아직 특정 사용자와 연결되지 않은
     상태이며, User Trigger Matcher가 사용자 포트폴리오/관심 종목과 매칭한다.
 
     명세 페이로드 예시:
@@ -54,7 +54,7 @@ class MarketTriggerEvent(BaseModel):
       "analysis_snapshot": {"technical": {...}, "fundamental": {...}, ...}
     }
 
-    `event_id`는 명세에 없는 AI 측 추적용 보조 필드 — DA 메시지에 없으면
+    `event_id`는 명세에 없는 AI 측 추적용 보조 필드 — Analysis Layer 메시지에 없으면
     수신 시점에 자동 생성되어 LangSmith / 로그 / source_event_id에 사용된다.
     """
 
@@ -64,7 +64,7 @@ class MarketTriggerEvent(BaseModel):
     trigger: MarketTrigger = Field(default_factory=MarketTrigger)
     analysis_snapshot: dict[str, Any] = Field(default_factory=dict)
 
-    # AI 측 추적용 보조. DA 메시지에 없으면 수신 시 자동 생성.
+    # AI 측 추적용 보조. Analysis Layer 메시지에 없으면 수신 시 자동 생성.
     event_id: str = Field(default_factory=lambda: f"market_event_{uuid4()}")
 
 
