@@ -55,10 +55,11 @@ public class KisBuyingPowerClient {
     public KisBuyPowerInfo getBuyPowerInfo(String accessToken, String appKey, String appSecret,
                                            String cano, String acntPrdtCd,
                                            String stockCode, Long orderPrice) {
-        // stockCode=null 이면 PDNO/ORD_UNPR 공란 → KIS가 매수금액+예수금만 반환 (수량 미제공)
+        // stockCode=null 이면 PDNO/ORD_UNPR 공란("") → KIS가 매수금액+예수금만 반환 (수량 미제공)
+        // ORD_UNPR="0" 은 시장가 0원 쿼리로 처리되어 공란 조회와 다르게 동작할 수 있으므로 "" 사용
         boolean hasStockCode = stockCode != null && !stockCode.isBlank();
         String pdno    = hasStockCode ? stockCode : "";
-        String ordUnpr = hasStockCode && orderPrice != null ? String.valueOf(orderPrice) : "0";
+        String ordUnpr = hasStockCode && orderPrice != null ? String.valueOf(orderPrice) : "";
         String ordDvsn = hasStockCode && orderPrice != null ? LIMIT_ORD_DVSN : MARKET_ORD_DVSN;
 
         try {

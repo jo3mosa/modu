@@ -416,10 +416,15 @@ public class OrderService {
             );
         }
 
+        // SELL 시 maxBuyQuantity=0 (API 계약: BUY 시에만 제공)
+        int maxBuyQty = side == OrderSide.SELL
+                ? 0
+                : toIntExact(buyPowerInfo.maxBuyQuantity(), "maxBuyQuantity");
+
         return new BuyingPowerResponse(
                 buyPowerInfo.maxBuyAmount(),
-                (int) buyPowerInfo.maxBuyQuantity(),
-                (int) maxSellQty,
+                maxBuyQty,
+                toIntExact(maxSellQty, "maxSellQuantity"),
                 buyPowerInfo.availableCash()
         );
     }
