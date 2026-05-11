@@ -15,11 +15,6 @@ def main() -> None:
     graph = build_investment_graph()
 
     initial_state = InvestmentAgentState(
-        market_snapshot={
-            "index": "KOSPI",
-            "market_status": "open",
-            "volatility": "normal",
-        },
         analysis_snapshot={
             "stock_code": "005930",
             "timestamp": "2026-05-02T08:00:00Z",

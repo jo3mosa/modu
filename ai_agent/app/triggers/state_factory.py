@@ -10,7 +10,6 @@ def build_state_from_user_trigger(
 
     Analysis Layer 명세 정합화 후 변경 사항:
     - `candidate_assets`는 Analysis Layer 메시지에 없으므로 stock_code 기반으로 자체 구성한다.
-    - `market_snapshot`은 Analysis Layer 메시지에 없으므로 빈 dict로 둔다 (별도 source에서 채울 예정).
     - `trigger` 정보(rule_ids / trigger_reason)는 InvestmentAgentState에 별도 필드로 저장하지 않는다.
       향후 LangSmith metadata 태깅 또는 LLM 프롬프트 입력에서 활용할 때 별도 작업으로 추가 검토.
     """
