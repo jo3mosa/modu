@@ -11,28 +11,57 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+# 작업 중단이 필요한 OpenDART 응답 status 코드
+#   020: 일일 호출 한도 초과 (quota)
+#   010, 011: 등록되지 않은 / 사용할 수 없는 키
+#   012: 허용되지 않은 IP
+# 일반 실패(미공시 013, 시스템 점검 800, 정의되지 않은 오류 900 등)와 분리해 caller가
+# "키 교체 필요" 시그널을 명확히 인지할 수 있도록 한다.
+CRITICAL_STATUSES = {"020", "010", "011", "012"}
+
+
+class DartCriticalError(Exception):
+    """OpenDART 치명적 응답 — 운영 개입(키 교체/IP 등록 등)이 필요하므로 작업 중단."""
+
+    def __init__(self, status, message):
+        self.status = status
+        self.message = message or ""
+        super().__init__(f"DART status={status}: {self.message}")
+
+
 class DartApiClient:
     BASE_URL = "https://opendart.fss.or.kr/api"
     CORP_CODE_CACHE = "dart_corp_code.json"
     CORP_CODE_TTL_DAYS = 7
     HTTP_TIMEOUT = 10  # seconds — polling worker hang 방지
 
-    # 단일회사 전체 재무제표에서 추출할 (statement, account_nm) 쌍
-    # sj_div: BS=재무상태표, IS=손익계산서, CIS=포괄손익계산서
-    # → account_nm은 여러 재무제표에 중복 등장하므로 반드시 sj_div로 disambiguate
-    TARGET_ACCOUNTS = {
-        ("BS", "자산총계"),
-        ("BS", "부채총계"),
-        ("BS", "자본총계"),
-        ("BS", "유동자산"),
-        ("BS", "유동부채"),
-        ("IS", "매출액"),
-        ("IS", "영업이익"),
-        ("IS", "당기순이익"),
-        # 일부 기업은 IS 대신 CIS만 제공 → fallback
-        ("CIS", "매출액"),
-        ("CIS", "영업이익"),
-        ("CIS", "당기순이익"),
+    # 표준 계정명 → (해당 statement 집합, DART 응답에서 매칭 가능한 원본 계정명 후보)
+    #
+    # 산업별 회계 양식 차이 흡수:
+    #   · 일반 제조·서비스: "매출액"
+    #   · 은행·보험·증권·자산운용: "영업수익" (이자/수수료/보험료 합산), "보험료수익"
+    #   · 일부 기업: "수익(매출액)"
+    # 매칭된 모든 원본 계정명은 표준명(키) 으로 정규화되어 반환되므로, 다운스트림 코드는
+    # 산업 무관하게 동일한 키("매출액", "당기순이익" 등)로 접근 가능하다.
+    #
+    # IS 우선, IS 없을 때만 CIS 로 fallback — 첫 매칭이 IS 면 후속 CIS 매칭은 무시.
+    ACCOUNT_ALIASES = {
+        "자산총계":   ({"BS"},        {"자산총계"}),
+        "부채총계":   ({"BS"},        {"부채총계"}),
+        "자본총계":   ({"BS"},        {"자본총계"}),
+        "유동자산":   ({"BS"},        {"유동자산"}),
+        "유동부채":   ({"BS"},        {"유동부채"}),
+        "매출액":     ({"IS", "CIS"}, {"매출액", "영업수익", "수익(매출액)", "보험료수익"}),
+        "영업이익":   ({"IS", "CIS"}, {"영업이익", "영업이익(손실)"}),
+        "당기순이익": ({"IS", "CIS"}, {"당기순이익", "당기순이익(손실)"}),
+    }
+
+    # 매칭 효율을 위한 역방향 인덱스: (sj_div, 원본 계정명) → 표준명
+    _ACCOUNT_NAME_TO_STD = {
+        (sj, alias): std
+        for std, (sj_divs, aliases) in ACCOUNT_ALIASES.items()
+        for sj in sj_divs
+        for alias in aliases
     }
 
     def __init__(self):
@@ -103,7 +132,10 @@ class DartApiClient:
         # status 013 = 조회된 데이터 없음 → 연결재무제표가 없는 소형주이므로 별도(OFS)로 fallback
         if status == "013" and fs_div == "CFS":
             return self.get_financial_accounts(corp_code, bsns_year, reprt_code, fs_div="OFS")
-        # 그 외 에러(인증/한도/장애)는 fallback 없이 즉시 실패 — quota 낭비 방지
+        # quota/인증/IP 등 운영 개입 필요한 상태는 즉시 raise — caller가 일반 실패와 구분
+        if status in CRITICAL_STATUSES:
+            raise DartCriticalError(status, data.get("message"))
+        # 그 외(미공시 013, 시스템 점검 800 등)는 stdout 에 status 노출 후 None 반환
         if status != "000":
             print(f"[ERROR] 재무제표 조회 실패 ({bsns_year}/{reprt_code}/{fs_div}): "
                   f"status={status}, message={data.get('message')}")
@@ -113,7 +145,8 @@ class DartApiClient:
         for item in data.get("list", []):
             sj_div = (item.get("sj_div") or "").strip()
             name = (item.get("account_nm") or "").strip()
-            if (sj_div, name) not in self.TARGET_ACCOUNTS:
+            std_name = self._ACCOUNT_NAME_TO_STD.get((sj_div, name))
+            if std_name is None:
                 continue
             amount_str = (item.get("thstrm_amount") or "").replace(",", "").strip()
             try:
@@ -121,9 +154,14 @@ class DartApiClient:
             except (ValueError, TypeError):
                 continue
             # IS 우선, IS 없을 때만 CIS로 fallback (이미 IS 값이 있으면 덮어쓰지 않음)
-            if sj_div == "CIS" and name in accounts:
+            if sj_div == "CIS" and std_name in accounts:
                 continue
-            accounts[name] = amount
+            # 동일 표준명에 여러 원본 계정명이 매칭되는 경우(예: 매출액·영업수익 둘 다 등장)
+            # 이미 더 우선순위 높은 alias 값이 있으면 덮어쓰지 않음.
+            # 응답 순서상 통상 표준 양식 계정이 먼저 등장하므로 first-wins 로 충분.
+            if sj_div != "CIS" and std_name in accounts:
+                continue
+            accounts[std_name] = amount
         return accounts
 
     # 발행주식수 (보통주)
@@ -139,6 +177,8 @@ class DartApiClient:
         data = self._get(url, params=params).json()
 
         status = data.get("status")
+        if status in CRITICAL_STATUSES:
+            raise DartCriticalError(status, data.get("message"))
         if status != "000":
             print(f"[ERROR] 주식수 조회 실패 ({bsns_year}/{reprt_code}): "
                   f"status={status}, message={data.get('message')}")
@@ -168,6 +208,8 @@ class DartApiClient:
         data = self._get(url, params=params).json()
 
         status = data.get("status")
+        if status in CRITICAL_STATUSES:
+            raise DartCriticalError(status, data.get("message"))
         if status not in ("000", "013"):  # 013 = 조회된 데이터 없음 (정상)
             print(f"[ERROR] 공시 조회 실패: status={status}, message={data.get('message')}")
             return []
