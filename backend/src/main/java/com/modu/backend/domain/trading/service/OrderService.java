@@ -1,8 +1,10 @@
 package com.modu.backend.domain.trading.service;
 
+import com.modu.backend.domain.trading.client.KisBuyingPowerClient;
 import com.modu.backend.domain.trading.client.KisModifyOrderClient;
 import com.modu.backend.domain.trading.client.KisOrderClient;
 import com.modu.backend.domain.trading.client.KisPendingOrderClient;
+import com.modu.backend.domain.trading.dto.BuyingPowerResponse;
 import com.modu.backend.domain.trading.dto.ModifyOrderRequest;
 import com.modu.backend.domain.trading.dto.ModifyOrderResponse;
 import com.modu.backend.domain.trading.dto.OrderRequest;
@@ -75,6 +77,7 @@ public class OrderService {
     private final KisOrderClient kisOrderClient;
     private final KisPendingOrderClient kisPendingOrderClient;
     private final KisModifyOrderClient kisModifyOrderClient;
+    private final KisBuyingPowerClient kisBuyingPowerClient;
     private final AesGcmEncryptor encryptor;
 
     @Transactional
@@ -361,5 +364,66 @@ public class OrderService {
                 userId, orderId, request.action(), result.newKisOrderNo());
 
         return ModifyOrderResponse.from(order);
+    }
+
+    // ── 주문 가능 금액/수량 조회 ──────────────────────────────────────────────
+
+    /**
+     * 주문 가능 금액/수량 조회
+     *
+     * [처리 흐름]
+     * 1. KIS 연동 확인, 토큰 준비
+     * 2. inquire-psbl-order 호출 → maxBuyAmount + availableCash
+     * 3. side=SELL 인 경우만 inquire-psbl-sell 호출 → maxSellQuantity
+     * 4. DB에서 riskLimitAmount 계산 (일일 누적 한도 - 오늘 사용 금액)
+     *
+     * [트랜잭션]
+     * 읽기 전용 조회이므로 @Transactional 미적용
+     */
+    public BuyingPowerResponse getBuyingPower(Long userId, String stockCode,
+                                              OrderSide side, Long orderPrice) {
+        KisCredential credential = kisCredentialRepository.findByUserId(userId)
+                .orElseThrow(() -> new ApiException(UserErrorCode.KIS_NOT_CONNECTED));
+
+        if (!credential.isRealAccount()) {
+            throw new ApiException(UserErrorCode.KIS_MOCK_ACCOUNT_NOT_SUPPORTED);
+        }
+
+        String appKey      = encryptor.decrypt(credential.getAppKeyEnc());
+        String appSecret   = encryptor.decrypt(credential.getAppSecretEnc());
+        String accessToken = kisTokenService.getOrIssueAccessToken(userId, appKey, appSecret);
+
+        // inquire-psbl-order: maxBuyAmount + availableCash (side 무관하게 항상 호출)
+        KisBuyingPowerClient.KisBuyPowerInfo buyPowerInfo = kisBuyingPowerClient.getBuyPowerInfo(
+                accessToken, appKey, appSecret,
+                credential.getAccountNo(), credential.getAccountPrdtCd(),
+                stockCode, orderPrice
+        );
+
+        // inquire-psbl-sell: side=SELL 일 때만 호출
+        long maxSellQty = 0L;
+        if (side == OrderSide.SELL) {
+            maxSellQty = kisBuyingPowerClient.getSellableQuantity(
+                    accessToken, appKey, appSecret,
+                    credential.getAccountNo(), credential.getAccountPrdtCd(),
+                    stockCode
+            );
+        }
+
+        // riskLimitAmount: 일일 누적 한도 - 오늘 매수 사용 금액 (음수면 0)
+        long riskLimitAmount = tradingRuleRepository.findById(userId)
+                .map(rule -> {
+                    long used = orderRepository.sumTodayBuyAmount(userId);
+                    return Math.max(0L, rule.getDailyLossLimitAmount() - used);
+                })
+                .orElse(0L);
+
+        return new BuyingPowerResponse(
+                buyPowerInfo.maxBuyAmount(),
+                (int) buyPowerInfo.maxBuyQuantity(),
+                (int) maxSellQty,
+                buyPowerInfo.availableCash(),
+                riskLimitAmount
+        );
     }
 }

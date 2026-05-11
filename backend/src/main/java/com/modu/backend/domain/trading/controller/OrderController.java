@@ -1,10 +1,12 @@
 package com.modu.backend.domain.trading.controller;
 
+import com.modu.backend.domain.trading.dto.BuyingPowerResponse;
 import com.modu.backend.domain.trading.dto.ModifyOrderRequest;
 import com.modu.backend.domain.trading.dto.ModifyOrderResponse;
 import com.modu.backend.domain.trading.dto.OrderRequest;
 import com.modu.backend.domain.trading.dto.OrderResponse;
 import com.modu.backend.domain.trading.dto.PendingOrdersResponse;
+import com.modu.backend.domain.trading.entity.OrderSide;
 import com.modu.backend.domain.trading.service.OrderService;
 import com.modu.backend.global.dto.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -52,6 +54,37 @@ public class OrderController {
     ) {
         PendingOrdersResponse response = orderService.getPendingOrders(userId);
         return ResponseEntity.ok(ApiResponse.success("미체결 주문을 조회했습니다.", response));
+    }
+
+    @Operation(
+            summary = "주문 가능 금액/수량 조회",
+            description = """
+                    한국투자증권 API를 통해 주문 가능 금액과 수량을 조회합니다.
+
+                    - side=BUY: maxBuyAmount(매수가능금액), availableCash(주문가능현금) 조회
+                    - side=SELL: 위 항목 + maxSellQuantity(매도가능수량) 추가 조회
+                    - orderPrice 미전달 시 시장가 기준으로 조회합니다.
+                    - riskLimitAmount: 일일 누적 한도에서 오늘 사용 금액을 뺀 잔여 주문 가능 금액
+                      (trading_rules 미설정 시 0 반환)
+                    """
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "주문 가능 정보 조회 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "잘못된 파라미터"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "인증 필요"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "KIS API 미연동",
+                    content = @Content(schema = @Schema(example = "{\"success\":false,\"message\":\"연동된 한국투자증권 API 정보가 없습니다.\",\"errorCode\":\"KIS_NOT_CONNECTED\"}"))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "502", description = "KIS API 호출 실패")
+    })
+    @GetMapping("/buying-power")
+    public ResponseEntity<ApiResponse<BuyingPowerResponse>> getBuyingPower(
+            @AuthenticationPrincipal Long userId,
+            @RequestParam String stockCode,
+            @RequestParam OrderSide side,
+            @RequestParam(required = false) Long orderPrice
+    ) {
+        BuyingPowerResponse response = orderService.getBuyingPower(userId, stockCode, side, orderPrice);
+        return ResponseEntity.ok(ApiResponse.success("주문 가능 정보를 조회했습니다.", response));
     }
 
     @Operation(
