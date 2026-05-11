@@ -34,7 +34,7 @@ def _make_result(
     checks: list[dict[str, Any]],
     risk_cleared: bool = False,
 ) -> dict[str, Any]:
-    flow_status = "running" if status == "passed" else status
+    flow_status = "completed" if status == "passed" else status
 
     add_run_metadata({
         "node": "risk_gate",

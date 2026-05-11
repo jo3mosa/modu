@@ -137,6 +137,7 @@ def _mock_risk_gate_pass(state):
     return {
         "risk_cleared": True,
         "risk_check_result": {"status": "passed"},
+        "flow_status": "completed",
     }
 
 
@@ -211,7 +212,6 @@ class TestStateConversion:
         assert state.research_verdict is None
         assert state.final_decision is None
         assert state.risk_cleared is False
-        assert state.execution_result == {}
 
 
 # ──────────────────────────────────────────
@@ -240,16 +240,14 @@ class TestLangGraphFlow:
     def test_hold_path(self):
         """
         [경로 A] decision_manager hold → END
-        risk_gate, executor는 실행되지 않는다.
+        risk_gate는 실행되지 않는다.
         """
         result = self._invoke({"app.graph.builder.decision_manager": _mock_decision_manager_hold})
         assert result["flow_status"] == "hold"
-        assert result["execution_result"] == {}
 
     def test_trade_risk_blocked_path(self):
         """
         [경로 B] decision_manager trade → risk_gate block → END
-        executor는 실행되지 않는다.
         """
         result = self._invoke({
             "app.graph.builder.decision_manager": _mock_decision_manager_trade,
@@ -257,12 +255,11 @@ class TestLangGraphFlow:
         })
         assert result["risk_cleared"] is False
         assert result["flow_status"] != "completed"
-        assert result["execution_result"] == {}
 
     def test_trade_risk_passed_path(self):
         """
-        [경로 C] decision_manager trade → risk_gate pass → executor → completed
-        execution_result에 주문 결과가 담긴다.
+        [경로 C] decision_manager trade → risk_gate pass → completed
+        백엔드가 ai.decision.generated를 수신해 실제 주문을 실행한다.
         """
         result = self._invoke({
             "app.graph.builder.decision_manager": _mock_decision_manager_trade,
@@ -270,8 +267,6 @@ class TestLangGraphFlow:
         })
         assert result["risk_cleared"] is True
         assert result["flow_status"] == "completed"
-        assert result["execution_result"]["status"] == "success"
-        assert result["execution_result"]["asset"] == "005930"
 
 
 # ──────────────────────────────────────────

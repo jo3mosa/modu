@@ -97,18 +97,7 @@ class InvestmentAgentState(BaseModel):
     risk_cleared: bool = False
 
     # ==============================
-    # 6. Execution output
-    # ==============================
-
-    # 주문 실행 결과
-    # 지금은 mock 주문 결과, 나중에는 한국투자증권 API 결과가 들어갈 예정
-    execution_result: dict[str, Any] = Field(default_factory=dict)
-    
-    # 주문 실행 재시도 횟수
-    execution_retry_count: int = 0
-
-    # ==============================
-    # 7. Feedback Layer output
+    # 6. Feedback Layer output
     # ==============================
 
     # 매도 체결 후 별도 스케줄러 또는 Feedback Graph가 주입하는 시장 데이터
