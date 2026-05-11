@@ -769,7 +769,7 @@ class OrderServiceTest {
     }
 
     @Test
-    @DisplayName("side=SELL 조회 성공 - getSellableQuantity 호출, maxBuyQuantity는 BUY API 결과")
+    @DisplayName("side=SELL 조회 성공 - getSellableQuantity 호출, maxBuyQuantity=0")
     void 주문가능조회_SELL_성공() {
         // given
         setupKisCredentialStubs();
@@ -781,9 +781,9 @@ class OrderServiceTest {
         // when
         BuyingPowerResponse response = orderService.getBuyingPower(1L, "005930", OrderSide.SELL, null);
 
-        // then
+        // then: SELL 시 maxBuyQuantity=0 (API 계약)
         assertThat(response.maxSellQuantity()).isEqualTo(50);
-        assertThat(response.maxBuyQuantity()).isEqualTo(13);
+        assertThat(response.maxBuyQuantity()).isEqualTo(0);
         verify(kisBuyingPowerClient).getSellableQuantity(any(), any(), any(), any(), any(), eq("005930"));
     }
 
