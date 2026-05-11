@@ -26,6 +26,8 @@ export default function MyPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    /* 
+    // MVP 범위 제외: 내 정보 조회 주석 처리
     async function loadMyInfo() {
       try {
         const data = await getMyInfo();
@@ -36,7 +38,6 @@ export default function MyPage() {
           joinedAt: new Date(data.createdAt).toLocaleDateString()
         });
 
-        // KIS 연동 정보가 있으면 연결됨 상태로 변경
         if (data.kisKeyStatus && data.kisKeyStatus.isConnected) {
           setIsConnected(true);
           setApiKeys(prev => ({
@@ -51,6 +52,8 @@ export default function MyPage() {
       }
     }
     loadMyInfo();
+    */
+    setIsLoading(false);
   }, []);
 
 
@@ -71,6 +74,7 @@ export default function MyPage() {
         }
         await updateKisKey(payload);
         alert('한국투자증권 API 키가 수정되었습니다!');
+        setIsConnected(true); // 수정 성공 시 연결됨 상태 유지
       } else {
         await registerKisKey({
           appKey: apiKeys.appKey,
@@ -145,9 +149,6 @@ export default function MyPage() {
       <div className="mypage-panel">
         <h2>
           한국투자증권 연동 관리
-          <span className={`status-badge ${isConnected ? 'connected' : 'disconnected'}`}>
-            {isConnected ? '연결됨 🟢' : '미연결 🔴'}
-          </span>
         </h2>
         <div className="api-form">
           <div className="input-group">
