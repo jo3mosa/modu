@@ -79,7 +79,7 @@ public class OrderController {
     @GetMapping("/buying-power")
     public ResponseEntity<ApiResponse<BuyingPowerResponse>> getBuyingPower(
             @AuthenticationPrincipal Long userId,
-            @RequestParam String stockCode,
+            @RequestParam(required = false) String stockCode,
             @RequestParam OrderSide side,
             @RequestParam(required = false) Long orderPrice
     ) {

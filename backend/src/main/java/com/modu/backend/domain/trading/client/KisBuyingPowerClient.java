@@ -55,8 +55,11 @@ public class KisBuyingPowerClient {
     public KisBuyPowerInfo getBuyPowerInfo(String accessToken, String appKey, String appSecret,
                                            String cano, String acntPrdtCd,
                                            String stockCode, Long orderPrice) {
-        String ordUnpr = orderPrice != null ? String.valueOf(orderPrice) : "0";
-        String ordDvsn = orderPrice != null ? LIMIT_ORD_DVSN : MARKET_ORD_DVSN;
+        // stockCode=null 이면 PDNO/ORD_UNPR 공란 → KIS가 매수금액+예수금만 반환 (수량 미제공)
+        boolean hasStockCode = stockCode != null && !stockCode.isBlank();
+        String pdno    = hasStockCode ? stockCode : "";
+        String ordUnpr = hasStockCode && orderPrice != null ? String.valueOf(orderPrice) : "0";
+        String ordDvsn = hasStockCode && orderPrice != null ? LIMIT_ORD_DVSN : MARKET_ORD_DVSN;
 
         try {
             BuyPowerResponse response = kisRestClient.get()
@@ -64,7 +67,7 @@ public class KisBuyingPowerClient {
                             .path(BUY_POWER_PATH)
                             .queryParam("CANO", cano)
                             .queryParam("ACNT_PRDT_CD", acntPrdtCd)
-                            .queryParam("PDNO", stockCode)
+                            .queryParam("PDNO", pdno)
                             .queryParam("ORD_UNPR", ordUnpr)
                             .queryParam("ORD_DVSN", ordDvsn)
                             .queryParam("CMA_EVLU_AMT_ICLD_YN", "N")

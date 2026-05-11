@@ -393,14 +393,20 @@ public class OrderService {
         String appSecret   = encryptor.decrypt(credential.getAppSecretEnc());
         String accessToken = kisTokenService.getOrIssueAccessToken(userId, appKey, appSecret);
 
+        // SELL 은 종목코드 필수 — 보유 종목 특정 없이 매도 가능 수량 조회 불가
+        if (side == OrderSide.SELL && (stockCode == null || stockCode.isBlank())) {
+            throw new ApiException(OrderErrorCode.SELL_REQUIRES_STOCK_CODE);
+        }
+
         // inquire-psbl-order: maxBuyAmount + availableCash (side 무관하게 항상 호출)
+        // stockCode=null 이면 PDNO/ORD_UNPR 공란으로 호출 → 매수금액+예수금만 조회 (수량 미제공)
         KisBuyingPowerClient.KisBuyPowerInfo buyPowerInfo = kisBuyingPowerClient.getBuyPowerInfo(
                 accessToken, appKey, appSecret,
                 credential.getAccountNo(), credential.getAccountPrdtCd(),
                 stockCode, orderPrice
         );
 
-        // inquire-psbl-sell: side=SELL 일 때만 호출
+        // inquire-psbl-sell: side=SELL 일 때만 호출 (stockCode 필수 보장됨)
         long maxSellQty = 0L;
         if (side == OrderSide.SELL) {
             maxSellQty = kisBuyingPowerClient.getSellableQuantity(
@@ -410,20 +416,11 @@ public class OrderService {
             );
         }
 
-        // riskLimitAmount: 일일 누적 한도 - 오늘 매수 사용 금액 (음수면 0)
-        long riskLimitAmount = tradingRuleRepository.findById(userId)
-                .map(rule -> {
-                    long used = orderRepository.sumTodayBuyAmount(userId);
-                    return Math.max(0L, rule.getDailyLossLimitAmount() - used);
-                })
-                .orElse(0L);
-
         return new BuyingPowerResponse(
                 buyPowerInfo.maxBuyAmount(),
                 (int) buyPowerInfo.maxBuyQuantity(),
                 (int) maxSellQty,
-                buyPowerInfo.availableCash(),
-                riskLimitAmount
+                buyPowerInfo.availableCash()
         );
     }
 }

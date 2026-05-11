@@ -14,6 +14,5 @@ public record BuyingPowerResponse(
         Long maxBuyAmount,       // 최대 매수 가능 금액 (원)
         Integer maxBuyQuantity,  // 최대 매수 가능 수량 (side=BUY 시 제공, SELL 시 0)
         Integer maxSellQuantity, // 최대 매도 가능 수량 (side=SELL 시 제공, BUY 시 0)
-        Long availableCash,      // 현재 주문 가능 현금 (예수금 기반, 미체결 차감)
-        Long riskLimitAmount     // 일일 누적 한도 기준 잔여 주문 가능 금액
+        Long availableCash       // 현재 주문 가능 현금 (예수금 기반, 미체결 차감)
 ) {}
