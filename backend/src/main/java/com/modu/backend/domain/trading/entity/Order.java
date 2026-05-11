@@ -149,8 +149,9 @@ public class Order {
                        String newKisOrderNo, String newKisOrgNo) {
         if (newLimitPrice != null) this.limitPrice = newLimitPrice;
         if (newQuantity   != null) this.quantity   = newQuantity;
-        this.kisOrderNo = newKisOrderNo;
-        this.kisOrgNo   = newKisOrgNo;
+        // null 체크 후 갱신 — 재정정/취소를 위해 기존 KIS 번호를 보존
+        if (newKisOrderNo != null) this.kisOrderNo = newKisOrderNo;
+        if (newKisOrgNo   != null) this.kisOrgNo   = newKisOrgNo;
         this.status     = OrderStatus.MODIFIED;
         this.updatedAt  = OffsetDateTime.now();
     }

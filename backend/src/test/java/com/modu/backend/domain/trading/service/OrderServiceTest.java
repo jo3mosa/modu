@@ -666,6 +666,28 @@ class OrderServiceTest {
     }
 
     @Test
+    @DisplayName("정정 시 newKisOrderNo가 null이면 기존 kis_order_no 보존")
+    void 정정_새_KIS_번호_null_시_기존_번호_보존() {
+        // given: KisModifyOrderClient가 null 번호를 반환하는 엣지 케이스
+        Order order = buildOrder(OrderSide.BUY, "key", 1L);
+        ReflectionTestUtils.setField(order, "kisOrderNo", "ORIGINAL_ORD");
+        ReflectionTestUtils.setField(order, "kisOrgNo",   "ORIGINAL_ORG");
+        when(orderRepository.findById(1L)).thenReturn(Optional.of(order));
+        setupKisCredentialStubs();
+        when(kisModifyOrderClient.execute(any(), any(), any(), any(), any(),
+                any(), any(), any(), any(), anyLong(), anyLong(), any(), any()))
+                .thenReturn(new KisModifyOrderClient.KisModifyResult(null, null));
+
+        // when
+        orderService.modifyOrCancelOrder(
+                1L, 1L, new ModifyOrderRequest(OrderModifyAction.MODIFY, 5, 65000L));
+
+        // then: null 전달 시 기존 KIS 번호 덮어쓰지 않음
+        assertThat(order.getKisOrderNo()).isEqualTo("ORIGINAL_ORD");
+        assertThat(order.getKisOrgNo()).isEqualTo("ORIGINAL_ORG");
+    }
+
+    @Test
     @DisplayName("MODIFIED 상태 주문도 재정정 가능")
     void 정정된_주문_재정정_가능() {
         // given: 이미 정정된(MODIFIED) 주문

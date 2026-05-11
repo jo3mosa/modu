@@ -125,9 +125,16 @@ public class KisModifyOrderClient {
                 throw new ApiException(CommonErrorCode.EXTERNAL_API_ERROR);
             }
 
+            // rtCd=0 이지만 output이 없는 경우 — 새 주문번호를 받지 못하면 재정정/취소 불가
+            if (response.output() == null) {
+                log.error("KIS 주문 정정/취소 성공 응답에 output 없음 - rtCd: {}, msg: {}",
+                        response.rtCd(), response.msg1());
+                throw new ApiException(CommonErrorCode.EXTERNAL_API_ERROR);
+            }
+
             return new KisModifyResult(
-                    response.output() != null ? response.output().odno()            : null,
-                    response.output() != null ? response.output().krxFwdgOrdOrgno() : null
+                    response.output().odno(),
+                    response.output().krxFwdgOrdOrgno()
             );
 
         } catch (RestClientException e) {
