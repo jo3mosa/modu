@@ -17,6 +17,8 @@ pipeline {
         REGISTRY_BE_ID = 'ecr-registry-backend'
         // Jenkins에 등록된 ECR 프론트엔드 레지스트리 URI (Credentials ID)
         REGISTRY_FE_ID = 'ecr-registry-frontend'
+        // Jenkins에 등록된 ECR AI Agent 레지스트리 URI (Credentials ID)
+        REGISTRY_AI_ID = 'ecr-registry-ai-agent'
         // Jenkins에 등록된 SSAFY K3s kubeconfig 파일 (Credentials ID)
         K3S_CONFIG_ID  = 'k3s-config.yaml'
         // Jenkins에 등록된 AWS EKS kubeconfig 파일 (Credentials ID)
@@ -52,7 +54,8 @@ pipeline {
                     // ECR URI를 Credentials에서 가져옴
                     withCredentials([
                         string(credentialsId: "${REGISTRY_BE_ID}", variable: 'FULL_URI_BE'),
-                        string(credentialsId: "${REGISTRY_FE_ID}", variable: 'FULL_URI_FE')
+                        string(credentialsId: "${REGISTRY_FE_ID}", variable: 'FULL_URI_FE'),
+                        string(credentialsId: "${REGISTRY_AI_ID}", variable: 'FULL_URI_AI')
                     ]) {
                         // ECR 호스트(레지스트리 도메인)만 추출 — 마지막 '/' 이전 문자열
                         def beRegistry = FULL_URI_BE.substring(0, FULL_URI_BE.lastIndexOf('/'))
@@ -114,6 +117,28 @@ ${log}
 """
                                 error "Frontend Build/Push Failed"
                             }
+
+                            // ── 2-3. AI Agent 이미지 빌드 및 푸시 ────────────
+                            try {
+                                env.FAILED_STAGE = "2-3. AI Agent 빌드 및 푸시"
+                                // Kafka 컨슈머 서비스 (market.signal.detected, ai.trigger.requested 소비)
+                                sh '''
+                                {
+                                  docker build -t "$FULL_URI_AI:$BUILD_NUMBER" ai_agent
+                                  docker push "$FULL_URI_AI:$BUILD_NUMBER"
+                                } 2> ai_agent/ai_err.log
+                                '''
+                            } catch (Exception e) {
+                                // 빌드/푸시 실패 시 에러 로그 마지막 15줄을 읽어 알림 메시지에 포함
+                                def log = sh(
+                                    script: '[ -f ai_agent/ai_err.log ] && tail -n 15 ai_agent/ai_err.log || echo "로그 없음"',
+                                    returnStdout: true
+                                ).trim()
+                                env.ERROR_DETAILS = """📦 **Docker Build/Push Fail (AI Agent)**
+${log}
+"""
+                                error "AI Agent Build/Push Failed"
+                            }
                         }
                     }
                 }
@@ -158,13 +183,13 @@ ${log}
                 def stageFlow = ""
                 def resultMsg = ""
                 if (env.BRANCH_NAME == 'develop') {
-                    stageFlow = "✅ 이미지 빌드 → 🚀 SSAFY K3s 배포"
+                    stageFlow = "✅ BE/FE/AI 이미지 빌드 → 🚀 SSAFY K3s 배포"
                     resultMsg = "🚀 **SSAFY K3s** 배포 성공!"
                 } else if (env.BRANCH_NAME == 'main') {
-                    stageFlow = "✅ 이미지 빌드 → 🌟 AWS EKS 배포"
+                    stageFlow = "✅ BE/FE/AI 이미지 빌드 → 🌟 AWS EKS 배포"
                     resultMsg = "🌟 **AWS EKS** 운영 환경 배포 성공!"
                 } else {
-                    stageFlow = "✅ 이미지 빌드"
+                    stageFlow = "✅ BE/FE/AI 이미지 빌드"
                     resultMsg = "✅ 빌드 성공 (배포 미대상 브랜치)"
                 }
 
@@ -223,6 +248,8 @@ def deployToCluster(String configId, String clusterName) {
                 string(credentialsId: "${REGISTRY_BE_ID}", variable: 'FULL_URI_BE'),
                 // ECR 프론트엔드 이미지 URI
                 string(credentialsId: "${REGISTRY_FE_ID}", variable: 'FULL_URI_FE'),
+                // ECR AI Agent 이미지 URI
+                string(credentialsId: "${REGISTRY_AI_ID}", variable: 'FULL_URI_AI'),
                 // AWS IAM 자격증명 — $class 참조 방식으로 AmazonWebServicesCredentialsBinding 사용
                 // (표준 Jenkins AWS Credentials Plugin 문법)
                 [$class          : 'AmazonWebServicesCredentialsBinding',
@@ -272,6 +299,7 @@ def deployToCluster(String configId, String clusterName) {
                     cp $K8S_DIR/*.yaml "$DEPLOY_DIR/"
                     sed -i "s|BACKEND_IMAGE|$FULL_URI_BE:$BUILD_NUMBER|g"   "$DEPLOY_DIR/backend.yaml"
                     sed -i "s|FRONTEND_IMAGE|$FULL_URI_FE:$BUILD_NUMBER|g"  "$DEPLOY_DIR/frontend.yaml"
+                    sed -i "s|AIAGENT_IMAGE|$FULL_URI_AI:$BUILD_NUMBER|g"   "$DEPLOY_DIR/ai-agent.yaml"
                     # 임시 디렉토리 기준으로 배포
                     kubectl --kubeconfig=$KUBECONFIG apply -f "$DEPLOY_DIR/"
                     # 임시 파일 정리
