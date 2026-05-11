@@ -1,7 +1,10 @@
 package com.modu.backend.domain.trading.service;
 
+import com.modu.backend.domain.trading.client.KisModifyOrderClient;
 import com.modu.backend.domain.trading.client.KisOrderClient;
 import com.modu.backend.domain.trading.client.KisPendingOrderClient;
+import com.modu.backend.domain.trading.dto.ModifyOrderRequest;
+import com.modu.backend.domain.trading.dto.ModifyOrderResponse;
 import com.modu.backend.domain.trading.dto.OrderRequest;
 import com.modu.backend.domain.trading.dto.OrderResponse;
 import com.modu.backend.domain.trading.dto.PendingOrdersResponse;
@@ -71,6 +74,7 @@ public class OrderService {
     private final KisTokenService kisTokenService;
     private final KisOrderClient kisOrderClient;
     private final KisPendingOrderClient kisPendingOrderClient;
+    private final KisModifyOrderClient kisModifyOrderClient;
     private final AesGcmEncryptor encryptor;
 
     @Transactional
@@ -284,5 +288,78 @@ public class OrderService {
             log.error("KIS 미체결 주문 수량 필드 int 범위 초과 - field: {}, value: {}", fieldName, value);
             throw new ApiException(CommonErrorCode.EXTERNAL_API_ERROR, e);
         }
+    }
+
+    // ── 미체결 주문 정정/취소 ─────────────────────────────────────────────────
+
+    /**
+     * 미체결 주문 정정 또는 취소
+     *
+     * [처리 흐름]
+     * 1. DB에서 주문 조회 → 없으면 ORDER_NOT_FOUND
+     * 2. 본인 주문 확인 → 불일치 시 ORDER_FORBIDDEN
+     * 3. 정정/취소 가능 상태 확인 (PENDING, MODIFIED) → 그 외 ORDER_ALREADY_FILLED
+     * 4. KIS 연동 확인, 토큰 준비
+     * 5. KIS order-rvsecncl 호출
+     * 6. DB 업데이트
+     *    - MODIFY: 가격/수량 반영, 새 kis_order_no/kis_org_no 업데이트, status=MODIFIED
+     *    - CANCEL: status=CANCELED, cancelled_at 기록
+     *
+     * [재정정 가능 설계]
+     * 정정 후 KIS가 발급한 새 odno/krx_fwdg_ord_orgno 를 DB에 반드시 업데이트.
+     * 이를 통해 정정된 주문을 다시 정정/취소할 수 있다.
+     */
+    @Transactional
+    public ModifyOrderResponse modifyOrCancelOrder(Long userId, Long orderId, ModifyOrderRequest request) {
+        // 1. 주문 조회
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ApiException(OrderErrorCode.ORDER_NOT_FOUND));
+
+        // 2. 본인 주문 확인
+        if (!order.getUserId().equals(userId)) {
+            throw new ApiException(OrderErrorCode.ORDER_FORBIDDEN);
+        }
+
+        // 3. 정정/취소 가능 상태 확인 (PENDING, MODIFIED 만 허용)
+        if (order.getStatus() != OrderStatus.PENDING
+                && order.getStatus() != OrderStatus.MODIFIED) {
+            throw new ApiException(OrderErrorCode.ORDER_ALREADY_FILLED);
+        }
+
+        // 4. KIS 연동 확인 및 토큰 준비
+        KisCredential credential = kisCredentialRepository.findByUserId(userId)
+                .orElseThrow(() -> new ApiException(UserErrorCode.KIS_NOT_CONNECTED));
+
+        String appKey      = encryptor.decrypt(credential.getAppKeyEnc());
+        String appSecret   = encryptor.decrypt(credential.getAppSecretEnc());
+        String accessToken = kisTokenService.getOrIssueAccessToken(userId, appKey, appSecret);
+
+        // 5. KIS 정정/취소 실행
+        KisModifyOrderClient.KisModifyResult result = kisModifyOrderClient.execute(
+                accessToken, appKey, appSecret,
+                credential.getAccountNo(), credential.getAccountPrdtCd(),
+                order.getKisOrgNo(), order.getKisOrderNo(),
+                order.getOrderType(), request.action(),
+                order.getQuantity(), order.getLimitPrice() != null ? order.getLimitPrice() : 0L,
+                request.newQuantity(), request.newPrice()
+        );
+
+        // 6. DB 업데이트
+        OffsetDateTime now = OffsetDateTime.now();
+        if (request.action() == OrderModifyAction.MODIFY) {
+            order.modify(
+                    request.newPrice(),
+                    request.newQuantity() != null ? (long) request.newQuantity() : null,
+                    result.newKisOrderNo(),
+                    result.newKisOrgNo()
+            );
+        } else {
+            order.cancel(now);
+        }
+
+        log.info("주문 정정/취소 완료 - userId: {}, orderId: {}, action: {}, newKisOrderNo: {}",
+                userId, orderId, request.action(), result.newKisOrderNo());
+
+        return ModifyOrderResponse.from(order);
     }
 }

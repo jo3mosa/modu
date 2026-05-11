@@ -1,5 +1,7 @@
 package com.modu.backend.domain.trading.controller;
 
+import com.modu.backend.domain.trading.dto.ModifyOrderRequest;
+import com.modu.backend.domain.trading.dto.ModifyOrderResponse;
 import com.modu.backend.domain.trading.dto.OrderRequest;
 import com.modu.backend.domain.trading.dto.OrderResponse;
 import com.modu.backend.domain.trading.dto.PendingOrdersResponse;
@@ -50,6 +52,41 @@ public class OrderController {
     ) {
         PendingOrdersResponse response = orderService.getPendingOrders(userId);
         return ResponseEntity.ok(ApiResponse.success("미체결 주문을 조회했습니다.", response));
+    }
+
+    @Operation(
+            summary = "미체결 주문 정정/취소",
+            description = """
+                    미체결(PENDING) 또는 정정됨(MODIFIED) 상태인 주문을 정정하거나 취소합니다.
+
+                    - action=MODIFY: newQuantity 또는 newPrice 중 하나 이상 필수입니다.
+                    - action=CANCEL: 미체결 잔량 전량이 취소됩니다.
+                    - 이미 체결(FILLED)된 주문은 정정/취소할 수 없습니다.
+                    - 정정 후 KIS에서 새 주문번호가 발급되며, 재정정/취소가 가능합니다.
+                    """
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "정정/취소 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "이미 체결된 주문 / 정정 시 변경 값 누락",
+                    content = @Content(schema = @Schema(example = "{\"success\":false,\"message\":\"이미 체결된 주문은 정정/취소할 수 없습니다.\",\"errorCode\":\"ORDER_004\"}"))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "인증 필요"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "본인 주문 아님",
+                    content = @Content(schema = @Schema(example = "{\"success\":false,\"message\":\"본인의 주문만 정정/취소할 수 있습니다.\",\"errorCode\":\"ORDER_006\"}"))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "주문 없음 / KIS API 미연동"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "502", description = "KIS API 호출 실패")
+    })
+    @PatchMapping("/{orderId}")
+    public ResponseEntity<ApiResponse<ModifyOrderResponse>> modifyOrCancelOrder(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long orderId,
+            @Valid @RequestBody ModifyOrderRequest request
+    ) {
+        ModifyOrderResponse response = orderService.modifyOrCancelOrder(userId, orderId, request);
+        return ResponseEntity.ok(ApiResponse.success(
+                request.action() == com.modu.backend.domain.trading.entity.OrderModifyAction.MODIFY
+                        ? "주문이 정정되었습니다."
+                        : "주문이 취소되었습니다.",
+                response));
     }
 
     @Operation(
