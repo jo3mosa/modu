@@ -51,8 +51,8 @@ def post_mortem_agent(
 
     inputs = {
         "decision_content": decision_content,
-        "raw_return": f"{raw_return:+.1%}",
-        "alpha_return": f"{alpha_return:+.1%}",
+        "raw_return": f"{raw_return:+.2%}",
+        "alpha_return": f"{alpha_return:+.2%}",
         "holding_days": holding_days,
         "risk_level": risk_level or "(미상)",
         "key_signals": to_json(key_signals or []),
