@@ -82,9 +82,16 @@ ai_agent/
     │   │   ├── bull_researcher.py       # 매수 옹호 발언 (자유 텍스트)
     │   │   ├── bear_researcher.py       # 매도/리스크 반박 (자유 텍스트)
     │   │   └── strategy_manager.py      # 토론 종합 → ResearchVerdict 구조화 출력
-    │   └── decision/
-    │       ├── decision_manager.py      # ResearchVerdict → FinalDecision
-    │       └── risk_gate.py             # ※LLM-free※ 결정의 형식·정책 검증 게이트
+    │   ├── decision/
+    │   │   ├── decision_manager.py      # ResearchVerdict → FinalDecision
+    │   │   └── risk_gate.py             # ※LLM-free※ 결정의 형식·정책 검증 게이트
+    │   └── feedback/
+    │       └── post_mortem_agent.py     # SELL 체결 후 사후 회고 LLM 노드
+    │
+    ├── feedback/                        # SELL 결정 후 사후 회고 흐름 (MVP: cron 없음)
+    │   ├── consumer.py                  # SELL 체결 알림 컨슈머
+    │   ├── pipeline.py                  # 단일 회고 실행 (학습/디버깅용)
+    │   └── schemas.py                   # PostMortem 입력/출력 스키마
     │
     ├── action/                          # LLM-free 실행 레이어
     │   ├── order_request/
@@ -184,7 +191,8 @@ ai_agent/
 | 영역 | 필드 | 누가 채우나 |
 |---|---|---|
 | 실행 주체 | `user_id` | 트리거 단계 (`state_factory`) |
-| 시장/분석 입력 | `market_snapshot`, `analysis_snapshot`, `candidate_assets` | Analysis Layer (Kafka) |
+| 시장/분석 입력 | `analysis_snapshot` | Analysis Layer (Kafka, `trigger` nested + 4분할 signals) |
+| 후보 종목 | `candidate_assets` | `state_factory` (Analysis Layer 메시지의 stock_code 기반 자체 생성) |
 | 포트폴리오 | `portfolio_snapshot` | 그래프 실행 전 백엔드 주입 — **Risk Gate가 broker API를 직접 호출하지 않는 정책** |
 | 컨텍스트 | `user_context`, `policy_context`, `memory_context`, `history_context` | `context_loader` |
 | 토론 | `investment_debate_state` (`history`/`bull_history`/`bear_history`/`current_response`/`count`) | bull/bear/strategy_manager |
