@@ -1,8 +1,10 @@
 package com.modu.backend.domain.trading.service;
 
+import com.modu.backend.domain.trading.client.KisBuyingPowerClient;
 import com.modu.backend.domain.trading.client.KisModifyOrderClient;
 import com.modu.backend.domain.trading.client.KisOrderClient;
 import com.modu.backend.domain.trading.client.KisPendingOrderClient;
+import com.modu.backend.domain.trading.dto.BuyingPowerResponse;
 import com.modu.backend.domain.trading.dto.ModifyOrderRequest;
 import com.modu.backend.domain.trading.dto.ModifyOrderResponse;
 import com.modu.backend.domain.trading.dto.OrderRequest;
@@ -75,6 +77,7 @@ public class OrderService {
     private final KisOrderClient kisOrderClient;
     private final KisPendingOrderClient kisPendingOrderClient;
     private final KisModifyOrderClient kisModifyOrderClient;
+    private final KisBuyingPowerClient kisBuyingPowerClient;
     private final AesGcmEncryptor encryptor;
 
     @Transactional
@@ -361,5 +364,71 @@ public class OrderService {
                 userId, orderId, request.action(), result.newKisOrderNo());
 
         return ModifyOrderResponse.from(order);
+    }
+
+    // ── 주문 가능 금액/수량 조회 ──────────────────────────────────────────────
+
+    /**
+     * 주문 가능 금액/수량 조회
+     *
+     * [처리 흐름]
+     * 1. KIS 연동 확인 (미연동 → KIS_NOT_CONNECTED, 모의투자 → KIS_MOCK_ACCOUNT_NOT_SUPPORTED)
+     * 2. SELL + stockCode 없음 검증 → SELL_REQUIRES_STOCK_CODE
+     * 3. 복호화 및 토큰 준비
+     * 4. inquire-psbl-order 호출 → maxBuyAmount + maxBuyQuantity + availableCash
+     * 5. side=SELL 일 때만 inquire-psbl-sell 호출 → maxSellQuantity
+     *    side=BUY 시 maxBuyQuantity=KIS값, maxSellQuantity=0
+     *    side=SELL 시 maxBuyQuantity=0, maxSellQuantity=KIS값
+     *
+     * [트랜잭션]
+     * 읽기 전용 조회이므로 @Transactional 미적용
+     */
+    public BuyingPowerResponse getBuyingPower(Long userId, String stockCode,
+                                              OrderSide side, Long orderPrice) {
+        KisCredential credential = kisCredentialRepository.findByUserId(userId)
+                .orElseThrow(() -> new ApiException(UserErrorCode.KIS_NOT_CONNECTED));
+
+        if (!credential.isRealAccount()) {
+            throw new ApiException(UserErrorCode.KIS_MOCK_ACCOUNT_NOT_SUPPORTED);
+        }
+
+        // SELL 은 종목코드 필수 — 잘못된 요청에서 불필요한 복호화/토큰 발급 방지
+        if (side == OrderSide.SELL && (stockCode == null || stockCode.isBlank())) {
+            throw new ApiException(OrderErrorCode.SELL_REQUIRES_STOCK_CODE);
+        }
+
+        String appKey      = encryptor.decrypt(credential.getAppKeyEnc());
+        String appSecret   = encryptor.decrypt(credential.getAppSecretEnc());
+        String accessToken = kisTokenService.getOrIssueAccessToken(userId, appKey, appSecret);
+
+        // inquire-psbl-order: maxBuyAmount + availableCash (side 무관하게 항상 호출)
+        // stockCode=null 이면 PDNO/ORD_UNPR 공란으로 호출 → 매수금액+예수금만 조회 (수량 미제공)
+        KisBuyingPowerClient.KisBuyPowerInfo buyPowerInfo = kisBuyingPowerClient.getBuyPowerInfo(
+                accessToken, appKey, appSecret,
+                credential.getAccountNo(), credential.getAccountPrdtCd(),
+                stockCode, orderPrice
+        );
+
+        // inquire-psbl-sell: side=SELL 일 때만 호출 (stockCode 필수 보장됨)
+        long maxSellQty = 0L;
+        if (side == OrderSide.SELL) {
+            maxSellQty = kisBuyingPowerClient.getSellableQuantity(
+                    accessToken, appKey, appSecret,
+                    credential.getAccountNo(), credential.getAccountPrdtCd(),
+                    stockCode
+            );
+        }
+
+        // SELL 시 maxBuyQuantity=0 (API 계약: BUY 시에만 제공)
+        int maxBuyQty = side == OrderSide.SELL
+                ? 0
+                : toIntExact(buyPowerInfo.maxBuyQuantity(), "maxBuyQuantity");
+
+        return new BuyingPowerResponse(
+                buyPowerInfo.maxBuyAmount(),
+                maxBuyQty,
+                toIntExact(maxSellQty, "maxSellQuantity"),
+                buyPowerInfo.availableCash()
+        );
     }
 }
