@@ -21,8 +21,10 @@ const DAILY_PERIODS = new Set(['D', 'W', 'M']);
  * - 분봉: timestamp 'HHmmss' → 오늘 날짜 + 해당 시각의 unix seconds
  */
 function adaptCandle(period, c) {
-  const ts = c.timestamp ?? '';
-  if (DAILY_PERIODS.has(period)) {
+  const ts = String(c.timestamp ?? '');
+  
+  // 1. 일/주/월봉 (YYYYMMDD - 8자리)
+  if (DAILY_PERIODS.has(period) || ts.length === 8) {
     const time = `${ts.slice(0, 4)}-${ts.slice(4, 6)}-${ts.slice(6, 8)}`;
     return {
       time,
@@ -33,14 +35,43 @@ function adaptCandle(period, c) {
       volume: c.volume,
     };
   }
-  // 분봉: HHmmss를 오늘 날짜에 매핑
-  const now = new Date();
-  const hh = parseInt(ts.slice(0, 2), 10) || 0;
-  const mm = parseInt(ts.slice(2, 4), 10) || 0;
-  const ss = parseInt(ts.slice(4, 6), 10) || 0;
-  now.setHours(hh, mm, ss, 0);
+
+  // 2. 분봉 처리 (HHmmss 또는 YYYYMMDDHHmmss)
+  let datePart, timePart;
+  if (ts.length === 14) {
+    // YYYYMMDDHHmmss 형식
+    datePart = ts.slice(0, 8);
+    timePart = ts.slice(8);
+  } else if (ts.length === 6) {
+    // HHmmss 형식 (오늘 날짜 가정 - 로컬 시간대 기준)
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    datePart = `${y}${m}${d}`;
+    timePart = ts;
+  } else {
+    // 예외 상황 대비 (현재 시각 사용)
+    return {
+      time: Math.floor(Date.now() / 1000),
+      open: c.openPrice,
+      high: c.highPrice,
+      low: c.lowPrice,
+      close: c.closePrice,
+      volume: c.volume,
+    };
+  }
+
+  const year = parseInt(datePart.slice(0, 4), 10);
+  const month = parseInt(datePart.slice(4, 6), 10) - 1;
+  const day = parseInt(datePart.slice(6, 8), 10);
+  const hh = parseInt(timePart.slice(0, 2), 10);
+  const mm = parseInt(timePart.slice(2, 4), 10);
+  const ss = parseInt(timePart.slice(4, 6), 10);
+
+  const dateObj = new Date(year, month, day, hh, mm, ss);
   return {
-    time: Math.floor(now.getTime() / 1000),
+    time: Math.floor(dateObj.getTime() / 1000),
     open: c.openPrice,
     high: c.highPrice,
     low: c.lowPrice,

@@ -41,12 +41,6 @@ const MOCK_AI_STATUS = {
   riskLevel: '보통'
 };
 
-const MOCK_LOGS = [
-  { id: 1, type: 'BUY', stock: '삼성전자', price: 74500, qty: 10, time: '10:30', status: 'SUCCESS' },
-  { id: 2, type: 'SELL', stock: 'SK하이닉스', price: 149000, qty: 5, time: '09:15', status: 'SUCCESS' },
-  { id: 3, type: 'ERROR', stock: 'NAVER', desc: '잔고 부족으로 예약 매수 실패', time: '09:05', status: 'FAIL' },
-];
-
 const CHART_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#84cc16'];
 
 export default function DashboardPage() {
@@ -73,10 +67,11 @@ export default function DashboardPage() {
       setIsLoading(true);
       try {
         const [summaryData, portfolioData, decisionsData] = await Promise.all([
-          getAccountSummary(),   // GET /api/v1/accounts/me/summary
-          getPortfolio(),        // GET /api/v1/accounts/me/holdings
-          getAiDecisions({ page: 0, size: 5 }) // 최신 5건
+          getAccountSummary(),
+          getPortfolio(),
+          getAiDecisions({ page: 0, size: 5 })
         ]);
+
         setSummary(summaryData);
         setHoldings(portfolioData.holdings ?? []);
         setLogs(decisionsData.content ?? []);
@@ -307,7 +302,11 @@ export default function DashboardPage() {
                 </thead>
                 <tbody>
                   {holdings.map((item, idx) => (
-                    <tr key={idx} onClick={() => navigate('/trading')} className="clickable-row">
+                    <tr
+                      key={idx}
+                      onClick={() => navigate(`/trading?stock=${item.stockCode}&name=${encodeURIComponent(item.stockName)}`)}
+                      className="clickable-row"
+                    >
                       <td className="col-name">
                         <span className="stock-name">{item.stockName}</span>
                         <span className="stock-code">{item.stockCode}</span>
@@ -367,22 +366,18 @@ export default function DashboardPage() {
           <div className="panel logs-panel">
             <h2>최근 매매 로그</h2>
             <div className="logs-list">
-              {logs.length > 0 ? logs.map((log) => (
-                <div key={log.id} className="log-item" onClick={() => navigate(`/report?logId=${log.id}`)}>
-                  <div className={`log-icon ${log.action.toLowerCase()}`}>
-                    {log.action === 'BUY' ? '매수' : log.action === 'SELL' ? '매도' : '관망'}
-                  </div>
-                  <div className="log-content">
-                    <div className="log-top">
-                      <span className="log-stock">{log.stockCode}</span>
-                      <span className="log-time">{new Date(log.decidedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                    </div>
-                    <div className="log-bottom">
-                      <span>AI 판단: {log.executionStatus === 'READY' ? '승인' : '미승인'}</span>
+              {logs.length > 0 ? logs.map((log) => {
+                return (
+                  <div key={log.judgmentId} className="log-item">
+                    <div className="log-time">{new Date(log.decidedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                    <div className={`log-badge ${log.decisionType.toLowerCase()}`}>{log.decisionType === 'BUY' ? '매수' : '매도'}</div>
+                    <div className="log-stock">{log.stockName}</div>
+                    <div className="log-desc">
+                      {log.currentPrice.toLocaleString()}원 · {log.quantity}주
                     </div>
                   </div>
-                </div>
-              )) : (
+                );
+              }) : (
                 <div className="empty-logs">표시할 활동이 없습니다.</div>
               )}
             </div>

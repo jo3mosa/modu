@@ -1,23 +1,20 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
-import { registerKisKey, updateKisKey, deleteKisKey } from '../api/user';
+import { getMyInfo, registerKisKey, updateKisKey, deleteKisKey } from '../api/user';
 import { logout } from '../api/auth';
 import './MyPage.css';
 
-// TODO: GET /api/v1/users/me 연동 후 서버에서 조회
-const MOCK_PROFILE = {
-  name: '김싸피',
-  email: 'modu@kakao.com',
-  provider: 'Kakao',
-  joinedAt: '2026.5.2'
-};
 
 export default function MyPage() {
   const navigate = useNavigate();
-  const [profile] = useState(MOCK_PROFILE);
+  const [profile, setProfile] = useState({
+    name: '',
+    email: '',
+    provider: '',
+    joinedAt: ''
+  });
 
-  // TODO: GET /api/v1/users/me/kis-keys/status 연동 후 초기 연동 상태 조회
   const [apiKeys, setApiKeys] = useState({
     appKey: '',
     appSecret: '',
@@ -26,6 +23,35 @@ export default function MyPage() {
   const [isConnected, setIsConnected] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
   const [savingKeys, setSavingKeys] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadMyInfo() {
+      try {
+        const data = await getMyInfo();
+        setProfile({
+          name: data.name,
+          email: data.email,
+          provider: data.socialProvider || 'Email',
+          joinedAt: new Date(data.createdAt).toLocaleDateString()
+        });
+
+        // KIS 연동 정보가 있으면 연결됨 상태로 변경
+        if (data.kisKeyStatus && data.kisKeyStatus.isConnected) {
+          setIsConnected(true);
+          setApiKeys(prev => ({
+            ...prev,
+            accountNo: data.kisKeyStatus.accountNo || ''
+          }));
+        }
+      } catch (error) {
+        console.error('내 정보 로드 실패:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadMyInfo();
+  }, []);
 
 
   const handleSaveKeys = async () => {
