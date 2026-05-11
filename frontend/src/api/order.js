@@ -96,10 +96,26 @@ export async function placeOrder(payload, idempotencyKey) {
  * 미체결 주문 정정/취소
  * PATCH /api/v1/orders/{orderId}
  *
- * ⚠️ 백엔드 미구현 (별도 브랜치 작업 중). 호출 시 404.
+ * 백엔드 검증 (ModifyOrderRequest):
+ * - action: 'MODIFY' | 'CANCEL' (필수)
+ * - MODIFY: newQuantity 또는 newPrice 중 하나 이상 필수 (@AssertTrue)
+ * - newQuantity: @Min(1), newPrice: @Min(1)
+ * - CANCEL: newQuantity/newPrice 불필요 (잔량 전량 취소)
  *
- * @param {string} orderId
- * @param {{ price?: number, quantity?: number, cancel?: boolean }} payload
+ * 에러: ORDER_004(이미 체결), ORDER_006(본인 주문 아님)
+ * 정정 후 KIS에서 새 주문번호 발급 → 재정정/취소 가능
+ *
+ * @param {string|number} orderId
+ * @param {{
+ *   action: 'MODIFY' | 'CANCEL',
+ *   newQuantity?: number,
+ *   newPrice?: number
+ * }} payload
+ * @returns {Promise<{
+ *   orderId: string,
+ *   status: 'MODIFIED' | 'CANCELED',
+ *   updatedAt: string
+ * }>}
  */
 export async function updateOrder(orderId, payload) {
   const data = await apiClient(`/orders/${orderId}`, {

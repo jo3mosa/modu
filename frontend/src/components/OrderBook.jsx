@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { placeOrder, getPendingOrders } from '../api/order';
-// 정정/취소·매수가능 조회는 백엔드 미구현
-// import { getBuyingPower, updateOrder } from '../api/order';
+import { placeOrder, getPendingOrders, updateOrder } from '../api/order';
+// 매수가능 조회는 백엔드 미구현
+// import { getBuyingPower } from '../api/order';
 import './OrderBook.css';
 
 export default function OrderBook({ stockCode }) {
@@ -21,6 +21,8 @@ export default function OrderBook({ stockCode }) {
   // 미체결 주문 목록 (PendingOrdersResponse.pendingOrders[])
   const [pendingOrders, setPendingOrders] = useState([]);
   const [loadingPending, setLoadingPending] = useState(false);
+  // 주문별 취소 진행 상태 { [orderId]: true }
+  const [canceling, setCanceling] = useState({});
 
   // 호가 WebSocket 연결: /ws/stocks/{code}/orderbook
   useEffect(() => {
@@ -121,6 +123,33 @@ export default function OrderBook({ stockCode }) {
       alert(error.message || '주문에 실패했습니다.');
     } finally {
       setSubmittingOrder(false);
+    }
+  };
+
+  // 미체결 주문 취소 (PATCH /api/v1/orders/{orderId}, action=CANCEL)
+  // 우리 DB에 orderId가 있는 주문만 취소 가능 (KIS 외부 주문은 orderId가 null)
+  const handleCancelOrder = async (order) => {
+    if (!order?.orderId) {
+      alert('시스템에 기록된 주문만 취소할 수 있습니다.');
+      return;
+    }
+    if (canceling[order.orderId]) return;
+    if (!window.confirm(`주문(${order.orderId})을 취소하시겠습니까?`)) return;
+
+    setCanceling((prev) => ({ ...prev, [order.orderId]: true }));
+    try {
+      await updateOrder(order.orderId, { action: 'CANCEL' });
+      alert('주문이 취소되었습니다.');
+      fetchPending();
+    } catch (error) {
+      console.error('주문 취소 실패:', error);
+      alert(error.message || '주문 취소에 실패했습니다.');
+    } finally {
+      setCanceling((prev) => {
+        const next = { ...prev };
+        delete next[order.orderId];
+        return next;
+      });
     }
   };
 
@@ -254,12 +283,12 @@ export default function OrderBook({ stockCode }) {
               disabled={loadingPending}
               style={{ fontSize: '0.85em' }}
             >
-              {loadingPending ? '새로고침 중…' : '새로고침'}
+              {loadingPending ? '새로고침 중 …' : '새로고침'}
             </button>
           </div>
 
           {loadingPending && pendingOrders.length === 0 ? (
-            <div className="empty-state">미체결 주문을 불러오는 중입니다…</div>
+            <div className="empty-state">미체결 주문을 불러오는 중입니다 …</div>
           ) : pendingOrders.length === 0 ? (
             <div className="empty-state">미체결 주문이 없습니다.</div>
           ) : (
@@ -288,10 +317,14 @@ export default function OrderBook({ stockCode }) {
                         )}
                       </div>
                     </div>
-                    {/* 정정/취소 버튼 — 백엔드 미구현이라 비활성화 */}
                     <div className="pending-actions">
-                      <button className="cancel-btn" disabled title="정정/취소 API 머지 후 활성화">
-                        취소
+                      <button
+                        className="cancel-btn"
+                        onClick={() => handleCancelOrder(order)}
+                        disabled={!order.orderId || !!canceling[order.orderId]}
+                        title={!order.orderId ? '시스템에 기록된 주문만 취소 가능' : ''}
+                      >
+                        {canceling[order.orderId] ? '취소 중…' : '취소'}
                       </button>
                     </div>
                   </div>
