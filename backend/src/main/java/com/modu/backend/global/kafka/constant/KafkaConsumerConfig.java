@@ -67,7 +67,7 @@ public class KafkaConsumerConfig {
         return factory;
     }
 
-    // KIS API 속도 제한으로 concurrency=1 순차 처리
+    // KIS API 속도 제한으로 concurrency=3, 유저별 파티션 키로 순서 보장
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, Object> kisOrderFactory() {
         return factory(KafkaConsumerGroup.KIS_ORDER, 3, 10, 30000);
@@ -77,5 +77,16 @@ public class KafkaConsumerConfig {
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, Object> portfolioUpdateFactory() {
         return factory(KafkaConsumerGroup.PORTFOLIO_UPDATE, 3, 50, 30000);
+    }
+
+    /**
+     * AI 판단 Consumer Factory
+     * - concurrency=3: 여러 유저의 AI 판단을 병렬 처리
+     * - maxPollRecords=10: AI 판단 1건당 처리 비용이 크므로 소량씩 처리
+     * - maxPollIntervalMs=60000: SignalHandlerService에서 DB 저장 + Kafka 재발행이 있어 여유 있게 설정
+     */
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<String, Object> aiDecisionFactory() {
+        return factory(KafkaConsumerGroup.AI_DECISION, 3, 10, 60000);
     }
 }

@@ -11,4 +11,7 @@ public class KafkaConsumerGroup {
 
     // trade.order.executed 소비 → 체결 DB 처리 및 포트폴리오 업데이트
     public static final String PORTFOLIO_UPDATE = "portfolio-update-group";
+
+    // ai.decision.generated 소비 → AI 판단 저장 + 자동 주문 발행
+    public static final String AI_DECISION      = "backend-ai-judgment-consumer";
 }
