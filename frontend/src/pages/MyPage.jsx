@@ -27,7 +27,7 @@ export default function MyPage() {
 
   useEffect(() => {
     /* 
-    // MVP 범위 제외: 내 정보 조회 주석 처리
+    // MVP 범위 제외: 내 정보 조회 주석 처리 -> 테스트를 위해 일시 해제
     async function loadMyInfo() {
       try {
         const data = await getMyInfo();
