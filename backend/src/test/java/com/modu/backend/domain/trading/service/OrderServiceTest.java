@@ -1,8 +1,10 @@
 package com.modu.backend.domain.trading.service;
 
+import com.modu.backend.domain.trading.client.KisBuyingPowerClient;
 import com.modu.backend.domain.trading.client.KisModifyOrderClient;
 import com.modu.backend.domain.trading.client.KisOrderClient;
 import com.modu.backend.domain.trading.client.KisPendingOrderClient;
+import com.modu.backend.domain.trading.dto.BuyingPowerResponse;
 import com.modu.backend.domain.trading.dto.ModifyOrderRequest;
 import com.modu.backend.domain.trading.dto.ModifyOrderResponse;
 import com.modu.backend.domain.trading.dto.OrderRequest;
@@ -50,6 +52,7 @@ class OrderServiceTest {
     @Mock KisOrderClient kisOrderClient;
     @Mock KisPendingOrderClient kisPendingOrderClient;
     @Mock KisModifyOrderClient kisModifyOrderClient;
+    @Mock KisBuyingPowerClient kisBuyingPowerClient;
     @Mock AesGcmEncryptor encryptor;
 
     @InjectMocks
@@ -703,6 +706,103 @@ class OrderServiceTest {
         assertThatCode(() -> orderService.modifyOrCancelOrder(
                 1L, 1L, new ModifyOrderRequest(OrderModifyAction.MODIFY, 3, 60000L)))
                 .doesNotThrowAnyException();
+    }
+
+    // ── 주문 가능 금액/수량 조회 ──────────────────────────────────────────────
+
+    @Test
+    @DisplayName("side=SELL 이고 stockCode=null 이면 ORDER_002 예외")
+    void 주문가능조회_SELL_종목코드_없음_예외() {
+        // given
+        when(kisCredentialRepository.findByUserId(1L)).thenReturn(Optional.of(realCredential));
+
+        // when & then
+        assertThatThrownBy(() -> orderService.getBuyingPower(1L, null, OrderSide.SELL, null))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode())
+                        .isEqualTo(OrderErrorCode.SELL_REQUIRES_STOCK_CODE));
+    }
+
+    @Test
+    @DisplayName("KIS 미연동 사용자 buying-power 조회 시 KIS_NOT_CONNECTED 예외")
+    void 주문가능조회_KIS_미연동_예외() {
+        // given
+        when(kisCredentialRepository.findByUserId(1L)).thenReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> orderService.getBuyingPower(1L, "005930", OrderSide.BUY, 75000L))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode())
+                        .isEqualTo(UserErrorCode.KIS_NOT_CONNECTED));
+    }
+
+    @Test
+    @DisplayName("모의투자 계좌로 buying-power 조회 시 KIS_MOCK_ACCOUNT_NOT_SUPPORTED 예외")
+    void 주문가능조회_모의투자_계좌_예외() {
+        // given
+        when(kisCredentialRepository.findByUserId(1L)).thenReturn(Optional.of(mockCredential));
+
+        // when & then
+        assertThatThrownBy(() -> orderService.getBuyingPower(1L, "005930", OrderSide.BUY, 75000L))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode())
+                        .isEqualTo(UserErrorCode.KIS_MOCK_ACCOUNT_NOT_SUPPORTED));
+    }
+
+    @Test
+    @DisplayName("side=BUY 조회 성공 - maxSellQuantity=0, getSellableQuantity 미호출")
+    void 주문가능조회_BUY_성공() {
+        // given
+        setupKisCredentialStubs();
+        when(kisBuyingPowerClient.getBuyPowerInfo(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new KisBuyingPowerClient.KisBuyPowerInfo(1_000_000L, 13L, 2_000_000L));
+
+        // when
+        BuyingPowerResponse response = orderService.getBuyingPower(1L, "005930", OrderSide.BUY, 75000L);
+
+        // then
+        assertThat(response.maxBuyAmount()).isEqualTo(1_000_000L);
+        assertThat(response.maxBuyQuantity()).isEqualTo(13);
+        assertThat(response.maxSellQuantity()).isEqualTo(0);
+        assertThat(response.availableCash()).isEqualTo(2_000_000L);
+        verify(kisBuyingPowerClient, never()).getSellableQuantity(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("side=SELL 조회 성공 - getSellableQuantity 호출, maxBuyQuantity는 BUY API 결과")
+    void 주문가능조회_SELL_성공() {
+        // given
+        setupKisCredentialStubs();
+        when(kisBuyingPowerClient.getBuyPowerInfo(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new KisBuyingPowerClient.KisBuyPowerInfo(1_000_000L, 13L, 2_000_000L));
+        when(kisBuyingPowerClient.getSellableQuantity(any(), any(), any(), any(), any(), any()))
+                .thenReturn(50L);
+
+        // when
+        BuyingPowerResponse response = orderService.getBuyingPower(1L, "005930", OrderSide.SELL, null);
+
+        // then
+        assertThat(response.maxSellQuantity()).isEqualTo(50);
+        assertThat(response.maxBuyQuantity()).isEqualTo(13);
+        verify(kisBuyingPowerClient).getSellableQuantity(any(), any(), any(), any(), any(), eq("005930"));
+    }
+
+    @Test
+    @DisplayName("orderPrice=null 시 SELL도 정상 조회 (가격 파라미터 불필요)")
+    void 주문가능조회_orderPrice_null_SELL_성공() {
+        // given
+        setupKisCredentialStubs();
+        when(kisBuyingPowerClient.getBuyPowerInfo(any(), any(), any(), any(), any(), any(), isNull()))
+                .thenReturn(new KisBuyingPowerClient.KisBuyPowerInfo(500_000L, 6L, 1_000_000L));
+        when(kisBuyingPowerClient.getSellableQuantity(any(), any(), any(), any(), any(), any()))
+                .thenReturn(30L);
+
+        // when
+        BuyingPowerResponse response = orderService.getBuyingPower(1L, "005930", OrderSide.SELL, null);
+
+        // then
+        assertThat(response.maxSellQuantity()).isEqualTo(30);
+        assertThat(response.availableCash()).isEqualTo(1_000_000L);
     }
 
     // ── 헬퍼 메서드 ───────────────────────────────────────────────────────────
