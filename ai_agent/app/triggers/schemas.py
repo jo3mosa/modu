@@ -4,7 +4,6 @@ Trigger 이벤트 스키마.
 DA 팀이 합의해 준 Analysis Layer 명세를 단일 소스로 따른다.
 - MarketTriggerEvent: Analysis Layer가 발행하는 시장 단위 이벤트 (명세 그대로)
 - UserTriggerEvent: User Trigger Matcher가 사용자 정보와 결합한 실행 이벤트
-- PositionTriggerEvent: Position Monitoring이 발행하는 사용자 포지션 이벤트
 """
 from datetime import datetime
 from enum import Enum
@@ -66,25 +65,6 @@ class MarketTriggerEvent(BaseModel):
 
     # AI 측 추적용 보조. Analysis Layer 메시지에 없으면 수신 시 자동 생성.
     event_id: str = Field(default_factory=lambda: f"market_event_{uuid4()}")
-
-
-class PositionTriggerEvent(BaseModel):
-    """
-    Position Monitoring이 발행하는 사용자 포지션 이벤트.
-
-    목표가/손절가 근접, 수익률 급변 등 사용자별 포지션 조건에서 생성된다.
-    Market Event와 달리 발행 시점부터 user_id가 결정되어 있다.
-    """
-
-    event_id: str = Field(default_factory=lambda: f"position_event_{uuid4()}")
-    event_type: Literal["POSITION_EVENT"] = "POSITION_EVENT"
-    timestamp: datetime = Field(..., description="이벤트 발생 시각")
-
-    user_id: int = Field(..., description="이벤트 대상 사용자 ID")
-    stock_code: str = Field(..., description="이벤트 대상 종목 코드")
-
-    trigger: MarketTrigger = Field(default_factory=MarketTrigger)
-    position_snapshot: dict[str, Any] = Field(default_factory=dict)
 
 
 class UserTriggerEvent(BaseModel):
