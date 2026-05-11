@@ -372,10 +372,13 @@ public class OrderService {
      * 주문 가능 금액/수량 조회
      *
      * [처리 흐름]
-     * 1. KIS 연동 확인, 토큰 준비
-     * 2. inquire-psbl-order 호출 → maxBuyAmount + availableCash
-     * 3. side=SELL 인 경우만 inquire-psbl-sell 호출 → maxSellQuantity
-     * 4. DB에서 riskLimitAmount 계산 (일일 누적 한도 - 오늘 사용 금액)
+     * 1. KIS 연동 확인 (미연동 → KIS_NOT_CONNECTED, 모의투자 → KIS_MOCK_ACCOUNT_NOT_SUPPORTED)
+     * 2. SELL + stockCode 없음 검증 → SELL_REQUIRES_STOCK_CODE
+     * 3. 복호화 및 토큰 준비
+     * 4. inquire-psbl-order 호출 → maxBuyAmount + maxBuyQuantity + availableCash
+     * 5. side=SELL 일 때만 inquire-psbl-sell 호출 → maxSellQuantity
+     *    side=BUY 시 maxBuyQuantity=KIS값, maxSellQuantity=0
+     *    side=SELL 시 maxBuyQuantity=0, maxSellQuantity=KIS값
      *
      * [트랜잭션]
      * 읽기 전용 조회이므로 @Transactional 미적용
