@@ -1,36 +1,8 @@
-import { useState } from 'react';
-// import { useEffect } from 'react';
-// import { getStockNews } from '../api/market';
+import { useState, useEffect } from 'react';
+import { getStockNews } from '../api/market';
 import './TradingNews.css';
 
-// ── MOCK 뉴스 데이터 (백엔드 연동 후 삭제 예정) ───────────────────────────────
-const MOCK_NEWS = [
-  {
-    title: '삼성전자, 3나노 파운드리 수율 개선…하반기 실적 기대감 ↑',
-    source: '한국경제',
-    publishedAt: new Date(Date.now() - 40 * 60 * 1000).toISOString(),
-    // url: 'https://example.com/news',
-  },
-  {
-    title: 'SK하이닉스, HBM4 공급 계약 체결…엔비디아와 협력 강화',
-    source: '매일경제',
-    publishedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    // url: 'https://example.com/news',
-  },
-  {
-    title: '미 연준 금리 동결 시사…국내 증시 외국인 순매수 전환',
-    source: '블룸버그',
-    publishedAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
-    // url: 'https://example.com/news',
-  },
-  {
-    title: '코스피 2,600선 회복…반도체·2차전지 동반 강세',
-    source: '연합뉴스',
-    publishedAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-    // url: 'https://example.com/news',
-  },
-];
-// ─────────────────────────────────────────────────────────────────────────────
+
 
 function toRelativeTime(isoString) {
   const diff = Math.floor((Date.now() - new Date(isoString).getTime()) / 1000);
@@ -41,25 +13,22 @@ function toRelativeTime(isoString) {
 }
 
 export default function TradingNews({ stockCode }) {
-  const [newsList] = useState(MOCK_NEWS);
+  const [newsList, setNewsList] = useState([]);
 
-  // ── 연동 시 위 useState(MOCK_NEWS) → useState([]) 로 교체하고 아래 블록 해제 ─
-  // const [newsList, setNewsList] = useState([]);
-  //
-  // useEffect(() => {
-  //   if (!stockCode) return;
-  //   async function fetchNews() {
-  //     try {
-  //       const news = await getStockNews(stockCode);
-  //       // news: [{ title, source, publishedAt, url }, ...]
-  //       setNewsList(news);
-  //     } catch (error) {
-  //       console.error('뉴스 데이터 로드 실패:', error);
-  //     }
-  //   }
-  //   fetchNews();
-  // }, [stockCode]);
-  // ─────────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!stockCode) return;
+    let cancelled = false;
+    async function fetchNews() {
+      try {
+        const news = await getStockNews(stockCode);
+        if (!cancelled) setNewsList(news ?? []);
+      } catch (error) {
+        if (!cancelled) console.error('뉴스 데이터 로드 실패:', error);
+      }
+    }
+    fetchNews();
+    return () => { cancelled = true; };
+  }, [stockCode]);
 
   const handleNewsClick = (url) => {
     if (url) window.open(url, '_blank', 'noopener,noreferrer');

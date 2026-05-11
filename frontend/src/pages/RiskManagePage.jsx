@@ -21,7 +21,7 @@ const RISK_LEVEL_COLOR = {
 export default function RiskManagePage() {
   const [isActive, setIsActive] = useState(true);
 
-  // 현재 투자 성향 (TODO: GET /strategies/me/profiles 엔드포인트 머지 후 서버에서 초기 조회)
+  // 현재 투자 성향 
   const [profile, setProfile] = useState({
     riskLevel: null,
     profileSummary: '',
@@ -35,8 +35,8 @@ export default function RiskManagePage() {
     maxLossLimit: 500000,
   });
 
-  // 룰셋 낙관적 잠금용 version. 페이지 진입 시 GET /me/rules로 초기화하고,
-  // 이후 PUT 응답의 version을 갱신 보관해 다음 요청에 재전송한다.
+  // 페이지 진입 시 GET /me/rules로 초기화
+  // 이후 PUT 응답의 version을 갱신 보관해 다음 요청에 재전송
   const [ruleVersion, setRuleVersion] = useState(0);
 
   // 재진단 모달 상태
@@ -48,7 +48,7 @@ export default function RiskManagePage() {
   const [submittingProfile, setSubmittingProfile] = useState(false);
   const [savingRules, setSavingRules] = useState(false);
 
-  // 페이지 진입 시 현재 룰셋 초기 조회 (404는 룰셋 미설정 상태이므로 무시 → 기본값 + version 0 유지)
+  // 페이지 진입 시 현재 룰셋 초기 조회
   useEffect(() => {
     let cancelled = false;
     getRules()
@@ -73,7 +73,7 @@ export default function RiskManagePage() {
     };
   }, []);
 
-  // 페이지 진입 시 현재 투자 성향 초기 조회 (404 INVEST_001은 미진단 상태이므로 무시)
+  // 페이지 진입 시 현재 투자 성향 초기 조회)
   useEffect(() => {
     let cancelled = false;
     getProfile()
@@ -136,7 +136,7 @@ export default function RiskManagePage() {
   const isModalComplete =
     questions.length > 0 && questions.every((q) => modalAnswers[q.questionId] != null);
 
-  // 모달 저장: PATCH /strategies/me/profiles (answers + freeText)
+  // 모달 저장: PATCH /strategies/me/profiles
   const handleSaveModal = async () => {
     if (!isModalComplete || submittingProfile) return;
     setSubmittingProfile(true);
@@ -167,7 +167,6 @@ export default function RiskManagePage() {
   const handleSaveAll = async () => {
     if (savingRules) return;
 
-    // 백엔드 검증: 모든 값 @Min(1) 양수 정수. 손절률은 절대값으로 변환해 전송.
     const stopLossRate = Math.abs(Number(rules.stopLoss));
     const takeProfitRate = Number(rules.takeProfit);
     const maxDailyOrderCount = Number(rules.maxDailyOrders);
