@@ -1,7 +1,10 @@
 import sqlite3
 import os
 
-def create_candle_table(db_path="../data/stock_master.db"):
+_DEFAULT_DB = os.path.join(os.path.dirname(__file__), "..", "..", "data", "stock_master.db")
+
+
+def create_candle_table(db_path=_DEFAULT_DB):
     
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
