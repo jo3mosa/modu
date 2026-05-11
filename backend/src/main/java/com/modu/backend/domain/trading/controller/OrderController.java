@@ -61,16 +61,26 @@ public class OrderController {
             description = """
                     한국투자증권 API를 통해 주문 가능 금액과 수량을 조회합니다.
 
-                    - side=BUY: maxBuyAmount(매수가능금액), availableCash(주문가능현금) 조회
-                    - side=SELL: 위 항목 + maxSellQuantity(매도가능수량) 추가 조회
+                    [stockCode 선택 파라미터]
+                    - stockCode 미전달 + side=BUY: 매수가능금액(maxBuyAmount), 주문가능현금(availableCash) 조회.
+                      maxBuyQuantity=0 반환 (종목 미지정 시 수량 계산 불가)
+                    - stockCode 미전달 + side=SELL: 400(ORDER_002) 반환 (매도는 종목코드 필수)
+
+                    [응답 필드]
+                    - maxBuyAmount: 미수 없는 최대 매수 가능 금액
+                    - maxBuyQuantity: 최대 매수 가능 수량 (side=SELL 시 0)
+                    - maxSellQuantity: 최대 매도 가능 수량 (side=BUY 시 0)
+                    - availableCash: 주문 가능 현금 (미체결 주문 차감 후 실사용 가능 금액)
+
+                    [기타]
                     - orderPrice 미전달 시 시장가 기준으로 조회합니다.
-                    - riskLimitAmount: 일일 누적 한도에서 오늘 사용 금액을 뺀 잔여 주문 가능 금액
-                      (trading_rules 미설정 시 0 반환)
+                    - 모의투자 계좌는 지원하지 않습니다.
                     """
     )
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "주문 가능 정보 조회 성공"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "잘못된 파라미터"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "SELL 조회 시 종목코드 누락",
+                    content = @Content(schema = @Schema(example = "{\"success\":false,\"message\":\"매도 조회 시 종목코드가 필요합니다.\",\"errorCode\":\"ORDER_002\"}"))),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "인증 필요"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "KIS API 미연동",
                     content = @Content(schema = @Schema(example = "{\"success\":false,\"message\":\"연동된 한국투자증권 API 정보가 없습니다.\",\"errorCode\":\"KIS_NOT_CONNECTED\"}"))),
