@@ -289,6 +289,7 @@ class TestValidationError:
         missing = {e["loc"][0] for e in exc_info.value.errors()}
         assert "user_id" in missing
         assert "stock_code" in missing
+        assert "timestamp" in missing
 
     def test_invalid_trigger_type(self):
         """존재하지 않는 event_type 값은 ValidationError를 발생시킨다"""
