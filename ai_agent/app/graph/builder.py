@@ -6,7 +6,6 @@ from app.agents.strategy.bear_researcher import bear_researcher
 from app.agents.strategy.bull_researcher import bull_researcher
 from app.agents.strategy.strategy_manager import strategy_manager
 from app.context.context_loader import context_loader
-from app.action.executor.executor import executor
 from app.state.investment_state import InvestmentAgentState
 
 
@@ -21,19 +20,6 @@ def route_after_decision_manager(state: InvestmentAgentState) -> str:
     if state.flow_status == "hold":
         return "end"
     return "risk_gate"
-
-
-def route_after_risk_gate(state: InvestmentAgentState) -> str:
-    """
-    Risk Gate 이후 다음 노드를 결정한다.
-
-    - risk_cleared=True이면 Executor로 이동
-    - False이면 그래프 종료
-    """
-
-    if state.risk_cleared:
-        return "executor"
-    return "end"
 
 
 def build_investment_graph():
@@ -65,7 +51,6 @@ def build_investment_graph():
     graph.add_node("strategy_manager", strategy_manager)
     graph.add_node("decision_manager", decision_manager)
     graph.add_node("risk_gate", risk_gate)
-    graph.add_node("executor", executor)
 
     graph.set_entry_point("context_loader")
 
@@ -83,15 +68,6 @@ def build_investment_graph():
         },
     )
 
-    graph.add_conditional_edges(
-        "risk_gate",
-        route_after_risk_gate,
-        {
-            "executor": "executor",
-            "end": END,
-        },
-    )
-
-    graph.add_edge("executor", END)
+    graph.add_edge("risk_gate", END)
 
     return graph.compile()

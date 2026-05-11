@@ -19,8 +19,6 @@ class StrEnum(str, Enum):
 
 class TriggerType(StrEnum):
     MARKET_EVENT = "MARKET_EVENT"
-    POSITION_EVENT = "POSITION_EVENT"
-    SCHEDULE_EVENT = "SCHEDULE_EVENT"
 
 
 class MarketTrigger(BaseModel):
