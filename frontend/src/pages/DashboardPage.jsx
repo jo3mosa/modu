@@ -6,6 +6,7 @@ const HighchartsReact = HighchartsReactPkg.default || HighchartsReactPkg;
 import highcharts3d from 'highcharts/highcharts-3d';
 import TutorialOverlay from '../components/TutorialOverlay';
 import { getAccountSummary, getPortfolio } from '../api/account';
+import { getAiDecisions } from '../api/aiAgent';
 import './DashboardPage.css';
 
 if (typeof Highcharts === 'object') {
@@ -57,9 +58,9 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isKisConnected, setIsKisConnected] = useState(true);
   const [aiStatus, setAiStatus] = useState(MOCK_AI_STATUS);
-  const [logs, setLogs] = useState(MOCK_LOGS);
+  const [logs, setLogs] = useState([]);
 
-  // 알림 UI state (TODO: 백엔드 SSE/WebSocket 연동 시 여기에 알림 추가)
+  // 알림 UI
   const [isAlarmOpen, setIsAlarmOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const alarmRef = useRef(null);
@@ -71,12 +72,14 @@ export default function DashboardPage() {
     async function fetchDashboardData() {
       setIsLoading(true);
       try {
-        const [summaryData, portfolioData] = await Promise.all([
+        const [summaryData, portfolioData, decisionsData] = await Promise.all([
           getAccountSummary(),   // GET /api/v1/accounts/me/summary
-          getPortfolio()         // GET /api/v1/accounts/me/holdings
+          getPortfolio(),        // GET /api/v1/accounts/me/holdings
+          getAiDecisions({ page: 0, size: 5 }) // 최신 5건
         ]);
         setSummary(summaryData);
         setHoldings(portfolioData.holdings ?? []);
+        setLogs(decisionsData.content ?? []);
       } catch (error) {
         if (error.errorCode === 'KIS_NOT_CONNECTED' || error.errorCode === 'USER_002') {
           setIsKisConnected(false);
@@ -364,26 +367,24 @@ export default function DashboardPage() {
           <div className="panel logs-panel">
             <h2>최근 매매 로그</h2>
             <div className="logs-list">
-              {logs.map((log) => (
+              {logs.length > 0 ? logs.map((log) => (
                 <div key={log.id} className="log-item" onClick={() => navigate(`/report?logId=${log.id}`)}>
-                  <div className={`log-icon ${log.type.toLowerCase()}`}>
-                    {log.type === 'BUY' ? '매수' : log.type === 'SELL' ? '매도' : '경고'}
+                  <div className={`log-icon ${log.action.toLowerCase()}`}>
+                    {log.action === 'BUY' ? '매수' : log.action === 'SELL' ? '매도' : '관망'}
                   </div>
                   <div className="log-content">
                     <div className="log-top">
-                      <span className="log-stock">{log.stock}</span>
-                      <span className="log-time">{log.time}</span>
+                      <span className="log-stock">{log.stockCode}</span>
+                      <span className="log-time">{new Date(log.decidedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
                     <div className="log-bottom">
-                      {log.type === 'ERROR' ? (
-                        <span className="text-red">{log.desc}</span>
-                      ) : (
-                        <span>{formatNumber(log.price)}원 · {log.qty}주 체결</span>
-                      )}
+                      <span>AI 판단: {log.executionStatus === 'READY' ? '승인' : '미승인'}</span>
                     </div>
                   </div>
                 </div>
-              ))}
+              )) : (
+                <div className="empty-logs">표시할 활동이 없습니다.</div>
+              )}
             </div>
           </div>
         </div>
