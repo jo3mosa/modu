@@ -15,13 +15,16 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 @Tag(name = "Orders", description = "주문 API")
+@Validated
 @RestController
 @RequestMapping("/api/v1/orders")
 @RequiredArgsConstructor
@@ -91,7 +94,7 @@ public class OrderController {
             @AuthenticationPrincipal Long userId,
             @RequestParam(required = false) String stockCode,
             @RequestParam OrderSide side,
-            @RequestParam(required = false) Long orderPrice
+            @Positive @RequestParam(required = false) Long orderPrice
     ) {
         BuyingPowerResponse response = orderService.getBuyingPower(userId, stockCode, side, orderPrice);
         return ResponseEntity.ok(ApiResponse.success("주문 가능 정보를 조회했습니다.", response));

@@ -389,14 +389,14 @@ public class OrderService {
             throw new ApiException(UserErrorCode.KIS_MOCK_ACCOUNT_NOT_SUPPORTED);
         }
 
-        String appKey      = encryptor.decrypt(credential.getAppKeyEnc());
-        String appSecret   = encryptor.decrypt(credential.getAppSecretEnc());
-        String accessToken = kisTokenService.getOrIssueAccessToken(userId, appKey, appSecret);
-
-        // SELL 은 종목코드 필수 — 보유 종목 특정 없이 매도 가능 수량 조회 불가
+        // SELL 은 종목코드 필수 — 잘못된 요청에서 불필요한 복호화/토큰 발급 방지
         if (side == OrderSide.SELL && (stockCode == null || stockCode.isBlank())) {
             throw new ApiException(OrderErrorCode.SELL_REQUIRES_STOCK_CODE);
         }
+
+        String appKey      = encryptor.decrypt(credential.getAppKeyEnc());
+        String appSecret   = encryptor.decrypt(credential.getAppSecretEnc());
+        String accessToken = kisTokenService.getOrIssueAccessToken(userId, appKey, appSecret);
 
         // inquire-psbl-order: maxBuyAmount + availableCash (side 무관하게 항상 호출)
         // stockCode=null 이면 PDNO/ORD_UNPR 공란으로 호출 → 매수금액+예수금만 조회 (수량 미제공)
