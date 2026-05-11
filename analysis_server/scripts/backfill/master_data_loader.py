@@ -13,7 +13,8 @@ from dotenv import load_dotenv
 # 로컬 개발: 모노레포 루트의 .env 파일 로드
 # 운영 배포: Jenkins 환경변수로 주입 (.env 파일 없어도 동작)
 # ====================================
-env_path = os.path.join(os.path.dirname(__file__), "../../.env")
+# scripts/backfill/ → modu/ 루트로 3단계 상위
+env_path = os.path.join(os.path.dirname(__file__), "../../../.env")
 load_dotenv(dotenv_path=env_path)
 
 DB_HOST = os.getenv("DB_HOST", "localhost")

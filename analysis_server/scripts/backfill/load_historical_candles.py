@@ -1,3 +1,4 @@
+import os
 import sqlite3
 import pandas as pd
 from pykrx import stock
@@ -5,7 +6,10 @@ import time
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
-def fetch_and_insert_historical_candles(db_path="../data/stock_master.db", years=5):
+_DEFAULT_DB = os.path.join(os.path.dirname(__file__), "..", "..", "data", "stock_master.db")
+
+
+def fetch_and_insert_historical_candles(db_path=_DEFAULT_DB, years=5):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     

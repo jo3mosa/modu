@@ -1,8 +1,8 @@
 import json
 from datetime import datetime, timezone, timedelta
 
-from dart_api_client import DartApiClient
-from kis_api_client import KisApiClient
+from clients.dart_api_client import DartApiClient
+from clients.kis_api_client import KisApiClient
 
 
 # 공시 임팩트 분류 (룰베이스 시작용 — 추후 LLM 분류기로 대체 가능)

@@ -27,10 +27,6 @@ export default function MyPage() {
   const [showSecret, setShowSecret] = useState(false);
   const [savingKeys, setSavingKeys] = useState(false);
 
-  const [settings, setSettings] = useState({
-    tradeNoti: true,
-    riskNoti: true
-  });
 
   const handleSaveKeys = async () => {
     if (savingKeys) return;
@@ -90,9 +86,6 @@ export default function MyPage() {
     }
   };
 
-  const handleToggleSetting = (key) => {
-    setSettings(prev => ({ ...prev, [key]: !prev[key] }));
-  };
 
   return (
     <div className="mypage-container" style={{ padding: '0 0.5rem' }}>
@@ -172,37 +165,6 @@ export default function MyPage() {
         </div>
       </div>
 
-      {/* 3. 알림 및 환경 설정 */}
-      <div className="mypage-panel">
-        <h2>알림 및 환경 설정</h2>
-        <div className="settings-list">
-          <div className="setting-item">
-            <div className="setting-info">
-              <h4>매매 체결 알림</h4>
-              <p>AI가 매수·매도를 체결했을 때 브라우저 알림을 받습니다.</p>
-            </div>
-            <div
-              className={`toggle-switch ${settings.tradeNoti ? 'on' : 'off'}`}
-              onClick={() => handleToggleSetting('tradeNoti')}
-            >
-              <div className="toggle-knob" />
-            </div>
-          </div>
-
-          <div className="setting-item">
-            <div className="setting-info">
-              <h4>위험 감지 긴급 알림</h4>
-              <p>시장의 급격한 하락이나 비정상적인 손실 감지 시 알림을 받습니다.</p>
-            </div>
-            <div
-              className={`toggle-switch ${settings.riskNoti ? 'on' : 'off'}`}
-              onClick={() => handleToggleSetting('riskNoti')}
-            >
-              <div className="toggle-knob" />
-            </div>
-          </div>
-        </div>
-      </div>
 
       <div className="mypage-panel account-actions" style={{ background: 'transparent', border: 'none', boxShadow: 'none', padding: 0 }}>
         <button className="logout-btn" onClick={handleLogout}>
