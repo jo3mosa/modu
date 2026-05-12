@@ -25,7 +25,6 @@ export default function RiskManagePage() {
   const [profile, setProfile] = useState({
     riskLevel: null,
     profileSummary: '',
-    principle: '',
   });
 
   const [rules, setRules] = useState({
@@ -45,7 +44,6 @@ export default function RiskManagePage() {
   const [questions, setQuestions] = useState([]);
   const [questionsError, setQuestionsError] = useState(null);
   const [modalAnswers, setModalAnswers] = useState({}); // { [questionId]: optionId(string) }
-  const [modalPrinciple, setModalPrinciple] = useState('');
   const [submittingProfile, setSubmittingProfile] = useState(false);
   const [savingRules, setSavingRules] = useState(false);
 
@@ -83,7 +81,6 @@ export default function RiskManagePage() {
         setProfile({
           riskLevel: data.riskLevel ?? null,
           profileSummary: data.profileSummary ?? '',
-          principle: data.freeText ?? '',
         });
         setProfileVersion(data.version ?? 0);
       })
@@ -125,7 +122,6 @@ export default function RiskManagePage() {
 
   const handleOpenModal = () => {
     setModalAnswers({});
-    setModalPrinciple(profile.principle);
     setIsModalOpen(true);
   };
 
@@ -149,13 +145,11 @@ export default function RiskManagePage() {
       }));
       const result = await updateProfile({
         answers: answersPayload,
-        freeText: modalPrinciple || undefined,
         version: profileVersion,
       });
       setProfile({
         riskLevel: result?.riskLevel ?? null,
         profileSummary: result?.profileSummary ?? '',
-        principle: modalPrinciple,
       });
       setProfileVersion(result?.version ?? profileVersion + 1);
       setIsModalOpen(false);
@@ -256,10 +250,6 @@ export default function RiskManagePage() {
           </div>
         </div>
 
-        <div className="principle-box">
-          <h3>나의 매매 원칙</h3>
-          <p>{profile.principle ? `"${profile.principle}"` : '아직 등록된 매매 원칙이 없습니다.'}</p>
-        </div>
       </div>
 
       {/* 3. 정량적 리스크 룰셋 설정 */}
@@ -331,15 +321,6 @@ export default function RiskManagePage() {
                 </div>
               ))}
 
-              <div className="survey-section" style={{ marginTop: '2rem' }}>
-                <h3>나의 매매 원칙 수정</h3>
-                <textarea
-                  className="principle-textarea"
-                  value={modalPrinciple}
-                  onChange={(e) => setModalPrinciple(e.target.value)}
-                  placeholder="예: 3일 연속 하락 시 분할 매수 진행"
-                />
-              </div>
             </div>
 
             <div className="modal-footer">
