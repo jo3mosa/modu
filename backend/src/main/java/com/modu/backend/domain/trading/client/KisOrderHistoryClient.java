@@ -89,6 +89,11 @@ public class KisOrderHistoryClient {
 
     public KisOrderHistoryClient(RestClient kisRestClient,
                                  @Value("${kis.order-history.max-page-fetch:2000}") int maxPageFetch) {
+        // 0 이하 값이면 루프가 한 번도 돌지 않아 모든 요청이 조용히 실패 — 빈 컨테이너 기동 시점에 차단
+        if (maxPageFetch <= 0) {
+            throw new IllegalArgumentException(
+                    "kis.order-history.max-page-fetch must be > 0, but was: " + maxPageFetch);
+        }
         this.kisRestClient = kisRestClient;
         this.maxPageFetch = maxPageFetch;
     }

@@ -122,8 +122,10 @@ public class OrderHistoryService {
                 .toList();
 
         int totalCount = merged.size();
-        int fromIdx    = Math.min((resolvedPage - 1) * resolvedSize, totalCount);
-        int toIdx      = Math.min(fromIdx + resolvedSize, totalCount);
+        // 큰 page/size 입력 시 int overflow 로 음수 인덱스 발생 방지 — long 계산 후 totalCount 로 clamp
+        long offset    = (long) (resolvedPage - 1) * (long) resolvedSize;
+        int fromIdx    = (int) Math.min(Math.max(offset, 0L), totalCount);
+        int toIdx      = (int) Math.min((long) fromIdx + resolvedSize, totalCount);
         List<OrderHistoryResponse.OrderHistoryItem> pageItems = merged.subList(fromIdx, toIdx);
 
         return new OrderHistoryResponse(pageItems, totalCount, resolvedPage, resolvedSize);
