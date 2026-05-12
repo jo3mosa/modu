@@ -28,7 +28,7 @@ export default function OnboardingPage() {
   const [profileResult, setProfileResult] = useState(null);
   const [submittingProfile, setSubmittingProfile] = useState(false);
 
-  const [principle, setPrinciple] = useState('');
+
   const [rules, setRules] = useState({
     takeProfit: '',
     stopLoss: '',
@@ -58,7 +58,7 @@ export default function OnboardingPage() {
     };
   }, []);
 
-  const nextStep = () => setStep((prev) => Math.min(prev + 1, 4));
+  const nextStep = () => setStep((prev) => Math.min(prev + 1, 3));
   const prevStep = () => setStep((prev) => Math.max(prev - 1, 1));
 
   // Step1 → Step2 진입 시 투자 성향을 서버에 PATCH 하고 응답을 보관한다.
@@ -112,27 +112,7 @@ export default function OnboardingPage() {
 
     setSubmittingComplete(true);
     try {
-      // 1) 매매 원칙(자유 입력)은 PATCH /strategies/me/profiles의 freeText로 별도 저장
-      if (principle?.trim()) {
-        try {
-          // 답변은 이전 단계(handleSurveySubmit)에서 이미 저장된 상태를 유지하기 위해
-          // 동일 답변 + freeText만 함께 보내는 방식. 백엔드는 9개 답변을 항상 요구한다.
-          const answersPayload = questions.map((q) => ({
-            questionId: q.questionId,
-            optionId: answers[q.questionId],
-          }));
-          await updateProfile({ 
-            answers: answersPayload, 
-            freeText: principle, 
-            version: profileResult?.version ?? 0 
-          });
-        } catch (error) {
-          // 매매 원칙 저장 실패는 룰셋 저장을 막지 않는다 (UX 우선).
-          console.warn('매매 원칙 저장 실패:', error);
-        }
-      }
-
-      // 2) 룰셋 저장: 일일 한도는 사용자 입력이 없으므로 기본값. 추후 마이페이지에서 조정.
+      // 룰셋 저장: 일일 한도는 사용자 입력이 없으므로 기본값. 추후 마이페이지에서 조정.
       await updateRules({
         stopLossRate,
         takeProfitRate,
@@ -169,7 +149,7 @@ export default function OnboardingPage() {
     <div className="onboarding-container">
       {/* 진행도 표시 */}
       <div className="progress-bar">
-        <div className="progress-fill" style={{ width: `${(step / 4) * 100}%` }} />
+        <div className="progress-fill" style={{ width: `${(step / 3) * 100}%` }} />
       </div>
 
       <div className="onboarding-content fade-in-slide" key={step}>
@@ -184,9 +164,6 @@ export default function OnboardingPage() {
           />
         )}
         {step === 2 && (
-          <Step2Principle principle={principle} setPrinciple={setPrinciple} nextStep={nextStep} prevStep={prevStep} />
-        )}
-        {step === 3 && (
           <Step3Rules
             rules={rules}
             setRules={setRules}
@@ -195,7 +172,7 @@ export default function OnboardingPage() {
             prevStep={prevStep}
           />
         )}
-        {step === 4 && (
+        {step === 3 && (
           <Step4ApiKeys
             apiKeys={apiKeys}
             setApiKeys={setApiKeys}
@@ -255,31 +232,6 @@ function Step1Survey({ questions, questionsError, answers, setAnswers, onSubmit,
   );
 }
 
-// 2단계 -> 주관식 투자 원칙
-function Step2Principle({ principle, setPrinciple, nextStep, prevStep }) {
-  return (
-    <div className="step-wrapper">
-      <h2 className="step-title">나만의 투자 원칙</h2>
-      <p className="step-subtitle">객관식으로 담지 못한 본인만의 투자 원칙을 자유롭게 적어주세요.</p>
-
-      <textarea
-        className="principle-textarea"
-        placeholder="예: 추격 매수를 하지 않습니다. 하락 시 분할 매수합니다."
-        value={principle}
-        onChange={(e) => setPrinciple(e.target.value)}
-      />
-
-      <div className="step-actions split">
-        <button className="nav-btn secondary" onClick={prevStep}>
-          <ArrowLeft size={18} /> 이전
-        </button>
-        <button className="nav-btn primary" onClick={nextStep}>
-          다음 <ArrowRight size={18} />
-        </button>
-      </div>
-    </div>
-  );
-}
 
 // 3단계 -> 서버 산정 결과(riskLevel, profileSummary) 표시 + 룰셋 설정
 function Step3Rules({ rules, setRules, profileResult, nextStep, prevStep }) {
