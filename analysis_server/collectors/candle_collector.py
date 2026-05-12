@@ -329,10 +329,8 @@ def run_once(
     if not stocks:
         return {"ok": 0, "fail": 0, "total": 0, "elapsed_sec": 0.0}
 
-    # 토큰 warm-up — 첫 호출에서 _issue_token 이 한 번만 일어나도록.
-    # 8개 워커가 동시에 처음 호출하면 lock 안에서 한 번만 발급되긴 하지만,
-    # 미리 한 번 호출해두면 모든 워커가 fast path 만 타게 됨.
-    kis._get_valid_token()
+    # 토큰 warm-up — 모든 워커가 fast path 만 타도록 사이클 시작 전 1회 발급.
+    kis.ensure_token()
 
     limiter = RateLimiter(calls_per_sec)
     started = time.monotonic()

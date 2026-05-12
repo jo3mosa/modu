@@ -23,7 +23,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from clients.dart_api_client import DartApiClient
+from clients.dart_api_client import DartApiClient, DartCriticalError
 from clients.redis_client import set_json
 
 logger = logging.getLogger(__name__)
@@ -144,10 +144,16 @@ def build_event_payload(disclosures: list[dict]) -> dict:
 # ─── 사이클 ─────────────────────────────────────────────────────────────────
 
 def run_once(dart: DartApiClient) -> dict:
-    """1 사이클 = batch fetch + 종목별 Redis SET. 통계 반환."""
+    """1 사이클 = batch fetch + 종목별 Redis SET. 통계 반환.
+
+    DartCriticalError 는 caller (run_forever) 가 별도 처리하도록 propagate.
+    여기서 0 stats 로 묻으면 quota 소진 후 3분마다 무한 재시도 패턴이 됨.
+    """
     started = time.monotonic()
     try:
         disclosures = fetch_recent_disclosures(dart)
+    except DartCriticalError:
+        raise
     except Exception:
         logger.exception("fetch failed")
         return {
@@ -179,7 +185,13 @@ def run_once(dart: DartApiClient) -> dict:
 
 
 def run_forever(interval: int = LOOP_INTERVAL_SEC) -> None:
-    """무한 루프 entrypoint (Docker PID 1)."""
+    """무한 루프 entrypoint (Docker PID 1).
+
+    DartCriticalError 처리:
+      - status=020 (quota 소진): KST 자정 +5분까지 대기 후 재개 (자정에 quota reset)
+      - status=010/011/012 (인증·IP): 키 교체 전까지 복구 불가 — 루프 종료
+        (docker restart policy 가 컨테이너 재기동 → 운영자가 .env 갱신 후 반영)
+    """
     dart = DartApiClient()
     cycle = 0
     while True:
@@ -188,6 +200,25 @@ def run_forever(interval: int = LOOP_INTERVAL_SEC) -> None:
         started = time.monotonic()
         try:
             run_once(dart)
+        except DartCriticalError as e:
+            if e.status == "020":
+                now = datetime.now(KST)
+                next_run = (now + timedelta(days=1)).replace(
+                    hour=0, minute=5, second=0, microsecond=0,
+                )
+                sleep_for = (next_run - now).total_seconds()
+                logger.warning(
+                    "DART quota 소진 (status=020) — 다음 KST 00:05 까지 %.0f초 대기",
+                    sleep_for,
+                )
+                time.sleep(sleep_for)
+                continue
+            # 010/011/012 — 키 교체 필요
+            logger.error(
+                "DART critical (status=%s, message=%s) — 작업 중단",
+                e.status, e.message,
+            )
+            return
         except Exception:
             logger.exception("cycle %d crashed", cycle)
         elapsed = time.monotonic() - started

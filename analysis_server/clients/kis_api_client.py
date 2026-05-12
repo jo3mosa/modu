@@ -96,6 +96,15 @@ class KisApiClient:
             # 파일 없거나 만료 — 새 발급
             return self._issue_token()
 
+    def ensure_token(self) -> None:
+        """토큰 pre-warm — ThreadPoolExecutor 진입 전 단일 스레드에서 호출해
+        첫 사이클의 발급 latency 를 사용자 시점으로 옮긴다.
+
+        double-checked locking 덕에 호출 안 해도 functional 하게 동작하지만,
+        명시적으로 한 번 호출해두면 worker 들이 모두 fast path 만 타게 됨.
+        """
+        self._get_valid_token()
+
     def get_realtime_snapshot(self, stock_code):
         """특정 종목의 실시간 5대 지표 스냅샷을 가져옵니다."""
         token = self._get_valid_token()

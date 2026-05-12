@@ -144,7 +144,7 @@ def run_once(
     if not stocks:
         return {"ok": 0, "fail": 0, "total": 0, "elapsed_sec": 0.0}
 
-    kis._get_valid_token()
+    kis.ensure_token()
     limiter = RateLimiter(calls_per_sec)
     started = time.monotonic()
 
