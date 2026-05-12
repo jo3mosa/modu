@@ -1,10 +1,12 @@
 package com.modu.backend.domain.trading.controller;
 
+import com.modu.backend.domain.trading.dto.BuyingPowerResponse;
 import com.modu.backend.domain.trading.dto.ModifyOrderRequest;
 import com.modu.backend.domain.trading.dto.ModifyOrderResponse;
 import com.modu.backend.domain.trading.dto.OrderRequest;
 import com.modu.backend.domain.trading.dto.OrderResponse;
 import com.modu.backend.domain.trading.dto.PendingOrdersResponse;
+import com.modu.backend.domain.trading.entity.OrderSide;
 import com.modu.backend.domain.trading.service.OrderService;
 import com.modu.backend.global.dto.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -13,13 +15,16 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 @Tag(name = "Orders", description = "주문 API")
+@Validated
 @RestController
 @RequestMapping("/api/v1/orders")
 @RequiredArgsConstructor
@@ -52,6 +57,47 @@ public class OrderController {
     ) {
         PendingOrdersResponse response = orderService.getPendingOrders(userId);
         return ResponseEntity.ok(ApiResponse.success("미체결 주문을 조회했습니다.", response));
+    }
+
+    @Operation(
+            summary = "주문 가능 금액/수량 조회",
+            description = """
+                    한국투자증권 API를 통해 주문 가능 금액과 수량을 조회합니다.
+
+                    [stockCode 선택 파라미터]
+                    - stockCode 미전달 + side=BUY: 매수가능금액(maxBuyAmount), 주문가능현금(availableCash) 조회.
+                      maxBuyQuantity=0 반환 (종목 미지정 시 수량 계산 불가)
+                    - stockCode 미전달 + side=SELL: 400(ORDER_002) 반환 (매도는 종목코드 필수)
+
+                    [응답 필드]
+                    - maxBuyAmount: 미수 없는 최대 매수 가능 금액
+                    - maxBuyQuantity: 최대 매수 가능 수량 (side=SELL 시 0)
+                    - maxSellQuantity: 최대 매도 가능 수량 (side=BUY 시 0)
+                    - availableCash: 주문 가능 현금 (미체결 주문 차감 후 실사용 가능 금액)
+
+                    [기타]
+                    - orderPrice 미전달 시 시장가 기준으로 조회합니다.
+                    - 모의투자 계좌는 지원하지 않습니다.
+                    """
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "주문 가능 정보 조회 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "SELL 조회 시 종목코드 누락",
+                    content = @Content(schema = @Schema(example = "{\"success\":false,\"message\":\"매도 조회 시 종목코드가 필요합니다.\",\"errorCode\":\"ORDER_002\"}"))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "인증 필요"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "KIS API 미연동",
+                    content = @Content(schema = @Schema(example = "{\"success\":false,\"message\":\"연동된 한국투자증권 API 정보가 없습니다.\",\"errorCode\":\"KIS_NOT_CONNECTED\"}"))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "502", description = "KIS API 호출 실패")
+    })
+    @GetMapping("/buying-power")
+    public ResponseEntity<ApiResponse<BuyingPowerResponse>> getBuyingPower(
+            @AuthenticationPrincipal Long userId,
+            @RequestParam(required = false) String stockCode,
+            @RequestParam OrderSide side,
+            @Positive @RequestParam(required = false) Long orderPrice
+    ) {
+        BuyingPowerResponse response = orderService.getBuyingPower(userId, stockCode, side, orderPrice);
+        return ResponseEntity.ok(ApiResponse.success("주문 가능 정보를 조회했습니다.", response));
     }
 
     @Operation(

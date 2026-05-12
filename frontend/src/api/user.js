@@ -55,3 +55,11 @@ export async function deleteKisKey() {
     method: 'DELETE',
   });
 }
+/**
+ * 내 정보 조회 (프로필 + KIS 연동 상태)
+ * GET /api/v1/users/me
+ */
+export async function getMyInfo() {
+  const data = await apiClient('/users/me');
+  return data.data;
+}

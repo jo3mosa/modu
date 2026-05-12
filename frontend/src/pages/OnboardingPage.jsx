@@ -71,7 +71,20 @@ export default function OnboardingPage() {
         questionId: q.questionId,
         optionId: answers[q.questionId],
       }));
-      const result = await updateProfile({ answers: answersPayload });
+
+      // 기존 프로필이 있는지 먼저 확인 (version 확보용)
+      let currentVersion = 0;
+      try {
+        const existing = await getProfile();
+        currentVersion = existing.version;
+      } catch (e) {
+        // 404면 신규 등록이므로 0 유지
+      }
+
+      const result = await updateProfile({ 
+        answers: answersPayload,
+        version: currentVersion 
+      });
       setProfileResult(result);
       nextStep();
     } catch (error) {
@@ -108,7 +121,11 @@ export default function OnboardingPage() {
             questionId: q.questionId,
             optionId: answers[q.questionId],
           }));
-          await updateProfile({ answers: answersPayload, freeText: principle });
+          await updateProfile({ 
+            answers: answersPayload, 
+            freeText: principle, 
+            version: profileResult?.version ?? 0 
+          });
         } catch (error) {
           // 매매 원칙 저장 실패는 룰셋 저장을 막지 않는다 (UX 우선).
           console.warn('매매 원칙 저장 실패:', error);
