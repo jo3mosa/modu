@@ -289,31 +289,6 @@ export default function RiskManagePage() {
               <span className="unit">%</span>
             </div>
           </div>
-
-          <div className="input-group">
-            <label>1일 최대 주문 횟수 제한</label>
-            <div className="input-with-unit">
-              <input
-                type="number"
-                value={rules.maxDailyOrders}
-                onChange={(e) => handleRuleChange('maxDailyOrders', e.target.value)}
-              />
-              <span className="unit">회</span>
-            </div>
-          </div>
-
-          <div className="input-group">
-            <label>1일 최대 허용 손실 금액</label>
-            <div className="input-with-unit">
-              <input
-                type="number"
-                value={rules.maxLossLimit}
-                onChange={(e) => handleRuleChange('maxLossLimit', e.target.value)}
-                step="10000"
-              />
-              <span className="unit">원</span>
-            </div>
-          </div>
         </div>
       </div>
 
