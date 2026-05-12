@@ -26,8 +26,7 @@ export default function MyPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    /* 
-    // MVP 범위 제외: 내 정보 조회 주석 처리 -> 테스트를 위해 일시 해제
+    // MVP 범위 제외였으나 가시성 확보를 위해 활성화
     async function loadMyInfo() {
       try {
         const data = await getMyInfo();
@@ -52,7 +51,6 @@ export default function MyPage() {
       }
     }
     loadMyInfo();
-    */
     setIsLoading(false);
   }, []);
 

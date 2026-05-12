@@ -154,18 +154,33 @@ export default function TradingChart({ stockCode }) {
         const response = await getStockCandles(stockCode, { period: timeframe });
         if (cancelled) return;
         const period = response?.period ?? timeframe;
-        const adapted = (response?.candles ?? []).map((c) => adaptCandle(period, c));
+        const rawCandles = response?.candles ?? [];
+        
+        // 1. 변환 및 정렬
+        const adapted = rawCandles
+          .map((c) => adaptCandle(period, c))
+          .sort((a, b) => a.time - b.time);
 
-        candlestickSeriesRef.current?.setData(adapted);
+        // 2. 중복 제거
+        const uniqueAdapted = [];
+        const seenTimes = new Set();
+        for (const c of adapted) {
+          if (!seenTimes.has(c.time)) {
+            uniqueAdapted.push(c);
+            seenTimes.add(c.time);
+          }
+        }
+
+        candlestickSeriesRef.current?.setData(uniqueAdapted);
         volumeSeriesRef.current?.setData(
-          adapted.map((d) => ({
+          uniqueAdapted.map((d) => ({
             time: d.time,
             value: d.volume ?? 0,
             color: d.close >= d.open ? 'rgba(239,68,68,0.4)' : 'rgba(59,130,246,0.4)',
           }))
         );
         // 실시간 틱이 들어올 때 합쳐 갱신할 기준 캔들 저장
-        lastCandleRef.current = adapted.length > 0 ? { ...adapted[adapted.length - 1] } : null;
+        lastCandleRef.current = uniqueAdapted.length > 0 ? { ...uniqueAdapted[uniqueAdapted.length - 1] } : null;
         // 종목/기간이 바뀌면 이전 마커는 의미가 없으므로 비워둔다.
         candlestickSeriesRef.current?.setMarkers([]);
       } catch (error) {
@@ -220,8 +235,27 @@ export default function TradingChart({ stockCode }) {
       try {
         const tick = JSON.parse(event.data);
         const price = tick?.currentPrice;
-        const last = lastCandleRef.current;
-        if (price == null || !last || !candlestickSeriesRef.current) return;
+        if (price == null || !candlestickSeriesRef.current) return;
+
+        let last = lastCandleRef.current;
+        
+        // 초기 데이터가 없는 경우 현재 시각 기준으로 새 캔들 생성 시작
+        if (!last) {
+          const nowSeconds = Math.floor(Date.now() / 1000);
+          const isMinute = !DAILY_PERIODS.has(timeframe);
+          // timeframe이 'D', 'W', 'M'인 경우 24시간, 아니면 분 단위로 버킷 계산
+          const interval = isMinute ? parseInt(timeframe, 10) * 60 : 24 * 3600;
+          const bucketTime = Math.floor(nowSeconds / interval) * interval;
+
+          last = {
+            time: bucketTime,
+            open: price,
+            high: price,
+            low: price,
+            close: price,
+            volume: 0,
+          };
+        }
 
         const updated = {
           time: last.time,
@@ -230,6 +264,7 @@ export default function TradingChart({ stockCode }) {
           low: Math.min(last.low ?? price, price),
           close: price,
         };
+        
         candlestickSeriesRef.current.update(updated);
         lastCandleRef.current = { ...updated, volume: last.volume };
       } catch (error) {
