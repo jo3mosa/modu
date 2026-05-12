@@ -12,6 +12,7 @@ analysis_server 는 publish 전용. consumer 는 ai_agent / backend 책임.
 """
 
 import json
+import logging
 import os
 from functools import lru_cache
 
@@ -20,6 +21,8 @@ from kafka import KafkaProducer
 from kafka.errors import KafkaError, NoBrokersAvailable
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
 class KafkaTopic:
@@ -60,11 +63,20 @@ def get_kafka_producer() -> KafkaProducer:
 
 
 def check_kafka_connection() -> bool:
-    """startup / health check 용. broker 도달 불가 시 False."""
+    """startup / health check 용. broker 도달 불가 시 False.
+
+    주의: `get_kafka_producer()` 는 lru_cache 되어 있어 첫 성공 이후엔 broker 가
+    내려가도 같은 객체를 반환한다. 그래서 단순 호출만으론 실시간 도달성을 못 본다.
+    `partitions_for()` 가 메타데이터 refresh 를 강제 (broker 단절 시 KafkaError raise)
+    하므로 그걸로 실제 connectivity 를 검증한다.
+
+    추후 (Phase 5): 전용 canary 서비스가 produce/consume end-to-end 검증.
+    """
     try:
-        get_kafka_producer()
+        producer = get_kafka_producer()
+        producer.partitions_for(KafkaTopic.MARKET_SIGNAL_DETECTED)
         return True
-    except NoBrokersAvailable:
+    except (NoBrokersAvailable, KafkaError):
         return False
 
 
@@ -87,11 +99,16 @@ def publish_event(
         payload : JSON-serializable dict. datetime 은 default=str 로 ISO 변환됨.
         timeout : broker ack 대기 시간 (초). 초과 시 False.
     """
-    producer = get_kafka_producer()
+    # producer 생성 자체도 try 안에서 — broker 가 부팅 시점에 down 이면
+    # KafkaProducer.__init__ 의 check_version 단계에서 NoBrokersAvailable 가
+    # raise 되므로 send/ack 와 동일하게 처리.
     try:
+        producer = get_kafka_producer()
         future = producer.send(topic, key=key, value=payload)
         future.get(timeout=timeout)   # block until ack — KafkaError on failure
         return True
-    except KafkaError:
-        # caller (event_publisher) 가 False 보고 cooldown 등록 skip → 다음 cycle 재발행 가능
+    except KafkaError as e:
+        # 사유(timeout / 인증 / 브로커 다운)별 추적 위해 로그 남김.
+        # caller (event_publisher) 는 False 보고 cooldown 등록 skip → 다음 cycle 재발행 가능.
+        logger.warning("publish_event failed (topic=%s, key=%s): %s", topic, key, e)
         return False
