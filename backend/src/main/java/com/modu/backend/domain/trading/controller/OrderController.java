@@ -3,11 +3,17 @@ package com.modu.backend.domain.trading.controller;
 import com.modu.backend.domain.trading.dto.BuyingPowerResponse;
 import com.modu.backend.domain.trading.dto.ModifyOrderRequest;
 import com.modu.backend.domain.trading.dto.ModifyOrderResponse;
+import com.modu.backend.domain.trading.dto.OrderHistoryResponse;
 import com.modu.backend.domain.trading.dto.OrderRequest;
 import com.modu.backend.domain.trading.dto.OrderResponse;
 import com.modu.backend.domain.trading.dto.PendingOrdersResponse;
+import com.modu.backend.domain.trading.entity.HistorySourceFilter;
 import com.modu.backend.domain.trading.entity.OrderSide;
+import com.modu.backend.domain.trading.service.OrderHistoryService;
 import com.modu.backend.domain.trading.service.OrderService;
+import org.springframework.format.annotation.DateTimeFormat;
+
+import java.time.LocalDate;
 import com.modu.backend.global.dto.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -31,6 +37,7 @@ import org.springframework.web.bind.annotation.*;
 public class OrderController {
 
     private final OrderService orderService;
+    private final OrderHistoryService orderHistoryService;
 
     @Operation(
             summary = "미체결 주문 조회",
@@ -57,6 +64,40 @@ public class OrderController {
     ) {
         PendingOrdersResponse response = orderService.getPendingOrders(userId);
         return ResponseEntity.ok(ApiResponse.success("미체결 주문을 조회했습니다.", response));
+    }
+
+    @Operation(
+            summary = "거래 이력 조회",
+            description = """
+                    한국투자증권 API(inquire-daily-ccld)를 통해 기간 단위 전체 거래 이력을 조회합니다.
+
+                    - KIS API 미연동 시 404(KIS_NOT_CONNECTED) 반환
+                    - 모의투자 계좌는 지원하지 않음
+                    - from/to 생략 시 최근 3개월 자동 적용
+                    - 조회 기간 최대 1년 (초과 시 ORDER_007)
+                    - source=AUTO/MANUAL 필터 시 우리 DB에 없는 주문(KIS 직접 주문 등)은 제외됨
+                    - createdAt: DB 매칭 주문은 orders.created_at, 미매칭은 KIS 주문일시(KST)
+                    """
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "거래 이력 조회 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "기간 검증 실패",
+                    content = @Content(schema = @Schema(example = "{\"success\":false,\"message\":\"조회 기간은 최대 1년까지 가능합니다.\",\"errorCode\":\"ORDER_007\"}"))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "인증 필요"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "KIS API 미연동"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "502", description = "KIS API 호출 실패")
+    })
+    @GetMapping("/history")
+    public ResponseEntity<ApiResponse<OrderHistoryResponse>> getOrderHistory(
+            @AuthenticationPrincipal Long userId,
+            @RequestParam(required = false, defaultValue = "ALL") HistorySourceFilter source,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyyMMdd") LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyyMMdd") LocalDate to,
+            @RequestParam(required = false, defaultValue = "1") @Positive Integer page,
+            @RequestParam(required = false, defaultValue = "20") @Positive Integer size
+    ) {
+        OrderHistoryResponse response = orderHistoryService.getOrderHistory(userId, source, from, to, page, size);
+        return ResponseEntity.ok(ApiResponse.success("거래 이력을 조회했습니다.", response));
     }
 
     @Operation(
