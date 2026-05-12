@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Highcharts from 'highcharts';
 import HighchartsReactPkg from 'highcharts-react-official';
@@ -73,7 +73,20 @@ export default function DashboardPage() {
         ]);
 
         setSummary(summaryData);
-        setHoldings(portfolioData.holdings ?? []);
+        // 백엔드가 avgBuyPrice를 0으로 내려주는 케이스 보정:
+        //   avgBuyPrice = (currentPrice × quantity − pnl) / quantity
+        // (KIS는 종목별 pnl 값을 정상적으로 내려주므로 역산 가능)
+        const normalizedHoldings = (portfolioData.holdings ?? []).map((h) => {
+          const quantity = h.quantity ?? 0;
+          const currentPrice = h.currentPrice ?? 0;
+          const pnl = h.pnl ?? 0;
+          const incomingAvg = h.avgBuyPrice ?? 0;
+          const derivedAvg =
+            quantity > 0 ? Math.round((currentPrice * quantity - pnl) / quantity) : 0;
+          const avgBuyPrice = incomingAvg > 0 ? incomingAvg : derivedAvg;
+          return { ...h, avgBuyPrice };
+        });
+        setHoldings(normalizedHoldings);
         setLogs(decisionsData.content ?? []);
       } catch (error) {
         if (error.errorCode === 'KIS_NOT_CONNECTED' || error.errorCode === 'USER_002') {
@@ -87,6 +100,112 @@ export default function DashboardPage() {
     }
     fetchDashboardData();
   }, []);
+
+  // 보유 종목 코드 리스트 — 가격 변경 시에도 동일 참조를 유지해 WS 재구독을 방지한다.
+  const stockCodesKey = useMemo(
+    () => holdings.map((h) => h.stockCode).join(','),
+    [holdings]
+  );
+
+  // 보유 종목별 실시간 체결가 구독: 종목 코드 리스트가 바뀔 때만 재연결
+  // 메시지 수신 시 해당 종목의 currentPrice/pnl/pnlPct를 즉시 갱신한다.
+  useEffect(() => {
+    if (!stockCodesKey) return;
+    const codes = stockCodesKey.split(',').filter(Boolean);
+    if (codes.length === 0) return;
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const sockets = codes.map((code) => {
+      const ws = new WebSocket(`${protocol}//${window.location.host}/ws/stocks/${code}/price`);
+      ws.onmessage = (event) => {
+        try {
+          const tick = JSON.parse(event.data);
+          const price = tick?.currentPrice;
+          if (price == null) return;
+          setHoldings((prev) =>
+            prev.map((item) => {
+              if (item.stockCode !== code) return item;
+              const newPnl = (price - item.avgBuyPrice) * item.quantity;
+              const newPnlPct =
+                item.avgBuyPrice > 0
+                  ? Number((((price - item.avgBuyPrice) / item.avgBuyPrice) * 100).toFixed(2))
+                  : 0;
+              return { ...item, currentPrice: price, pnl: newPnl, pnlPct: newPnlPct };
+            })
+          );
+        } catch (error) {
+          console.error('실시간 체결가 메시지 파싱 실패:', error);
+        }
+      };
+      ws.onerror = (event) => {
+        console.warn(`실시간 체결가 WebSocket 오류 (${code}):`, event);
+      };
+      return ws;
+    });
+
+    return () => {
+      sockets.forEach((ws) => {
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+          ws.close();
+        }
+      });
+    };
+  }, [stockCodesKey]);
+
+  // 예수금/매입금액 보정용 폴링 (KIS 연동 시에만, 30초 주기)
+  // 실시간 가격 외 값들(availableCash 등)은 WS가 없으므로 주기적으로 갱신한다.
+  useEffect(() => {
+    if (!isKisConnected) return;
+    const intervalId = setInterval(async () => {
+      try {
+        const data = await getAccountSummary();
+        setSummary(data);
+      } catch (error) {
+        console.warn('자산 요약 폴링 실패:', error);
+      }
+    }, 30000);
+    return () => clearInterval(intervalId);
+  }, [isKisConnected]);
+
+  // holdings 기준 파생 요약값
+  //
+  // [배경] 백엔드 summary.availableCash는 KIS `dncl_amt` (D+0 예수금)을 그대로 매핑한다.
+  // 이 값은 종목 매수 후에도 차감되지 않아 사용자가 인식하는 "주문 가능 금액"과 다르다.
+  // → 프론트에서 입금 원금으로 간주하고, 투자 원금을 빼서 실제 주문 가능 금액을 산출한다.
+  //
+  // - principal       : summary.availableCash  (입금 원금 = KIS dncl_amt)
+  // - totalEvalAmount : Σ(보유수량 × 현재가)     (보유 종목 현재가치)
+  // - totalBuyAmount  : Σ(보유수량 × 매수평균가)  (투자 원금, 역산 보정값)
+  // - totalPnl        : Σ(pnl)                 (평가 손익)
+  // - totalPnlPct     : totalPnl / totalBuyAmount × 100
+  // - availableCash   : principal − totalBuyAmount  (실제 주문 가능 금액)
+  // - totalAsset      : availableCash + totalEvalAmount  (= principal + totalPnl 와 등가)
+  const derivedSummary = useMemo(() => {
+    if (!summary) return null;
+    const totalEvalAmount = holdings.reduce(
+      (sum, h) => sum + (h.currentPrice ?? 0) * (h.quantity ?? 0),
+      0
+    );
+    const totalBuyAmount = holdings.reduce(
+      (sum, h) => sum + (h.avgBuyPrice ?? 0) * (h.quantity ?? 0),
+      0
+    );
+    const totalPnl = holdings.reduce((sum, h) => sum + (h.pnl ?? 0), 0);
+    const totalPnlPct =
+      totalBuyAmount > 0 ? Number(((totalPnl / totalBuyAmount) * 100).toFixed(2)) : 0;
+    const principal = summary.availableCash ?? 0;
+    const availableCash = Math.max(0, principal - totalBuyAmount);
+    const totalAsset = availableCash + totalEvalAmount;
+    return {
+      ...summary,
+      availableCash,
+      totalEvalAmount,
+      totalBuyAmount,
+      totalPnl,
+      totalPnlPct,
+      totalAsset,
+    };
+  }, [summary, holdings]);
 
   // 알림 팝업 외부 클릭 시 닫기
   useEffect(() => {
@@ -117,14 +236,14 @@ export default function DashboardPage() {
     return '';
   };
 
-  // 도넛 차트 데이터 포맷팅
+  // 도넛 차트 데이터 포맷팅 (실시간 currentPrice 기반)
   const chartData = holdings.map((h, i) => ({
     name: h.stockName,
-    y: h.quantity * h.currentPrice,
+    y: (h.quantity ?? 0) * (h.currentPrice ?? 0),
     color: CHART_COLORS[i % CHART_COLORS.length],
     quantity: h.quantity
   }));
-  chartData.push({ name: '예수금', y: summary?.availableCash ?? 0, color: '#84cc16', quantity: null });
+  chartData.push({ name: '주문 가능 금액', y: derivedSummary?.availableCash ?? 0, color: '#84cc16', quantity: null });
 
   // 비중 내림차순 정렬
   chartData.sort((a, b) => b.y - a.y);
@@ -194,7 +313,7 @@ export default function DashboardPage() {
   // ── 연동 시 아래 주석 해제 (KIS 미연동/로딩 상태 처리) ──────────────────
   if (isLoading) return <div className="dashboard-container"><p style={{ padding: '2rem', color: '#aaa' }}>자산 정보를 불러오는 중...</p></div>;
   if (!isKisConnected) return <div className="dashboard-container"><p style={{ padding: '2rem', color: '#ef4444' }}>한국투자증권 API 연동이 필요합니다. 마이페이지에서 설정해주세요.</p></div>;
-  if (!summary) return null;
+  if (!derivedSummary) return null;
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
@@ -252,7 +371,7 @@ export default function DashboardPage() {
               <div className="asset-huge">
                 <span className="label">총 자산</span>
                 <div className="value-row">
-                  <span className="value">{formatNumber(summary.totalAsset)}</span>
+                  <span className="value">{formatNumber(derivedSummary.totalAsset)}</span>
                   <span className="unit">원</span>
                 </div>
               </div>
@@ -260,18 +379,18 @@ export default function DashboardPage() {
               <div className="asset-details">
                 <div className="detail-item">
                   <span className="detail-label">총 평가 손익</span>
-                  <span className={`detail-value ${getColorClass(summary.totalPnl)}`}>
-                    {summary.totalPnl > 0 ? '+' : ''}{formatNumber(summary.totalPnl)}원
-                    <span className="rate">({summary.totalPnlPct > 0 ? '+' : ''}{summary.totalPnlPct}%)</span>
+                  <span className={`detail-value ${getColorClass(derivedSummary.totalPnl)}`}>
+                    {derivedSummary.totalPnl > 0 ? '+' : ''}{formatNumber(derivedSummary.totalPnl)}원
+                    <span className="rate">({derivedSummary.totalPnlPct > 0 ? '+' : ''}{derivedSummary.totalPnlPct}%)</span>
                   </span>
                 </div>
                 <div className="detail-item">
                   <span className="detail-label">투자 원금</span>
-                  <span className="detail-value">{formatNumber(summary.totalBuyAmount)}원</span>
+                  <span className="detail-value">{formatNumber(derivedSummary.totalBuyAmount)}원</span>
                 </div>
                 <div className="detail-item">
-                  <span className="detail-label">가용 예수금</span>
-                  <span className="detail-value cash">{formatNumber(summary.availableCash)}원</span>
+                  <span className="detail-label">주문 가능 금액</span>
+                  <span className="detail-value cash">{formatNumber(derivedSummary.availableCash)}원</span>
                 </div>
               </div>
             </div>

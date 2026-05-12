@@ -23,7 +23,7 @@ export default function OrderBook({ stockCode }) {
   const [canceling, setCanceling] = useState({});
 
   // 매수가능 정보 (연결 실패 시 → null 시 영역 미표시)
-  // { maxBuyAmount, maxSellQuantity, availableCash, riskLimitAmount }
+  // { maxBuyAmount, maxBuyQuantity, maxSellQuantity, availableCash }
   const [buyingPower, setBuyingPower] = useState(null);
   const buyingPowerTimerRef = useRef(null);
 
@@ -285,7 +285,7 @@ export default function OrderBook({ stockCode }) {
                 {orderType === 'BUY' ? (
                   <>
                     <div>주문 가능 금액: <strong style={{ color: '#fff' }}>{buyingPower.maxBuyAmount?.toLocaleString() ?? '-'}원</strong></div>
-                    <div>일일 한도 잔여: {buyingPower.riskLimitAmount?.toLocaleString() ?? '-'}원</div>
+                    <div>최대 매수 가능 수량: {buyingPower.maxBuyQuantity?.toLocaleString() ?? '-'}주</div>
                     <div>예수금: {buyingPower.availableCash?.toLocaleString() ?? '-'}원</div>
                   </>
                 ) : (
