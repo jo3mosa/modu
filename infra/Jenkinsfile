@@ -340,28 +340,40 @@ def deployToCluster(String configId, String clusterName) {
                         if [ "$BUILD_BACKEND" = "true" ]; then
                             BE_IMAGE="$FULL_URI_BE:$BUILD_NUMBER"
                         else
-                            BE_IMAGE=$(kubectl --kubeconfig=$KUBECONFIG get deployment modu-backend \
-                                -n modu-apps \
-                                -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "")
-                            [ -z "$BE_IMAGE" ] && BE_IMAGE="$FULL_URI_BE:latest"
+                            if kubectl --kubeconfig=$KUBECONFIG get deployment modu-backend -n modu-apps >/dev/null 2>&1; then
+                                BE_IMAGE=$(kubectl --kubeconfig=$KUBECONFIG get deployment modu-backend \
+                                    -n modu-apps \
+                                    -o jsonpath='{.spec.template.spec.containers[0].image}')
+                            else
+                                echo "⚠️ modu-backend Deployment 없음 — :latest 폴백"
+                                BE_IMAGE="$FULL_URI_BE:latest"
+                            fi
                         fi
 
                         if [ "$BUILD_FRONTEND" = "true" ]; then
                             FE_IMAGE="$FULL_URI_FE:$BUILD_NUMBER"
                         else
-                            FE_IMAGE=$(kubectl --kubeconfig=$KUBECONFIG get deployment modu-frontend \
-                                -n modu-apps \
-                                -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "")
-                            [ -z "$FE_IMAGE" ] && FE_IMAGE="$FULL_URI_FE:latest"
+                            if kubectl --kubeconfig=$KUBECONFIG get deployment modu-frontend -n modu-apps >/dev/null 2>&1; then
+                                FE_IMAGE=$(kubectl --kubeconfig=$KUBECONFIG get deployment modu-frontend \
+                                    -n modu-apps \
+                                    -o jsonpath='{.spec.template.spec.containers[0].image}')
+                            else
+                                echo "⚠️ modu-frontend Deployment 없음 — :latest 폴백"
+                                FE_IMAGE="$FULL_URI_FE:latest"
+                            fi
                         fi
 
                         if [ "$BUILD_AI" = "true" ]; then
                             AI_IMAGE="$FULL_URI_AI:$BUILD_NUMBER"
                         else
-                            AI_IMAGE=$(kubectl --kubeconfig=$KUBECONFIG get deployment modu-ai-agent \
-                                -n modu-apps \
-                                -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "")
-                            [ -z "$AI_IMAGE" ] && AI_IMAGE="$FULL_URI_AI:latest"
+                            if kubectl --kubeconfig=$KUBECONFIG get deployment modu-ai-agent -n modu-apps >/dev/null 2>&1; then
+                                AI_IMAGE=$(kubectl --kubeconfig=$KUBECONFIG get deployment modu-ai-agent \
+                                    -n modu-apps \
+                                    -o jsonpath='{.spec.template.spec.containers[0].image}')
+                            else
+                                echo "⚠️ modu-ai-agent Deployment 없음 — :latest 폴백"
+                                AI_IMAGE="$FULL_URI_AI:latest"
+                            fi
                         fi
 
                         echo "▶ 배포 이미지 — BE: $BE_IMAGE | FE: $FE_IMAGE | AI: $AI_IMAGE"
