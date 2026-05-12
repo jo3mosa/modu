@@ -1,0 +1,49 @@
+# AI Agent Deployment
+# Kafka Consumer (market.signal.detected, ai.trigger.requested 토픽 소비)
+# 서버가 아니라 컨슈머이므로 Service 없음
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: modu-ai-agent
+  namespace: modu-apps
+  labels:
+    app: ai-agent
+spec:
+  # 컨슈머는 단일 인스턴스로 실행 (Kafka 컨슈머 그룹이 파티션을 나눠 처리)
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ai-agent
+  template:
+    metadata:
+      labels:
+        app: ai-agent
+    spec:
+      # ECR 프라이빗 리포지토리 접근 권한 — 누락 시 ImagePullBackOff 발생
+      imagePullSecrets:
+      - name: regcred
+      containers:
+      - name: ai-agent
+        # Jenkinsfile의 sed 명령어가 실제 이미지 주소와 태그를 주입
+        image: AIAGENT_IMAGE
+        # modu-secret의 모든 키를 환경변수로 주입 (Kafka/DB 접속 정보 등)
+        envFrom:
+        - secretRef:
+            name: modu-secret
+        resources:
+          requests:
+            memory: "512Mi"   # LLM 호출 포함 파이프라인이므로 메모리 여유 확보
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        # Kafka 컨슈머 프로세스 생존 여부 확인 — 스레드 비정상 종료 시 재시작
+        livenessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - import os; os.kill(1, 0)  # PID 1(메인 프로세스) 생존 확인
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          failureThreshold: 3
