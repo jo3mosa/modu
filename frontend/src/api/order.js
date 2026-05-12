@@ -40,16 +40,16 @@ export async function getPendingOrders() {
  *
  * 응답:
  * - maxBuyAmount: 최대 매수 가능 금액 (원, Long)
- * - maxSellQuantity: 최대 매도 가능 수량 (Integer)
+ * - maxBuyQuantity: 최대 매수 가능 수량 (side=BUY 시 제공, SELL 시 0)
+ * - maxSellQuantity: 최대 매도 가능 수량 (side=SELL 시 제공, BUY 시 0)
  * - availableCash: 현재 예수금 (Long)
- * - riskLimitAmount: 일일 누적 한도 기준 잔여 주문 가능 금액 (Long)
  *
  * @param {{ stockCode: string, side: 'BUY' | 'SELL', orderPrice?: number }} params
  * @returns {Promise<{
  *   maxBuyAmount: number,
+ *   maxBuyQuantity: number,
  *   maxSellQuantity: number,
- *   availableCash: number,
- *   riskLimitAmount: number
+ *   availableCash: number
  * }>}
  */
 export async function getBuyingPower({ stockCode, side, orderPrice } = {}) {

@@ -7,8 +7,8 @@
 .orderbook-tabs {
   display: flex;
   padding: 0.5rem;
-  background: rgba(0,0,0,0.2);
-  border-bottom: 1px solid rgba(255,255,255,0.05);
+  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .tab-btn {
@@ -24,7 +24,7 @@
 }
 
 .tab-btn.active {
-  background: rgba(255,255,255,0.1);
+  background: rgba(255, 255, 255, 0.1);
   color: #fff;
 }
 
@@ -65,17 +65,24 @@
 }
 
 /* 매도 호가 (파란색) */
-.order-row.ask .col-price { color: #3b82f6; }
+.order-row.ask .col-price {
+  color: #3b82f6;
+}
+
 .order-row.ask .bg-bar {
   background: rgba(59, 130, 246, 0.15);
   right: 0;
 }
 
 /* 매수 호가 (빨간색) */
-.order-row.bid .col-price { color: #ef4444; }
+.order-row.bid .col-price {
+  color: #ef4444;
+}
+
 .order-row.bid .bg-bar {
   background: rgba(239, 68, 68, 0.15);
-  right: 0; /* 우측 정렬로 통일하여 깔끔하게 보이도록 함 */
+  right: 0;
+  /* 우측 정렬로 통일하여 깔끔하게 보이도록 함 */
 }
 
 .bg-bar {
@@ -86,7 +93,8 @@
   border-radius: 4px;
 }
 
-.col-price, .col-amount {
+.col-price,
+.col-amount {
   z-index: 1;
   font-weight: 600;
 }
@@ -100,10 +108,10 @@
   flex-direction: column;
   align-items: center;
   padding: 0.4rem 0;
-  border-top: 1px dashed rgba(255,255,255,0.1);
-  border-bottom: 1px dashed rgba(255,255,255,0.1);
+  border-top: 1px dashed rgba(255, 255, 255, 0.1);
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.1);
   margin: 0.2rem 0;
-  background: rgba(0,0,0,0.2);
+  background: rgba(0, 0, 0, 0.2);
 }
 
 .current-price {
@@ -120,7 +128,7 @@
 
 .order-form {
   padding: 1.2rem;
-  border-top: 1px solid rgba(255,255,255,0.05);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -128,7 +136,7 @@
 
 .order-type-switch {
   display: flex;
-  background: rgba(0,0,0,0.3);
+  background: rgba(0, 0, 0, 0.3);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -158,7 +166,7 @@
   justify-content: space-between;
   font-size: 0.9rem;
   color: #888;
-  background: rgba(255,255,255,0.05);
+  background: rgba(255, 255, 255, 0.05);
   padding: 0.6rem;
   border-radius: 6px;
 }
@@ -179,8 +187,8 @@
 }
 
 .input-group input {
-  background: rgba(0,0,0,0.3);
-  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   color: #fff;
   padding: 0.6rem;
   border-radius: 6px;
@@ -195,7 +203,7 @@
   align-items: center;
   margin-top: 0.5rem;
   padding-top: 0.5rem;
-  border-top: 1px dashed rgba(255,255,255,0.1);
+  border-top: 1px dashed rgba(255, 255, 255, 0.1);
   font-size: 1.05rem;
 }
 
@@ -220,8 +228,13 @@
   opacity: 0.9;
 }
 
-.submit-order-btn.buy { background: #ef4444; }
-.submit-order-btn.sell { background: #3b82f6; }
+.submit-order-btn.buy {
+  background: #ef4444;
+}
+
+.submit-order-btn.sell {
+  background: #3b82f6;
+}
 
 /* Pending Orders Tab */
 .pending-content {
@@ -243,10 +256,16 @@
 }
 
 .pending-item {
-  background: rgba(0,0,0,0.2);
-  border: 1px solid rgba(255,255,255,0.05);
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 8px;
   padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.pending-item-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -265,8 +284,15 @@
   border-radius: 4px;
 }
 
-.pending-type.buy { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
-.pending-type.sell { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+.pending-type.buy {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.pending-type.sell {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+}
 
 .pending-details {
   display: flex;
@@ -291,7 +317,7 @@
 
 .cancel-btn {
   background: transparent;
-  border: 1px solid rgba(255,255,255,0.1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   color: #ccc;
   padding: 0.5rem 0.8rem;
   border-radius: 6px;
@@ -301,6 +327,115 @@
 }
 
 .cancel-btn:hover {
-  background: rgba(255,255,255,0.1);
+  background: rgba(255, 255, 255, 0.1);
   color: #fff;
+}
+
+/* 정정/취소 버튼 행 */
+.pending-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+/* 정정 버튼 */
+.modify-btn {
+  background: transparent;
+  border: 1px solid rgba(234, 179, 8, 0.4);
+  color: #84cc16;
+  padding: 0.5rem 0.8rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+}
+
+.modify-btn:hover:not(:disabled) {
+  background: rgba(234, 179, 8, 0.15);
+}
+
+.modify-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 인라인 정정 폼 */
+.modify-form {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.modify-inputs {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.modify-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex: 1;
+}
+
+.modify-input-group label {
+  font-size: 0.78rem;
+  color: #888;
+}
+
+.modify-input-group input {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.9rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.modify-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.modify-save-btn {
+  background: rgba(234, 179, 8, 0.2);
+  border: 1px solid rgba(234, 179, 8, 0.4);
+  color: #84cc16;
+  padding: 0.45rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.modify-save-btn:hover:not(:disabled) {
+  background: rgba(234, 179, 8, 0.3);
+}
+
+.modify-save-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.modify-cancel-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #888;
+  padding: 0.45rem 0.8rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+}
+
+.modify-cancel-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ccc;
 }

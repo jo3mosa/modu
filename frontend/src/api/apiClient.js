@@ -39,7 +39,12 @@ export function getAccessToken() {
 /**
  * Refresh Token 쿠키로 새 Access Token을 발급받아 메모리에 저장한다.
  * 동시에 여러 번 호출되어도 한 번만 실제 네트워크 요청을 보낸다.
+ * (PrivateRoute 등에서 외부 호출 가능)
  */
+export async function refreshAccessToken() {
+  return callRefresh();
+}
+
 async function callRefresh() {
   if (refreshPromise) return refreshPromise;
 
