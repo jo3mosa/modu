@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any
 
 from app.memory.interfaces import MemoryStore
@@ -10,8 +11,12 @@ def load_memory_context(
     key_signals: list[str],
     memory_store: MemoryStore,
     days: int = 30,
+    as_of: datetime | None = None,
 ) -> dict[str, Any]:
-    """MemoryStore에서 과거 유사 판단 이력을 조회해 memory_context를 구성한다."""
+    """MemoryStore에서 과거 유사 판단 이력을 조회해 memory_context를 구성한다.
+
+    as_of: 조회 기준 시각. None이면 NOW(). backtest는 시뮬레이션 시점 주입.
+    """
     if not stock_codes and not sectors and not key_signals:
         return {
             "query_basis": {
@@ -31,6 +36,7 @@ def load_memory_context(
         key_signals=key_signals,
         limit=10,
         days=days,
+        as_of=as_of,
     )
 
     # only_loss=True: 손실로 끝난 판단만 별도 조회해 Decision Manager가 반복 실수를 피하게 한다
@@ -42,6 +48,7 @@ def load_memory_context(
         limit=5,
         days=days,
         only_loss=True,
+        as_of=as_of,
     )
 
     return {

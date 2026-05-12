@@ -1,3 +1,4 @@
+from datetime import datetime
 from functools import lru_cache
 from typing import Any, TypedDict
 
@@ -51,6 +52,7 @@ class ContextLoader:
         user_id: int,
         analysis_snapshot: dict[str, Any],
         candidate_assets: list[dict[str, Any]],
+        as_of: datetime | None = None,
     ) -> AgentContext:
         stock_codes = extract_stock_codes(candidate_assets)
         sectors = extract_sectors(candidate_assets)
@@ -65,6 +67,7 @@ class ContextLoader:
             key_signals=key_signals,
             memory_store=self.memory_store,
             days=30,
+            as_of=as_of,
         )
         history_context = load_history_context(user_id, key_signals)
 
@@ -99,6 +102,7 @@ def context_loader(state: InvestmentAgentState) -> dict[str, Any]:
         user_id=state.user_id,
         analysis_snapshot=state.analysis_snapshot,
         candidate_assets=state.candidate_assets,
+        as_of=state.as_of,
     )
 
     return {

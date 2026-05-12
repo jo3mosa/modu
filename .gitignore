@@ -84,3 +84,8 @@ venv/
 .env
 
 data/
+
+# 레퍼런스
+Vibe-Trading/
+TradingAgents/
+TradingGoose.github.io/

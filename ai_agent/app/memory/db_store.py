@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from sqlalchemy.engine import Engine
 
 from app.memory.interfaces import (
@@ -28,6 +30,7 @@ class DBMemoryStore:
         key_signals: list[str],
         limit: int = 10,
         days: int = 30,
+        as_of: datetime | None = None,
     ) -> list[PastDecision]:
         return self._retrieval.get_recent_decisions(
             user_id=user_id,
@@ -36,6 +39,7 @@ class DBMemoryStore:
             key_signals=key_signals,
             limit=limit,
             days=days,
+            as_of=as_of,
         )
 
     def get_similar_decisions(
@@ -47,6 +51,7 @@ class DBMemoryStore:
         limit: int = 5,
         days: int = 30,
         only_loss: bool = False,
+        as_of: datetime | None = None,
     ) -> list[PastDecision]:
         return self._retrieval.get_similar_decisions(
             user_id=user_id,
@@ -56,10 +61,11 @@ class DBMemoryStore:
             limit=limit,
             days=days,
             only_loss=only_loss,
+            as_of=as_of,
         )
 
-    def store_decision(self, log: DecisionLog) -> int:
-        return self._log.store_decision(log)
+    def store_decision(self, log: DecisionLog, judged_at: datetime | None = None) -> int:
+        return self._log.store_decision(log, judged_at=judged_at)
 
     def store_postmortem(self, report: PostMortemRecord) -> int:
         return self._log.store_postmortem(report)

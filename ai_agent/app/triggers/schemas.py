@@ -86,3 +86,6 @@ class UserTriggerEvent(BaseModel):
 
     portfolio_snapshot: dict[str, Any] = Field(default_factory=dict)
     user_context: dict[str, Any] = Field(default_factory=dict)
+
+    # backtest 시뮬레이션 기준 시각. None이면 실시간(NOW). retrieval/memory_log가 이 값을 사용.
+    as_of: datetime | None = Field(default=None, description="backtest 시뮬레이션 시각 (실시간은 None)")
