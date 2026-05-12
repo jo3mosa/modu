@@ -13,6 +13,11 @@ architecture spec 의 Rule별 TTL 표를 단일 소스로 보유:
   event_publisher.publish      → Kafka send
   성공 시에만 cooldown_manager.register
   ↑ 순서 중요: 발행 전 register 하면 Kafka 실패 시 rule 이 묶인 채 이벤트 미전달.
+
+동시성 한계:
+  현재 main.py 가 1분 cron + 종목 순회 단일 스레드라 (stock, rule) 단위 race 가
+  발생하지 않는다. engine 을 수평 확장(인스턴스 N개)하는 시점이 오면 filter↔register
+  사이 TOCTOU 가능 — 그때 SET NX EX 기반 atomic reservation 패턴으로 바꿀 것.
 """
 
 import logging
@@ -83,7 +88,7 @@ def filter_active(stock_code: str, rule_ids: list[str]) -> list[str]:
         pipe.exists(_key(stock_code, rid))
     results = pipe.execute()
 
-    return [rid for rid, exists in zip(rule_ids, results) if not exists]
+    return [rid for rid, exists in zip(rule_ids, results, strict=True) if not exists]
 
 
 def register(stock_code: str, rule_id: str) -> None:
