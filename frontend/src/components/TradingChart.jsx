@@ -177,6 +177,21 @@ export default function TradingChart({ stockCode }) {
       timeScale: {
         borderColor: 'rgba(255, 255, 255, 0.1)',
         timeVisible: true,
+        barSpacing: 8,
+        rightOffset: 3,
+      },
+      localization: {
+        locale: 'ko-KR',
+        // 차트 하단 tickMark 포맷: 일봉 'M월 d일', 분봉 'HH:mm'
+        timeFormatter: (time) => {
+          if (typeof time === 'number') {
+            const d = new Date(time * 1000);
+            return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+          }
+          // 'YYYY-MM-DD' string
+          const [, m, day] = String(time).split('-');
+          return `${parseInt(m, 10)}월 ${parseInt(day, 10)}일`;
+        },
       },
     });
     chartRef.current = chart;
@@ -349,9 +364,15 @@ export default function TradingChart({ stockCode }) {
             color: d.close >= d.open ? 'rgba(239,68,68,0.4)' : 'rgba(59,130,246,0.4)',
           }))
         );
-        // 초기 로드 / 기간 전환 시 전체 데이터가 차트 폭을 가득 채우도록 맞춤
-        // (무한 스크롤 트리거에서는 호출하지 않음 — visible range 보존이 우선)
-        chartRef.current?.timeScale().fitContent();
+        // 초기 로드 / 기간 전환 시 가장 최신 N개만 보이도록 설정
+        // (전체 fit은 캔들이 너무 압축되어 분봉이 점처럼 보임 → visible range 명시)
+        const visibleCount = Math.min(80, uniqueAdapted.length);
+        if (visibleCount > 0) {
+          chartRef.current?.timeScale().setVisibleLogicalRange({
+            from: uniqueAdapted.length - visibleCount,
+            to: uniqueAdapted.length - 1,
+          });
+        }
         // 실시간 틱이 들어올 때 합쳐 갱신할 기준 캔들 저장
         lastCandleRef.current = uniqueAdapted.length > 0 ? { ...uniqueAdapted[uniqueAdapted.length - 1] } : null;
         // 종목/기간이 바뀌면 이전 마커는 의미가 없으므로 비워둔다.

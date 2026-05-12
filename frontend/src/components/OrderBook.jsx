@@ -5,6 +5,7 @@ import './OrderBook.css';
 export default function OrderBook({ stockCode }) {
   const [activeTab, setActiveTab] = useState('ORDER'); // 'ORDER' | 'PENDING'
   const [orderType, setOrderType] = useState('BUY'); // 'BUY' | 'SELL'
+  const [orderMethod, setOrderMethod] = useState('LIMIT'); // 'LIMIT' | 'MARKET'
 
   const [price, setPrice] = useState(0);
   const [quantity, setQuantity] = useState(1);
@@ -79,7 +80,8 @@ export default function OrderBook({ stockCode }) {
     if (activeTab === 'PENDING') fetchPending();
   }, [activeTab, fetchPending]);
 
-  // 매수가능 정보 조회: side/stockCode/price 변경 시 300ms debounce로 호출.
+  // 매수가능 정보 조회: side/stockCode 변경 시 1초 debounce로 호출.
+  // (price 변경마다 호출하면 KIS 초당 거래건수 한도(EGW00201)에 걸려서 의존성에서 제외)
   // 연결 실패 시 404 → null 유지 → 화면 영역 미표시.
   useEffect(() => {
     if (!stockCode) {
@@ -88,13 +90,11 @@ export default function OrderBook({ stockCode }) {
     }
     if (buyingPowerTimerRef.current) clearTimeout(buyingPowerTimerRef.current);
 
-    const numericPrice = Number(price);
     buyingPowerTimerRef.current = setTimeout(async () => {
       try {
         const data = await getBuyingPower({
           stockCode,
           side: orderType,
-          orderPrice: numericPrice > 0 ? numericPrice : undefined,
         });
         setBuyingPower(data ?? null);
       } catch (error) {
@@ -103,12 +103,12 @@ export default function OrderBook({ stockCode }) {
         }
         setBuyingPower(null);
       }
-    }, 300);
+    }, 1000);
 
     return () => {
       if (buyingPowerTimerRef.current) clearTimeout(buyingPowerTimerRef.current);
     };
-  }, [stockCode, orderType, price]);
+  }, [stockCode, orderType]);
 
   const maxQuantity = useMemo(() => {
     const allQuantities = [...asks, ...bids].map((lv) => lv?.quantity ?? 0);
@@ -120,14 +120,16 @@ export default function OrderBook({ stockCode }) {
   };
 
   // 수동 매수/매도 주문 (POST /api/v1/orders)
-  // 현재 화면이 단가 입력형이라 LIMIT 고정. 추후 시장가 옵션 추가 시 orderMethod 토글 필요.
+  // orderMethod: LIMIT(지정가) / MARKET(시장가).
+  // - LIMIT: 사용자 입력 price 사용
+  // - MARKET: price 0 전송 (백엔드가 ORD_DVSN=01로 처리)
   const handleOrder = async () => {
     if (submittingOrder) return;
     if (!stockCode) {
       alert('종목이 선택되지 않았습니다.');
       return;
     }
-    if (!Number.isFinite(Number(price)) || Number(price) <= 0) {
+    if (orderMethod === 'LIMIT' && (!Number.isFinite(Number(price)) || Number(price) <= 0)) {
       alert('단가를 입력해 주세요.');
       return;
     }
@@ -142,9 +144,9 @@ export default function OrderBook({ stockCode }) {
         {
           stockCode,
           side: orderType,
-          orderMethod: 'LIMIT',
+          orderMethod,
           quantity: Number(quantity),
-          price: Number(price),
+          price: orderMethod === 'MARKET' ? 0 : Number(price),
         },
         idempotencyKeyRef.current
       );
@@ -279,6 +281,24 @@ export default function OrderBook({ stockCode }) {
               </button>
             </div>
 
+            {/* 주문 방식 토글: 지정가 / 시장가 */}
+            <div className="order-method-switch" style={{ display: 'flex', gap: '0.4rem', marginTop: '0.5rem' }}>
+              <button
+                className={`tool-btn ${orderMethod === 'LIMIT' ? 'active' : ''}`}
+                style={{ flex: 1, padding: '0.4rem 0.5rem' }}
+                onClick={() => setOrderMethod('LIMIT')}
+              >
+                지정가
+              </button>
+              <button
+                className={`tool-btn ${orderMethod === 'MARKET' ? 'active' : ''}`}
+                style={{ flex: 1, padding: '0.4rem 0.5rem' }}
+                onClick={() => setOrderMethod('MARKET')}
+              >
+                시장가
+              </button>
+            </div>
+
             {/* 매수가능 정보 — 백엔드 미연결 시 표시 안 함 */}
             {buyingPower && (
               <div className="buying-power-info" style={{ fontSize: '0.85em', color: '#aaa', margin: '0.5rem 0' }}>
@@ -294,9 +314,31 @@ export default function OrderBook({ stockCode }) {
               </div>
             )}
 
+            {/* 매도인데 보유 수량 0이면 안내 + 버튼 비활성화 */}
+            {orderType === 'SELL' && buyingPower && (buyingPower.maxSellQuantity ?? 0) === 0 && (
+              <div
+                style={{
+                  fontSize: '0.85em',
+                  color: '#ef4444',
+                  background: 'rgba(239,68,68,0.1)',
+                  padding: '0.5rem 0.75rem',
+                  borderRadius: '6px',
+                  margin: '0.5rem 0',
+                }}
+              >
+                보유 종목이 없습니다. 매도할 수 없어요.
+              </div>
+            )}
+
             <div className="input-group">
               <label>단가 (원)</label>
-              <input type="number" value={price} onChange={(e) => setPrice(Number(e.target.value))} />
+              <input
+                type="number"
+                value={orderMethod === 'MARKET' ? '' : price}
+                onChange={(e) => setPrice(Number(e.target.value))}
+                disabled={orderMethod === 'MARKET'}
+                placeholder={orderMethod === 'MARKET' ? '시장가 (체결 시점 가격)' : ''}
+              />
             </div>
             <div className="input-group">
               <label>수량 (주)</label>
@@ -305,13 +347,20 @@ export default function OrderBook({ stockCode }) {
 
             <div className="order-total">
               <span>총 주문 금액</span>
-              <strong>{(price * quantity).toLocaleString()}원</strong>
+              <strong>
+                {orderMethod === 'MARKET'
+                  ? '시장가'
+                  : `${(price * quantity).toLocaleString()}원`}
+              </strong>
             </div>
 
             <button
               className={`submit-order-btn ${orderType.toLowerCase()}`}
               onClick={handleOrder}
-              disabled={submittingOrder}
+              disabled={
+                submittingOrder ||
+                (orderType === 'SELL' && buyingPower && (buyingPower.maxSellQuantity ?? 0) === 0)
+              }
             >
               {submittingOrder ? '접수 중…' : (orderType === 'BUY' ? '매수 주문' : '매도 주문')}
             </button>

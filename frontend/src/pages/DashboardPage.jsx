@@ -170,8 +170,9 @@ export default function DashboardPage() {
     };
   }, [stockCodesKey]);
 
-  // 예수금/매입금액 보정용 폴링 (KIS 연동 시에만, 30초 주기)
+  // 예수금/매입금액 보정용 폴링 (KIS 연동 시에만, 60초 주기)
   // 실시간 가격 외 값들(availableCash 등)은 WS가 없으므로 주기적으로 갱신한다.
+  // (KIS 초당 거래건수 한도 고려해 60초로 설정 — 너무 짧으면 다른 호출과 겹쳐 EGW00201 발생)
   useEffect(() => {
     if (!isKisConnected) return;
     const intervalId = setInterval(async () => {
@@ -181,7 +182,7 @@ export default function DashboardPage() {
       } catch (error) {
         console.warn('자산 요약 폴링 실패:', error);
       }
-    }, 30000);
+    }, 60000);
     return () => clearInterval(intervalId);
   }, [isKisConnected]);
 
