@@ -19,6 +19,7 @@ export default function KakaoCallbackPage() {
       try {
         // POST /api/v1/auth/social/kakao → { onboarding: { isSurveyCompleted, isRuleSetCompleted } }
         const data = await socialLogin(code);
+        console.log('카카오 로그인 성공 - 온보딩 상태:', data.onboarding);
         const { isSurveyCompleted, isRuleSetCompleted } = data.onboarding;
 
         if (isSurveyCompleted && isRuleSetCompleted) {

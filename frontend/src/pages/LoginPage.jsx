@@ -30,6 +30,7 @@ export default function LoginPage() {
       // POST /api/v1/auth/test/login
       // 로컬 환경(Spring Profile: local)에서만 동작
       const loginData = await testLogin(Number(userId));
+      console.log('테스트 로그인 성공 - 온보딩 상태:', loginData.onboarding);
 
       // 응답의 onboarding 상태에 따라 라우팅 분기
       const { isSurveyCompleted, isRuleSetCompleted } = loginData.onboarding;

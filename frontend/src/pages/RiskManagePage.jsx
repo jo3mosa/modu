@@ -36,8 +36,9 @@ export default function RiskManagePage() {
   });
 
   // 페이지 진입 시 GET /me/rules로 초기화
-  // 이후 PUT 응답의 version을 갱신 보관해 다음 요청에 재전송
+  // 이후 PUT/PATCH 응답의 version을 갱신 보관해 다음 요청에 재전송
   const [ruleVersion, setRuleVersion] = useState(0);
+  const [profileVersion, setProfileVersion] = useState(0);
 
   // 재진단 모달 상태
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -84,6 +85,7 @@ export default function RiskManagePage() {
           profileSummary: data.profileSummary ?? '',
           principle: data.freeText ?? '',
         });
+        setProfileVersion(data.version ?? 0);
       })
       .catch((error) => {
         if (cancelled) return;
@@ -148,12 +150,14 @@ export default function RiskManagePage() {
       const result = await updateProfile({
         answers: answersPayload,
         freeText: modalPrinciple || undefined,
+        version: profileVersion,
       });
       setProfile({
         riskLevel: result?.riskLevel ?? null,
         profileSummary: result?.profileSummary ?? '',
         principle: modalPrinciple,
       });
+      setProfileVersion(result?.version ?? profileVersion + 1);
       setIsModalOpen(false);
     } catch (error) {
       console.error('투자 성향 저장 실패:', error);
