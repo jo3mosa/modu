@@ -2,11 +2,11 @@ package com.modu.backend.domain.trading.client;
 
 import com.modu.backend.global.error.ApiException;
 import com.modu.backend.global.error.CommonErrorCode;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Answers;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.client.RestClient;
@@ -31,8 +31,13 @@ class KisOrderHistoryClientTest {
     @Mock(answer = Answers.RETURNS_DEEP_STUBS)
     RestClient kisRestClient;
 
-    @InjectMocks
     KisOrderHistoryClient kisOrderHistoryClient;
+
+    @BeforeEach
+    void setUp() {
+        // maxPageFetch 를 명시적으로 주입 — @InjectMocks 의 int=0 기본값 회피
+        kisOrderHistoryClient = new KisOrderHistoryClient(kisRestClient, 2000);
+    }
 
     @Test
     @DisplayName("KIS 거래 이력 조회 API 호출 실패 시 EXTERNAL_API_ERROR 예외")

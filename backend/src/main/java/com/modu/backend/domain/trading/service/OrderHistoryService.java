@@ -115,8 +115,9 @@ public class OrderHistoryService {
         List<OrderHistoryResponse.OrderHistoryItem> merged = kisItems.stream()
                 .map(kisItem -> buildItem(kisItem, orderByOdno.get(kisItem.odno())))
                 .filter(item -> matchesSource(item, resolvedSource))
+                // OffsetDateTime 기준 시간 정렬 — 문자열 정렬은 오프셋 차이/포맷 변경에 취약
                 .sorted(Comparator.comparing(
-                        (OrderHistoryResponse.OrderHistoryItem i) -> i.createdAt(),
+                        (OrderHistoryResponse.OrderHistoryItem i) -> toSortKey(i.createdAt()),
                         Comparator.nullsLast(Comparator.reverseOrder())))
                 .toList();
 
@@ -126,6 +127,19 @@ public class OrderHistoryService {
         List<OrderHistoryResponse.OrderHistoryItem> pageItems = merged.subList(fromIdx, toIdx);
 
         return new OrderHistoryResponse(pageItems, totalCount, resolvedPage, resolvedSize);
+    }
+
+    /**
+     * 정렬용 시간 키 변환 — createdAt(ISO_OFFSET_DATE_TIME 문자열) → OffsetDateTime
+     * null/파싱 실패는 null 반환 (정렬에서 nullsLast 적용)
+     */
+    private OffsetDateTime toSortKey(String createdAt) {
+        if (createdAt == null) return null;
+        try {
+            return OffsetDateTime.parse(createdAt, ISO);
+        } catch (java.time.format.DateTimeParseException e) {
+            return null;
+        }
     }
 
     /**
