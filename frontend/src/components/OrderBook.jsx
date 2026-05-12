@@ -22,6 +22,10 @@ export default function OrderBook({ stockCode }) {
   const [loadingPending, setLoadingPending] = useState(false);
   // 주문별 취소 진행 상태 { [orderId]: true }
   const [canceling, setCanceling] = useState({});
+  // 정정 중인 주문: { orderId, newPrice, newQuantity } | null
+  const [modifyingOrder, setModifyingOrder] = useState(null);
+  // 주문별 정정 API 호출 중 여부 { [orderId]: true }
+  const [modifying, setModifying] = useState({});
 
   // 매수가능 정보 (연결 실패 시 → null 시 영역 미표시)
   // { maxBuyAmount, maxBuyQuantity, maxSellQuantity, availableCash }
@@ -184,6 +188,53 @@ export default function OrderBook({ stockCode }) {
       setCanceling((prev) => {
         const next = { ...prev };
         delete next[order.orderId];
+        return next;
+      });
+    }
+  };
+
+  // 정정 폼 열기: 현재 주문의 price/remainQuantity를 초기값으로 세팅
+  const handleOpenModify = (order) => {
+    setModifyingOrder({
+      orderId: order.orderId,
+      newPrice: order.price ?? 0,
+      newQuantity: order.remainQuantity ?? order.quantity ?? 1,
+    });
+  };
+
+  const handleCloseModify = () => setModifyingOrder(null);
+
+  // 정정 저장 (PATCH /api/v1/orders/{orderId}, action=MODIFY)
+  // 백엔드: newPrice or newQuantity 중 하나 이상 필수, 각 @Min(1)
+  const handleSaveModify = async () => {
+    if (!modifyingOrder) return;
+    const { orderId, newPrice, newQuantity } = modifyingOrder;
+    if (modifying[orderId]) return;
+
+    const parsedPrice = Number(newPrice);
+    const parsedQty   = Number(newQuantity);
+    if (parsedPrice < 1 || parsedQty < 1) {
+      alert('단가와 수량은 1 이상이어야 합니다.');
+      return;
+    }
+
+    setModifying((prev) => ({ ...prev, [orderId]: true }));
+    try {
+      await updateOrder(orderId, {
+        action: 'MODIFY',
+        newPrice: parsedPrice,
+        newQuantity: parsedQty,
+      });
+      alert('주문이 정정되었습니다.');
+      setModifyingOrder(null);
+      fetchPending();
+    } catch (error) {
+      console.error('주문 정정 실패:', error);
+      alert(error.message || '주문 정정에 실패했습니다.');
+    } finally {
+      setModifying((prev) => {
+        const next = { ...prev };
+        delete next[orderId];
         return next;
       });
     }
@@ -396,35 +447,91 @@ export default function OrderBook({ stockCode }) {
                 const sideLabel = order.side === 'BUY' ? '매수' : '매도';
                 return (
                   <div key={key} className="pending-item">
-                    <div className="pending-info">
-                      <span className={`pending-type ${(order.side ?? '').toLowerCase()}`}>
-                        {sideLabel}
-                      </span>
-                      <div className="pending-details">
-                        <strong>{order.stockName ?? order.stockCode}</strong>
-                        <span>
-                          {order.price?.toLocaleString() ?? '-'}원 · {order.quantity?.toLocaleString() ?? '-'}주
+                    <div className="pending-item-row">
+                      <div className="pending-info">
+                        <span className={`pending-type ${(order.side ?? '').toLowerCase()}`}>
+                          {sideLabel}
                         </span>
-                        <span style={{ color: '#888', fontSize: '0.85em' }}>
-                          체결 {order.filledQuantity ?? 0} / 미체결 {order.remainQuantity ?? 0}
-                        </span>
-                        {order.createdAt && (
-                          <span className="pending-time" style={{ fontSize: '0.85em', color: '#888' }}>
-                            {order.createdAt}
+                        <div className="pending-details">
+                          <strong>{order.stockName ?? order.stockCode}</strong>
+                          <span>
+                            {order.price?.toLocaleString() ?? '-'}원 · {order.quantity?.toLocaleString() ?? '-'}주
                           </span>
-                        )}
+                          <span style={{ color: '#888', fontSize: '0.85em' }}>
+                            체결 {order.filledQuantity ?? 0} / 미체결 {order.remainQuantity ?? 0}
+                          </span>
+                          {order.createdAt && (
+                            <span className="pending-time" style={{ fontSize: '0.85em', color: '#888' }}>
+                              {order.createdAt}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                    <div className="pending-actions">
+                      <div className="pending-actions">
+                      <button
+                        className="modify-btn"
+                        onClick={() => handleOpenModify(order)}
+                        disabled={!order.orderId || !!modifying[order.orderId] || !!canceling[order.orderId]}
+                        title={!order.orderId ? '시스템에 기록된 주문만 정정 가능' : ''}
+                      >
+                        정정
+                      </button>
                       <button
                         className="cancel-btn"
                         onClick={() => handleCancelOrder(order)}
-                        disabled={!order.orderId || !!canceling[order.orderId]}
+                        disabled={!order.orderId || !!canceling[order.orderId] || !!modifying[order.orderId]}
                         title={!order.orderId ? '시스템에 기록된 주문만 취소 가능' : ''}
                       >
                         {canceling[order.orderId] ? '취소 중 …' : '취소'}
                       </button>
+                      </div>
                     </div>
+
+                    {/* 인라인 정정 폼: 해당 주문 클릭 시 펼쳐짐 */}
+                    {modifyingOrder?.orderId === order.orderId && (
+                      <div className="modify-form">
+                        <div className="modify-inputs">
+                          <div className="modify-input-group">
+                            <label>단가 (원)</label>
+                            <input
+                              type="number"
+                              min={1}
+                              value={modifyingOrder.newPrice}
+                              onChange={(e) =>
+                                setModifyingOrder((prev) => ({ ...prev, newPrice: e.target.value }))
+                              }
+                            />
+                          </div>
+                          <div className="modify-input-group">
+                            <label>수량 (주)</label>
+                            <input
+                              type="number"
+                              min={1}
+                              value={modifyingOrder.newQuantity}
+                              onChange={(e) =>
+                                setModifyingOrder((prev) => ({ ...prev, newQuantity: e.target.value }))
+                              }
+                            />
+                          </div>
+                        </div>
+                        <div className="modify-actions">
+                          <button
+                            className="modify-save-btn"
+                            onClick={handleSaveModify}
+                            disabled={modifying[order.orderId]}
+                          >
+                            {modifying[order.orderId] ? '정정 중 …' : '저장'}
+                          </button>
+                          <button
+                            className="modify-cancel-btn"
+                            onClick={handleCloseModify}
+                            disabled={modifying[order.orderId]}
+                          >
+                            닫기
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
