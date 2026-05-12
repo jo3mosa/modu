@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.modu.backend.global.error.ApiException;
 import com.modu.backend.global.error.CommonErrorCode;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -59,8 +60,11 @@ public class KisOrderHistoryClient {
     /** TR_ID 분기 기준 — 3개월 */
     private static final int RECENT_PERIOD_MONTHS = 3;
 
-    /** 연속조회 최대 반복 횟수 — 무한루프 방지 */
-    private static final int MAX_PAGE_FETCH = 200;
+    /**
+     * 연속조회 진행 없음(같은 NK100 키 반복) 허용 횟수 — 비정상 무한루프 방지용 가드
+     * KIS 응답이 안정적이라면 정상 흐름에서 동일 키가 연속 등장할 일이 없으므로 작은 값으로 충분
+     */
+    private static final int NO_PROGRESS_THRESHOLD = 3;
 
     /** sll_buy_dvsn_cd: 01=매도(SELL), 02=매수(BUY) */
     private static final String SELL_CODE = "01";
@@ -77,8 +81,16 @@ public class KisOrderHistoryClient {
 
     private final RestClient kisRestClient;
 
-    public KisOrderHistoryClient(RestClient kisRestClient) {
+    /**
+     * 연속조회 최대 페이지 수 — 설정값 (default 2000)
+     * CTSC9215R(15건/페이지) 기준 30,000건까지 수용. 그 이상 필요한 계좌는 설정으로 상향.
+     */
+    private final int maxPageFetch;
+
+    public KisOrderHistoryClient(RestClient kisRestClient,
+                                 @Value("${kis.order-history.max-page-fetch:2000}") int maxPageFetch) {
         this.kisRestClient = kisRestClient;
+        this.maxPageFetch = maxPageFetch;
     }
 
     /**
@@ -104,7 +116,11 @@ public class KisOrderHistoryClient {
         String ctxFk = "";
         String ctxNk = "";
 
-        for (int page = 0; page < MAX_PAGE_FETCH; page++) {
+        // 진행 없음(같은 NK100 키 반복) 감지용 추적값
+        String lastNk = null;
+        int noProgressCount = 0;
+
+        for (int page = 0; page < maxPageFetch; page++) {
             HistoryResponse response = callKis(accessToken, appKey, appSecret,
                     cano, acntPrdtCd, fromYmd, toYmd, trId, ctxFk, ctxNk);
 
@@ -120,13 +136,39 @@ public class KisOrderHistoryClient {
             if (nextNk == null || nextNk.isBlank()) {
                 return accumulated;
             }
+            String trimmedNk = nextNk.trim();
+
+            // 같은 NK100 이 반복 등장 → 진행 없음. 임계치 초과 시 무한루프로 간주
+            if (trimmedNk.equals(lastNk)) {
+                noProgressCount++;
+                if (noProgressCount >= NO_PROGRESS_THRESHOLD) {
+                    log.error("KIS 거래 이력 연속조회 진행 없음 감지 - cano: {}, from: {}, to: {}",
+                            maskCano(cano), fromYmd, toYmd);
+                    throw new ApiException(CommonErrorCode.EXTERNAL_API_ERROR);
+                }
+            } else {
+                noProgressCount = 0;
+            }
+            lastNk = trimmedNk;
+
             ctxFk = nextFk == null ? "" : nextFk.trim();
-            ctxNk = nextNk.trim();
+            ctxNk = trimmedNk;
         }
 
-        log.error("KIS 거래 이력 연속조회 최대 반복 횟수 초과 - cano: {}, from: {}, to: {}",
-                cano, fromYmd, toYmd);
+        log.error("KIS 거래 이력 연속조회 최대 반복 횟수 초과 - cano: {}, from: {}, to: {}, maxPageFetch: {}",
+                maskCano(cano), fromYmd, toYmd, maxPageFetch);
         throw new ApiException(CommonErrorCode.EXTERNAL_API_ERROR);
+    }
+
+    /**
+     * 계좌번호 마스킹 — 로그 출력용
+     * 8자리 cano 의 끝 4자리만 표시. null/짧은 값은 안전하게 처리.
+     */
+    private String maskCano(String cano) {
+        if (cano == null || cano.isBlank()) return "****";
+        int len = cano.length();
+        if (len <= 4) return "*".repeat(len);
+        return "*".repeat(len - 4) + cano.substring(len - 4);
     }
 
     private HistoryResponse callKis(String accessToken, String appKey, String appSecret,
