@@ -29,7 +29,8 @@ export default function PrivateRoute({ children }) {
       try {
         await refreshAccessToken();
         if (!cancelled) setStatus(STATUS.AUTHENTICATED);
-      } catch {
+      } catch (error) {
+        console.warn('[PrivateRoute] refresh 실패 → /login 이동:', error);
         if (!cancelled) setStatus(STATUS.UNAUTHENTICATED);
       }
     })();
