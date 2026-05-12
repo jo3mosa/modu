@@ -47,13 +47,13 @@ pydantic==2.13.3
 pydantic_core==2.46.3
 Pygments==2.20.0
 pykrx==1.2.7
+psycopg2-binary==2.9.10
 pymongo==4.17.0
 pyparsing==3.3.2
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.2
 pytz==2026.1.post1
 PyYAML==6.0.3
-redis==7.4.0
 regex==2026.4.4
 requests==2.33.1
 requests-file==3.0.1
