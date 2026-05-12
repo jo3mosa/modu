@@ -43,7 +43,7 @@ spring:
 
 app:
   cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,http://k14b106.p.ssafy.io}
   kafka:
     topic:
       partitions: 3
@@ -71,7 +71,7 @@ kis:
     reconnect-max-attempts: ${KIS_WEBSOCKET_RECONNECT_MAX_ATTEMPTS:3}
     reconnect-delay-ms: ${KIS_WEBSOCKET_RECONNECT_DELAY_MS:1000}
     connection-timeout-ms: ${KIS_WEBSOCKET_CONNECTION_TIMEOUT_MS:5000}
-    allowed-origin-patterns: ${KIS_WEBSOCKET_ALLOWED_ORIGIN_PATTERNS:http://localhost:3000,http://localhost:5173}
+    allowed-origin-patterns: ${KIS_WEBSOCKET_ALLOWED_ORIGIN_PATTERNS:http://localhost:3000,http://localhost:5173,http://k14b106.p.ssafy.io}
 
 # JWT 설정
 jwt:
