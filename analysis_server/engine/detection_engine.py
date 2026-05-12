@@ -214,6 +214,16 @@ RULE_REASONS: dict[str, str] = {
 }
 
 
+# RULES ↔ RULE_REASONS 키셋 드리프트 차단 — 룰 추가 시 사유 누락하면 모듈 로드 자체가 실패.
+# event_publisher._build_payload 의 .get(rid, rid) fallback 은 production -O 모드 등 만일의 안전망.
+_RULE_KEY_MISMATCH = set(RULES) ^ set(RULE_REASONS)
+if _RULE_KEY_MISMATCH:
+    raise RuntimeError(
+        f"RULES / RULE_REASONS 키셋 불일치: {sorted(_RULE_KEY_MISMATCH)}. "
+        "두 dict 를 동시에 갱신해야 합니다."
+    )
+
+
 def detect(signal: Signal) -> list[str]:
     """Signal → 충족된 rule_ids 리스트. 룰 평가는 등록 순서.
 

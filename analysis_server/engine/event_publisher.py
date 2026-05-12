@@ -68,11 +68,20 @@ def publish(stock_code: str, rule_ids: list[str], signal: Signal) -> bool:
 
     payload = _build_payload(stock_code, rule_ids, signal)
 
-    ok = publish_event(
-        topic=KafkaTopic.MARKET_SIGNAL_DETECTED,
-        key=stock_code,
-        payload=payload,
-    )
+    # publish_event 는 KafkaError 만 catch — JSON 직렬화 오류 / unexpected type 등
+    # 다른 예외는 escape. publish() 계약(True/False)을 항상 만족시키도록 한 번 더 래핑.
+    try:
+        ok = publish_event(
+            topic=KafkaTopic.MARKET_SIGNAL_DETECTED,
+            key=stock_code,
+            payload=payload,
+        )
+    except Exception:
+        logger.exception(
+            "publish_event raised (stock=%s rules=%s) — cooldown 미등록, 다음 cycle 재시도",
+            stock_code, rule_ids,
+        )
+        return False
     if not ok:
         # publish_event 가 이미 KafkaError 로그 — 여기선 비즈니스 컨텍스트만.
         logger.warning(
