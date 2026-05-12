@@ -27,6 +27,10 @@ class KisApiClient:
         self._token_cache: tuple[str, datetime] | None = None
         self._token_lock = threading.Lock()
 
+    # _token_lock 안에서 호출되므로 hang/지연이 모든 worker 를 block 시킴 →
+    # timeout 과 raise_for_status() 로 실패를 빨리 surface 한다.
+    _TOKEN_ISSUE_TIMEOUT = 10  # seconds
+
     def _issue_token(self):
         """접근 토큰을 발급받고 파일·메모리 캐시에 저장합니다. 호출자는 _token_lock 보유 가정."""
         url = f"{self.base_url}/oauth2/tokenP"
@@ -37,24 +41,25 @@ class KisApiClient:
             "appsecret": self.app_secret
         }
 
-        response = requests.post(url, headers=headers, data=json.dumps(body))
-        res_data = response.json()
+        response = requests.post(
+            url, headers=headers, data=json.dumps(body),
+            timeout=self._TOKEN_ISSUE_TIMEOUT,
+        )
+        response.raise_for_status()   # 4xx/5xx → HTTPError 즉시 propagate
+        res_data = response.json()    # HTML 등 비-JSON 응답이면 JSONDecodeError
 
-        if response.status_code == 200:
-            access_token = res_data["access_token"]
-            expired_at = datetime.now() + timedelta(hours=23)
+        access_token = res_data["access_token"]
+        expired_at = datetime.now() + timedelta(hours=23)
 
-            with open(self.token_file, "w") as f:
-                json.dump(
-                    {"access_token": access_token, "expired_at": expired_at.isoformat()},
-                    f,
-                )
+        with open(self.token_file, "w") as f:
+            json.dump(
+                {"access_token": access_token, "expired_at": expired_at.isoformat()},
+                f,
+            )
 
-            self._token_cache = (access_token, expired_at)
-            print("[SUCCESS] KIS API 토큰 신규 발급 및 파일 저장 완료")
-            return access_token
-        else:
-            raise Exception(f"토큰 발급 실패: {res_data}")
+        self._token_cache = (access_token, expired_at)
+        print("[SUCCESS] KIS API 토큰 신규 발급 및 파일 저장 완료")
+        return access_token
 
     def _get_valid_token(self):
         """thread-safe 토큰 조회.

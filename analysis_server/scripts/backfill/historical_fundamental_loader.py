@@ -329,9 +329,11 @@ def fetch_annual_statements(
             print(f"       조치: OpenDART 콘솔에서 등록 IP 확인 후 재실행")
         else:
             print(f"       원인: 치명적 응답 (status={e.status}, message={e.message})")
-        return
+        # caller (run_full_pipeline) 가 Phase 2 진입을 중단할 수 있도록 명시 신호
+        return False
 
     print(f"[FIN] DART 적재 완료 — fetched={fetched}, skipped={skipped}, failed={failed}")
+    return True
 
 
 # ---------- Phase 2: financial_statements + daily_ohlcv → daily_fundamentals ----------
@@ -520,14 +522,21 @@ def run_full_pipeline(
     stock_codes=None,
     sleep_between=0.5,
 ):
-    """Phase 1 (DART fetch) → Phase 2 (daily panel build) 통합 실행."""
-    fetch_annual_statements(
+    """Phase 1 (DART fetch) → Phase 2 (daily panel build) 통합 실행.
+
+    Phase 1 이 DART critical error (quota / 인증 / IP) 로 중단되면 Phase 2 도 중단.
+    반쯤 갱신된 financial_statements 기반으로 panel 을 만드는 silent corruption 방지.
+    """
+    ok = fetch_annual_statements(
         db_path=db_path,
         start_date=start_date,
         end_date=end_date,
         stock_codes=stock_codes,
         sleep_between=sleep_between,
     )
+    if ok is False:
+        print("[SKIP] Phase 1 중단 — Phase 2 (daily_fundamentals 빌드) 도 건너뜀")
+        return
     build_daily_fundamentals(
         db_path=db_path,
         start_date=start_date,

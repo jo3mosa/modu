@@ -21,11 +21,16 @@ import logging
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from clients.dart_api_client import DartApiClient
 from clients.redis_client import set_json
 
 logger = logging.getLogger(__name__)
+
+# DART 공시 기준일은 한국시간. UTC 컨테이너에서 datetime.now() 그대로 쓰면
+# KST 오전 시간대에 end_de 가 전일로 계산되어 당일 공시가 누락됨.
+KST = ZoneInfo("Asia/Seoul")
 
 
 # ─── 공시 임팩트 분류 ────────────────────────────────────────────────────────
@@ -89,7 +94,7 @@ def fetch_recent_disclosures(
     dart: DartApiClient, days_back: int = LOOKBACK_DAYS,
 ) -> list[dict]:
     """DART batch list 모든 페이지 합쳐 반환."""
-    now = datetime.now()
+    now = datetime.now(KST)
     end_de = now.strftime("%Y%m%d")
     bgn_de = (now - timedelta(days=days_back)).strftime("%Y%m%d")
 

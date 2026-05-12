@@ -26,9 +26,11 @@ import argparse
 import logging
 import os
 import sqlite3
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from clients.kis_api_client import KisApiClient
 from collectors.candle_collector import RateLimiter
@@ -41,6 +43,14 @@ from scripts.backfill.historical_fundamental_loader import (
 )
 
 logger = logging.getLogger(__name__)
+
+# 처리 기준일은 한국시간. UTC 컨테이너에서 datetime.now() 그대로 쓰면
+# KST 새벽 시간대에 전일 날짜로 적재되어 pick_fiscal_year 도 어긋남.
+KST = ZoneInfo("Asia/Seoul")
+
+# SQLite 는 single-writer 모델이라 worker 가 동시에 REPLACE INTO + COMMIT 하면
+# 간헐적으로 "database is locked" 발생. 계산은 병렬, write 만 직렬화.
+_DB_WRITE_LOCK = threading.Lock()
 
 
 # ─── 설정 ────────────────────────────────────────────────────────────────────
@@ -104,9 +114,11 @@ def process_stock(
         if row is None:
             return False
 
-        with sqlite3.connect(db_path) as conn:
-            conn.execute(DAILY_FUND_INSERT_SQL, row)
-            conn.commit()
+        # SQLite single-writer 직렬화 — read 는 lock 밖에서 이미 끝남.
+        with _DB_WRITE_LOCK:
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(DAILY_FUND_INSERT_SQL, row)
+                conn.commit()
         return True
     except Exception as e:
         logger.warning("process_stock(%s) failed: %s", stock_code, e)
@@ -124,7 +136,7 @@ def run_once(
     stock_filter: list[str] | None = None,
 ) -> dict:
     """주어진 날짜의 daily_fundamentals 1 사이클 적재 (병렬)."""
-    date_str = date_str or datetime.now().strftime("%Y-%m-%d")
+    date_str = date_str or datetime.now(KST).strftime("%Y-%m-%d")
     fiscal_year = pick_fiscal_year(date_str)
     logger.info("processing date=%s, fiscal_year=%d", date_str, fiscal_year)
 
