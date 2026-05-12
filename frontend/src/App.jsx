@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import AuthLayout from './layouts/AuthLayout';
 import MainLayout from './layouts/MainLayout';
+import PrivateRoute from './components/PrivateRoute';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import KakaoCallbackPage from './pages/KakaoCallbackPage';
@@ -19,10 +20,23 @@ function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/auth/callback/kakao" element={<KakaoCallbackPage />} />
-          <Route path="/onboarding" element={<OnboardingPage />} />
+          <Route
+            path="/onboarding"
+            element={
+              <PrivateRoute>
+                <OnboardingPage />
+              </PrivateRoute>
+            }
+          />
         </Route>
-        
-        <Route element={<MainLayout />}>
+
+        <Route
+          element={
+            <PrivateRoute>
+              <MainLayout />
+            </PrivateRoute>
+          }
+        >
           <Route path="/home" element={<DashboardPage />} />
           <Route path="/trading" element={<TradingPage />} />
           <Route path="/report" element={<ReportPage />} />
