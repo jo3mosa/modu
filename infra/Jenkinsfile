@@ -344,6 +344,7 @@ def deployToCluster(String configId, String clusterName) {
                                 BE_IMAGE=$(kubectl --kubeconfig=$KUBECONFIG get deployment modu-backend \
                                     -n modu-apps \
                                     -o jsonpath='{.spec.template.spec.containers[0].image}')
+                                [ -z "$BE_IMAGE" ] && { echo "❌ modu-backend 이미지 값이 비어있습니다."; exit 1; }
                             else
                                 echo "⚠️ modu-backend Deployment 없음 — :latest 폴백"
                                 BE_IMAGE="$FULL_URI_BE:latest"
@@ -357,6 +358,7 @@ def deployToCluster(String configId, String clusterName) {
                                 FE_IMAGE=$(kubectl --kubeconfig=$KUBECONFIG get deployment modu-frontend \
                                     -n modu-apps \
                                     -o jsonpath='{.spec.template.spec.containers[0].image}')
+                                [ -z "$FE_IMAGE" ] && { echo "❌ modu-frontend 이미지 값이 비어있습니다."; exit 1; }
                             else
                                 echo "⚠️ modu-frontend Deployment 없음 — :latest 폴백"
                                 FE_IMAGE="$FULL_URI_FE:latest"
@@ -370,6 +372,7 @@ def deployToCluster(String configId, String clusterName) {
                                 AI_IMAGE=$(kubectl --kubeconfig=$KUBECONFIG get deployment modu-ai-agent \
                                     -n modu-apps \
                                     -o jsonpath='{.spec.template.spec.containers[0].image}')
+                                [ -z "$AI_IMAGE" ] && { echo "❌ modu-ai-agent 이미지 값이 비어있습니다."; exit 1; }
                             else
                                 echo "⚠️ modu-ai-agent Deployment 없음 — :latest 폴백"
                                 AI_IMAGE="$FULL_URI_AI:latest"
