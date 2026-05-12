@@ -129,7 +129,7 @@ class MemoryStore(Protocol):
     key_signals:
         Analysis Layer, Agent, DB가 같은 어휘를 사용해야 한다.
         예: "RSI_OVERSOLD", "GOLDEN_CROSS", "VOLUME_SPIKE"
-        실제 enum 목록은 DA codebook에서 별도로 합의한다.
+        실제 enum 목록은 Analysis Layer codebook에서 별도로 합의한다.
 
     매칭 조건:
         - stock_codes 내부 값끼리는 OR 매칭

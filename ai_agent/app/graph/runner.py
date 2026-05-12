@@ -33,7 +33,6 @@ def run_and_publish(event: UserTriggerEvent) -> None:
         "source_event_id": event.event_id,
         "stock_code": event.stock_code,
         "final_decision": final_decision.model_dump() if final_decision else None,
-        "execution_result": result.get("execution_result"),
         "flow_status": result.get("flow_status"),
     }
 

@@ -13,6 +13,7 @@ import org.springframework.http.HttpStatus;
 public enum OrderErrorCode implements ErrorCode {
 
     INSUFFICIENT_BALANCE("ORDER_001", HttpStatus.BAD_REQUEST, "잔고가 부족합니다."),
+    SELL_REQUIRES_STOCK_CODE("ORDER_002", HttpStatus.BAD_REQUEST, "매도 조회 시 종목코드가 필요합니다."),
     DAILY_ORDER_LIMIT_EXCEEDED("ORDER_003", HttpStatus.BAD_REQUEST, "일일 최대 주문 금액을 초과했습니다."),
     ORDER_ALREADY_FILLED("ORDER_004", HttpStatus.BAD_REQUEST, "이미 체결된 주문은 정정/취소할 수 없습니다."),
     ORDER_NOT_FOUND("ORDER_005", HttpStatus.NOT_FOUND, "주문을 찾을 수 없습니다."),
