@@ -191,6 +191,29 @@ RULES: dict[str, callable] = {
 }
 
 
+# rule_id → 한국어 사유. ai_agent MarketTriggerEvent.trigger.trigger_reason 에 들어감.
+# RULES 와 같은 인덱스로 매핑 — 새 룰 추가 시 두 dict 동시 갱신.
+RULE_REASONS: dict[str, str] = {
+    "RSI-001":   "RSI 과매수",
+    "RSI-002":   "RSI 과매도",
+    "RSI-003":   "RSI 70 상향 돌파",
+    "RSI-004":   "RSI 30 하향 이탈",
+    "MACD-001":  "MACD 골든크로스",
+    "MACD-002":  "MACD 데드크로스",
+    "BB-001":    "볼린저밴드 상단 이탈",
+    "BB-002":    "볼린저밴드 하단 이탈",
+    "ATR-001":   "변동성 급증",
+    "MFI-001":   "MFI 과매수",
+    "MFI-002":   "MFI 과매도",
+    "PRICE-001": "급등",
+    "PRICE-002": "급락",
+    "VOL-001":   "거래량 급증",
+    "SENT-001":  "긍정 뉴스 강세",
+    "SENT-002":  "부정 뉴스 강세",
+    "DART-001":  "긴급 공시",
+}
+
+
 def detect(signal: Signal) -> list[str]:
     """Signal → 충족된 rule_ids 리스트. 룰 평가는 등록 순서.
 
