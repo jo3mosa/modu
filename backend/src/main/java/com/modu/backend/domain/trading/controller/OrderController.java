@@ -171,11 +171,22 @@ public class OrderController {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success("주문이 접수되었습니다.", response));
     }
-    /**
-     * * SSE 연결 수립 엔드포인트
-     * * 프론트가 로그인 후 한 번 호출하여 연결 유지
-     * * produces: SSE 응답 형식 지정 (필수)
-     * */
+    @Operation(
+            summary = "주문 결과 SSE 구독",
+            description = """
+                    주문 처리 결과를 실시간으로 수신하기 위한 SSE(Server-Sent Events) 연결을 수립합니다.
+
+                    - 로그인 후 최초 1회 호출하여 연결을 유지합니다.
+                    - 주문 접수(POST /api/v1/orders) 후 체결/실패 결과가 이 연결로 푸시됩니다.
+                    - 연결 타임아웃은 1시간이며, 이후 재연결이 필요합니다.
+                    - `text/event-stream` 형식으로 응답되므로 EventSource API를 사용하세요.
+                    """
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "SSE 연결 수립 성공",
+                    content = @Content(schema = @Schema(example = "data:{\"orderId\":1,\"status\":\"FILLED\",\"message\":\"체결 완료\"}"))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "인증 실패")
+    })
     @GetMapping(value = "/connect", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter connect(@AuthenticationPrincipal Long userId) {
         return orderSseEmitterManager.connect(userId);

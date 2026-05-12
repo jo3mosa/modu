@@ -444,4 +444,19 @@ public class OrderService {
                 buyPowerInfo.availableCash()
         );
     }
+
+    /**
+     * KIS 주문 접수 결과를 DB에 반영합니다.
+     *
+     * [트랜잭션 분리 이유]
+     * KisOrderConsumer.consume()은 외부 KIS API 호출을 포함하므로 @Transactional을 걸면
+     * KIS API 응답 대기 시간 동안 DB 커넥션이 점유되어 커넥션 풀 고갈 위험이 있습니다.
+     * 따라서 DB 업데이트만 별도 @Transactional 메서드로 분리하여 커넥션 점유 시간을 최소화합니다.
+     */
+    @Transactional
+    public void updateKisOrderInfo(Long orderId, String kisOrderNo, String kisOrgNo) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new RuntimeException("주문 없음 - orderId=" + orderId));
+        order.updateKisInfo(kisOrderNo, kisOrgNo, OffsetDateTime.now());
+    }
 }

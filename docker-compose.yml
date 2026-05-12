@@ -9,6 +9,8 @@ services:
   frontend:
     build:
       context: ./frontend
+      args:
+        VITE_KAKAO_CLIENT_ID: ${VITE_KAKAO_CLIENT_ID}
       dockerfile: Dockerfile
     container_name: modu-frontend
     ports:

@@ -85,7 +85,8 @@ pipeline {
                     withCredentials([
                         string(credentialsId: "${REGISTRY_BE_ID}", variable: 'FULL_URI_BE'),
                         string(credentialsId: "${REGISTRY_FE_ID}", variable: 'FULL_URI_FE'),
-                        string(credentialsId: "${REGISTRY_AI_ID}", variable: 'FULL_URI_AI')
+                        string(credentialsId: "${REGISTRY_AI_ID}", variable: 'FULL_URI_AI'),
+                        string(credentialsId: 'VITE_KAKAO_CLIENT_ID', variable: 'VITE_KAKAO_CLIENT_ID')
                     ]) {
                         // ECR 호스트(레지스트리 도메인)만 추출 — 마지막 '/' 이전 문자열
                         def beRegistry = FULL_URI_BE.substring(0, FULL_URI_BE.lastIndexOf('/'))
@@ -138,7 +139,11 @@ ${log}
                                     env.FAILED_STAGE = "2-2. 프론트엔드 빌드 및 푸시"
                                     sh '''
                                     {
-                                      docker build -t "$FULL_URI_FE:$BUILD_NUMBER" -t "$FULL_URI_FE:latest" frontend
+                                      docker build \
+                                        --build-arg VITE_KAKAO_CLIENT_ID="$VITE_KAKAO_CLIENT_ID" \
+                                        -t "$FULL_URI_FE:$BUILD_NUMBER" \
+                                        -t "$FULL_URI_FE:latest" \
+                                        frontend
                                       docker push "$FULL_URI_FE:$BUILD_NUMBER"
                                       docker push "$FULL_URI_FE:latest"
                                     } 2> frontend/fe_err.log

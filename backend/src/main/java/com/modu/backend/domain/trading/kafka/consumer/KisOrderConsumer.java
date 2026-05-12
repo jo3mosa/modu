@@ -4,6 +4,7 @@ import com.modu.backend.domain.trading.client.KisOrderClient;
 import com.modu.backend.domain.trading.dto.OrderSseEvent;
 import com.modu.backend.domain.trading.entity.*;
 import com.modu.backend.domain.trading.repository.OrderRepository;
+import com.modu.backend.domain.trading.service.OrderService;
 import com.modu.backend.domain.trading.sse.OrderSseEmitterManager;
 import com.modu.backend.domain.user.entity.KisCredential;
 import com.modu.backend.domain.user.repository.KisCredentialRepository;
@@ -17,9 +18,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.time.OffsetDateTime;
 
 @Slf4j
 @Component
@@ -32,20 +30,24 @@ public class KisOrderConsumer {
     private final KisOrderClient kisOrderClient;
     private final AesGcmEncryptor encryptor;
     private final OrderSseEmitterManager orderSseEmitterManager;
+    // KIS API 호출과 DB 업데이트를 분리하기 위해 OrderService를 통해 트랜잭션 처리
+    private final OrderService orderService;
 
-    @Transactional
     @KafkaListener(
         topics = KafkaTopic.TRADE_ORDER_SUBMITTED,
         groupId = KafkaConsumerGroup.KIS_ORDER,
         containerFactory = "kisOrderFactory"
     )
     public void consume(TradeOrderMessage message, Acknowledgment ack) {
+        // catch 블록에서도 orderId를 참조할 수 있도록 try 밖에 선언
+        // 주문 조회 성공 시 DB PK, 실패 시 null (→ catch에서 idempotencyKey로 폴백)
+        Order order = null;
         try {
             log.info("주문 수신: orderId={}, userId={}, stockCode={}",
                 message.orderId(), message.userId(), message.stockCode());
 
             // 1. 기존 PENDING 주문 조회 (Kafka 발행 전 OrderService/SignalHandler에서 저장)
-            Order order = orderRepository
+            order = orderRepository
                     .findByUserIdAndIdempotencyKey(message.userId(), message.orderId())
                     .orElseThrow(() -> new RuntimeException("주문 없음 - orderId=" + message.orderId()));
 
@@ -74,8 +76,8 @@ public class KisOrderConsumer {
                     order.getLimitPrice() != null ? order.getLimitPrice() : 0L
             );
 
-            // 4. orders.kis_order_no UPDATE (dirty checking으로 자동 반영)
-            order.updateKisInfo(result.kisOrderNo(), result.kisOrgNo(), OffsetDateTime.now());
+            // 4. orders.kis_order_no UPDATE — KIS API 호출과 트랜잭션을 분리하여 DB 커넥션 점유 최소화
+            orderService.updateKisOrderInfo(order.getId(), result.kisOrderNo(), result.kisOrgNo());
 
             log.info("주문 접수 완료 - userId={}, stockCode={}, source={}, kisOrderNo={}",
                     message.userId(), message.stockCode(), message.source(), result.kisOrderNo());
@@ -94,10 +96,11 @@ public class KisOrderConsumer {
         } catch (Exception e) {
             log.error("주문 처리 실패: orderId={}, error={}", message.orderId(), e.getMessage(), e);
 
-            // 실패 시 SSE push → 사용자에게 실패 알림
+            // 실패 시 SSE push — 성공과 동일하게 DB PK 사용, 주문 조회 전 실패 시 idempotencyKey로 폴백
+            String failedOrderId = order != null ? String.valueOf(order.getId()) : message.orderId();
             orderSseEmitterManager.send(message.userId(), new OrderSseEvent(
                     "ORDER_FAILED",
-                    message.orderId(),
+                    failedOrderId,
                     message.stockCode(),
                     null,
                     "FAILED",

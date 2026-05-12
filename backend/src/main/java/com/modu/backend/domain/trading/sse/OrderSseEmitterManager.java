@@ -23,12 +23,21 @@ public class OrderSseEmitterManager {
      */
     public SseEmitter connect(Long userId) {
         SseEmitter emitter = new SseEmitter(Long.MAX_VALUE);
-        emitters.put(userId, emitter);
 
-        // 연결 종료/타임아웃/에러 시 Map에서 제거 (메모리 누수 방지)
-        emitter.onCompletion(() -> emitters.remove(userId));
-        emitter.onTimeout(() -> emitters.remove(userId));
-        emitter.onError(e -> emitters.remove(userId));
+        SseEmitter oldEmitter = emitters.put(userId, emitter);
+        if (oldEmitter != null) {
+            try {
+                oldEmitter.complete();
+            } catch (Exception ignored) {
+                // 이미 완료된 emitter일 수 있음
+            }
+        }
+
+        // emitters.remove(userId, emitter): userId와 emitter가 둘 다 일치할 때만 제거
+        // → 이전 emitter의 콜백이 늦게 실행되어도 새 emitter가 삭제되지 않음
+        emitter.onCompletion(() -> emitters.remove(userId, emitter));
+        emitter.onTimeout(() -> emitters.remove(userId, emitter));
+        emitter.onError(e -> emitters.remove(userId, emitter));
 
         log.info("SSE 연결 수립 - userId={}", userId);
         return emitter;
