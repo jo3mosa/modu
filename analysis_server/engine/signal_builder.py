@@ -18,14 +18,17 @@ DB 의 status 컬럼을 채울 때 쓴다. signal_builder.build() 자체는 이�
 채워진 DB row 를 그대로 읽기만 한다 (classifier 재호출 안 함).
 """
 
+import logging
 import os
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import Callable, Optional
 from zoneinfo import ZoneInfo
 
 from clients.redis_client import get_json
+
+logger = logging.getLogger(__name__)
 
 KST = ZoneInfo("Asia/Seoul")
 
@@ -152,18 +155,32 @@ def _load_fundamental_from_db(stock_code: str, db_path: str = DEFAULT_DB) -> Opt
     }
 
 
+def _safe(label: str, fn: Callable[[], Optional[dict]]) -> Optional[dict]:
+    """소스별 fetch 실패를 None 으로 격리.
+
+    docstring 약속 "모든 소스 None 가능" 을 실제 동작과 일치시키기 위한 안전망.
+    Redis 일시 단절 / DB 락 등으로 한 source 가 raise 해도 다른 source 는 계속 진행.
+    """
+    try:
+        return fn()
+    except Exception:
+        logger.exception("signal source '%s' failed — falling back to None", label)
+        return None
+
+
 def build(stock_code: str, db_path: str = DEFAULT_DB) -> Signal:
     """4 소스 통합 Signal 생성. 모든 소스 None 가능 — caller 가 안전 처리.
 
-    이 함수는 read-only (Redis GET × 3 + DB SELECT × 1). 사이드 이펙트 없음.
+    이 함수는 read-only (Redis GET x 3 + DB SELECT x 1). 사이드 이펙트 없음.
+    소스별 예외는 _safe 가 None 으로 격리 → 한 source 장애가 사이클 전체를 깨지 않음.
     """
     return Signal(
         stock_code=stock_code,
         timestamp=datetime.now(KST),
         signals={
-            "technical":   get_json(f"technical:{stock_code}"),
-            "fundamental": _load_fundamental_from_db(stock_code, db_path),
-            "event":       get_json(f"event:{stock_code}"),
-            "sentiment":   get_json(f"sentiment:{stock_code}"),
+            "technical":   _safe("technical",   lambda: get_json(f"technical:{stock_code}")),
+            "fundamental": _safe("fundamental", lambda: _load_fundamental_from_db(stock_code, db_path)),
+            "event":       _safe("event",       lambda: get_json(f"event:{stock_code}")),
+            "sentiment":   _safe("sentiment",   lambda: get_json(f"sentiment:{stock_code}")),
         },
     )
