@@ -12,13 +12,6 @@
 import os
 import sys
 
-sys.stdout.reconfigure(encoding="utf-8")
-sys.stderr.reconfigure(encoding="utf-8")
-sys.path.insert(0, os.path.dirname(__file__))
-
-os.environ.setdefault("LANGCHAIN_PROJECT", "modu-mvp")
-os.environ.setdefault("DATABASE_URL", "postgresql://dummy:dummy@localhost/dummy")
-
 # ── 더미 입력 신호 ─────────────────────────────────────────────────────────
 # analysis_snapshot은 반드시 "signals" 키 아래 4개 분야로 구성해야 합니다.
 # bull_researcher와 extract_key_signals 모두 signals.get("technical") 형태로 접근합니다.
@@ -316,6 +309,12 @@ def dummy_context_loader(state) -> dict:
 # ── 메인 ──────────────────────────────────────────────────────────────────
 
 def main() -> None:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+    sys.path.insert(0, os.path.dirname(__file__))
+    os.environ.setdefault("LANGCHAIN_PROJECT", "modu-mvp")
+    os.environ.setdefault("DATABASE_URL", "postgresql://dummy:dummy@localhost/dummy")
+
     import app.graph.builder as builder_module
     from app.state.investment_state import InvestmentAgentState
 
@@ -342,15 +341,16 @@ def main() -> None:
 
     _section("파이프라인 실행")
 
-    # stream(stream_mode="updates"): 각 노드 완료 직후 {node_name: partial_output} 반환
     step = 0
-    for event in graph.stream(initial_state, stream_mode="updates"):
-        for node_name, node_output in event.items():
-            step += 1
-            _print_node(step, node_name, node_output)
+    final_state = None
+    for mode, event in graph.stream(initial_state, stream_mode=["updates", "values"]):
+        if mode == "updates":
+            for node_name, node_output in event.items():
+                step += 1
+                _print_node(step, node_name, node_output)
+        else:
+            final_state = event
 
-    # 전체 최종 state는 invoke로 별도 수집 (stream은 partial output만 반환)
-    final_state = graph.invoke(initial_state)
     _print_summary(final_state)
 
 
