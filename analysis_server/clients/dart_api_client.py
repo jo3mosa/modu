@@ -199,7 +199,7 @@ class DartApiClient:
                 continue
         return None
 
-    # 공시 목록
+    # 공시 목록 — 특정 회사
     def get_disclosures(self, corp_code, bgn_de, end_de, page_count=100):
         url = f"{self.BASE_URL}/list.json"
         params = {
@@ -218,6 +218,30 @@ class DartApiClient:
             print(f"[ERROR] 공시 조회 실패: status={status}, message={data.get('message')}")
             return []
         return data.get("list", [])
+
+    # 공시 목록 — 전체 회사 batch (corp_code 미지정).
+    # 종목별 polling 대신 1 페이지/회 단위로 끌어와 collector 에서 그룹화하면
+    # 일일 API quota 를 수십 배 절약 가능.
+    def get_all_disclosures(self, bgn_de, end_de, page_no=1, page_count=100):
+        """Returns (list_of_disclosures, total_page). 실패 시 ([], 1)."""
+        url = f"{self.BASE_URL}/list.json"
+        params = {
+            "crtfc_key": self.api_key,
+            "bgn_de": bgn_de,
+            "end_de": end_de,
+            "page_no": str(page_no),
+            "page_count": str(page_count),
+        }
+        data = self._get(url, params=params).json()
+
+        status = data.get("status")
+        if status in CRITICAL_STATUSES:
+            raise DartCriticalError(status, data.get("message"))
+        if status not in ("000", "013"):
+            print(f"[ERROR] 전체 공시 조회 실패 (page {page_no}): "
+                  f"status={status}, message={data.get('message')}")
+            return [], 1
+        return data.get("list", []), int(data.get("total_page", 1))
 
 
 if __name__ == "__main__":
