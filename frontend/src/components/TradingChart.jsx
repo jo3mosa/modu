@@ -15,6 +15,63 @@ const TIMEFRAME_OPTIONS = [
 
 const DAILY_PERIODS = new Set(['D', 'W', 'M']);
 
+// 무한 스크롤 시 한 번에 가져올 추가 범위 (period별)
+// 가장 오래된 캔들 기준 이 기간만큼 과거로 추가 fetch한다.
+const LOAD_MORE_RANGE = {
+  D:   { months: 6 },
+  W:   { years: 2 },
+  M:   { years: 5 },
+  '1':  { days: 3 },
+  '5':  { days: 7 },
+  '60': { days: 30 },
+};
+
+// timeScale visibleRange.from이 이 임계값 이하로 내려가면 과거 데이터 추가 fetch
+const LOAD_MORE_THRESHOLD = 10;
+
+// YYYYMMDD 포맷터
+function toBasicIsoDate(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}${m}${d}`;
+}
+
+// lightweight-charts에 넘길 수 있는 안전한 캔들인지 검증
+// (KIS가 휴장일 등에 OHLC 중 일부가 빈/0으로 응답하는 케이스 방어)
+function isValidCandle(c) {
+  if (!c) return false;
+  if (c.time == null || c.time === '') return false;
+  if (!Number.isFinite(c.open)) return false;
+  if (!Number.isFinite(c.high)) return false;
+  if (!Number.isFinite(c.low)) return false;
+  if (!Number.isFinite(c.close)) return false;
+  return true;
+}
+
+// time이 string('YYYY-MM-DD')일 수도 number(unix sec)일 수도 있으므로 안전한 비교
+function compareCandleTime(a, b) {
+  const ta = a.time;
+  const tb = b.time;
+  if (typeof ta === 'number' && typeof tb === 'number') return ta - tb;
+  return String(ta).localeCompare(String(tb));
+}
+
+// 무한 스크롤용: 가장 오래된 캔들 timestamp → 그 직전 시점의 [startDate, endDate]
+function buildOlderDateRange(period, oldestTimestampSec) {
+  const oldestDate = new Date(oldestTimestampSec * 1000);
+  const endDate = new Date(oldestDate);
+  endDate.setDate(endDate.getDate() - 1); // 중복 방지: 가장 오래된 캔들 직전까지
+
+  const startDate = new Date(endDate);
+  const range = LOAD_MORE_RANGE[period] ?? { months: 1 };
+  if (range.years) startDate.setFullYear(startDate.getFullYear() - range.years);
+  if (range.months) startDate.setMonth(startDate.getMonth() - range.months);
+  if (range.days) startDate.setDate(startDate.getDate() - range.days);
+
+  return { startDate: toBasicIsoDate(startDate), endDate: toBasicIsoDate(endDate) };
+}
+
 /**
  * 백엔드 CandleResponse → lightweight-charts 호환 형식으로 변환
  * - 일/주/월봉: timestamp 'YYYYMMDD' → 'YYYY-MM-DD'
@@ -22,7 +79,9 @@ const DAILY_PERIODS = new Set(['D', 'W', 'M']);
  */
 function adaptCandle(period, c) {
   const ts = String(c.timestamp ?? '');
-  
+  // timestamp 없는 캔들은 무의미 → null로 표시해 호출부에서 filter
+  if (!ts) return null;
+
   // 1. 일/주/월봉 (YYYYMMDD - 8자리)
   if (DAILY_PERIODS.has(period) || ts.length === 8) {
     const time = `${ts.slice(0, 4)}-${ts.slice(4, 6)}-${ts.slice(6, 8)}`;
@@ -82,13 +141,25 @@ function adaptCandle(period, c) {
 
 export default function TradingChart({ stockCode }) {
   const chartContainerRef = useRef(null);
+  const chartRef = useRef(null);
   const candlestickSeriesRef = useRef(null);
   const volumeSeriesRef = useRef(null);
   // 실시간 틱으로 갱신할 마지막 캔들 (high/low 누적용)
   const lastCandleRef = useRef(null);
+  // 무한 스크롤용 상태
+  const allCandlesRef = useRef([]);        // 누적 캔들 (시간 오름차순, dedup된 상태)
+  const loadingMoreRef = useRef(false);    // 과거 데이터 fetch 중 동시호출 방지
+  const noMoreDataRef = useRef(false);     // 더 이상 가져올 데이터가 없음
+  // 핸들러 내부에서 최신 stockCode/timeframe 참조용 (timeScale 구독은 마운트 1회)
+  const stockCodeRef = useRef(stockCode);
+  const timeframeRef = useRef('D');
   const [timeframe, setTimeframe] = useState('D');
 
-  // 차트 생성 (마운트 1회)
+  // 매 렌더에서 최신값 동기화
+  stockCodeRef.current = stockCode;
+  timeframeRef.current = timeframe;
+
+  // 차트 생성 (마운트 1회) + 무한 스크롤 트리거 구독
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
@@ -108,6 +179,7 @@ export default function TradingChart({ stockCode }) {
         timeVisible: true,
       },
     });
+    chartRef.current = chart;
 
     candlestickSeriesRef.current = chart.addCandlestickSeries({
       upColor: '#ef4444',
@@ -127,6 +199,17 @@ export default function TradingChart({ stockCode }) {
       scaleMargins: { top: 0.8, bottom: 0 },
     });
 
+    // 무한 스크롤: 보이는 영역이 가장 왼쪽 캔들 근처에 도달하면 과거 데이터 추가 로드
+    const onVisibleLogicalRangeChange = (range) => {
+      if (!range) return;
+      if (loadingMoreRef.current || noMoreDataRef.current) return;
+      if (allCandlesRef.current.length === 0) return;
+      if (range.from < LOAD_MORE_THRESHOLD) {
+        loadMoreCandles();
+      }
+    };
+    chart.timeScale().subscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange);
+
     const handleResize = () => {
       chart.applyOptions({
         width: chartContainerRef.current.clientWidth,
@@ -138,28 +221,114 @@ export default function TradingChart({ stockCode }) {
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange);
       chart.remove();
+      chartRef.current = null;
       candlestickSeriesRef.current = null;
       volumeSeriesRef.current = null;
     };
   }, []);
 
-  // 종목/기간 변경 시 캔들 데이터 fetch + 차트 갱신
+  // 가장 오래된 캔들 직전 구간을 추가로 가져와 차트 앞쪽에 prepend.
+  // 동시호출 방지(loadingMoreRef)와 데이터 소진 감지(noMoreDataRef)는 호출부에서 일부 처리하지만
+  // race 안전을 위해 함수 진입 시점에도 다시 확인한다.
+  async function loadMoreCandles() {
+    if (loadingMoreRef.current || noMoreDataRef.current) return;
+    const oldest = allCandlesRef.current[0];
+    if (!oldest) return;
+
+    const period = timeframeRef.current;
+    const stock = stockCodeRef.current;
+    const oldestSec = typeof oldest.time === 'number'
+      ? oldest.time
+      : Math.floor(new Date(oldest.time).getTime() / 1000);
+    const { startDate, endDate } = buildOlderDateRange(period, oldestSec);
+
+    loadingMoreRef.current = true;
+    try {
+      const response = await getStockCandles(stock, { period, startDate, endDate });
+      // 응답 도착 시점 종목/기간이 바뀌었으면 이번 결과는 폐기
+      if (stock !== stockCodeRef.current || period !== timeframeRef.current) return;
+
+      const rawCandles = response?.candles ?? [];
+      if (rawCandles.length === 0) {
+        noMoreDataRef.current = true;
+        return;
+      }
+
+      const adapted = rawCandles
+        .map((c) => adaptCandle(period, c))
+        .filter(isValidCandle)
+        .sort(compareCandleTime);
+
+      // 기존 + 새 데이터 머지 + 중복 제거
+      const seenTimes = new Set(allCandlesRef.current.map((c) => c.time));
+      const merged = [...allCandlesRef.current];
+      let addedCount = 0;
+      for (const c of adapted) {
+        if (!seenTimes.has(c.time)) {
+          merged.push(c);
+          seenTimes.add(c.time);
+          addedCount += 1;
+        }
+      }
+      if (addedCount === 0) {
+        // 응답은 있었지만 전부 기존과 중복 → 사실상 더 이상 새로운 데이터 없음
+        noMoreDataRef.current = true;
+        return;
+      }
+      merged.sort(compareCandleTime);
+
+      // setData 직전 visible range 보존 (prepend 후 스크롤 위치 튐 방지)
+      const timeScale = chartRef.current?.timeScale();
+      const prevLogicalRange = timeScale?.getVisibleLogicalRange();
+
+      allCandlesRef.current = merged;
+      candlestickSeriesRef.current?.setData(merged);
+      volumeSeriesRef.current?.setData(
+        merged.map((d) => ({
+          time: d.time,
+          value: d.volume ?? 0,
+          color: d.close >= d.open ? 'rgba(239,68,68,0.4)' : 'rgba(59,130,246,0.4)',
+        }))
+      );
+
+      // 추가된 개수만큼 logical index를 shift 해 사용자가 보던 위치 유지
+      if (prevLogicalRange && timeScale) {
+        timeScale.setVisibleLogicalRange({
+          from: prevLogicalRange.from + addedCount,
+          to: prevLogicalRange.to + addedCount,
+        });
+      }
+    } catch (error) {
+      console.error('과거 캔들 데이터 로드 실패:', error);
+    } finally {
+      loadingMoreRef.current = false;
+    }
+  }
+
+  // 종목/기간 변경 시 캔들 데이터 fetch + 차트 갱신 (무한 스크롤 상태도 초기화)
   useEffect(() => {
     if (!stockCode || !candlestickSeriesRef.current) return;
     let cancelled = false;
 
     async function fetchCandles() {
       try {
+        // 종목/기간 변경 → 누적 상태 리셋
+        allCandlesRef.current = [];
+        loadingMoreRef.current = false;
+        noMoreDataRef.current = false;
+
         const response = await getStockCandles(stockCode, { period: timeframe });
         if (cancelled) return;
         const period = response?.period ?? timeframe;
         const rawCandles = response?.candles ?? [];
-        
-        // 1. 변환 및 정렬
+
+        // 1. 변환 + invalid 캔들 제거 + 정렬 (KIS 휴장일/빈 캔들 방어)
         const adapted = rawCandles
           .map((c) => adaptCandle(period, c))
-          .sort((a, b) => a.time - b.time);
+          .filter(isValidCandle)
+          .sort(compareCandleTime);
 
         // 2. 중복 제거
         const uniqueAdapted = [];
@@ -171,6 +340,7 @@ export default function TradingChart({ stockCode }) {
           }
         }
 
+        allCandlesRef.current = uniqueAdapted;
         candlestickSeriesRef.current?.setData(uniqueAdapted);
         volumeSeriesRef.current?.setData(
           uniqueAdapted.map((d) => ({
@@ -179,6 +349,9 @@ export default function TradingChart({ stockCode }) {
             color: d.close >= d.open ? 'rgba(239,68,68,0.4)' : 'rgba(59,130,246,0.4)',
           }))
         );
+        // 초기 로드 / 기간 전환 시 전체 데이터가 차트 폭을 가득 채우도록 맞춤
+        // (무한 스크롤 트리거에서는 호출하지 않음 — visible range 보존이 우선)
+        chartRef.current?.timeScale().fitContent();
         // 실시간 틱이 들어올 때 합쳐 갱신할 기준 캔들 저장
         lastCandleRef.current = uniqueAdapted.length > 0 ? { ...uniqueAdapted[uniqueAdapted.length - 1] } : null;
         // 종목/기간이 바뀌면 이전 마커는 의미가 없으므로 비워둔다.
