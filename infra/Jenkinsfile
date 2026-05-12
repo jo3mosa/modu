@@ -39,11 +39,6 @@ pipeline {
         BUILD_FRONTEND = 'false'
         BUILD_AI       = 'false'
 
-        // ── 배포에 사용할 이미지 태그 (Stage 2에서 결정) ──────
-        // 빌드된 서비스: BUILD_NUMBER 태그, 스킵된 서비스: latest 태그
-        TAG_BE = 'latest'
-        TAG_FE = 'latest'
-        TAG_AI = 'latest'
     }
 
     stages {
@@ -115,7 +110,6 @@ pipeline {
                                       docker push "$FULL_URI_BE:latest"
                                     } 2> backend/be_err.log
                                     '''
-                                    env.TAG_BE = env.BUILD_NUMBER
                                 } catch (Exception e) {
                                     def log = sh(
                                         script: '[ -f backend/be_err.log ] && tail -n 15 backend/be_err.log || echo "로그 없음"',
@@ -127,9 +121,7 @@ ${log}
                                     error "Backend Build/Push Failed"
                                 }
                             } else {
-                                // 변경 없음 — 이전 빌드의 latest 태그 재사용
-                                echo "백엔드 변경 없음 — 빌드 스킵 (latest 태그 재사용)"
-                                env.TAG_BE = 'latest'
+                                echo "백엔드 변경 없음 — 빌드 스킵 (현재 배포 이미지 유지)"
                             }
 
                             // ── 2-2. 프론트엔드 이미지 빌드 및 푸시 ─────────
@@ -143,7 +135,6 @@ ${log}
                                       docker push "$FULL_URI_FE:latest"
                                     } 2> frontend/fe_err.log
                                     '''
-                                    env.TAG_FE = env.BUILD_NUMBER
                                 } catch (Exception e) {
                                     def log = sh(
                                         script: '[ -f frontend/fe_err.log ] && tail -n 15 frontend/fe_err.log || echo "로그 없음"',
@@ -155,8 +146,7 @@ ${log}
                                     error "Frontend Build/Push Failed"
                                 }
                             } else {
-                                echo "프론트엔드 변경 없음 — 빌드 스킵 (latest 태그 재사용)"
-                                env.TAG_FE = 'latest'
+                                echo "프론트엔드 변경 없음 — 빌드 스킵 (현재 배포 이미지 유지)"
                             }
 
                             // ── 2-3. AI Agent 이미지 빌드 및 푸시 ────────────
@@ -170,7 +160,6 @@ ${log}
                                       docker push "$FULL_URI_AI:latest"
                                     } 2> ai_agent/ai_err.log
                                     '''
-                                    env.TAG_AI = env.BUILD_NUMBER
                                 } catch (Exception e) {
                                     def log = sh(
                                         script: '[ -f ai_agent/ai_err.log ] && tail -n 15 ai_agent/ai_err.log || echo "로그 없음"',
@@ -182,8 +171,7 @@ ${log}
                                     error "AI Agent Build/Push Failed"
                                 }
                             } else {
-                                echo "AI Agent 변경 없음 — 빌드 스킵 (latest 태그 재사용)"
-                                env.TAG_AI = 'latest'
+                                echo "AI Agent 변경 없음 — 빌드 스킵 (현재 배포 이미지 유지)"
                             }
                         }
                     }
@@ -198,8 +186,7 @@ ${log}
             steps {
                 script {
                     env.FAILED_STAGE = "3. SSAFY K3s 클러스터 배포"
-                    // 각 서비스의 이미지 태그를 함께 전달
-                    deployToCluster("${K3S_CONFIG_ID}", "SSAFY K3s", env.TAG_BE, env.TAG_FE, env.TAG_AI)
+                    deployToCluster("${K3S_CONFIG_ID}", "SSAFY K3s")
                 }
             }
         }
@@ -211,7 +198,7 @@ ${log}
             steps {
                 script {
                     env.FAILED_STAGE = "4. AWS EKS 운영 환경 배포"
-                    deployToCluster("${EKS_CONFIG_ID}", "AWS EKS", env.TAG_BE, env.TAG_FE, env.TAG_AI)
+                    deployToCluster("${EKS_CONFIG_ID}", "AWS EKS")
                 }
             }
         }
@@ -280,13 +267,16 @@ ${env.ERROR_DETAILS}""")
 // [함수] deployToCluster
 // 지정된 Kubernetes 클러스터에 백엔드/프론트엔드/AI Agent를 배포합니다.
 //
+// 이미지 태그 결정 전략:
+//   - 빌드된 서비스: BUILD_NUMBER 태그 사용
+//   - 스킵된 서비스: kubectl로 현재 배포 이미지를 읽어 그대로 재사용
+//     → 태그 변경 없음 → K8s 변경 감지 안 함 → Pod 재시작 없음
+//     → 최초 배포(Deployment 없음)이면 :latest 폴백
+//
 // @param configId    Jenkins에 등록된 kubeconfig 파일 Credentials ID
 // @param clusterName 로그/알림에 표시할 클러스터 이름
-// @param tagBe       백엔드 이미지 태그 (빌드됐으면 BUILD_NUMBER, 스킵됐으면 latest)
-// @param tagFe       프론트엔드 이미지 태그
-// @param tagAi       AI Agent 이미지 태그
 // ============================================================
-def deployToCluster(String configId, String clusterName, String tagBe, String tagFe, String tagAi) {
+def deployToCluster(String configId, String clusterName) {
     try {
         // 이전 빌드의 deploy.err가 잔존할 경우 stale 로그가 오인될 수 있으므로
         // 배포 시작 전에 파일을 빈 상태로 초기화 (없으면 새로 생성)
@@ -313,34 +303,28 @@ def deployToCluster(String configId, String clusterName, String tagBe, String ta
                  secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
                 ]
             ]) {
-                // 각 서비스의 이미지 태그를 셸 스크립트에서 참조할 수 있도록 환경변수로 주입
-                withEnv(["TAG_BE=${tagBe}", "TAG_FE=${tagFe}", "TAG_AI=${tagAi}"]) {
+                withEnv([
+                    "BUILD_BACKEND=${env.BUILD_BACKEND}",
+                    "BUILD_FRONTEND=${env.BUILD_FRONTEND}",
+                    "BUILD_AI=${env.BUILD_AI}"
+                ]) {
                     sh '''
                     {
-                        # 명령어 실패 또는 파이프 오류 발생 시 즉시 스크립트 중단
                         set -e -o pipefail
 
                         # ── Step 1. kubectl 설치 및 무결성 검증 ──────────────
-                        # 최신 안정 버전 번호를 가져옴
                         KUBECTL_VERSION="$(curl -L -s https://dl.k8s.io/release/stable.txt)"
-                        # kubectl 바이너리 다운로드
                         curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
-                        # sha256 체크섬 파일 다운로드
                         curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl.sha256"
-                        # 체크섬 검증 — 위변조 여부 확인
                         echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check
                         chmod +x kubectl
                         mv kubectl /usr/local/bin/
 
                         # ── Step 2. 네임스페이스 준비 ─────────────────────────
-                        # ECR 서버 도메인만 추출 (URI에서 '/' 이전 부분)
                         ECR_SERVER="${FULL_URI_BE%%/*}"
-                        # 네임스페이스 매니페스트 적용 (이미 존재해도 멱등 처리)
                         kubectl --kubeconfig=$KUBECONFIG apply -f $K8S_DIR/00_namespace.yaml
 
                         # ── Step 3. ECR 인증 시크릿(regcred) 갱신 ────────────
-                        # --dry-run=client -o yaml | apply 패턴으로 원자적 갱신
-                        # (시크릿이 없으면 생성, 있으면 업데이트 — 무중단 보장)
                         kubectl --kubeconfig=$KUBECONFIG create secret docker-registry regcred \
                           --docker-server="$ECR_SERVER" \
                           --docker-username=AWS \
@@ -348,22 +332,64 @@ def deployToCluster(String configId, String clusterName, String tagBe, String ta
                           -n modu-apps \
                           --dry-run=client -o yaml | kubectl --kubeconfig=$KUBECONFIG apply -f -
 
-                        # ── Step 4. 이미지 태그 치환 및 배포 ─────────────────
-                        # 원본 yaml을 직접 수정하면 재빌드 시 플레이스홀더가 없어
-                        # sed가 동작하지 않고 이전 이미지 태그로 배포되는 버그 발생
-                        # → 임시 디렉토리에 복사 후 치환하여 원본 파일 보존
+                        # ── Step 4. 이미지 결정 ───────────────────────────────
+                        # 빌드된 서비스: BUILD_NUMBER 태그 사용
+                        # 스킵된 서비스: 현재 K8s 배포 이미지 재사용 → Pod 재시작 없음
+                        #               최초 배포(Deployment 없음)이면 :latest 폴백
+
+                        if [ "$BUILD_BACKEND" = "true" ]; then
+                            BE_IMAGE="$FULL_URI_BE:$BUILD_NUMBER"
+                        else
+                            if kubectl --kubeconfig=$KUBECONFIG get deployment modu-backend -n modu-apps >/dev/null 2>&1; then
+                                BE_IMAGE=$(kubectl --kubeconfig=$KUBECONFIG get deployment modu-backend \
+                                    -n modu-apps \
+                                    -o jsonpath='{.spec.template.spec.containers[0].image}')
+                                [ -z "$BE_IMAGE" ] && { echo "❌ modu-backend 이미지 값이 비어있습니다."; exit 1; }
+                            else
+                                echo "⚠️ modu-backend Deployment 없음 — :latest 폴백"
+                                BE_IMAGE="$FULL_URI_BE:latest"
+                            fi
+                        fi
+
+                        if [ "$BUILD_FRONTEND" = "true" ]; then
+                            FE_IMAGE="$FULL_URI_FE:$BUILD_NUMBER"
+                        else
+                            if kubectl --kubeconfig=$KUBECONFIG get deployment modu-frontend -n modu-apps >/dev/null 2>&1; then
+                                FE_IMAGE=$(kubectl --kubeconfig=$KUBECONFIG get deployment modu-frontend \
+                                    -n modu-apps \
+                                    -o jsonpath='{.spec.template.spec.containers[0].image}')
+                                [ -z "$FE_IMAGE" ] && { echo "❌ modu-frontend 이미지 값이 비어있습니다."; exit 1; }
+                            else
+                                echo "⚠️ modu-frontend Deployment 없음 — :latest 폴백"
+                                FE_IMAGE="$FULL_URI_FE:latest"
+                            fi
+                        fi
+
+                        if [ "$BUILD_AI" = "true" ]; then
+                            AI_IMAGE="$FULL_URI_AI:$BUILD_NUMBER"
+                        else
+                            if kubectl --kubeconfig=$KUBECONFIG get deployment modu-ai-agent -n modu-apps >/dev/null 2>&1; then
+                                AI_IMAGE=$(kubectl --kubeconfig=$KUBECONFIG get deployment modu-ai-agent \
+                                    -n modu-apps \
+                                    -o jsonpath='{.spec.template.spec.containers[0].image}')
+                                [ -z "$AI_IMAGE" ] && { echo "❌ modu-ai-agent 이미지 값이 비어있습니다."; exit 1; }
+                            else
+                                echo "⚠️ modu-ai-agent Deployment 없음 — :latest 폴백"
+                                AI_IMAGE="$FULL_URI_AI:latest"
+                            fi
+                        fi
+
+                        echo "▶ 배포 이미지 — BE: $BE_IMAGE | FE: $FE_IMAGE | AI: $AI_IMAGE"
+
+                        # ── Step 5. 이미지 태그 치환 및 배포 ─────────────────
                         DEPLOY_DIR=$(mktemp -d)
                         cp $K8S_DIR/*.yaml "$DEPLOY_DIR/"
-                        # TAG_BE/FE/AI: 빌드된 서비스는 BUILD_NUMBER, 스킵된 서비스는 latest
-                        sed -i "s|BACKEND_IMAGE|$FULL_URI_BE:$TAG_BE|g"   "$DEPLOY_DIR/backend.yaml"
-                        sed -i "s|FRONTEND_IMAGE|$FULL_URI_FE:$TAG_FE|g"  "$DEPLOY_DIR/frontend.yaml"
-                        sed -i "s|AIAGENT_IMAGE|$FULL_URI_AI:$TAG_AI|g"   "$DEPLOY_DIR/ai-agent.yaml"
-                        # 임시 디렉토리 기준으로 배포
+                        sed -i "s|BACKEND_IMAGE|${BE_IMAGE}|g"   "$DEPLOY_DIR/backend.yaml"
+                        sed -i "s|FRONTEND_IMAGE|${FE_IMAGE}|g"  "$DEPLOY_DIR/frontend.yaml"
+                        sed -i "s|AIAGENT_IMAGE|${AI_IMAGE}|g"   "$DEPLOY_DIR/ai-agent.yaml"
                         kubectl --kubeconfig=$KUBECONFIG apply -f "$DEPLOY_DIR/"
-                        # 임시 파일 정리
                         rm -rf "$DEPLOY_DIR"
 
-                    # 모든 stderr를 deploy.err 파일로 리다이렉트 (에러 원인 추적용)
                     } 2> deploy.err
                     '''
                 }
