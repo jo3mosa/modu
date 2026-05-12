@@ -21,9 +21,10 @@ DB 의 status 컬럼을 채울 때 쓴다. signal_builder.build() 자체는 이�
 import logging
 import os
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Callable, Optional
+from typing import Optional
 from zoneinfo import ZoneInfo
 
 from clients.redis_client import get_json
