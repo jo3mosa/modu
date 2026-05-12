@@ -7,6 +7,7 @@ import highcharts3d from 'highcharts/highcharts-3d';
 import TutorialOverlay from '../components/TutorialOverlay';
 import { getAccountSummary, getPortfolio } from '../api/account';
 import { getAiDecisions } from '../api/aiAgent';
+import { getProfile } from '../api/strategy';
 import './DashboardPage.css';
 
 if (typeof Highcharts === 'object') {
@@ -37,8 +38,16 @@ const MOCK_HOLDINGS = [
 
 const MOCK_AI_STATUS = {
   isActive: true,
-  strategy: '단기 수익 실현',
-  riskLevel: '보통'
+};
+
+// 투자 성향 등급 → "전략" + "위험 수준" 표시값 매핑
+// (RiskManagePage의 RISK_LEVEL_LABEL과 동일한 키 사용)
+const RISK_LEVEL_DISPLAY = {
+  STABLE:         { strategy: '원금 보존형', risk: '매우 낮음' },
+  STABLE_SEEKING: { strategy: '안정 수익형', risk: '낮음' },
+  RISK_NEUTRAL:   { strategy: '균형 투자형', risk: '보통' },
+  ACTIVE:         { strategy: '적극 매매형', risk: '다소 높음' },
+  AGGRESSIVE:     { strategy: '공격 매매형', risk: '높음' },
 };
 
 const CHART_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#84cc16'];
@@ -52,6 +61,7 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isKisConnected, setIsKisConnected] = useState(true);
   const [aiStatus, setAiStatus] = useState(MOCK_AI_STATUS);
+  const [profileRiskLevel, setProfileRiskLevel] = useState(null);
   const [logs, setLogs] = useState([]);
 
   // 알림 UI
@@ -66,12 +76,20 @@ export default function DashboardPage() {
     async function fetchDashboardData() {
       setIsLoading(true);
       try {
-        const [summaryData, portfolioData, decisionsData] = await Promise.all([
+        const [summaryData, portfolioData, decisionsData, profileResult] = await Promise.all([
           getAccountSummary(),
           getPortfolio(),
-          getAiDecisions({ page: 0, size: 5 })
+          getAiDecisions({ page: 0, size: 5 }),
+          // 투자 성향 미설정(404) 케이스를 정상 흐름으로 흡수해 다른 데이터 로드를 막지 않음
+          getProfile().catch((error) => {
+            if (error.status !== 404 && error.errorCode !== 'INVEST_001') {
+              console.warn('투자 성향 로드 실패:', error);
+            }
+            return null;
+          }),
         ]);
 
+        setProfileRiskLevel(profileResult?.riskLevel ?? null);
         setSummary(summaryData);
         // 백엔드가 avgBuyPrice를 0으로 내려주는 케이스 보정:
         //   avgBuyPrice = (currentPrice × quantity − pnl) / quantity
@@ -471,11 +489,19 @@ export default function DashboardPage() {
               <div className="ai-info-box">
                 <div className="info-row">
                   <span className="info-label">전략</span>
-                  <span className="info-value">{aiStatus.strategy}</span>
+                  <span className="info-value">
+                    {profileRiskLevel
+                      ? RISK_LEVEL_DISPLAY[profileRiskLevel]?.strategy ?? '미설정'
+                      : '성향 진단 필요'}
+                  </span>
                 </div>
                 <div className="info-row">
                   <span className="info-label">위험 수준</span>
-                  <span className="info-value">{aiStatus.riskLevel}</span>
+                  <span className="info-value">
+                    {profileRiskLevel
+                      ? RISK_LEVEL_DISPLAY[profileRiskLevel]?.risk ?? '-'
+                      : '-'}
+                  </span>
                 </div>
               </div>
             </div>
