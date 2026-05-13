@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createChart } from 'lightweight-charts';
-import { SMA, BollingerBands } from 'technicalindicators';
+import { SMA, BollingerBands, RSI, MACD } from 'technicalindicators';
 import { getStockCandles } from '../api/market';
 import './TradingChart.css';
 
@@ -36,6 +36,41 @@ function calcBB(candles, period = BB_PERIOD, stdDev = BB_STDDEV) {
   });
   const toLine = (key) => result.map((v, i) => ({ time: candles[i + period - 1].time, value: v[key] }));
   return { upper: toLine('upper'), middle: toLine('middle'), lower: toLine('lower') };
+}
+
+// RSI 계산
+function calcRSI(candles, period = 14) {
+  if (candles.length <= period) return [];
+  const result = RSI.calculate({ period, values: candles.map((c) => c.close) });
+  const offset = candles.length - result.length;
+  return result.map((v, i) => ({ time: candles[offset + i].time, value: v }));
+}
+
+// MACD 계산
+function calcMACD(candles) {
+  const slowPeriod = 26;
+  const signalPeriod = 9;
+  if (candles.length < slowPeriod + signalPeriod) return { macd: [], signal: [], hist: [] };
+  
+  const result = MACD.calculate({
+    fastPeriod: 12,
+    slowPeriod: 26,
+    signalPeriod: 9,
+    values: candles.map((c) => c.close),
+    SimpleMAOscillator: false,
+    SimpleMASignal: false,
+  });
+
+  const offset = candles.length - result.length;
+  return {
+    macd: result.map((v, i) => ({ time: candles[offset + i].time, value: v.MACD })),
+    signal: result.map((v, i) => ({ time: candles[offset + i].time, value: v.signal })),
+    hist: result.map((v, i) => ({
+      time: candles[offset + i].time,
+      value: v.histogram,
+      color: v.histogram >= 0 ? '#ef4444' : '#3b82f6',
+    })),
+  };
 }
 
 // timeframe 옵션은 백엔드 period 값과 일대일 대응 (D/W/M/1/5/60)
@@ -179,6 +214,8 @@ export default function TradingChart({ stockCode }) {
   const chartRef = useRef(null);
   const candlestickSeriesRef = useRef(null);
   const volumeSeriesRef = useRef(null);
+  const rsiSeriesRef = useRef(null);
+  const macdSeriesRefs = useRef({ macd: null, signal: null, hist: null });
   // 보조지표 series refs
   const maSeriesRefs = useRef({ 5: null, 20: null, 60: null });
   const bbSeriesRefs = useRef({ upper: null, middle: null, lower: null });
@@ -227,7 +264,39 @@ export default function TradingChart({ stockCode }) {
     const candles = allCandlesRef.current;
     if (candles.length === 0) return;
     const active = activeIndicatorsRef.current;
+    const chart = chartRef.current;
+    if (!chart) return;
 
+    // ── Phase 5: 영역 동적 분할 계산 ──
+    const bottomPanels = [];
+    if (active.has(INDICATOR.VOLUME)) bottomPanels.push('volume');
+    if (active.has(INDICATOR.RSI)) bottomPanels.push('rsi');
+    if (active.has(INDICATOR.MACD)) bottomPanels.push('macd');
+
+    const count = bottomPanels.length;
+    let mainBottom = 0;
+    if (count === 1) mainBottom = 0.25;
+    else if (count === 2) mainBottom = 0.4;
+    else if (count === 3) mainBottom = 0.5;
+
+    // 메인 차트 영역 설정
+    chart.priceScale('right').applyOptions({
+      scaleMargins: { top: 0.05, bottom: mainBottom },
+    });
+
+    // 하단 패널별 영역 배분
+    bottomPanels.forEach((key, idx) => {
+      const panelHeight = mainBottom / count;
+      const top = 1 - mainBottom + panelHeight * idx;
+      const bottom = 1 - (1 - mainBottom + panelHeight * (idx + 1));
+      
+      const scaleId = key === 'volume' ? '' : key;
+      chart.priceScale(scaleId).applyOptions({
+        scaleMargins: { top: top + 0.02, bottom: bottom },
+      });
+    });
+
+    // ── 지표 데이터 업데이트 ──
     // 이동평균선
     MA_PERIODS.forEach((period) => {
       const ref = maSeriesRefs.current[period];
@@ -245,6 +314,25 @@ export default function TradingChart({ stockCode }) {
       bbSeriesRefs.current.upper?.setData([]);
       bbSeriesRefs.current.middle?.setData([]);
       bbSeriesRefs.current.lower?.setData([]);
+    }
+
+    // RSI
+    if (active.has(INDICATOR.RSI)) {
+      rsiSeriesRef.current?.setData(calcRSI(candles));
+    } else {
+      rsiSeriesRef.current?.setData([]);
+    }
+
+    // MACD
+    if (active.has(INDICATOR.MACD)) {
+      const macd = calcMACD(candles);
+      macdSeriesRefs.current.macd?.setData(macd.macd);
+      macdSeriesRefs.current.signal?.setData(macd.signal);
+      macdSeriesRefs.current.hist?.setData(macd.hist);
+    } else {
+      macdSeriesRefs.current.macd?.setData([]);
+      macdSeriesRefs.current.signal?.setData([]);
+      macdSeriesRefs.current.hist?.setData([]);
     }
 
     // 거래량
@@ -344,10 +432,32 @@ export default function TradingChart({ stockCode }) {
     volumeSeriesRef.current = chart.addHistogramSeries({
       color: '#26a69a',
       priceFormat: { type: 'volume' },
-      priceScaleId: '',
+      priceScaleId: '', // volume은 관습적으로 ID 없이 기본 축 하단 사용
     });
 
+    // RSI 시리즈 추가
+    rsiSeriesRef.current = chart.addLineSeries({
+      color: '#a78bfa',
+      lineWidth: 2,
+      priceScaleId: 'rsi',
+      title: 'RSI',
+    });
+    // RSI 기준선 추가 (30, 70)
+    rsiSeriesRef.current.createPriceLine({ price: 70, color: 'rgba(255,255,255,0.2)', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '70' });
+    rsiSeriesRef.current.createPriceLine({ price: 30, color: 'rgba(255,255,255,0.2)', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '30' });
+
+    // MACD 시리즈 추가
+    macdSeriesRefs.current.macd = chart.addLineSeries({ color: '#3b82f6', lineWidth: 1, priceScaleId: 'macd', title: 'MACD' });
+    macdSeriesRefs.current.signal = chart.addLineSeries({ color: '#ef4444', lineWidth: 1, priceScaleId: 'macd', title: 'Signal' });
+    macdSeriesRefs.current.hist = chart.addHistogramSeries({ priceScaleId: 'macd', title: 'Hist' });
+
     chart.priceScale('').applyOptions({
+      scaleMargins: { top: 0.8, bottom: 0 },
+    });
+    chart.priceScale('rsi').applyOptions({
+      scaleMargins: { top: 0.8, bottom: 0 },
+    });
+    chart.priceScale('macd').applyOptions({
       scaleMargins: { top: 0.8, bottom: 0 },
     });
 
@@ -636,16 +746,12 @@ export default function TradingChart({ stockCode }) {
           <button
             className={`tool-btn ${activeIndicators.has(INDICATOR.MACD) ? 'active' : ''}`}
             onClick={() => toggleIndicator(INDICATOR.MACD)}
-            disabled
-            title="2단계에서 구현 예정"
           >
             MACD
           </button>
           <button
             className={`tool-btn ${activeIndicators.has(INDICATOR.RSI) ? 'active' : ''}`}
             onClick={() => toggleIndicator(INDICATOR.RSI)}
-            disabled
-            title="2단계에서 구현 예정"
           >
             RSI
           </button>
