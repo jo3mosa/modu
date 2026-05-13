@@ -132,14 +132,22 @@ def _load_stock_names() -> dict[str, str]:
     """{회사명: 종목코드} dict. 활성 + 길이 ≥ MIN_STOCK_NAME_LEN 만.
 
     싱글톤 캐시 — 컨테이너 재기동 전엔 stock_master 변동 거의 없음.
+    DB 오류 시 빈 dict 반환 (cache 안 함 → 다음 호출에 재시도 가능).
     """
     global _STOCK_NAME_TO_CODE
     if _STOCK_NAME_TO_CODE is not None:
         return _STOCK_NAME_TO_CODE
-    with sqlite3.connect(STOCK_DB_PATH) as conn:
-        rows = conn.execute(
-            "SELECT stock_code, stock_name FROM stock_master WHERE is_active=1"
-        ).fetchall()
+    try:
+        with sqlite3.connect(STOCK_DB_PATH) as conn:
+            rows = conn.execute(
+                "SELECT stock_code, stock_name FROM stock_master WHERE is_active=1"
+            ).fetchall()
+    except sqlite3.Error:
+        # 파일 락 / 권한 / 손상 등 일시 오류 — 빈 매핑으로 폴백.
+        # cache 안 하므로 다음 호출에 재시도. 매핑 없는 동안 그 cycle 의
+        # stock_codes 가 [] 가 되어 sentiment 갱신만 누락 (기사 자체는 적재됨).
+        logger.exception("stock_master 로드 실패 — 빈 매핑 폴백 (다음 호출에 재시도)")
+        return {}
     _STOCK_NAME_TO_CODE = {
         name: code for code, name in rows
         if name and len(name) >= MIN_STOCK_NAME_LEN
@@ -373,6 +381,7 @@ def update_sentiment_redis(collection, target_stock_codes: set[str]) -> int:
     cutoff = (datetime.now(KST) - timedelta(hours=SENTIMENT_LOOKBACK_HOURS)).strftime(
         "%Y-%m-%dT%H:%M:%S"
     )
+    required_keys = ("sentiment_score", "confidence", "pos_prob", "neu_prob", "neg_prob")
     written = 0
     for stock_code in target_stock_codes:
         # 24h 안 그 종목 기사 + sentiment 분석된 것만
@@ -387,12 +396,21 @@ def update_sentiment_redis(collection, target_stock_codes: set[str]) -> int:
         if not docs:
             continue
 
-        n = len(docs)
-        avg_score = sum(d["sentiment"]["sentiment_score"] for d in docs) / n
-        avg_conf  = sum(d["sentiment"]["confidence"]      for d in docs) / n
-        avg_pos   = sum(d["sentiment"]["pos_prob"]        for d in docs) / n
-        avg_neu   = sum(d["sentiment"]["neu_prob"]        for d in docs) / n
-        avg_neg   = sum(d["sentiment"]["neg_prob"]        for d in docs) / n
+        # 필수 키 모두 있는 doc 만 사용 — 옛 스키마 / 부분 적재 문서가 1건 섞여도
+        # 직접 인덱싱 시 KeyError 로 집계 전체가 멈추는 것 방지.
+        valid = [
+            d for d in docs
+            if isinstance(d.get("sentiment"), dict)
+            and all(k in d["sentiment"] for k in required_keys)
+        ]
+        if not valid:
+            continue
+        n = len(valid)
+        avg_score = sum(d["sentiment"]["sentiment_score"] for d in valid) / n
+        avg_conf  = sum(d["sentiment"]["confidence"]      for d in valid) / n
+        avg_pos   = sum(d["sentiment"]["pos_prob"]        for d in valid) / n
+        avg_neu   = sum(d["sentiment"]["neu_prob"]        for d in valid) / n
+        avg_neg   = sum(d["sentiment"]["neg_prob"]        for d in valid) / n
 
         payload = {
             "daily_score":      round(avg_score, 2),
