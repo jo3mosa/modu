@@ -43,10 +43,11 @@ ATR_SPIKE_RATIO = 0.05       # ATR-001, 5%
 PRICE_SPIKE_UP_PCT   = 7.0    # PRICE-001
 PRICE_SPIKE_DOWN_PCT = -7.0   # PRICE-002
 
-# SENT (FinBERT daily_score 가 0~1 스케일이면 임곗값 0.7 / 0.3, -1~1 스케일이면 ±0.7)
-# news_collector 의 sentiment 출력 스케일 확정되면 한쪽으로 맞춤 — 일단 0~1 기준.
-SENT_POSITIVE_LINE = 0.7      # SENT-001
-SENT_NEGATIVE_LINE = 0.3      # SENT-002
+# SENT (FinBERT 의 sentiment_score 스케일 -100~100 — pos_prob - neg_prob 에
+# confidence (1 - neu_prob) 가중. 강한 방향성 + 낮은 중립이어야 ±60 통과).
+# 보수적 60 으로 시작 — 운영 백테스트 결과로 조정 (낮추면 발화 잦아짐).
+SENT_POSITIVE_LINE = 60.0     # SENT-001
+SENT_NEGATIVE_LINE = -60.0    # SENT-002
 
 
 # ─── 안전 접근 헬퍼 ─────────────────────────────────────────────────────────
