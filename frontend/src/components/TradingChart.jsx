@@ -1,7 +1,42 @@
 import { useEffect, useRef, useState } from 'react';
 import { createChart } from 'lightweight-charts';
+import { SMA, BollingerBands } from 'technicalindicators';
 import { getStockCandles } from '../api/market';
 import './TradingChart.css';
+
+// 보조지표 키
+const INDICATOR = {
+  MA: 'MA',
+  BB: 'BB',
+  MACD: 'MACD',
+  RSI: 'RSI',
+  VOLUME: 'VOLUME',
+};
+
+// 보조지표별 표시 설정
+const MA_PERIODS = [5, 20, 60];
+const MA_COLORS = { 5: '#fbbf24', 20: '#06b6d4', 60: '#a78bfa' };
+const BB_PERIOD = 20;
+const BB_STDDEV = 2;
+
+// SMA 계산 → lightweight-charts 라인 데이터 형식
+function calcMA(candles, period) {
+  if (candles.length < period) return [];
+  const values = SMA.calculate({ period, values: candles.map((c) => c.close) });
+  return values.map((v, i) => ({ time: candles[i + period - 1].time, value: v }));
+}
+
+// 볼린저밴드 계산 → upper/middle/lower 3개 라인
+function calcBB(candles, period = BB_PERIOD, stdDev = BB_STDDEV) {
+  if (candles.length < period) return { upper: [], middle: [], lower: [] };
+  const result = BollingerBands.calculate({
+    period,
+    stdDev,
+    values: candles.map((c) => c.close),
+  });
+  const toLine = (key) => result.map((v, i) => ({ time: candles[i + period - 1].time, value: v[key] }));
+  return { upper: toLine('upper'), middle: toLine('middle'), lower: toLine('lower') };
+}
 
 // timeframe 옵션은 백엔드 period 값과 일대일 대응 (D/W/M/1/5/60)
 const TIMEFRAME_OPTIONS = [
@@ -144,6 +179,9 @@ export default function TradingChart({ stockCode }) {
   const chartRef = useRef(null);
   const candlestickSeriesRef = useRef(null);
   const volumeSeriesRef = useRef(null);
+  // 보조지표 series refs
+  const maSeriesRefs = useRef({ 5: null, 20: null, 60: null });
+  const bbSeriesRefs = useRef({ upper: null, middle: null, lower: null });
   // 실시간 틱으로 갱신할 마지막 캔들 (high/low 누적용)
   const lastCandleRef = useRef(null);
   // 무한 스크롤용 상태
@@ -155,9 +193,73 @@ export default function TradingChart({ stockCode }) {
   const timeframeRef = useRef('D');
   const [timeframe, setTimeframe] = useState('D');
 
+  // 활성화된 보조지표 (기본: 거래량 + 볼린저밴드 + RSI — 기존 hardcode active와 맞춤)
+  const [activeIndicators, setActiveIndicators] = useState(
+    new Set([INDICATOR.VOLUME, INDICATOR.BB, INDICATOR.MA])
+  );
+  // applyIndicators 콜백 안에서 최신 state 참조용 (의존성 폭주 회피)
+  const activeIndicatorsRef = useRef(activeIndicators);
+  activeIndicatorsRef.current = activeIndicators;
+
+  const toggleIndicator = (key) => {
+    setActiveIndicators((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   // 매 렌더에서 최신값 동기화
   stockCodeRef.current = stockCode;
   timeframeRef.current = timeframe;
+
+  // 토글 변경 시 보조지표 즉시 재적용 (차트 series는 살아있고 데이터만 갱신)
+  useEffect(() => {
+    applyIndicators();
+    // applyIndicators는 ref만 읽으므로 의존성 명시 불필요
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeIndicators]);
+
+  // 누적 캔들 기준으로 모든 활성 보조지표 데이터를 setData.
+  // 비활성 지표는 빈 배열로 set해 화면에서 숨김.
+  const applyIndicators = () => {
+    const candles = allCandlesRef.current;
+    if (candles.length === 0) return;
+    const active = activeIndicatorsRef.current;
+
+    // 이동평균선
+    MA_PERIODS.forEach((period) => {
+      const ref = maSeriesRefs.current[period];
+      if (!ref) return;
+      ref.setData(active.has(INDICATOR.MA) ? calcMA(candles, period) : []);
+    });
+
+    // 볼린저밴드
+    if (active.has(INDICATOR.BB)) {
+      const bb = calcBB(candles);
+      bbSeriesRefs.current.upper?.setData(bb.upper);
+      bbSeriesRefs.current.middle?.setData(bb.middle);
+      bbSeriesRefs.current.lower?.setData(bb.lower);
+    } else {
+      bbSeriesRefs.current.upper?.setData([]);
+      bbSeriesRefs.current.middle?.setData([]);
+      bbSeriesRefs.current.lower?.setData([]);
+    }
+
+    // 거래량
+    if (active.has(INDICATOR.VOLUME)) {
+      volumeSeriesRef.current?.setData(
+        candles.map((d) => ({
+          time: d.time,
+          value: d.volume ?? 0,
+          color: d.close >= d.open ? 'rgba(239,68,68,0.4)' : 'rgba(59,130,246,0.4)',
+        }))
+      );
+    } else {
+      volumeSeriesRef.current?.setData([]);
+    }
+  };
 
   // 차트 생성 (마운트 1회) + 무한 스크롤 트리거 구독
   useEffect(() => {
@@ -202,6 +304,41 @@ export default function TradingChart({ stockCode }) {
       borderVisible: false,
       wickUpColor: '#ef4444',
       wickDownColor: '#3b82f6',
+    });
+
+    // 이동평균선 (5/20/60일) — 가격 차트 위 오버레이 (기본 priceScale 공유)
+    MA_PERIODS.forEach((period) => {
+      maSeriesRefs.current[period] = chart.addLineSeries({
+        color: MA_COLORS[period],
+        lineWidth: 1,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        title: `MA${period}`,
+      });
+    });
+
+    // 볼린저밴드 (20일, ±2σ) — 가격 차트 위 오버레이
+    bbSeriesRefs.current.upper = chart.addLineSeries({
+      color: 'rgba(168, 162, 158, 0.7)',
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      title: 'BB Upper',
+    });
+    bbSeriesRefs.current.middle = chart.addLineSeries({
+      color: 'rgba(168, 162, 158, 0.4)',
+      lineWidth: 1,
+      lineStyle: 2, // dashed
+      priceLineVisible: false,
+      lastValueVisible: false,
+      title: 'BB Mid',
+    });
+    bbSeriesRefs.current.lower = chart.addLineSeries({
+      color: 'rgba(168, 162, 158, 0.7)',
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      title: 'BB Lower',
     });
 
     volumeSeriesRef.current = chart.addHistogramSeries({
@@ -300,13 +437,8 @@ export default function TradingChart({ stockCode }) {
 
       allCandlesRef.current = merged;
       candlestickSeriesRef.current?.setData(merged);
-      volumeSeriesRef.current?.setData(
-        merged.map((d) => ({
-          time: d.time,
-          value: d.volume ?? 0,
-          color: d.close >= d.open ? 'rgba(239,68,68,0.4)' : 'rgba(59,130,246,0.4)',
-        }))
-      );
+      // 거래량/MA/BB 등 보조지표는 applyIndicators가 일괄 처리
+      applyIndicators();
 
       // 추가된 개수만큼 logical index를 shift 해 사용자가 보던 위치 유지
       if (prevLogicalRange && timeScale) {
@@ -357,13 +489,8 @@ export default function TradingChart({ stockCode }) {
 
         allCandlesRef.current = uniqueAdapted;
         candlestickSeriesRef.current?.setData(uniqueAdapted);
-        volumeSeriesRef.current?.setData(
-          uniqueAdapted.map((d) => ({
-            time: d.time,
-            value: d.volume ?? 0,
-            color: d.close >= d.open ? 'rgba(239,68,68,0.4)' : 'rgba(59,130,246,0.4)',
-          }))
-        );
+        // 거래량/MA/BB 등 보조지표는 applyIndicators가 일괄 처리
+        applyIndicators();
         // 초기 로드 / 기간 전환 시 가장 최신 N개만 보이도록 설정
         // (전체 fit은 캔들이 너무 압축되어 분봉이 점처럼 보임 → visible range 명시)
         const visibleCount = Math.min(80, uniqueAdapted.length);
@@ -494,11 +621,40 @@ export default function TradingChart({ stockCode }) {
 
           <span style={{ color: 'rgba(255,255,255,0.2)', marginRight: '1rem' }}>|</span>
 
-          <button className="tool-btn">이동평균선</button>
-          <button className="tool-btn active">볼린저밴드</button>
-          <button className="tool-btn">MACD</button>
-          <button className="tool-btn active">RSI</button>
-          <button className="tool-btn active">거래량</button>
+          <button
+            className={`tool-btn ${activeIndicators.has(INDICATOR.MA) ? 'active' : ''}`}
+            onClick={() => toggleIndicator(INDICATOR.MA)}
+          >
+            이동평균선
+          </button>
+          <button
+            className={`tool-btn ${activeIndicators.has(INDICATOR.BB) ? 'active' : ''}`}
+            onClick={() => toggleIndicator(INDICATOR.BB)}
+          >
+            볼린저밴드
+          </button>
+          <button
+            className={`tool-btn ${activeIndicators.has(INDICATOR.MACD) ? 'active' : ''}`}
+            onClick={() => toggleIndicator(INDICATOR.MACD)}
+            disabled
+            title="2단계에서 구현 예정"
+          >
+            MACD
+          </button>
+          <button
+            className={`tool-btn ${activeIndicators.has(INDICATOR.RSI) ? 'active' : ''}`}
+            onClick={() => toggleIndicator(INDICATOR.RSI)}
+            disabled
+            title="2단계에서 구현 예정"
+          >
+            RSI
+          </button>
+          <button
+            className={`tool-btn ${activeIndicators.has(INDICATOR.VOLUME) ? 'active' : ''}`}
+            onClick={() => toggleIndicator(INDICATOR.VOLUME)}
+          >
+            거래량
+          </button>
         </div>
         <div className="toolbar-right">
           <button className="tool-btn">지표 추가 ▼</button>
