@@ -107,7 +107,7 @@ public class KisModifyOrderClient {
         try {
             ModifyResponse response = kisRestClient.post()
                     .uri(MODIFY_PATH)
-                    .header("content-type", "application/json; charset=utf-8")
+                    .header("content-type", "application/json")
                     .header("authorization", "Bearer " + accessToken)
                     .header("appkey", appKey)
                     .header("appsecret", appSecret)

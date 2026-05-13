@@ -5,6 +5,7 @@ import com.modu.backend.domain.user.dto.KisKeyUpdateRequest;
 import com.modu.backend.domain.user.entity.KisCredential;
 import com.modu.backend.domain.user.exception.UserErrorCode;
 import com.modu.backend.domain.user.repository.KisCredentialRepository;
+import com.modu.backend.domain.user.repository.KisTokenRepository;
 import com.modu.backend.global.error.ApiException;
 import com.modu.backend.global.util.AesGcmEncryptor;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class KisKeyService {
 
     private final KisCredentialRepository kisCredentialRepository;
+    private final KisTokenRepository kisTokenRepository;
     private final KisTokenService kisTokenService;
     private final AesGcmEncryptor encryptor;
 
@@ -72,6 +74,8 @@ public class KisKeyService {
      *
      * 연동 정보가 없으면 KIS_NOT_CONNECTED 예외
      * null이 아닌 필드만 선택적으로 업데이트
+     * appKey 또는 appSecret 변경 시: 기존 토큰 전체 삭제 후 신규 발급
+     * (KIS는 appKey당 토큰 1개만 유효 — 이전 appKey 토큰이 남아있으면 EGW00202 발생)
      */
     public void updateKisKey(Long userId, KisKeyUpdateRequest request) {
         KisCredential credential = kisCredentialRepository.findByUserId(userId)
@@ -81,6 +85,8 @@ public class KisKeyService {
                 ? parseAccountNo(request.accountNo())
                 : null;
 
+        boolean credentialsChanged = request.appKey() != null || request.appSecret() != null;
+
         credential.update(
                 request.appKey() != null ? encryptor.encrypt(request.appKey()) : null,
                 request.appSecret() != null ? encryptor.encrypt(request.appSecret()) : null,
@@ -88,6 +94,14 @@ public class KisKeyService {
                 accountParts != null ? accountParts[1] : null,
                 request.isRealAccount()
         );
+
+        if (credentialsChanged) {
+            kisTokenRepository.deleteAllByUserId(userId);
+            String newAppKey = request.appKey() != null ? request.appKey() : encryptor.decrypt(credential.getAppKeyEnc());
+            String newAppSecret = request.appSecret() != null ? request.appSecret() : encryptor.decrypt(credential.getAppSecretEnc());
+            kisTokenService.issueAndSaveAccessToken(userId, newAppKey, newAppSecret);
+            kisTokenService.issueAndSaveWebSocketKey(userId, newAppKey, newAppSecret);
+        }
     }
 
     // ── 삭제 ──────────────────────────────────────────────────────────────────
