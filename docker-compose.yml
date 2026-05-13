@@ -4,6 +4,39 @@
 # 종료: docker compose down -v
 # ============================================================
 
+# analysis_server engine + collectors 공통 설정 — 4 서비스가 같은 이미지를
+# 쓰며 command 만 다름. 환경변수·네트워크·재시작 정책을 anchor 로 묶어 중복 제거.
+x-analysis-base: &analysis-base
+  build:
+    context: ./analysis_server
+    dockerfile: Dockerfile
+  environment:
+    # Redis / Kafka — 컨테이너 내부 네트워크 호스트명. .env 의 KAFKA_BOOTSTRAP_SERVERS
+    # ("kafka:9092") 는 잘못된 값이라 의도적으로 무시하고 3-broker 명시.
+    REDIS_HOST: ${REDIS_HOST:-redis}
+    REDIS_PORT: ${REDIS_PORT:-6379}
+    REDIS_DB: ${REDIS_DB:-0}
+    KAFKA_BOOTSTRAP_SERVERS: kafka-0:9092,kafka-1:9092,kafka-2:9092
+    # 외부 API 키 (collectors 용)
+    KIS_APP_KEY: ${KIS_APP_KEY}
+    KIS_APP_SECRET: ${KIS_APP_SECRET}
+    KIS_BASE_URL: ${KIS_BASE_URL}
+    DART_API_KEY: ${DART_API_KEY}
+    MONGO_URI: ${MONGO_URI}
+    # DB (engine signal_builder + backfill 용)
+    DB_HOST: ${DB_HOST:-postgres}
+    DB_PORT: ${DB_PORT:-5432}
+    DB_NAME: ${DB_NAME:-modu_db}
+    DB_USERNAME: ${DB_USERNAME:-postgres}
+    DB_PASSWORD: ${DB_PASSWORD:-localpassword}
+  volumes:
+    # stock_master.db (SQLite) 공유 — engine/collectors 모두 read 또는 read+write.
+    # 호스트 파일 직접 마운트로 컨테이너 재기동 후에도 데이터 보존.
+    - ./analysis_server/data:/app/data
+  networks:
+    - modu-network
+  restart: on-failure
+
 services:
   # React 프론트엔드 (Nginx 서빙)
   frontend:
@@ -270,6 +303,54 @@ services:
     networks:
       - modu-network
     restart: on-failure
+
+  # ============================================================
+  # analysis_server engine + collectors
+  # 모두 같은 이미지 (./analysis_server/Dockerfile) — command 로 entrypoint 차별화.
+  # x-analysis-base anchor 가 환경변수·네트워크·재시작·볼륨 공통 처리.
+  # ============================================================
+
+  # 1분 cron engine cycle — Redis/DB 의 collector 데이터 읽어 Kafka 발행
+  analysis-engine:
+    <<: *analysis-base
+    container_name: modu-analysis-engine
+    command: ["python", "-m", "main"]
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka-0:
+        condition: service_healthy
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+
+  # KIS 1분봉 → 6 지표 → Redis technical:{stock} (무한 루프, 1 사이클 ≈ 7~10분)
+  analysis-candle-collector:
+    <<: *analysis-base
+    container_name: modu-candle-collector
+    command: ["python", "-m", "collectors.candle_collector", "--loop"]
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # DART list.json batch → Redis event:{stock} (3분 주기)
+  analysis-disclosure-collector:
+    <<: *analysis-base
+    container_name: modu-disclosure-collector
+    command: ["python", "-m", "collectors.disclosure_collector", "--loop"]
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # 한국경제·연합인포맥스 RSS → MongoDB news_articles (10분 주기)
+  analysis-news-collector:
+    <<: *analysis-base
+    container_name: modu-news-collector
+    command: ["python", "-m", "collectors.news_collector", "--loop"]
+    depends_on:
+      mongo:
+        condition: service_healthy
 
 networks:
   modu-network:
