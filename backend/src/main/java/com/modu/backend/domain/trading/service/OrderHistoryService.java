@@ -26,6 +26,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -55,6 +56,16 @@ public class OrderHistoryService {
     private static final int DEFAULT_PERIOD_MONTHS = 3;
     /** 최대 조회 기간 — 1년 */
     private static final int MAX_PERIOD_MONTHS    = 12;
+
+    /**
+     * 자동 매매로 분류되는 OrderSource 집합 — HistorySourceFilter.AUTO 매칭 시 사용
+     * 새 OrderSource 추가 시 자동 매매 여부를 의식적으로 결정하도록 화이트리스트 방식 사용
+     */
+    private static final Set<String> AUTO_SOURCES = Set.of(
+            OrderSource.AI_DECISION.name(),
+            OrderSource.STOP_LOSS.name(),
+            OrderSource.TAKE_PROFIT.name()
+    );
 
     private final OrderRepository orderRepository;
     private final KisCredentialRepository kisCredentialRepository;
@@ -197,8 +208,8 @@ public class OrderHistoryService {
     /**
      * source 필터 매칭
      *  ALL    → 모두 통과
-     *  AUTO   → source == "AUTO"
-     *  MANUAL → source == "MANUAL"
+     *  AUTO   → source ∈ AUTO_SOURCES (AI_DECISION / STOP_LOSS / TAKE_PROFIT)
+     *  MANUAL → source == MANUAL
      * (AUTO/MANUAL 필터 시 DB 미매칭 항목 source=null 은 제외)
      */
     private boolean matchesSource(OrderHistoryResponse.OrderHistoryItem item,
@@ -206,7 +217,7 @@ public class OrderHistoryService {
         if (filter == HistorySourceFilter.ALL) return true;
         if (item.source() == null) return false;
         return filter == HistorySourceFilter.AUTO
-                ? OrderSource.AUTO.name().equals(item.source())
+                ? AUTO_SOURCES.contains(item.source())
                 : OrderSource.MANUAL.name().equals(item.source());
     }
 }
