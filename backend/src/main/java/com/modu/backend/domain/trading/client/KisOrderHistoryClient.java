@@ -200,7 +200,7 @@ public class KisOrderHistoryClient {
                             .queryParam("CTX_AREA_FK100", ctxFk)
                             .queryParam("CTX_AREA_NK100", ctxNk)
                             .build())
-                    .header("content-type", "application/json; charset=utf-8")
+                    .header("content-type", "application/json")
                     .header("authorization", "Bearer " + accessToken)
                     .header("appkey", appKey)
                     .header("appsecret", appSecret)
