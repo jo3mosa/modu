@@ -80,7 +80,7 @@ public class KisPendingOrderClient {
                             .queryParam("INQR_DVSN_1", "0")   // 주문 기준 조회
                             .queryParam("INQR_DVSN_2", "0")   // 매수+매도 전체
                             .build())
-                    .header("content-type", "application/json; charset=utf-8")
+                    .header("content-type", "application/json")
                     .header("authorization", "Bearer " + accessToken)
                     .header("appkey", appKey)
                     .header("appsecret", appSecret)

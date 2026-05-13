@@ -70,7 +70,7 @@ public class KisBalanceClient {
                             .queryParam("CTX_AREA_FK100", "")
                             .queryParam("CTX_AREA_NK100", "")
                             .build())
-                    .header("content-type", "application/json; charset=utf-8")
+                    .header("content-type", "application/json")
                     .header("authorization", "Bearer " + accessToken)
                     .header("appkey", appKey)
                     .header("appsecret", appSecret)

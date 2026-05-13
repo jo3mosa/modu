@@ -1,20 +1,16 @@
 package com.modu.backend.global.config;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
-/**
- * RestClient 빈 설정
- *
- * 외부 API 호출 시 무한 대기를 방지하기 위해 타임아웃 설정
- * - kakaoRestClient: connectTimeout 3초, readTimeout 5초
- * - kisRestClient  : connectTimeout 5초, readTimeout 10초 (KIS API 응답이 다소 느릴 수 있음)
- */
+@Slf4j
 @Configuration
 public class RestClientConfig {
 
@@ -38,6 +34,13 @@ public class RestClientConfig {
         return RestClient.builder()
                 .baseUrl(kisBaseUrl)
                 .requestFactory(factory)
+                .requestInterceptor((request, body, execution) -> {
+                    log.warn("[KIS-WIRE] {} {} | headers={} | body={}",
+                            request.getMethod(), request.getURI(),
+                            request.getHeaders(),
+                            new String(body, StandardCharsets.UTF_8));
+                    return execution.execute(request, body);
+                })
                 .build();
     }
 }

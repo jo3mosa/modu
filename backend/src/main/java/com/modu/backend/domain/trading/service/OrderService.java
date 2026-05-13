@@ -134,13 +134,32 @@ public class OrderService {
                     .orElseThrow(() -> new ApiException(CommonErrorCode.CONCURRENT_CONFLICT));
         }
 
-        // KIS 주문 실행
-        KisOrderClient.KisOrderResult result = kisOrderClient.placeOrder(
-                accessToken, appKey, appSecret,
-                credential.getAccountNo(), credential.getAccountPrdtCd(),
-                request.stockCode(), request.side(), request.orderMethod(),
-                request.quantity(), request.price()
-        );
+        // KIS 주문 실행 (토큰 무효화 시 1회 재시도)
+        KisOrderClient.KisOrderResult result;
+        try {
+            result = kisOrderClient.placeOrder(
+                    accessToken, appKey, appSecret,
+                    credential.getAccountNo(), credential.getAccountPrdtCd(),
+                    request.stockCode(), request.side(), request.orderMethod(),
+                    request.quantity(), request.price());
+        } catch (ApiException e) {
+            if (!CommonErrorCode.EXTERNAL_API_ERROR.equals(e.getErrorCode())) throw e;
+            // EGW00202 등 — 외부에서 동일 appKey로 새 토큰 발급 시 DB 토큰이 무효화됨
+            // 토큰 강제 재발급 후 1회 재시도 (KIS 분당 1회 제한에 걸리면 명확한 에러 반환)
+            log.warn("[주문] KIS API 오류 → 토큰 강제 재발급 후 재시도 - userId: {}", userId);
+            try {
+                accessToken = kisTokenService.issueAndSaveAccessToken(userId, appKey, appSecret);
+            } catch (ApiException tokenEx) {
+                // EGW00133: KIS 분당 1회 발급 제한 — 외부에서 토큰을 발급한 직후 무효화된 상황
+                log.warn("[주문] 토큰 재발급 실패 (rate limit 또는 자격증명 오류) - userId: {}", userId);
+                throw new ApiException(OrderErrorCode.KIS_TOKEN_INVALIDATED);
+            }
+            result = kisOrderClient.placeOrder(
+                    accessToken, appKey, appSecret,
+                    credential.getAccountNo(), credential.getAccountPrdtCd(),
+                    request.stockCode(), request.side(), request.orderMethod(),
+                    request.quantity(), request.price());
+        }
 
         // KIS 응답으로 주문 정보 업데이트 (JPA dirty checking으로 자동 반영)
         order.updateKisInfo(result.kisOrderNo(), result.kisOrgNo(), OffsetDateTime.now());
@@ -182,7 +201,7 @@ public class OrderService {
         if (request.side() == OrderSide.BUY) {
             long buyable     = kisOrderClient.getBuyableAmount(
                     accessToken, appKey, appSecret, cano, acntPrdtCd,
-                    request.stockCode(), request.price());
+                    request.stockCode(), request.orderMethod(), request.price());
             long orderAmount = (long) request.quantity() * request.price();
             if (orderAmount > buyable) {
                 throw new ApiException(OrderErrorCode.INSUFFICIENT_BALANCE);
@@ -190,7 +209,7 @@ public class OrderService {
         } else {
             long sellable = kisOrderClient.getSellableQuantity(
                     accessToken, appKey, appSecret, cano, acntPrdtCd,
-                    request.stockCode(), request.price());
+                    request.stockCode(), request.orderMethod(), request.price());
             if (request.quantity() > sellable) {
                 throw new ApiException(OrderErrorCode.INSUFFICIENT_BALANCE);
             }

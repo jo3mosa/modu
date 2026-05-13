@@ -49,7 +49,7 @@ public class KisPriceClient {
                             .queryParam("FID_COND_MRKT_DIV_CODE", "J")
                             .queryParam("FID_INPUT_ISCD", stockCode)
                             .build())
-                    .header("content-type", "application/json; charset=utf-8")
+                    .header("content-type", "application/json")
                     .header("authorization", "Bearer " + accessToken)
                     .header("appkey", kisApiProperties.getAppKey())
                     .header("appsecret", kisApiProperties.getAppSecret())
