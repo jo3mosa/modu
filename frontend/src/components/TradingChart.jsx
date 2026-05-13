@@ -762,9 +762,6 @@ export default function TradingChart({ stockCode }) {
             거래량
           </button>
         </div>
-        <div className="toolbar-right">
-          <button className="tool-btn">지표 추가 ▼</button>
-        </div>
       </div>
       <div className="chart-container" ref={chartContainerRef} />
     </div>
