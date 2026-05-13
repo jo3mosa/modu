@@ -16,6 +16,7 @@ collectors 는 별도 프로세스 (docker-compose) 로 띄움 — 이 모듈은
 
 import argparse
 import logging
+import sys
 import time
 from functools import partial
 from typing import Optional
@@ -127,13 +128,14 @@ def main() -> None:
         if args.watchlist else None
     )
 
-    # 의존성 헬스체크 — 실패 시 즉시 exit (docker restart policy 가 재기동, ops 가시성)
+    # 의존성 헬스체크 — 실패 시 exit code 1 (docker restart: on-failure / k8s
+    # restartPolicy: OnFailure 가 재기동 트리거, 좀비 컨테이너 방지).
     if not check_redis_connection():
         logger.error("Redis 연결 실패 — exit (REDIS_HOST 환경변수 확인)")
-        return
+        sys.exit(1)
     if not check_kafka_connection():
         logger.error("Kafka 연결 실패 — exit (KAFKA_BOOTSTRAP_SERVERS 환경변수 확인)")
-        return
+        sys.exit(1)
     logger.info("dependencies OK (Redis + Kafka)")
 
     if args.once:
