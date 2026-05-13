@@ -146,7 +146,7 @@ class OrderServiceTest {
         when(encryptor.decrypt("enc-key")).thenReturn("real-key");
         when(encryptor.decrypt("enc-secret")).thenReturn("real-secret");
         when(kisTokenService.getOrIssueAccessToken(1L, "real-key", "real-secret")).thenReturn("token");
-        when(kisOrderClient.getBuyableAmount(any(), any(), any(), any(), any(), any(), anyLong()))
+        when(kisOrderClient.getBuyableAmount(any(), any(), any(), any(), any(), any(), any(OrderType.class), anyLong()))
                 .thenReturn(10_000_000L);
 
         when(orderRepository.saveAndFlush(any(Order.class)))
@@ -336,7 +336,7 @@ class OrderServiceTest {
         when(encryptor.decrypt("enc-key")).thenReturn("real-key");
         when(encryptor.decrypt("enc-secret")).thenReturn("real-secret");
         when(kisTokenService.getOrIssueAccessToken(1L, "real-key", "real-secret")).thenReturn("token");
-        when(kisOrderClient.getBuyableAmount(any(), any(), any(), any(), any(), any(), anyLong()))
+        when(kisOrderClient.getBuyableAmount(any(), any(), any(), any(), any(), any(), any(OrderType.class), anyLong()))
                 .thenReturn(500_000L);
 
         try (MockedStatic<ZonedDateTime> mocked =
@@ -361,7 +361,7 @@ class OrderServiceTest {
         when(encryptor.decrypt("enc-key")).thenReturn("real-key");
         when(encryptor.decrypt("enc-secret")).thenReturn("real-secret");
         when(kisTokenService.getOrIssueAccessToken(1L, "real-key", "real-secret")).thenReturn("token");
-        when(kisOrderClient.getSellableQuantity(any(), any(), any(), any(), any(), any(), anyLong()))
+        when(kisOrderClient.getSellableQuantity(any(), any(), any(), any(), any(), any(), any(OrderType.class), anyLong()))
                 .thenReturn(3L);
 
         try (MockedStatic<ZonedDateTime> mocked =
@@ -829,10 +829,10 @@ class OrderServiceTest {
         when(kisTokenService.getOrIssueAccessToken(1L, "real-key", "real-secret")).thenReturn("token");
 
         if (side == OrderSide.BUY) {
-            when(kisOrderClient.getBuyableAmount(any(), any(), any(), any(), any(), any(), anyLong()))
+            when(kisOrderClient.getBuyableAmount(any(), any(), any(), any(), any(), any(), any(OrderType.class), anyLong()))
                     .thenReturn(10_000_000L);
         } else {
-            when(kisOrderClient.getSellableQuantity(any(), any(), any(), any(), any(), any(), anyLong()))
+            when(kisOrderClient.getSellableQuantity(any(), any(), any(), any(), any(), any(), any(OrderType.class), anyLong()))
                     .thenReturn(100L);
         }
 
