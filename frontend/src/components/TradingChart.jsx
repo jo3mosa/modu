@@ -230,10 +230,8 @@ export default function TradingChart({ stockCode }) {
   const timeframeRef = useRef('D');
   const [timeframe, setTimeframe] = useState('D');
 
-  // 활성화된 보조지표 (기본: 거래량 + 볼린저밴드 + RSI — 기존 hardcode active와 맞춤)
-  const [activeIndicators, setActiveIndicators] = useState(
-    new Set([INDICATOR.VOLUME, INDICATOR.BB, INDICATOR.MA])
-  );
+  // 활성화된 보조지표 (초기값: 모두 꺼짐)
+  const [activeIndicators, setActiveIndicators] = useState(new Set());
   // applyIndicators 콜백 안에서 최신 state 참조용 (의존성 폭주 회피)
   const activeIndicatorsRef = useRef(activeIndicators);
   activeIndicatorsRef.current = activeIndicators;
