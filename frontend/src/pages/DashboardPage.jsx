@@ -81,10 +81,9 @@ export default function DashboardPage() {
         const [summaryData, portfolioData, decisionsData, historyResult, profileResult] = await Promise.all([
           getAccountSummary(),
           getPortfolio(),
-          // 최근 매매 로그용 AI 판단 5개
-          getAiDecisions({ page: 0, size: 5 }),
-          // 최근 매매 로그용 수동 주문 5개 (404 → 빈 결과로 흡수)
-          getOrderHistory({ page: 1, size: 5 }).catch((error) => {
+          // 최근 매매 로그용 — AI 10개 + 수동 10개 가져와서 합치고 최신 8개 표시
+          getAiDecisions({ page: 0, size: 10 }),
+          getOrderHistory({ page: 1, size: 10 }).catch((error) => {
             if (error.status !== 404) {
               console.warn('거래 이력 로드 실패:', error);
             }
@@ -235,7 +234,7 @@ export default function DashboardPage() {
     return [...aiItems, ...manualItems]
       .filter((l) => l.decidedAt)
       .sort((a, b) => new Date(b.decidedAt) - new Date(a.decidedAt))
-      .slice(0, 5);
+      .slice(0, 8);
   }, [aiDecisions, orderHistory]);
 
   const derivedSummary = useMemo(() => {
@@ -556,17 +555,21 @@ export default function DashboardPage() {
                 const actionLabel = log.action === 'BUY' ? '매수'
                   : log.action === 'SELL' ? '매도'
                   : log.action === 'HOLD' ? '관망' : '판단';
+                const date = new Date(log.decidedAt);
+                const timeLabel = `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
                 return (
                   <div key={log.id} className="log-item">
-                    <div className="log-time">
-                      {new Date(log.decidedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </div>
-                    <div className={`log-badge ${actionLower}`}>{actionLabel}</div>
-                    <div className="log-stock">{log.stockName ?? log.stockCode}</div>
-                    <div className="log-desc">
-                      {log.price != null && log.quantity != null
-                        ? `${log.price.toLocaleString()}원 · ${log.quantity}주`
-                        : (log.source === 'AI' ? 'AI 판단' : '-')}
+                    <div className={`log-icon ${actionLower}`}>{actionLabel}</div>
+                    <div className="log-content">
+                      <div className="log-top">
+                        <span className="log-stock">{log.stockName ?? log.stockCode}</span>
+                        <span className="log-time">{timeLabel}</span>
+                      </div>
+                      <div className="log-bottom">
+                        {log.price != null && log.quantity != null
+                          ? `${log.price.toLocaleString()}원 · ${log.quantity}주`
+                          : (log.source === 'AI' ? 'AI 판단' : '-')}
+                      </div>
                     </div>
                   </div>
                 );
