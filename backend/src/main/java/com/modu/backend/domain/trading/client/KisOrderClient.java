@@ -170,7 +170,7 @@ public class KisOrderClient {
         String hashKey = kisHashKeyClient.getHashKey(appKey, appSecret, body);
 
         log.info("[주문] KIS 호출 - trId: {}, appKeyPrefix: {}, tokenPrefix: {}, cano: {}, acntPrdtCd: {}, stockCode: {}, ordDvsn: {}, ordQty: {}, ordUnpr: {}",
-                trId, appKey.substring(0, 8), accessToken.substring(0, 20), cano, acntPrdtCd, stockCode, ordDvsn, quantity, ordUnpr);
+                trId, safePrefix(appKey, 8), safePrefix(accessToken, 20), cano, acntPrdtCd, stockCode, ordDvsn, quantity, ordUnpr);
 
         try {
             PlaceOrderResponse response = kisRestClient.post()
@@ -202,6 +202,16 @@ public class KisOrderClient {
             log.error("KIS 주문 API 호출 실패: {}", e.getMessage());
             throw new ApiException(CommonErrorCode.EXTERNAL_API_ERROR);
         }
+    }
+
+    /**
+     * 로그 출력용 안전 prefix 추출
+     * 입력 길이가 요청 길이보다 짧으면 원본을 그대로 반환해 StringIndexOutOfBoundsException 방지
+     * 운영 환경의 정상 길이 입력에서는 기존 substring(0, len) 과 동일하게 동작
+     */
+    private static String safePrefix(String value, int len) {
+        if (value == null) return "";
+        return value.length() <= len ? value : value.substring(0, len);
     }
 
     /**

@@ -202,7 +202,7 @@ class OrderHistoryServiceTest {
         when(orderRepository.findByUserIdAndKisOrderNoIn(eq(1L), any()))
                 .thenReturn(List.of(
                         buildOrder(1L, "A", OrderSource.MANUAL, now),
-                        buildOrder(2L, "B", OrderSource.AUTO, now)
+                        buildOrder(2L, "B", OrderSource.AI_DECISION, now)
                 ));
 
         OrderHistoryResponse res = orderHistoryService.getOrderHistory(

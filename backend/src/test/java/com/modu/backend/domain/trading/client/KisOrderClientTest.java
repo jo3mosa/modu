@@ -49,7 +49,7 @@ class KisOrderClientTest {
 
         // when & then
         assertThatThrownBy(() -> kisOrderClient.getBuyableAmount(
-                "token", "key", "secret", "50012345", "01", "005930", 70000L))
+                "token", "key", "secret", "50012345", "01", "005930", OrderType.LIMIT, 70000L))
                 .isInstanceOf(ApiException.class)
                 .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode())
                         .isEqualTo(CommonErrorCode.EXTERNAL_API_ERROR));
@@ -65,7 +65,7 @@ class KisOrderClientTest {
 
         // when & then
         assertThatThrownBy(() -> kisOrderClient.getSellableQuantity(
-                "token", "key", "secret", "50012345", "01", "005930", 70000L))
+                "token", "key", "secret", "50012345", "01", "005930", OrderType.LIMIT, 70000L))
                 .isInstanceOf(ApiException.class)
                 .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode())
                         .isEqualTo(CommonErrorCode.EXTERNAL_API_ERROR));
