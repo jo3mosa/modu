@@ -99,6 +99,25 @@ const MOCK_HABIT_SUMMARY = {
   desc: "이번 달은 손절 원칙을 잘 지켜 전반적으로 안정적인 수익을 누적했습니다. 다만 지난주 급락장에서 하루 10회 이상 매매하는 등 일시적인 뇌동매매 징후가 포착되었습니다. 규칙적인 매매 빈도를 유지하세요."
 };
 
+// 매매 이력 섹션 페이지당 표시 개수 (클라이언트 페이지네이션)
+const TRADES_PER_PAGE = 10;
+
+// 페이지 버튼 스타일 (active/disabled에 따라 다른 색상)
+function paginationBtnStyle(isActive, isDisabled) {
+  return {
+    minWidth: '2rem',
+    padding: '0.3rem 0.6rem',
+    fontSize: '0.85rem',
+    fontWeight: 600,
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '6px',
+    background: isActive ? 'rgba(132,204,22,0.2)' : 'transparent',
+    color: isActive ? '#84cc16' : isDisabled ? '#444' : '#aaa',
+    cursor: isDisabled ? 'not-allowed' : 'pointer',
+    transition: 'all 0.15s',
+  };
+}
+
 // 백엔드 getOrderHistory 응답 표준 형식과 동일 (side / orderType / createdAt / source / status).
 const MOCK_GENERAL_HISTORY = [
   { orderId: '1001', stockCode: '005930', stockName: '삼성전자', side: 'BUY', orderType: 'LIMIT', price: 74500, quantity: 10, status: 'FILLED', source: 'MANUAL', createdAt: '2026-05-03 10:30' },
@@ -120,6 +139,8 @@ export default function ReportPage() {
   const [generalLogs, setGeneralLogs] = useState(MOCK_GENERAL_HISTORY);
   const [expandedLogId, setExpandedLogId] = useState(initialLogId ? parseInt(initialLogId, 10) : null);
   const [detailedDecisions, setDetailedDecisions] = useState({});
+  // 매매 이력 섹션 페이지네이션 (다른 섹션과 독립적으로 동작)
+  const [tradePage, setTradePage] = useState(1);
 
   // AI 판단 이력 조회. 실패 시 mock 그대로 표시.
   useEffect(() => {
@@ -187,6 +208,23 @@ export default function ReportPage() {
       (a, b) => new Date(b.decidedAt) - new Date(a.decidedAt)
     );
   }, [logs, generalLogs]);
+
+  // 매매 이력 페이지네이션: 현재 페이지에 해당하는 슬라이스
+  const totalTradePages = Math.max(1, Math.ceil(mergedLogs.length / TRADES_PER_PAGE));
+  const paginatedLogs = useMemo(() => {
+    const start = (tradePage - 1) * TRADES_PER_PAGE;
+    return mergedLogs.slice(start, start + TRADES_PER_PAGE);
+  }, [mergedLogs, tradePage]);
+
+  // 데이터 변동으로 totalPages가 줄어 현재 페이지가 범위를 벗어나면 마지막 페이지로 보정
+  useEffect(() => {
+    if (tradePage > totalTradePages) setTradePage(totalTradePages);
+  }, [tradePage, totalTradePages]);
+
+  const goToTradePage = (p) => {
+    if (p < 1 || p > totalTradePages) return;
+    setTradePage(p);
+  };
 
   // 아코디언 토글 + 펼칠 때 단건 상세(indicatorsSnapshot 포함) 조회
   const toggleLog = async (id) => {
@@ -362,7 +400,7 @@ export default function ReportPage() {
         </div>
 
         <div className="trade-log-list">
-          {mergedLogs.map((log) => {
+          {paginatedLogs.map((log) => {
             const isAI = log.source === 'AI';
             const isExpanded = isAI && expandedLogId === log.id;
             const actionDisplay = ACTION_DISPLAY[log.action] ?? ACTION_DISPLAY.UNKNOWN;
@@ -423,6 +461,48 @@ export default function ReportPage() {
             );
           })}
         </div>
+
+        {/* 매매 이력 페이지네이션 — 이 섹션만 페이지 전환, 위쪽 카드는 그대로 유지 */}
+        {mergedLogs.length > 0 && totalTradePages > 1 && (
+          <div
+            className="trade-pagination"
+            style={{
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              gap: '0.4rem',
+              marginTop: '1rem',
+              flexWrap: 'wrap',
+            }}
+          >
+            <button
+              className="page-btn"
+              onClick={() => goToTradePage(tradePage - 1)}
+              disabled={tradePage === 1}
+              style={paginationBtnStyle(false, tradePage === 1)}
+            >
+              ‹ 이전
+            </button>
+            {Array.from({ length: totalTradePages }, (_, i) => i + 1).map((p) => (
+              <button
+                key={p}
+                className={`page-btn ${p === tradePage ? 'active' : ''}`}
+                onClick={() => goToTradePage(p)}
+                style={paginationBtnStyle(p === tradePage, false)}
+              >
+                {p}
+              </button>
+            ))}
+            <button
+              className="page-btn"
+              onClick={() => goToTradePage(tradePage + 1)}
+              disabled={tradePage === totalTradePages}
+              style={paginationBtnStyle(false, tradePage === totalTradePages)}
+            >
+              다음 ›
+            </button>
+          </div>
+        )}
       </div>
 
     </div>
