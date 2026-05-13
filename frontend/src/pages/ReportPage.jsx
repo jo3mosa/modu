@@ -51,40 +51,6 @@ const MOCK_TREND_DATA = {
   kospiYield: [0, 0.5, 0.2, 0.8, 1.1, 1.0, 1.5, 2.0]
 };
 
-// 백엔드 미연결/실패 시 fallback. 형식은 aiAgent.js의 표준 형식과 동일하게 맞춤.
-const MOCK_TRADE_LOGS = [
-  {
-    id: 1,
-    orderId: 5001,
-    stockCode: '005930',
-    action: 'BUY',
-    executionStatus: 'READY',
-    confidence: 85,
-    reason: 'RSI 지표가 30 이하로 과매도 구간에 진입하였으며, 외국인 순매수세가 3일 연속 유입되는 것을 확인하여 분할 매수 1차 진입을 결정했습니다.',
-    decidedAt: '2026-05-03 10:30',
-  },
-  {
-    id: 2,
-    orderId: 5002,
-    stockCode: '000660',
-    action: 'SELL',
-    executionStatus: 'READY',
-    confidence: 92,
-    reason: '설정된 목표 수익률 5%를 초과 달성하였으며, 볼린저 밴드 상단 이탈 및 단기 저항선 도달을 확인하여 수익 실현을 위해 매도 처리했습니다.',
-    decidedAt: '2026-05-02 09:15',
-  },
-  {
-    id: 3,
-    orderId: 5003,
-    stockCode: '035720',
-    action: 'SELL',
-    executionStatus: 'BLOCKED',
-    confidence: 99,
-    reason: '설정된 최대 허용 손실률(-3%)에 도달하여, 추가적인 하락 리스크를 방어하기 위해 설정된 리스크 관리 룰셋에 따라 기계적 손절매를 집행했습니다.',
-    decidedAt: '2026-05-01 14:20',
-  },
-];
-
 const PERIOD_OPTIONS = [
   { value: '1W', label: '1주일' },
   { value: '1M', label: '1개월' },
@@ -134,7 +100,7 @@ export default function ReportPage() {
 
   const [period, setPeriod] = useState('1M');
   const [briefing] = useState(MOCK_MARKET_BRIEFING);
-  const [logs, setLogs] = useState(MOCK_TRADE_LOGS);
+  const [logs, setLogs] = useState([]);
   // 수동 매매 이력 (getOrderHistory). 연결 실패 시 mock 유지.
   const [generalLogs, setGeneralLogs] = useState(MOCK_GENERAL_HISTORY);
   const [expandedLogId, setExpandedLogId] = useState(initialLogId ? parseInt(initialLogId, 10) : null);
@@ -142,19 +108,18 @@ export default function ReportPage() {
   // 매매 이력 섹션 페이지네이션 (다른 섹션과 독립적으로 동작)
   const [tradePage, setTradePage] = useState(1);
 
-  // AI 판단 이력 조회. 실패 시 mock 그대로 표시.
+  // AI 판단 이력 조회. 실패하면 빈 목록 유지.
   useEffect(() => {
     let cancelled = false;
     async function fetchLogs() {
       try {
         const response = await getAiDecisions({ page: 0, size: 20 });
         if (cancelled) return;
-        if (response?.content?.length) {
-          setLogs(response.content);
-        }
+        setLogs(response?.content ?? []);
       } catch (error) {
         if (cancelled) return;
-        console.warn('AI 판단 이력 조회 실패 (mock 표시 유지):', error);
+        console.warn('AI 판단 이력 조회 실패:', error);
+        setLogs([]);
       }
     }
     fetchLogs();
