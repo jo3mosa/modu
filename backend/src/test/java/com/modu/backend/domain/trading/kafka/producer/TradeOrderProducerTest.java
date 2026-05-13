@@ -92,6 +92,24 @@ class TradeOrderProducerTest {
     }
 
     @Test
+    @DisplayName("send() 자체가 동기 RuntimeException 던질 때도 EXTERNAL_API_ERROR 로 매핑")
+    void send_동기_RuntimeException_변환() {
+        // given — send() 호출 시 직렬화 실패·producer 닫힘 등으로 즉시 throw 되는 케이스
+        RuntimeException syncFailure = new org.apache.kafka.common.KafkaException("serialization failed");
+        when(kafkaTemplate.send(any(ProducerRecord.class))).thenThrow(syncFailure);
+        TradeOrderMessage msg = sampleSubmittedMessage(42L);
+
+        // when & then
+        assertThatThrownBy(() -> producer.publishOrderSubmitted(msg))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> {
+                    assertThat(((ApiException) ex).getErrorCode())
+                            .isEqualTo(CommonErrorCode.EXTERNAL_API_ERROR);
+                    assertThat(ex.getCause()).isSameAs(syncFailure);
+                });
+    }
+
+    @Test
     @DisplayName("브로커 발행 실패 시 EXTERNAL_API_ERROR + cause 보존")
     void 발행_실패_ApiException_변환() {
         // given

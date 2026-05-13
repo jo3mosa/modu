@@ -112,6 +112,13 @@ public class TradeOrderProducer {
             log.error("Kafka 발행 타임아웃({}s) - topic: {}, key: {}, {}",
                     SEND_TIMEOUT_SECONDS, topic, key, logSummary, e);
             throw new ApiException(CommonErrorCode.EXTERNAL_API_ERROR, e);
+
+        } catch (RuntimeException e) {
+            // send() 자체에서 동기로 throw 되는 경우 처리
+            //  - 직렬화 실패 / producer 닫힘 / 메타데이터 fetch 실패(max.block.ms 초과) 등
+            //  - KafkaException 을 포함한 모든 RuntimeException 을 EXTERNAL_API_ERROR 로 단일 수렴
+            log.error("Kafka 발행 동기 실패 - topic: {}, key: {}, {}", topic, key, logSummary, e);
+            throw new ApiException(CommonErrorCode.EXTERNAL_API_ERROR, e);
         }
     }
 
