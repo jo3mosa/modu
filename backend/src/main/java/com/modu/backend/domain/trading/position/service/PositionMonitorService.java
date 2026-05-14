@@ -5,11 +5,13 @@ import com.modu.backend.domain.trading.position.entity.PositionTriggerReason;
 import com.modu.backend.domain.trading.position.repository.PositionThresholdRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Position Monitor 단일 사이클 평가 서비스
@@ -37,6 +39,7 @@ public class PositionMonitorService {
 
     private static final String PRICE_KEY_PREFIX = "market:price:";
     private static final Duration LOCK_TTL = Duration.ofSeconds(30);
+    private static final String TRACE_ID_MDC_KEY = "traceId";
 
     private final PositionThresholdRepository positionThresholdRepository;
     private final PositionTriggerLockService lockService;
@@ -60,6 +63,8 @@ public class PositionMonitorService {
             return;
         }
 
+        // traceId 발급 — 트리거 발생 시 TradeOrderProducer 가 MDC 의 traceId 를 Kafka x-trace-id 헤더로 자동 주입
+        MDC.put(TRACE_ID_MDC_KEY, UUID.randomUUID().toString());
         try {
             Long currentPrice = readCurrentPrice(stockCode);
             if (currentPrice == null) return;
@@ -73,6 +78,7 @@ public class PositionMonitorService {
             log.error("Position 평가 실패 - userId: {}, stockCode: {}", userId, stockCode, e);
         } finally {
             lockService.unlock(userId, stockCode);
+            MDC.remove(TRACE_ID_MDC_KEY);
         }
     }
 
