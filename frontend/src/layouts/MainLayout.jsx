@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { getStocks } from '../api/market';
+import { useOrderSSE } from '../hooks/useOrderSSE';
 import './MainLayout.css';
 
 export default function MainLayout() {
@@ -15,12 +16,22 @@ export default function MainLayout() {
   const debounceRef = useRef(null);
 
   const menuItems = [
-    { path: '/home',        label: '대시보드' },
-    { path: '/trading',     label: '트레이딩 룸' },
-    { path: '/report',      label: '리포트' },
+    { path: '/home', label: '대시보드' },
+    { path: '/trading', label: '트레이딩 룸' },
+    { path: '/report', label: '리포트' },
     { path: '/risk-manage', label: '리스크 관리' },
-    { path: '/mypage',      label: '마이페이지' },
+    { path: '/mypage', label: '마이페이지' },
   ];
+
+  const { latestEvent } = useOrderSSE();
+
+  // 전역 체결 알림 수신 (ORDER_EXECUTED)
+  useEffect(() => {
+    if (!latestEvent) return;
+    if (latestEvent.type === 'ORDER_EXECUTED') {
+      alert(`[체결 알림] ${latestEvent.stockCode || '주문'} 체결 완료! (주문번호: ${latestEvent.kisOrderNo})`);
+    }
+  }, [latestEvent]);
 
   // 검색어 변경 시 API 호출 (300ms debounce)
   useEffect(() => {
