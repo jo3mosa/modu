@@ -12,8 +12,10 @@ import com.modu.backend.domain.trading.dto.OrderResponse;
 import com.modu.backend.domain.trading.dto.PendingOrdersResponse;
 import com.modu.backend.domain.trading.entity.*;
 import com.modu.backend.domain.trading.exception.OrderErrorCode;
+import com.modu.backend.domain.trading.kafka.producer.TradeOrderProducer;
 import com.modu.backend.domain.trading.repository.OrderRepository;
 import com.modu.backend.domain.trading.repository.TradingRuleRepository;
+import com.modu.backend.global.kafka.dto.TradeOrderMessage;
 import com.modu.backend.domain.user.entity.KisCredential;
 import com.modu.backend.domain.user.exception.UserErrorCode;
 import com.modu.backend.domain.user.repository.KisCredentialRepository;
@@ -54,6 +56,7 @@ class OrderServiceTest {
     @Mock KisModifyOrderClient kisModifyOrderClient;
     @Mock KisBuyingPowerClient kisBuyingPowerClient;
     @Mock AesGcmEncryptor encryptor;
+    @Mock TradeOrderProducer tradeOrderProducer;
 
     @InjectMocks
     OrderService orderService;
@@ -112,7 +115,7 @@ class OrderServiceTest {
     // ── Idempotency ───────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("동일한 Idempotency-Key로 재요청 시 KIS API 호출 없이 기존 응답 반환")
+    @DisplayName("동일한 Idempotency-Key로 재요청 시 Kafka 발행 없이 기존 응답 반환")
     void 중복_요청_기존_응답_반환() {
         // given
         Order existing = buildOrder(OrderSide.BUY, "dup-key", 1L);
@@ -126,12 +129,11 @@ class OrderServiceTest {
         assertThat(response.orderId()).isEqualTo("1");
         assertThat(response.status()).isEqualTo("PENDING");
         verify(kisCredentialRepository, never()).findByUserId(any());
-        verify(kisOrderClient, never()).placeOrder(
-                any(), any(), any(), any(), any(), any(), any(), any(), anyLong(), anyLong());
+        verify(tradeOrderProducer, never()).publishOrderSubmitted(any(TradeOrderMessage.class));
     }
 
     @Test
-    @DisplayName("동시 중복 요청으로 유니크 제약 충돌 시 기존 주문 반환 (KIS 미호출)")
+    @DisplayName("동시 중복 요청으로 유니크 제약 충돌 시 기존 주문 반환 (Kafka 미발행)")
     void 동시_중복_요청_유니크_충돌_기존_주문_반환() {
         // given: 선조회는 empty → credential/잔고 검증 통과 → saveAndFlush 에서 유니크 충돌 → 재조회 반환
         Order existing = buildOrder(OrderSide.BUY, "key-001", 1L);
@@ -146,7 +148,7 @@ class OrderServiceTest {
         when(encryptor.decrypt("enc-key")).thenReturn("real-key");
         when(encryptor.decrypt("enc-secret")).thenReturn("real-secret");
         when(kisTokenService.getOrIssueAccessToken(1L, "real-key", "real-secret")).thenReturn("token");
-        when(kisOrderClient.getBuyableAmount(any(), any(), any(), any(), any(), any(), anyLong()))
+        when(kisOrderClient.getBuyableAmount(any(), any(), any(), any(), any(), any(), any(OrderType.class), anyLong()))
                 .thenReturn(10_000_000L);
 
         when(orderRepository.saveAndFlush(any(Order.class)))
@@ -159,10 +161,9 @@ class OrderServiceTest {
             // when
             OrderResponse response = orderService.placeOrder(1L, buyRequest, "key-001");
 
-            // then: 기존 주문 응답 반환, KIS 주문 미실행
+            // then: 기존 주문 응답 반환, Kafka 미발행
             assertThat(response.orderId()).isEqualTo("1");
-            verify(kisOrderClient, never()).placeOrder(
-                    any(), any(), any(), any(), any(), any(), any(), any(), anyLong(), anyLong());
+            verify(tradeOrderProducer, never()).publishOrderSubmitted(any(TradeOrderMessage.class));
         }
     }
 
@@ -336,7 +337,7 @@ class OrderServiceTest {
         when(encryptor.decrypt("enc-key")).thenReturn("real-key");
         when(encryptor.decrypt("enc-secret")).thenReturn("real-secret");
         when(kisTokenService.getOrIssueAccessToken(1L, "real-key", "real-secret")).thenReturn("token");
-        when(kisOrderClient.getBuyableAmount(any(), any(), any(), any(), any(), any(), anyLong()))
+        when(kisOrderClient.getBuyableAmount(any(), any(), any(), any(), any(), any(), any(OrderType.class), anyLong()))
                 .thenReturn(500_000L);
 
         try (MockedStatic<ZonedDateTime> mocked =
@@ -361,7 +362,7 @@ class OrderServiceTest {
         when(encryptor.decrypt("enc-key")).thenReturn("real-key");
         when(encryptor.decrypt("enc-secret")).thenReturn("real-secret");
         when(kisTokenService.getOrIssueAccessToken(1L, "real-key", "real-secret")).thenReturn("token");
-        when(kisOrderClient.getSellableQuantity(any(), any(), any(), any(), any(), any(), anyLong()))
+        when(kisOrderClient.getSellableQuantity(any(), any(), any(), any(), any(), any(), any(OrderType.class), anyLong()))
                 .thenReturn(3L);
 
         try (MockedStatic<ZonedDateTime> mocked =
@@ -379,7 +380,7 @@ class OrderServiceTest {
     // ── 주문 성공 ─────────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("매수 주문 성공 - status=PENDING, source=MANUAL, kisOrderNo/kisOrgNo 저장 확인")
+    @DisplayName("매수 주문 성공 - PENDING 저장 + trade.order.submitted Kafka 발행")
     void 매수_주문_성공() {
         // given
         setupKisStubs(OrderSide.BUY);
@@ -393,7 +394,7 @@ class OrderServiceTest {
             // when
             OrderResponse response = orderService.placeOrder(1L, buyRequest, "key-001");
 
-            // then
+            // then: HTTP 응답은 PENDING 으로 즉시 반환 (kisOrderNo 는 SSE 로 후속 수신)
             assertThat(response.orderId()).isEqualTo("1");
             assertThat(response.stockCode()).isEqualTo("005930");
             assertThat(response.side()).isEqualTo("BUY");
@@ -401,18 +402,30 @@ class OrderServiceTest {
             assertThat(response.price()).isEqualTo(70000L);
             assertThat(response.status()).isEqualTo("PENDING");
 
-            // saveAndFlush 시점엔 KIS 미호출이므로 kisOrderNo/kisOrgNo 는 null
-            // KIS 응답 후 updateKisInfo()로 반영됨
+            // DB 저장: PENDING + MANUAL
             verify(orderRepository).saveAndFlush(argThat(order ->
                     order.getStatus() == OrderStatus.PENDING &&
                     order.getSource() == OrderSource.MANUAL  &&
                     order.getSide()   == OrderSide.BUY
             ));
+
+            // Kafka 발행: source=MANUAL 메시지가 정확히 발행됨
+            ArgumentCaptor<TradeOrderMessage> captor = ArgumentCaptor.forClass(TradeOrderMessage.class);
+            verify(tradeOrderProducer).publishOrderSubmitted(captor.capture());
+            TradeOrderMessage published = captor.getValue();
+            assertThat(published.userId()).isEqualTo(1L);
+            assertThat(published.stockCode()).isEqualTo("005930");
+            assertThat(published.side()).isEqualTo(OrderSide.BUY.name());
+            assertThat(published.orderType()).isEqualTo(OrderType.LIMIT.name());
+            assertThat(published.quantity()).isEqualTo(10L);
+            assertThat(published.limitPrice()).isEqualTo(70000L);
+            assertThat(published.source()).isEqualTo(OrderSource.MANUAL.name());
+            assertThat(published.orderId()).isEqualTo("key-001");
         }
     }
 
     @Test
-    @DisplayName("매도 주문 성공 - status=PENDING, source=MANUAL 저장 확인")
+    @DisplayName("매도 주문 성공 - PENDING 저장 + trade.order.submitted Kafka 발행")
     void 매도_주문_성공() {
         // given
         setupKisStubs(OrderSide.SELL);
@@ -430,6 +443,11 @@ class OrderServiceTest {
             verify(orderRepository).saveAndFlush(argThat(order ->
                     order.getSide()   == OrderSide.SELL   &&
                     order.getStatus() == OrderStatus.PENDING
+            ));
+            verify(tradeOrderProducer).publishOrderSubmitted(argThat(msg ->
+                    msg.side().equals(OrderSide.SELL.name()) &&
+                    msg.quantity() == 5L &&
+                    msg.source().equals(OrderSource.MANUAL.name())
             ));
         }
     }
@@ -829,18 +847,15 @@ class OrderServiceTest {
         when(kisTokenService.getOrIssueAccessToken(1L, "real-key", "real-secret")).thenReturn("token");
 
         if (side == OrderSide.BUY) {
-            when(kisOrderClient.getBuyableAmount(any(), any(), any(), any(), any(), any(), anyLong()))
+            when(kisOrderClient.getBuyableAmount(any(), any(), any(), any(), any(), any(), any(OrderType.class), anyLong()))
                     .thenReturn(10_000_000L);
         } else {
-            when(kisOrderClient.getSellableQuantity(any(), any(), any(), any(), any(), any(), anyLong()))
+            when(kisOrderClient.getSellableQuantity(any(), any(), any(), any(), any(), any(), any(OrderType.class), anyLong()))
                     .thenReturn(100L);
         }
 
-        when(kisOrderClient.placeOrder(
-                any(), any(), any(), any(), any(), any(), any(), any(), anyLong(), anyLong()))
-                .thenReturn(new KisOrderClient.KisOrderResult("ORD001", "ORG001"));
-
         // 서비스가 saveAndFlush를 사용하므로 saveAndFlush 스텁
+        // KIS placeOrder 는 비동기 분리 (KisOrderConsumer 책임) — 본 테스트에서 mock 불필요
         when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(inv -> {
             Order o = inv.getArgument(0);
             ReflectionTestUtils.setField(o, "id", 1L);

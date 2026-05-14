@@ -4,6 +4,46 @@
 # 종료: docker compose down -v
 # ============================================================
 
+# ============================================================
+# Anchors
+# ============================================================
+
+# analysis_server: engine + 3 collectors 공통 설정.
+# 4 서비스가 같은 이미지를 공유하며 command 로 entrypoint 만 차별화.
+# 환경변수·볼륨·네트워크·재시작 정책을 묶어 중복 제거.
+x-analysis-base: &analysis-base
+  build:
+    context: ./analysis_server
+    dockerfile: Dockerfile
+  environment:
+    # Redis / Kafka 접속
+    REDIS_HOST: ${REDIS_HOST:-redis}
+    REDIS_PORT: ${REDIS_PORT:-6379}
+    REDIS_DB: ${REDIS_DB:-0}
+    KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
+    # 외부 API 키 (collectors 용)
+    KIS_APP_KEY: ${KIS_APP_KEY}
+    KIS_APP_SECRET: ${KIS_APP_SECRET}
+    KIS_BASE_URL: ${KIS_BASE_URL}
+    DART_API_KEY: ${DART_API_KEY}
+    MONGO_URI: ${MONGO_URI}
+    # DB (backfill 스크립트용 — engine 은 SQLite 사용)
+    DB_HOST: ${DB_HOST:-postgres}
+    DB_PORT: ${DB_PORT:-5432}
+    DB_NAME: ${DB_NAME:-modu_db}
+    DB_USERNAME: ${DB_USERNAME:-postgres}
+    DB_PASSWORD: ${DB_PASSWORD:-localpassword}
+  volumes:
+    # stock_master.db (SQLite) 공유 — engine/collectors 모두 read 또는 read+write.
+    # 호스트 파일 직접 마운트로 컨테이너 재기동 후에도 데이터 보존.
+    - ./analysis_server/data:/app/data
+  networks:
+    - modu-network
+  restart: on-failure
+
+# ============================================================
+# Services
+# ============================================================
 services:
   # React 프론트엔드 (Nginx 서빙)
   frontend:
@@ -45,8 +85,8 @@ services:
       KIS_ENCRYPTION_KEY: ${KIS_ENCRYPTION_KEY}
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
-      MONGO_HOST: ${MONGO_HOST}   # 추가
-      MONGO_PORT: ${MONGO_PORT}   # 추가
+      MONGO_HOST: ${MONGO_HOST}
+      MONGO_PORT: ${MONGO_PORT}
       # KIS_CANO: ${KIS_CANO:-}
       # KIS_ACNT_PRDT_CD: ${KIS_ACNT_PRDT_CD:-01}
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
@@ -67,12 +107,12 @@ services:
       - modu-network
     restart: on-failure
 
-  # 백엔드 DB
+  # PostgreSQL (백엔드 메인 DB)
   postgres:
     image: postgres:16-alpine
     container_name: modu-postgres
     environment:
-      POSTGRES_DB: ${DB_HOST}
+      POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${DB_USERNAME}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-localpassword}
     ports:
@@ -102,7 +142,7 @@ services:
       timeout: 10s
       retries: 3
 
-  # MongoDB
+  # MongoDB (뉴스 기사 저장소)
   mongo:
     image: mongo:7
     container_name: modu-mongo
@@ -117,13 +157,13 @@ services:
     networks:
       - modu-network
     healthcheck:
-      # mongosh를 이용한 최신 버전 헬스체크 방식 유지
+      # mongosh ping (mongo 5+ 호환)
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 30s
       timeout: 10s
       retries: 3
 
-      # Kafka 브로커 1 (KRaft 모드)
+  # Kafka 브로커 1 (KRaft 모드)
   kafka-0:
     image: apache/kafka:3.9.0
     container_name: modu-kafka-0
@@ -216,8 +256,6 @@ services:
       retries: 5
       start_period: 30s
 
-
-
   # AI 투자 판단 에이전트 (Kafka Consumer)
   ai-agent:
     build:
@@ -270,6 +308,54 @@ services:
     networks:
       - modu-network
     restart: on-failure
+
+  # ============================================================
+  # analysis_server: engine + 3 collectors
+  # 같은 이미지를 공유하며 command 로 entrypoint 만 차별화.
+  # 공통 설정은 상단 x-analysis-base anchor 참조.
+  # ============================================================
+
+  # 1분 cron engine cycle — Redis/DB 의 collector 데이터 읽어 Kafka 발행
+  analysis-engine:
+    <<: *analysis-base
+    container_name: modu-analysis-engine
+    command: ["python", "-m", "main"]
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka-0:
+        condition: service_healthy
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+
+  # KIS 1분봉 → 6 지표 → Redis technical:{stock} (무한 루프, 1 사이클 ≈ 7~10분)
+  analysis-candle-collector:
+    <<: *analysis-base
+    container_name: modu-candle-collector
+    command: ["python", "-m", "collectors.candle_collector", "--loop"]
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # DART list.json batch → Redis event:{stock} (3분 주기)
+  analysis-disclosure-collector:
+    <<: *analysis-base
+    container_name: modu-disclosure-collector
+    command: ["python", "-m", "collectors.disclosure_collector", "--loop"]
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # 한국경제·연합인포맥스 RSS → MongoDB news_articles (10분 주기)
+  analysis-news-collector:
+    <<: *analysis-base
+    container_name: modu-news-collector
+    command: ["python", "-m", "collectors.news_collector", "--loop"]
+    depends_on:
+      mongo:
+        condition: service_healthy
 
 networks:
   modu-network:

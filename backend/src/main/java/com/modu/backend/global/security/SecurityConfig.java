@@ -67,6 +67,9 @@ public class SecurityConfig {
                                 "/api/v1/auth/refresh",
                                 "/api/v1/auth/logout",
                                 "/api/v1/auth/test/login",
+                                // SSE 연결은 EventSource 제약상 query param 토큰으로 인증하므로
+                                // SecurityFilterChain 은 통과시키고 컨트롤러에서 SseTokenService 가 직접 검증
+                                "/api/v1/orders/connect",
                                 "/actuator/**",
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**"

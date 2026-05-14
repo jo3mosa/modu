@@ -7,6 +7,7 @@ import highcharts3d from 'highcharts/highcharts-3d';
 import TutorialOverlay from '../components/TutorialOverlay';
 import { getAccountSummary, getPortfolio } from '../api/account';
 import { getAiDecisions } from '../api/aiAgent';
+import { getOrderHistory } from '../api/order';
 import { getProfile } from '../api/strategy';
 import './DashboardPage.css';
 
@@ -62,7 +63,8 @@ export default function DashboardPage() {
   const [isKisConnected, setIsKisConnected] = useState(true);
   const [aiStatus, setAiStatus] = useState(MOCK_AI_STATUS);
   const [profileRiskLevel, setProfileRiskLevel] = useState(null);
-  const [logs, setLogs] = useState([]);
+  const [aiDecisions, setAiDecisions] = useState([]);
+  const [orderHistory, setOrderHistory] = useState([]);
 
   // 알림 UI
   const [isAlarmOpen, setIsAlarmOpen] = useState(false);
@@ -76,10 +78,17 @@ export default function DashboardPage() {
     async function fetchDashboardData() {
       setIsLoading(true);
       try {
-        const [summaryData, portfolioData, decisionsData, profileResult] = await Promise.all([
+        const [summaryData, portfolioData, decisionsData, historyResult, profileResult] = await Promise.all([
           getAccountSummary(),
           getPortfolio(),
-          getAiDecisions({ page: 0, size: 5 }),
+          // 최근 매매 로그용 — AI 10개 + 수동 10개 가져와서 합치고 최신 8개 표시
+          getAiDecisions({ page: 0, size: 10 }),
+          getOrderHistory({ page: 1, size: 10 }).catch((error) => {
+            if (error.status !== 404) {
+              console.warn('거래 이력 로드 실패:', error);
+            }
+            return { orders: [] };
+          }),
           // 투자 성향 미설정(404) 케이스를 정상 흐름으로 흡수해 다른 데이터 로드를 막지 않음
           getProfile().catch((error) => {
             if (error.status !== 404 && error.errorCode !== 'INVEST_001') {
@@ -105,7 +114,8 @@ export default function DashboardPage() {
           return { ...h, avgBuyPrice };
         });
         setHoldings(normalizedHoldings);
-        setLogs(decisionsData.content ?? []);
+        setAiDecisions(decisionsData?.content ?? []);
+        setOrderHistory(historyResult?.orders ?? []);
       } catch (error) {
         if (error.errorCode === 'KIS_NOT_CONNECTED' || error.errorCode === 'USER_002') {
           setIsKisConnected(false);
@@ -199,6 +209,34 @@ export default function DashboardPage() {
   // - totalPnlPct     : totalPnl / totalBuyAmount × 100
   // - availableCash   : principal − totalBuyAmount  (실제 주문 가능 금액)
   // - totalAsset      : availableCash + totalEvalAmount  (= principal + totalPnl 와 등가)
+  // 최근 매매 로그: AI 판단 + 수동 주문을 표준 형식으로 통합 후 시간 내림차순 상위 5개
+  const recentLogs = useMemo(() => {
+    const aiItems = aiDecisions.map((d) => ({
+      id: `ai-${d.id}`,
+      source: 'AI',
+      action: d.action,
+      stockCode: d.stockCode,
+      stockName: null,
+      price: null,
+      quantity: null,
+      decidedAt: d.decidedAt,
+    }));
+    const manualItems = orderHistory.map((o) => ({
+      id: `manual-${o.orderId}`,
+      source: 'MANUAL',
+      action: o.side,
+      stockCode: o.stockCode,
+      stockName: o.stockName,
+      price: o.price,
+      quantity: o.quantity,
+      decidedAt: o.createdAt,
+    }));
+    return [...aiItems, ...manualItems]
+      .filter((l) => l.decidedAt)
+      .sort((a, b) => new Date(b.decidedAt) - new Date(a.decidedAt))
+      .slice(0, 8);
+  }, [aiDecisions, orderHistory]);
+
   const derivedSummary = useMemo(() => {
     if (!summary) return null;
     const totalEvalAmount = holdings.reduce(
@@ -508,18 +546,30 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* 최근 매매 로그 */}
+          {/* 최근 매매 로그 (AI + 수동 통합, 최근 5개) */}
           <div className="panel logs-panel">
             <h2>최근 매매 로그</h2>
             <div className="logs-list">
-              {logs.length > 0 ? logs.map((log) => {
+              {recentLogs.length > 0 ? recentLogs.map((log) => {
+                const actionLower = (log.action ?? '').toLowerCase();
+                const actionLabel = log.action === 'BUY' ? '매수'
+                  : log.action === 'SELL' ? '매도'
+                  : log.action === 'HOLD' ? '관망' : '판단';
+                const date = new Date(log.decidedAt);
+                const timeLabel = `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
                 return (
-                  <div key={log.judgmentId} className="log-item">
-                    <div className="log-time">{new Date(log.decidedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-                    <div className={`log-badge ${log.decisionType.toLowerCase()}`}>{log.decisionType === 'BUY' ? '매수' : '매도'}</div>
-                    <div className="log-stock">{log.stockName}</div>
-                    <div className="log-desc">
-                      {log.currentPrice.toLocaleString()}원 · {log.quantity}주
+                  <div key={log.id} className="log-item">
+                    <div className={`log-icon ${actionLower}`}>{actionLabel}</div>
+                    <div className="log-content">
+                      <div className="log-top">
+                        <span className="log-stock">{log.stockName ?? log.stockCode}</span>
+                        <span className="log-time">{timeLabel}</span>
+                      </div>
+                      <div className="log-bottom">
+                        {log.price != null && log.quantity != null
+                          ? `${log.price.toLocaleString()}원 · ${log.quantity}주`
+                          : (log.source === 'AI' ? 'AI 판단' : '-')}
+                      </div>
                     </div>
                   </div>
                 );

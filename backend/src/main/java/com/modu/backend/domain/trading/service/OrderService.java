@@ -12,8 +12,10 @@ import com.modu.backend.domain.trading.dto.OrderResponse;
 import com.modu.backend.domain.trading.dto.PendingOrdersResponse;
 import com.modu.backend.domain.trading.entity.*;
 import com.modu.backend.domain.trading.exception.OrderErrorCode;
+import com.modu.backend.domain.trading.kafka.producer.TradeOrderProducer;
 import com.modu.backend.domain.trading.repository.OrderRepository;
 import com.modu.backend.domain.trading.repository.TradingRuleRepository;
+import com.modu.backend.global.kafka.dto.TradeOrderMessage;
 import com.modu.backend.domain.user.entity.KisCredential;
 import com.modu.backend.domain.user.exception.UserErrorCode;
 import com.modu.backend.domain.user.repository.KisCredentialRepository;
@@ -79,6 +81,7 @@ public class OrderService {
     private final KisModifyOrderClient kisModifyOrderClient;
     private final KisBuyingPowerClient kisBuyingPowerClient;
     private final AesGcmEncryptor encryptor;
+    private final TradeOrderProducer tradeOrderProducer;
 
     @Transactional
     public OrderResponse placeOrder(Long userId, OrderRequest request, String idempotencyKey) {
@@ -134,20 +137,29 @@ public class OrderService {
                     .orElseThrow(() -> new ApiException(CommonErrorCode.CONCURRENT_CONFLICT));
         }
 
-        // KIS 주문 실행
-        KisOrderClient.KisOrderResult result = kisOrderClient.placeOrder(
-                accessToken, appKey, appSecret,
-                credential.getAccountNo(), credential.getAccountPrdtCd(),
-                request.stockCode(), request.side(), request.orderMethod(),
-                request.quantity(), request.price()
+        // KIS 호출은 KisOrderConsumer 가 비동기 수행 (S14P31B106-306)
+        // 발행 실패 시 ApiException 으로 전파되어 @Transactional 롤백 → DB 도 함께 취소
+        // orderId(=idempotencyKey) 로 Consumer 가 본 주문을 재조회한다
+        TradeOrderMessage message = TradeOrderMessage.of(
+                idempotencyKey,
+                null,                        // 수동 주문은 부모 없음
+                userId,
+                request.stockCode(),
+                request.side(),
+                request.orderMethod(),
+                (long) request.quantity(),
+                request.price(),
+                OrderSource.MANUAL,
+                null,                        // 수동 주문은 룰 history 없음
+                OffsetDateTime.now()
         );
+        tradeOrderProducer.publishOrderSubmitted(message);
 
-        // KIS 응답으로 주문 정보 업데이트 (JPA dirty checking으로 자동 반영)
-        order.updateKisInfo(result.kisOrderNo(), result.kisOrgNo(), OffsetDateTime.now());
+        log.info("수동 주문 Kafka 발행 완료 - userId: {}, stockCode: {}, side: {}, orderId(idempotencyKey): {}",
+                userId, request.stockCode(), request.side(), idempotencyKey);
 
-        log.info("수동 주문 접수 완료 - userId: {}, stockCode: {}, side: {}, kisOrderNo: {}",
-                userId, request.stockCode(), request.side(), result.kisOrderNo());
-
+        // kisOrderNo / kisOrgNo / submittedAt 은 Consumer 가 KIS 응답 수신 후 DB 갱신.
+        // 현 시점 응답은 PENDING + kisOrderNo=null 상태이며, 프론트는 SSE 로 후속 수신.
         return OrderResponse.from(order);
     }
 
@@ -182,7 +194,7 @@ public class OrderService {
         if (request.side() == OrderSide.BUY) {
             long buyable     = kisOrderClient.getBuyableAmount(
                     accessToken, appKey, appSecret, cano, acntPrdtCd,
-                    request.stockCode(), request.price());
+                    request.stockCode(), request.orderMethod(), request.price());
             long orderAmount = (long) request.quantity() * request.price();
             if (orderAmount > buyable) {
                 throw new ApiException(OrderErrorCode.INSUFFICIENT_BALANCE);
@@ -190,7 +202,7 @@ public class OrderService {
         } else {
             long sellable = kisOrderClient.getSellableQuantity(
                     accessToken, appKey, appSecret, cano, acntPrdtCd,
-                    request.stockCode(), request.price());
+                    request.stockCode(), request.orderMethod(), request.price());
             if (request.quantity() > sellable) {
                 throw new ApiException(OrderErrorCode.INSUFFICIENT_BALANCE);
             }
