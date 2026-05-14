@@ -50,9 +50,9 @@ public class OrderSseEmitterManager {
         if (previous != null) {
             // 이전 emitter complete → onCompletion 콜백이 발동되지만, 동일성 체크로 새 emitter 는 보호됨
             previous.complete();
-            log.debug("SSE 기존 연결 교체 - userId: {}", userId);
+            log.info("SSE 기존 연결 교체 - userId: {}", userId);
         } else {
-            log.debug("SSE 연결 등록 - userId: {}", userId);
+            log.info("SSE 연결 등록 - userId: {}", userId);
         }
         return emitter;
     }
@@ -65,7 +65,7 @@ public class OrderSseEmitterManager {
     public void send(Long userId, OrderSseEvent event) {
         SseEmitter emitter = emitters.get(userId);
         if (emitter == null) {
-            log.debug("SSE 연결 없음 - userId: {}, type: {}", userId, event.type());
+            log.info("SSE 연결 없음 - userId: {}, type: {}", userId, event.type());
             return;
         }
         try {
