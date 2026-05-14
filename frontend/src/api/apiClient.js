@@ -39,7 +39,12 @@ export function getAccessToken() {
 /**
  * Refresh Token 쿠키로 새 Access Token을 발급받아 메모리에 저장한다.
  * 동시에 여러 번 호출되어도 한 번만 실제 네트워크 요청을 보낸다.
+ * (PrivateRoute 등에서 외부 호출 가능)
  */
+export async function refreshAccessToken() {
+  return callRefresh();
+}
+
 async function callRefresh() {
   if (refreshPromise) return refreshPromise;
 
@@ -73,6 +78,10 @@ async function callRefresh() {
  */
 async function apiClient(endpoint, options = {}, retry = true) {
   const url = `${BASE_URL}${endpoint}`;
+  const method = options.method ?? 'GET';
+
+  // API 요청
+  console.log(`%c[API 요청] ${method} ${url}`, 'color: #3b82f6; font-weight: bold');
 
   const headers = {
     'Content-Type': 'application/json',
@@ -84,37 +93,52 @@ async function apiClient(endpoint, options = {}, retry = true) {
 
   const fetchOptions = {
     ...options,
-    credentials: 'include', // refreshToken 쿠키 전송용
+    credentials: 'include',
     headers,
   };
 
-  const response = await fetch(url, fetchOptions);
+  try {
+    const response = await fetch(url, fetchOptions);
 
-  // 401 Unauthorized: Access Token 만료 → refreshToken 쿠키로 재발급 후 1회 재시도
-  if (response.status === 401 && retry) {
-    try {
-      await callRefresh();
-      return apiClient(endpoint, options, false);
-    } catch {
-      clearAccessToken();
-      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
-        window.location.href = '/login';
+    // 401 Unauthorized: Access Token 만료 → refreshToken 쿠키로 재발급 후 1회 재시도
+    if (response.status === 401 && retry) {
+      console.warn(`%c[API 재시도] 401 Unauthorized. 토큰 갱신 시도 중...`, 'color: #f59e0b; font-weight: bold');
+      try {
+        await callRefresh();
+        return apiClient(endpoint, options, false);
+      } catch {
+        clearAccessToken();
+        if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+          window.location.href = '/login';
+        }
+        throw new Error('세션이 만료되었습니다. 다시 로그인해 주세요.');
       }
-      throw new Error('세션이 만료되었습니다. 다시 로그인해 주세요.');
     }
-  }
 
-  const data = await response.json();
+    const data = await response.json().catch(() => ({}));
 
-  if (!response.ok) {
-    // 백엔드 공통 에러 형식: { success: false, message: '...', errorCode: '...' }
-    const error = new Error(data.message || `HTTP ${response.status} 에러`);
-    error.errorCode = data.errorCode;
-    error.status = response.status;
+    if (!response.ok) {
+      // API 에러 발생
+      console.error(
+        `%c[API 에러] ${method} ${url} (${response.status})`,
+        'color: #ef4444; font-weight: bold',
+        data
+      );
+      const error = new Error(data.message || `HTTP ${response.status} 에러`);
+      error.errorCode = data.errorCode;
+      error.status = response.status;
+      throw error;
+    }
+
+    // API 성공
+    console.log(`%c[API 성공] ${method} ${url} (${response.status})`, 'color: #10b981; font-weight: bold', data);
+    return data;
+  } catch (error) {
+    if (error.name !== 'Error') {
+      console.error(`%c[네트워크 에러] ${method} ${url}`, 'color: #7f1d1d; font-weight: bold', error);
+    }
     throw error;
   }
-
-  return data; // { success: true, message: '...', data: { ... } }
 }
 
 export default apiClient;

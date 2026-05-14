@@ -33,8 +33,8 @@ import time
 import pandas as pd
 from datetime import datetime
 
-from dart_api_client import DartApiClient, DartCriticalError
-from fundamental_calculator import (
+from clients.dart_api_client import DartApiClient, DartCriticalError
+from engine.signal_builder import (
     classify_valuation,
     classify_profitability,
     classify_growth,
@@ -109,7 +109,11 @@ def pick_fiscal_year(date_str):
     return dt.year - 1 if dt.month >= 4 else dt.year - 2
 
 
-CORP_CODE_JSON = "dart_corp_code.json"
+# scripts/backfill/ → analysis_server/data/stock_master.db
+_MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+_DEFAULT_DB = os.path.join(_MODULE_DIR, "..", "..", "data", "stock_master.db")
+# dart_corp_code.json 은 clients/ 옆 (gitignored 캐시).
+CORP_CODE_JSON = os.path.join(_MODULE_DIR, "..", "..", "clients", "dart_corp_code.json")
 
 
 def _load_corp_code_map():
@@ -186,7 +190,7 @@ def _get_stock_fiscal_year_map(conn, start_date, end_date, stock_codes=None):
 # ---------- Phase 1: DART → financial_statements ----------
 
 def fetch_annual_statements(
-    db_path="../data/stock_master.db",
+    db_path=_DEFAULT_DB,
     start_date="2023-01-01",
     end_date="2025-12-31",
     stock_codes=None,
@@ -325,9 +329,11 @@ def fetch_annual_statements(
             print(f"       조치: OpenDART 콘솔에서 등록 IP 확인 후 재실행")
         else:
             print(f"       원인: 치명적 응답 (status={e.status}, message={e.message})")
-        return
+        # caller (run_full_pipeline) 가 Phase 2 진입을 중단할 수 있도록 명시 신호
+        return False
 
     print(f"[FIN] DART 적재 완료 — fetched={fetched}, skipped={skipped}, failed={failed}")
+    return True
 
 
 # ---------- Phase 2: financial_statements + daily_ohlcv → daily_fundamentals ----------
@@ -415,7 +421,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 
 
 def build_daily_fundamentals(
-    db_path="../data/stock_master.db",
+    db_path=_DEFAULT_DB,
     start_date="2023-01-01",
     end_date="2025-12-31",
     stock_codes=None,
@@ -510,20 +516,27 @@ def build_daily_fundamentals(
 # ---------- 통합 진입점 ----------
 
 def run_full_pipeline(
-    db_path="../data/stock_master.db",
+    db_path=_DEFAULT_DB,
     start_date="2023-01-01",
     end_date="2025-12-31",
     stock_codes=None,
     sleep_between=0.5,
 ):
-    """Phase 1 (DART fetch) → Phase 2 (daily panel build) 통합 실행."""
-    fetch_annual_statements(
+    """Phase 1 (DART fetch) → Phase 2 (daily panel build) 통합 실행.
+
+    Phase 1 이 DART critical error (quota / 인증 / IP) 로 중단되면 Phase 2 도 중단.
+    반쯤 갱신된 financial_statements 기반으로 panel 을 만드는 silent corruption 방지.
+    """
+    ok = fetch_annual_statements(
         db_path=db_path,
         start_date=start_date,
         end_date=end_date,
         stock_codes=stock_codes,
         sleep_between=sleep_between,
     )
+    if ok is False:
+        print("[SKIP] Phase 1 중단 — Phase 2 (daily_fundamentals 빌드) 도 건너뜀")
+        return
     build_daily_fundamentals(
         db_path=db_path,
         start_date=start_date,
@@ -533,8 +546,26 @@ def run_full_pipeline(
 
 
 if __name__ == "__main__":
-    # 23~25년 train(23-24) + test(25) panel 적재
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="historical_fundamental_loader — DART → financial_statements + daily_fundamentals panel"
+    )
+    parser.add_argument("--start-date", default="2023-01-01",
+                        help="OHLCV 기준 시작 날짜 (YYYY-MM-DD). 이 구간 내 종목만 처리")
+    parser.add_argument("--end-date", default="2025-12-31",
+                        help="OHLCV 기준 끝 날짜. fiscal_year 는 pick_fiscal_year(end_date) 까지 적재")
+    parser.add_argument("--db", default=_DEFAULT_DB, help="stock_master.db 경로")
+    parser.add_argument("--stocks", help="쉼표 구분 종목 코드 리스트 (테스트용)")
+    parser.add_argument("--sleep", type=float, default=0.5,
+                        help="DART 호출 간 sleep (초, 기본 0.5)")
+    args = parser.parse_args()
+
+    stock_codes = [s.strip() for s in args.stocks.split(",")] if args.stocks else None
     run_full_pipeline(
-        start_date="2023-01-01",
-        end_date="2025-12-31",
+        db_path=args.db,
+        start_date=args.start_date,
+        end_date=args.end_date,
+        stock_codes=stock_codes,
+        sleep_between=args.sleep,
     )

@@ -2,6 +2,9 @@ package com.modu.backend.domain.user.repository;
 
 import com.modu.backend.domain.user.entity.KisToken;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.OffsetDateTime;
 import java.util.Optional;
@@ -17,4 +20,9 @@ public interface KisTokenRepository extends JpaRepository<KisToken, Long> {
     /** 유효한 KIS 토큰 조회 (미만료 + 미revoke, 발급일 기준 최신 1건) */
     Optional<KisToken> findFirstByUserIdAndTokenTypeAndIsRevokedFalseAndExpiresAtAfterOrderByIssuedAtDesc(
             Long userId, String tokenType, OffsetDateTime now);
+
+    /** appKey 변경 시 기존 토큰 전체 삭제 (@Modifying: 즉시 DELETE SQL 실행) */
+    @Modifying
+    @Query("DELETE FROM KisToken t WHERE t.userId = :userId")
+    void deleteAllByUserId(@Param("userId") Long userId);
 }

@@ -1,0 +1,8 @@
+{
+  "_doc": "뉴스 본문에 자주 등장하는 종목 줄임말/별칭 사전. key = 텍스트 표현, value = 6자리 stock_code",
+  "_examples_remove_underscore_keys_in_production": true,
+  "삼전": "005930",
+  "하닉": "000660",
+  "엔솔": "373220",
+  "현차": "005380"
+}

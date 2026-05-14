@@ -29,21 +29,21 @@ spring:
     consumer:
       client-id: modu-consumer
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      # value-deserializer 와 spring.json.* 설정은 KafkaConsumerConfig 에서 타입별로 명시적으로 구성
+      # (yml 자동 설정 + 코드 setter 병행 시 "must be configured ... not both" 충돌 발생)
       enable-auto-commit: false
       auto-offset-reset: earliest
       properties:
         session.timeout.ms: 30000
         heartbeat.interval.ms: 10000
         fetch.max.wait.ms: 50
-        spring.json.trusted.packages: "com.modu.*"
     listener:
       ack-mode: MANUAL_IMMEDIATE
       concurrency: 3
 
 app:
   cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,http://k14b106.p.ssafy.io}
   kafka:
     topic:
       partitions: 3
@@ -71,7 +71,7 @@ kis:
     reconnect-max-attempts: ${KIS_WEBSOCKET_RECONNECT_MAX_ATTEMPTS:3}
     reconnect-delay-ms: ${KIS_WEBSOCKET_RECONNECT_DELAY_MS:1000}
     connection-timeout-ms: ${KIS_WEBSOCKET_CONNECTION_TIMEOUT_MS:5000}
-    allowed-origin-patterns: ${KIS_WEBSOCKET_ALLOWED_ORIGIN_PATTERNS:http://localhost:3000,http://localhost:5173}
+    allowed-origin-patterns: ${KIS_WEBSOCKET_ALLOWED_ORIGIN_PATTERNS:http://localhost:3000,http://localhost:5173,http://k14b106.p.ssafy.io}
 
 # JWT 설정
 jwt:

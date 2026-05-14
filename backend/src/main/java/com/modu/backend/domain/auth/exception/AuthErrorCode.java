@@ -40,7 +40,12 @@ public enum AuthErrorCode implements ErrorCode {
     // ── 사용자 ──────────────────────────────────────────────────────────────────
 
     /** userId로 사용자를 조회했으나 존재하지 않을 때 (테스트 로그인 등) */
-    USER_NOT_FOUND("AUTH_007", HttpStatus.NOT_FOUND, "존재하지 않는 사용자입니다.");
+    USER_NOT_FOUND("AUTH_007", HttpStatus.NOT_FOUND, "존재하지 않는 사용자입니다."),
+
+    // ── SSE 단기 토큰 ──────────────────────────────────────────────────────────
+
+    /** SSE 토큰 누락 / 만료 / 서명 오류 / aud 불일치 */
+    SSE_TOKEN_INVALID("AUTH_008", HttpStatus.UNAUTHORIZED, "SSE 토큰이 유효하지 않거나 만료되었습니다.");
 
     private final String code;
     private final HttpStatus status;

@@ -5,6 +5,7 @@ import './OrderBook.css';
 export default function OrderBook({ stockCode }) {
   const [activeTab, setActiveTab] = useState('ORDER'); // 'ORDER' | 'PENDING'
   const [orderType, setOrderType] = useState('BUY'); // 'BUY' | 'SELL'
+  const [orderMethod, setOrderMethod] = useState('LIMIT'); // 'LIMIT' | 'MARKET'
 
   const [price, setPrice] = useState(0);
   const [quantity, setQuantity] = useState(1);
@@ -21,9 +22,13 @@ export default function OrderBook({ stockCode }) {
   const [loadingPending, setLoadingPending] = useState(false);
   // 주문별 취소 진행 상태 { [orderId]: true }
   const [canceling, setCanceling] = useState({});
+  // 정정 중인 주문: { orderId, newPrice, newQuantity } | null
+  const [modifyingOrder, setModifyingOrder] = useState(null);
+  // 주문별 정정 API 호출 중 여부 { [orderId]: true }
+  const [modifying, setModifying] = useState({});
 
   // 매수가능 정보 (연결 실패 시 → null 시 영역 미표시)
-  // { maxBuyAmount, maxSellQuantity, availableCash, riskLimitAmount }
+  // { maxBuyAmount, maxBuyQuantity, maxSellQuantity, availableCash }
   const [buyingPower, setBuyingPower] = useState(null);
   const buyingPowerTimerRef = useRef(null);
 
@@ -79,7 +84,8 @@ export default function OrderBook({ stockCode }) {
     if (activeTab === 'PENDING') fetchPending();
   }, [activeTab, fetchPending]);
 
-  // 매수가능 정보 조회: side/stockCode/price 변경 시 300ms debounce로 호출.
+  // 매수가능 정보 조회: side/stockCode 변경 시 1초 debounce로 호출.
+  // (price 변경마다 호출하면 KIS 초당 거래건수 한도(EGW00201)에 걸려서 의존성에서 제외)
   // 연결 실패 시 404 → null 유지 → 화면 영역 미표시.
   useEffect(() => {
     if (!stockCode) {
@@ -88,13 +94,11 @@ export default function OrderBook({ stockCode }) {
     }
     if (buyingPowerTimerRef.current) clearTimeout(buyingPowerTimerRef.current);
 
-    const numericPrice = Number(price);
     buyingPowerTimerRef.current = setTimeout(async () => {
       try {
         const data = await getBuyingPower({
           stockCode,
           side: orderType,
-          orderPrice: numericPrice > 0 ? numericPrice : undefined,
         });
         setBuyingPower(data ?? null);
       } catch (error) {
@@ -103,12 +107,12 @@ export default function OrderBook({ stockCode }) {
         }
         setBuyingPower(null);
       }
-    }, 300);
+    }, 1000);
 
     return () => {
       if (buyingPowerTimerRef.current) clearTimeout(buyingPowerTimerRef.current);
     };
-  }, [stockCode, orderType, price]);
+  }, [stockCode, orderType]);
 
   const maxQuantity = useMemo(() => {
     const allQuantities = [...asks, ...bids].map((lv) => lv?.quantity ?? 0);
@@ -120,14 +124,16 @@ export default function OrderBook({ stockCode }) {
   };
 
   // 수동 매수/매도 주문 (POST /api/v1/orders)
-  // 현재 화면이 단가 입력형이라 LIMIT 고정. 추후 시장가 옵션 추가 시 orderMethod 토글 필요.
+  // orderMethod: LIMIT(지정가) / MARKET(시장가).
+  // - LIMIT: 사용자 입력 price 사용
+  // - MARKET: price 0 전송 (백엔드가 ORD_DVSN=01로 처리)
   const handleOrder = async () => {
     if (submittingOrder) return;
     if (!stockCode) {
       alert('종목이 선택되지 않았습니다.');
       return;
     }
-    if (!Number.isFinite(Number(price)) || Number(price) <= 0) {
+    if (orderMethod === 'LIMIT' && (!Number.isFinite(Number(price)) || Number(price) <= 0)) {
       alert('단가를 입력해 주세요.');
       return;
     }
@@ -142,9 +148,9 @@ export default function OrderBook({ stockCode }) {
         {
           stockCode,
           side: orderType,
-          orderMethod: 'LIMIT',
+          orderMethod,
           quantity: Number(quantity),
-          price: Number(price),
+          price: orderMethod === 'MARKET' ? 0 : Number(price),
         },
         idempotencyKeyRef.current
       );
@@ -182,6 +188,53 @@ export default function OrderBook({ stockCode }) {
       setCanceling((prev) => {
         const next = { ...prev };
         delete next[order.orderId];
+        return next;
+      });
+    }
+  };
+
+  // 정정 폼 열기: 현재 주문의 price/remainQuantity를 초기값으로 세팅
+  const handleOpenModify = (order) => {
+    setModifyingOrder({
+      orderId: order.orderId,
+      newPrice: order.price ?? 0,
+      newQuantity: order.remainQuantity ?? order.quantity ?? 1,
+    });
+  };
+
+  const handleCloseModify = () => setModifyingOrder(null);
+
+  // 정정 저장 (PATCH /api/v1/orders/{orderId}, action=MODIFY)
+  // 백엔드: newPrice or newQuantity 중 하나 이상 필수, 각 @Min(1)
+  const handleSaveModify = async () => {
+    if (!modifyingOrder) return;
+    const { orderId, newPrice, newQuantity } = modifyingOrder;
+    if (modifying[orderId]) return;
+
+    const parsedPrice = Number(newPrice);
+    const parsedQty   = Number(newQuantity);
+    if (parsedPrice < 1 || parsedQty < 1) {
+      alert('단가와 수량은 1 이상이어야 합니다.');
+      return;
+    }
+
+    setModifying((prev) => ({ ...prev, [orderId]: true }));
+    try {
+      await updateOrder(orderId, {
+        action: 'MODIFY',
+        newPrice: parsedPrice,
+        newQuantity: parsedQty,
+      });
+      alert('주문이 정정되었습니다.');
+      setModifyingOrder(null);
+      fetchPending();
+    } catch (error) {
+      console.error('주문 정정 실패:', error);
+      alert(error.message || '주문 정정에 실패했습니다.');
+    } finally {
+      setModifying((prev) => {
+        const next = { ...prev };
+        delete next[orderId];
         return next;
       });
     }
@@ -279,13 +332,31 @@ export default function OrderBook({ stockCode }) {
               </button>
             </div>
 
+            {/* 주문 방식 토글: 지정가 / 시장가 */}
+            <div className="order-method-switch" style={{ display: 'flex', gap: '0.4rem', marginTop: '0.5rem' }}>
+              <button
+                className={`tool-btn ${orderMethod === 'LIMIT' ? 'active' : ''}`}
+                style={{ flex: 1, padding: '0.4rem 0.5rem' }}
+                onClick={() => setOrderMethod('LIMIT')}
+              >
+                지정가
+              </button>
+              <button
+                className={`tool-btn ${orderMethod === 'MARKET' ? 'active' : ''}`}
+                style={{ flex: 1, padding: '0.4rem 0.5rem' }}
+                onClick={() => setOrderMethod('MARKET')}
+              >
+                시장가
+              </button>
+            </div>
+
             {/* 매수가능 정보 — 백엔드 미연결 시 표시 안 함 */}
             {buyingPower && (
               <div className="buying-power-info" style={{ fontSize: '0.85em', color: '#aaa', margin: '0.5rem 0' }}>
                 {orderType === 'BUY' ? (
                   <>
                     <div>주문 가능 금액: <strong style={{ color: '#fff' }}>{buyingPower.maxBuyAmount?.toLocaleString() ?? '-'}원</strong></div>
-                    <div>일일 한도 잔여: {buyingPower.riskLimitAmount?.toLocaleString() ?? '-'}원</div>
+                    <div>최대 매수 가능 수량: {buyingPower.maxBuyQuantity?.toLocaleString() ?? '-'}주</div>
                     <div>예수금: {buyingPower.availableCash?.toLocaleString() ?? '-'}원</div>
                   </>
                 ) : (
@@ -294,9 +365,31 @@ export default function OrderBook({ stockCode }) {
               </div>
             )}
 
+            {/* 매도인데 보유 수량 0이면 안내 + 버튼 비활성화 */}
+            {orderType === 'SELL' && buyingPower && (buyingPower.maxSellQuantity ?? 0) === 0 && (
+              <div
+                style={{
+                  fontSize: '0.85em',
+                  color: '#ef4444',
+                  background: 'rgba(239,68,68,0.1)',
+                  padding: '0.5rem 0.75rem',
+                  borderRadius: '6px',
+                  margin: '0.5rem 0',
+                }}
+              >
+                보유 종목이 없습니다. 매도할 수 없어요.
+              </div>
+            )}
+
             <div className="input-group">
               <label>단가 (원)</label>
-              <input type="number" value={price} onChange={(e) => setPrice(Number(e.target.value))} />
+              <input
+                type="number"
+                value={orderMethod === 'MARKET' ? '' : price}
+                onChange={(e) => setPrice(Number(e.target.value))}
+                disabled={orderMethod === 'MARKET'}
+                placeholder={orderMethod === 'MARKET' ? '시장가 (체결 시점 가격)' : ''}
+              />
             </div>
             <div className="input-group">
               <label>수량 (주)</label>
@@ -305,13 +398,20 @@ export default function OrderBook({ stockCode }) {
 
             <div className="order-total">
               <span>총 주문 금액</span>
-              <strong>{(price * quantity).toLocaleString()}원</strong>
+              <strong>
+                {orderMethod === 'MARKET'
+                  ? '시장가'
+                  : `${(price * quantity).toLocaleString()}원`}
+              </strong>
             </div>
 
             <button
               className={`submit-order-btn ${orderType.toLowerCase()}`}
               onClick={handleOrder}
-              disabled={submittingOrder}
+              disabled={
+                submittingOrder ||
+                (orderType === 'SELL' && buyingPower && (buyingPower.maxSellQuantity ?? 0) === 0)
+              }
             >
               {submittingOrder ? '접수 중…' : (orderType === 'BUY' ? '매수 주문' : '매도 주문')}
             </button>
@@ -347,35 +447,91 @@ export default function OrderBook({ stockCode }) {
                 const sideLabel = order.side === 'BUY' ? '매수' : '매도';
                 return (
                   <div key={key} className="pending-item">
-                    <div className="pending-info">
-                      <span className={`pending-type ${(order.side ?? '').toLowerCase()}`}>
-                        {sideLabel}
-                      </span>
-                      <div className="pending-details">
-                        <strong>{order.stockName ?? order.stockCode}</strong>
-                        <span>
-                          {order.price?.toLocaleString() ?? '-'}원 · {order.quantity?.toLocaleString() ?? '-'}주
+                    <div className="pending-item-row">
+                      <div className="pending-info">
+                        <span className={`pending-type ${(order.side ?? '').toLowerCase()}`}>
+                          {sideLabel}
                         </span>
-                        <span style={{ color: '#888', fontSize: '0.85em' }}>
-                          체결 {order.filledQuantity ?? 0} / 미체결 {order.remainQuantity ?? 0}
-                        </span>
-                        {order.createdAt && (
-                          <span className="pending-time" style={{ fontSize: '0.85em', color: '#888' }}>
-                            {order.createdAt}
+                        <div className="pending-details">
+                          <strong>{order.stockName ?? order.stockCode}</strong>
+                          <span>
+                            {order.price?.toLocaleString() ?? '-'}원 · {order.quantity?.toLocaleString() ?? '-'}주
                           </span>
-                        )}
+                          <span style={{ color: '#888', fontSize: '0.85em' }}>
+                            체결 {order.filledQuantity ?? 0} / 미체결 {order.remainQuantity ?? 0}
+                          </span>
+                          {order.createdAt && (
+                            <span className="pending-time" style={{ fontSize: '0.85em', color: '#888' }}>
+                              {order.createdAt}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                    <div className="pending-actions">
+                      <div className="pending-actions">
+                      <button
+                        className="modify-btn"
+                        onClick={() => handleOpenModify(order)}
+                        disabled={!order.orderId || !!modifying[order.orderId] || !!canceling[order.orderId]}
+                        title={!order.orderId ? '시스템에 기록된 주문만 정정 가능' : ''}
+                      >
+                        정정
+                      </button>
                       <button
                         className="cancel-btn"
                         onClick={() => handleCancelOrder(order)}
-                        disabled={!order.orderId || !!canceling[order.orderId]}
+                        disabled={!order.orderId || !!canceling[order.orderId] || !!modifying[order.orderId]}
                         title={!order.orderId ? '시스템에 기록된 주문만 취소 가능' : ''}
                       >
                         {canceling[order.orderId] ? '취소 중 …' : '취소'}
                       </button>
+                      </div>
                     </div>
+
+                    {/* 인라인 정정 폼: 해당 주문 클릭 시 펼쳐짐 */}
+                    {modifyingOrder?.orderId === order.orderId && (
+                      <div className="modify-form">
+                        <div className="modify-inputs">
+                          <div className="modify-input-group">
+                            <label>단가 (원)</label>
+                            <input
+                              type="number"
+                              min={1}
+                              value={modifyingOrder.newPrice}
+                              onChange={(e) =>
+                                setModifyingOrder((prev) => ({ ...prev, newPrice: e.target.value }))
+                              }
+                            />
+                          </div>
+                          <div className="modify-input-group">
+                            <label>수량 (주)</label>
+                            <input
+                              type="number"
+                              min={1}
+                              value={modifyingOrder.newQuantity}
+                              onChange={(e) =>
+                                setModifyingOrder((prev) => ({ ...prev, newQuantity: e.target.value }))
+                              }
+                            />
+                          </div>
+                        </div>
+                        <div className="modify-actions">
+                          <button
+                            className="modify-save-btn"
+                            onClick={handleSaveModify}
+                            disabled={modifying[order.orderId]}
+                          >
+                            {modifying[order.orderId] ? '정정 중 …' : '저장'}
+                          </button>
+                          <button
+                            className="modify-cancel-btn"
+                            onClick={handleCloseModify}
+                            disabled={modifying[order.orderId]}
+                          >
+                            닫기
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}

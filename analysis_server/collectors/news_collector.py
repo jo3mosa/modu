@@ -22,8 +22,11 @@ import atexit
 import logging
 import os
 import re
+import sqlite3
 import time
-from datetime import datetime, timezone
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import feedparser
 import requests
@@ -36,6 +39,8 @@ try:
 except ImportError:
     MongoClient = None
     PyMongoError = Exception
+
+from clients.redis_client import set_json
 
 
 # ─── 설정 ────────────────────────────────────────────────────────────────────
@@ -71,6 +76,27 @@ ARTICLE_FETCH_DELAY = 1.5     # 본문 fetch 사이 sleep (초)
 HTTP_TIMEOUT = 10
 DEFAULT_LOOP_INTERVAL = 600   # 무한 루프 간격 — 10분 (RSS 갱신 빈도와 균형)
 
+# ─── sentiment / 종목 매핑 설정 ─────────────────────────────────────────────
+
+KST = ZoneInfo("Asia/Seoul")
+
+# stock_master 캐시 위치 (collectors/ → ../data/stock_master.db).
+_MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+STOCK_DB_PATH = os.path.join(_MODULE_DIR, "..", "data", "stock_master.db")
+
+# 회사명 substring 매칭 최소 길이 — LG/SK 같은 2자리는 false positive 다수.
+MIN_STOCK_NAME_LEN = 3
+
+# Redis `sentiment:{stock}` TTL (architecture spec — 2시간).
+SENTIMENT_REDIS_TTL = 2 * 3600
+
+# 종목별 sentiment 집계 lookback (24시간 안의 기사만 평균).
+SENTIMENT_LOOKBACK_HOURS = 24
+
+# 확신도 → confidence_level 매핑 임곗값.
+CONFIDENCE_HIGH = 70.0
+CONFIDENCE_MEDIUM = 30.0
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -79,7 +105,83 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# ─── 헬퍼 ────────────────────────────────────────────────────────────────────
+# ─── FinBERT analyzer 싱글톤 ────────────────────────────────────────────────
+# KR-FinBERT-SC 모델 로드는 무거우니 (~500MB + GPU 초기화) 첫 사용 시 1회만.
+
+_analyzer = None
+
+
+def get_sentiment_analyzer():
+    """models.sentiment_analyzer.FinancialSentimentAnalyzer 싱글톤 lazy 로드."""
+    global _analyzer
+    if _analyzer is None:
+        # local import — 컨테이너 부팅 시점 transformers/torch 로드 회피.
+        from models.sentiment_analyzer import FinancialSentimentAnalyzer
+        _analyzer = FinancialSentimentAnalyzer()
+    return _analyzer
+
+
+# ─── 종목명 매핑 (회사명 substring) ─────────────────────────────────────────
+# NER 모델 없이 stock_master 활성 회사명으로 본문 substring 검색.
+# MVP — 정교한 매핑(동음이의어, 별칭)은 별도 PR.
+
+_STOCK_NAME_TO_CODE: dict[str, str] | None = None
+
+
+def _load_stock_names() -> dict[str, str]:
+    """{회사명: 종목코드} dict. 활성 + 길이 ≥ MIN_STOCK_NAME_LEN 만.
+
+    싱글톤 캐시 — 컨테이너 재기동 전엔 stock_master 변동 거의 없음.
+    DB 오류 시 빈 dict 반환 (cache 안 함 → 다음 호출에 재시도 가능).
+    """
+    global _STOCK_NAME_TO_CODE
+    if _STOCK_NAME_TO_CODE is not None:
+        return _STOCK_NAME_TO_CODE
+    try:
+        with sqlite3.connect(STOCK_DB_PATH) as conn:
+            rows = conn.execute(
+                "SELECT stock_code, stock_name FROM stock_master WHERE is_active=1"
+            ).fetchall()
+    except sqlite3.Error:
+        # 파일 락 / 권한 / 손상 등 일시 오류 — 빈 매핑으로 폴백.
+        # cache 안 하므로 다음 호출에 재시도. 매핑 없는 동안 그 cycle 의
+        # stock_codes 가 [] 가 되어 sentiment 갱신만 누락 (기사 자체는 적재됨).
+        logger.exception("stock_master 로드 실패 — 빈 매핑 폴백 (다음 호출에 재시도)")
+        return {}
+    _STOCK_NAME_TO_CODE = {
+        name: code for code, name in rows
+        if name and len(name) >= MIN_STOCK_NAME_LEN
+    }
+    logger.info("loaded %d stock name mappings (len>=%d)",
+                len(_STOCK_NAME_TO_CODE), MIN_STOCK_NAME_LEN)
+    return _STOCK_NAME_TO_CODE
+
+
+def match_stocks(text: str) -> list[str]:
+    """본문에서 회사명 substring 매칭 → 종목코드 리스트 (중복 제거).
+
+    긴 이름 우선 매칭 + 매치된 부분 제거 → "삼성전자" 매치 후 그 자리에 "삼성"
+    재매치 되지 않게 함.
+    """
+    if not text:
+        return []
+    names = _load_stock_names()
+    # 긴 이름 먼저 매치 — substring overlap 회피
+    sorted_names = sorted(names.keys(), key=len, reverse=True)
+    found: list[str] = []
+    seen: set[str] = set()
+    remaining = text
+    for name in sorted_names:
+        if name in remaining:
+            code = names[name]
+            if code not in seen:
+                found.append(code)
+                seen.add(code)
+            remaining = remaining.replace(name, " ")
+    return found
+
+
+# ─── 기존 헬퍼 ──────────────────────────────────────────────────────────────
 
 def _extract_article_id(source_key: str, url: str, pattern: str) -> str:
     """원문 URL → '{source_key}_{numeric_id}' 형식의 article_id.
@@ -170,9 +272,12 @@ def crawl_one_source(source: dict, collection, session) -> dict:
     """단일 source RSS 갱신 + 신규 기사 본문 적재.
 
     이미 MongoDB 에 _id 가 있는 기사는 본문 fetch 자체를 skip → 네트워크 절약.
-    Returns: {"fetched", "skipped", "failed"}
+    이번 사이클에서 매핑된 종목코드 set 도 함께 반환 — run_once 가 Redis sentiment
+    갱신 대상 모음에 사용.
+
+    Returns: {"fetched", "skipped", "failed", "touched_stocks": set[str]}
     """
-    stats = {"fetched": 0, "skipped": 0, "failed": 0}
+    stats = {"fetched": 0, "skipped": 0, "failed": 0, "touched_stocks": set()}
 
     try:
         r = session.get(source["rss_url"], headers=HEADERS, timeout=HTTP_TIMEOUT)
@@ -201,6 +306,18 @@ def crawl_one_source(source: dict, collection, session) -> dict:
         published_at = _parse_pub_date(entry.get("published", ""))
         date_ymd = published_at[:10].replace("-", "") if published_at else ""
 
+        # FinBERT 감성 분석 (제목 + 본문). 첫 호출 시 모델 로드 (수 초 소요).
+        try:
+            sentiment = get_sentiment_analyzer().analyze(
+                title=entry.title, content=content,
+            )
+        except Exception:
+            logger.exception("sentiment 분석 실패 %s", article_id)
+            sentiment = None
+
+        # 본문에 등장한 종목코드 매핑 — engine 의 sentiment 집계 키.
+        stock_codes = match_stocks((entry.title or "") + " " + (content or ""))
+
         doc = {
             "article_id":   article_id,
             "source":       source["key"],
@@ -216,6 +333,8 @@ def crawl_one_source(source: dict, collection, session) -> dict:
             "keywords":     list(getattr(entry, "tags", []) and
                                  [t.term for t in entry.tags] or []),
             "crawled_at":   datetime.now(timezone.utc),
+            "sentiment":    sentiment,       # FinancialSentimentAnalyzer.analyze() 결과 또는 None
+            "stock_codes":  stock_codes,     # 매핑된 종목 (없으면 [])
         }
 
         try:
@@ -225,6 +344,7 @@ def crawl_one_source(source: dict, collection, session) -> dict:
                 upsert=True,
             )
             stats["fetched"] += 1
+            stats["touched_stocks"].update(stock_codes)
         except PyMongoError as e:
             logger.warning(f"MongoDB upsert 실패 {article_id}: {e}")
             stats["failed"] += 1
@@ -238,25 +358,109 @@ def crawl_one_source(source: dict, collection, session) -> dict:
     return stats
 
 
+# ─── 종목별 sentiment 집계 → Redis ──────────────────────────────────────────
+
+def _confidence_level(confidence: float) -> str:
+    """confidence (0~100) → high / medium / low."""
+    if confidence >= CONFIDENCE_HIGH:
+        return "high"
+    if confidence >= CONFIDENCE_MEDIUM:
+        return "medium"
+    return "low"
+
+
+def update_sentiment_redis(collection, target_stock_codes: set[str]) -> int:
+    """target_stock_codes 각 종목의 24h 안 기사 평균 sentiment → Redis SET.
+
+    이번 cycle 에서 매핑된 종목만 갱신 — 매번 전체 종목 재계산하면 무거움.
+    한 종목에 24h 기사가 0건이면 SET skip (자연 TTL 만료).
+    """
+    if not target_stock_codes:
+        return 0
+
+    cutoff = (datetime.now(KST) - timedelta(hours=SENTIMENT_LOOKBACK_HOURS)).strftime(
+        "%Y-%m-%dT%H:%M:%S"
+    )
+    required_keys = ("sentiment_score", "confidence", "pos_prob", "neu_prob", "neg_prob")
+    written = 0
+    for stock_code in target_stock_codes:
+        # 24h 안 그 종목 기사 + sentiment 분석된 것만
+        docs = list(collection.find(
+            {
+                "stock_codes": stock_code,
+                "published_at": {"$gte": cutoff},
+                "sentiment": {"$exists": True, "$ne": None},
+            },
+            {"sentiment": 1},
+        ))
+        if not docs:
+            continue
+
+        # 필수 키 모두 있는 doc 만 사용 — 옛 스키마 / 부분 적재 문서가 1건 섞여도
+        # 직접 인덱싱 시 KeyError 로 집계 전체가 멈추는 것 방지.
+        valid = [
+            d for d in docs
+            if isinstance(d.get("sentiment"), dict)
+            and all(k in d["sentiment"] for k in required_keys)
+        ]
+        if not valid:
+            continue
+        n = len(valid)
+        avg_score = sum(d["sentiment"]["sentiment_score"] for d in valid) / n
+        avg_conf  = sum(d["sentiment"]["confidence"]      for d in valid) / n
+        avg_pos   = sum(d["sentiment"]["pos_prob"]        for d in valid) / n
+        avg_neu   = sum(d["sentiment"]["neu_prob"]        for d in valid) / n
+        avg_neg   = sum(d["sentiment"]["neg_prob"]        for d in valid) / n
+
+        payload = {
+            "daily_score":      round(avg_score, 2),
+            "confidence_level": _confidence_level(avg_conf),
+            "pos_prob":         round(avg_pos, 2),
+            "neu_prob":         round(avg_neu, 2),
+            "neg_prob":         round(avg_neg, 2),
+            "article_count":    n,
+            "timestamp":        datetime.now(KST).isoformat(),
+        }
+        try:
+            set_json(f"sentiment:{stock_code}", payload, ttl_seconds=SENTIMENT_REDIS_TTL)
+            written += 1
+        except Exception:
+            logger.exception("redis SET failed for sentiment:%s", stock_code)
+
+    logger.info("sentiment redis updated: %d/%d stocks (24h window)",
+                written, len(target_stock_codes))
+    return written
+
+
 # ─── 진입점 ──────────────────────────────────────────────────────────────────
 
 def run_once(collection=None) -> dict:
-    """1회 RSS 갱신. collection 미지정 시 내부에서 연결."""
+    """1회 RSS 갱신 + 매핑된 종목들 sentiment Redis 갱신.
+
+    collection 미지정 시 내부에서 연결.
+    """
     if collection is None:
         collection = _connect_mongo()
     if collection is None:
-        return {"fetched": 0, "skipped": 0, "failed": 0}
+        return {"fetched": 0, "skipped": 0, "failed": 0, "sentiment_updated": 0}
 
     session = requests.Session()
     total = {"fetched": 0, "skipped": 0, "failed": 0}
+    touched_stocks: set[str] = set()
     for source in SOURCES:
         s = crawl_one_source(source, collection, session)
         for k in total:
             total[k] += s[k]
+        touched_stocks.update(s.get("touched_stocks", set()))
+
+    # 이번 cycle 에 매핑된 종목들만 sentiment redis 갱신 — 24h window 평균.
+    sentiment_updated = update_sentiment_redis(collection, touched_stocks)
+    total["sentiment_updated"] = sentiment_updated
 
     logger.info(
         f"=== 1회 갱신 완료 — fetched={total['fetched']} / "
-        f"skipped={total['skipped']} / failed={total['failed']} ==="
+        f"skipped={total['skipped']} / failed={total['failed']} / "
+        f"sentiment_updated={sentiment_updated} ==="
     )
     return total
 

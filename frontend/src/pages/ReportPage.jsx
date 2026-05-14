@@ -51,40 +51,6 @@ const MOCK_TREND_DATA = {
   kospiYield: [0, 0.5, 0.2, 0.8, 1.1, 1.0, 1.5, 2.0]
 };
 
-// 백엔드 미연결/실패 시 fallback. 형식은 aiAgent.js의 표준 형식과 동일하게 맞춤.
-const MOCK_TRADE_LOGS = [
-  {
-    id: 1,
-    orderId: 5001,
-    stockCode: '005930',
-    action: 'BUY',
-    executionStatus: 'READY',
-    confidence: 85,
-    reason: 'RSI 지표가 30 이하로 과매도 구간에 진입하였으며, 외국인 순매수세가 3일 연속 유입되는 것을 확인하여 분할 매수 1차 진입을 결정했습니다.',
-    decidedAt: '2026-05-03 10:30',
-  },
-  {
-    id: 2,
-    orderId: 5002,
-    stockCode: '000660',
-    action: 'SELL',
-    executionStatus: 'READY',
-    confidence: 92,
-    reason: '설정된 목표 수익률 5%를 초과 달성하였으며, 볼린저 밴드 상단 이탈 및 단기 저항선 도달을 확인하여 수익 실현을 위해 매도 처리했습니다.',
-    decidedAt: '2026-05-02 09:15',
-  },
-  {
-    id: 3,
-    orderId: 5003,
-    stockCode: '035720',
-    action: 'SELL',
-    executionStatus: 'BLOCKED',
-    confidence: 99,
-    reason: '설정된 최대 허용 손실률(-3%)에 도달하여, 추가적인 하락 리스크를 방어하기 위해 설정된 리스크 관리 룰셋에 따라 기계적 손절매를 집행했습니다.',
-    decidedAt: '2026-05-01 14:20',
-  },
-];
-
 const PERIOD_OPTIONS = [
   { value: '1W', label: '1주일' },
   { value: '1M', label: '1개월' },
@@ -98,6 +64,25 @@ const MOCK_HABIT_SUMMARY = {
   title: "안정적인 수익 창출 중이나, 간헐적 과매매 주의",
   desc: "이번 달은 손절 원칙을 잘 지켜 전반적으로 안정적인 수익을 누적했습니다. 다만 지난주 급락장에서 하루 10회 이상 매매하는 등 일시적인 뇌동매매 징후가 포착되었습니다. 규칙적인 매매 빈도를 유지하세요."
 };
+
+// 매매 이력 섹션 페이지당 표시 개수 (클라이언트 페이지네이션)
+const TRADES_PER_PAGE = 10;
+
+// 페이지 버튼 스타일 (active/disabled에 따라 다른 색상)
+function paginationBtnStyle(isActive, isDisabled) {
+  return {
+    minWidth: '2rem',
+    padding: '0.3rem 0.6rem',
+    fontSize: '0.85rem',
+    fontWeight: 600,
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '6px',
+    background: isActive ? 'rgba(132,204,22,0.2)' : 'transparent',
+    color: isActive ? '#84cc16' : isDisabled ? '#444' : '#aaa',
+    cursor: isDisabled ? 'not-allowed' : 'pointer',
+    transition: 'all 0.15s',
+  };
+}
 
 // 백엔드 getOrderHistory 응답 표준 형식과 동일 (side / orderType / createdAt / source / status).
 const MOCK_GENERAL_HISTORY = [
@@ -115,25 +100,26 @@ export default function ReportPage() {
 
   const [period, setPeriod] = useState('1M');
   const [briefing] = useState(MOCK_MARKET_BRIEFING);
-  const [logs, setLogs] = useState(MOCK_TRADE_LOGS);
+  const [logs, setLogs] = useState([]);
   // 수동 매매 이력 (getOrderHistory). 연결 실패 시 mock 유지.
   const [generalLogs, setGeneralLogs] = useState(MOCK_GENERAL_HISTORY);
   const [expandedLogId, setExpandedLogId] = useState(initialLogId ? parseInt(initialLogId, 10) : null);
   const [detailedDecisions, setDetailedDecisions] = useState({});
+  // 매매 이력 섹션 페이지네이션 (다른 섹션과 독립적으로 동작)
+  const [tradePage, setTradePage] = useState(1);
 
-  // AI 판단 이력 조회. 실패 시 mock 그대로 표시.
+  // AI 판단 이력 조회. 실패하면 빈 목록 유지.
   useEffect(() => {
     let cancelled = false;
     async function fetchLogs() {
       try {
         const response = await getAiDecisions({ page: 0, size: 20 });
         if (cancelled) return;
-        if (response?.content?.length) {
-          setLogs(response.content);
-        }
+        setLogs(response?.content ?? []);
       } catch (error) {
         if (cancelled) return;
-        console.warn('AI 판단 이력 조회 실패 (mock 표시 유지):', error);
+        console.warn('AI 판단 이력 조회 실패:', error);
+        setLogs([]);
       }
     }
     fetchLogs();
@@ -187,6 +173,23 @@ export default function ReportPage() {
       (a, b) => new Date(b.decidedAt) - new Date(a.decidedAt)
     );
   }, [logs, generalLogs]);
+
+  // 매매 이력 페이지네이션: 현재 페이지에 해당하는 슬라이스
+  const totalTradePages = Math.max(1, Math.ceil(mergedLogs.length / TRADES_PER_PAGE));
+  const paginatedLogs = useMemo(() => {
+    const start = (tradePage - 1) * TRADES_PER_PAGE;
+    return mergedLogs.slice(start, start + TRADES_PER_PAGE);
+  }, [mergedLogs, tradePage]);
+
+  // 데이터 변동으로 totalPages가 줄어 현재 페이지가 범위를 벗어나면 마지막 페이지로 보정
+  useEffect(() => {
+    if (tradePage > totalTradePages) setTradePage(totalTradePages);
+  }, [tradePage, totalTradePages]);
+
+  const goToTradePage = (p) => {
+    if (p < 1 || p > totalTradePages) return;
+    setTradePage(p);
+  };
 
   // 아코디언 토글 + 펼칠 때 단건 상세(indicatorsSnapshot 포함) 조회
   const toggleLog = async (id) => {
@@ -362,7 +365,7 @@ export default function ReportPage() {
         </div>
 
         <div className="trade-log-list">
-          {mergedLogs.map((log) => {
+          {paginatedLogs.map((log) => {
             const isAI = log.source === 'AI';
             const isExpanded = isAI && expandedLogId === log.id;
             const actionDisplay = ACTION_DISPLAY[log.action] ?? ACTION_DISPLAY.UNKNOWN;
@@ -423,6 +426,48 @@ export default function ReportPage() {
             );
           })}
         </div>
+
+        {/* 매매 이력 페이지네이션 — 이 섹션만 페이지 전환, 위쪽 카드는 그대로 유지 */}
+        {mergedLogs.length > 0 && totalTradePages > 1 && (
+          <div
+            className="trade-pagination"
+            style={{
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              gap: '0.4rem',
+              marginTop: '1rem',
+              flexWrap: 'wrap',
+            }}
+          >
+            <button
+              className="page-btn"
+              onClick={() => goToTradePage(tradePage - 1)}
+              disabled={tradePage === 1}
+              style={paginationBtnStyle(false, tradePage === 1)}
+            >
+              ‹ 이전
+            </button>
+            {Array.from({ length: totalTradePages }, (_, i) => i + 1).map((p) => (
+              <button
+                key={p}
+                className={`page-btn ${p === tradePage ? 'active' : ''}`}
+                onClick={() => goToTradePage(p)}
+                style={paginationBtnStyle(p === tradePage, false)}
+              >
+                {p}
+              </button>
+            ))}
+            <button
+              className="page-btn"
+              onClick={() => goToTradePage(tradePage + 1)}
+              disabled={tradePage === totalTradePages}
+              style={paginationBtnStyle(false, tradePage === totalTradePages)}
+            >
+              다음 ›
+            </button>
+          </div>
+        )}
       </div>
 
     </div>

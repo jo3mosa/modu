@@ -28,6 +28,7 @@ huggingface_hub==1.12.0
 idna==3.13
 Jinja2==3.1.6
 joblib==1.5.3
+kafka-python==2.0.3
 kiwisolver==1.5.0
 lxml==6.1.0
 markdown-it-py==4.0.0
@@ -47,6 +48,7 @@ pydantic==2.13.3
 pydantic_core==2.46.3
 Pygments==2.20.0
 pykrx==1.2.7
+psycopg2-binary==2.9.10
 pymongo==4.17.0
 pyparsing==3.3.2
 python-dateutil==2.9.0.post0
@@ -86,3 +88,4 @@ urllib3==2.6.3
 uvicorn==0.46.0
 wrapt==2.1.2
 zope.interface==8.4
+psycopg2-binary==2.9.10

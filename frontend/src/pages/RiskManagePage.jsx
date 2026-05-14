@@ -25,7 +25,6 @@ export default function RiskManagePage() {
   const [profile, setProfile] = useState({
     riskLevel: null,
     profileSummary: '',
-    principle: '',
   });
 
   const [rules, setRules] = useState({
@@ -36,15 +35,15 @@ export default function RiskManagePage() {
   });
 
   // 페이지 진입 시 GET /me/rules로 초기화
-  // 이후 PUT 응답의 version을 갱신 보관해 다음 요청에 재전송
+  // 이후 PUT/PATCH 응답의 version을 갱신 보관해 다음 요청에 재전송
   const [ruleVersion, setRuleVersion] = useState(0);
+  const [profileVersion, setProfileVersion] = useState(0);
 
   // 재진단 모달 상태
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [questions, setQuestions] = useState([]);
   const [questionsError, setQuestionsError] = useState(null);
   const [modalAnswers, setModalAnswers] = useState({}); // { [questionId]: optionId(string) }
-  const [modalPrinciple, setModalPrinciple] = useState('');
   const [submittingProfile, setSubmittingProfile] = useState(false);
   const [savingRules, setSavingRules] = useState(false);
 
@@ -82,8 +81,8 @@ export default function RiskManagePage() {
         setProfile({
           riskLevel: data.riskLevel ?? null,
           profileSummary: data.profileSummary ?? '',
-          principle: data.freeText ?? '',
         });
+        setProfileVersion(data.version ?? 0);
       })
       .catch((error) => {
         if (cancelled) return;
@@ -123,7 +122,6 @@ export default function RiskManagePage() {
 
   const handleOpenModal = () => {
     setModalAnswers({});
-    setModalPrinciple(profile.principle);
     setIsModalOpen(true);
   };
 
@@ -147,13 +145,13 @@ export default function RiskManagePage() {
       }));
       const result = await updateProfile({
         answers: answersPayload,
-        freeText: modalPrinciple || undefined,
+        version: profileVersion,
       });
       setProfile({
         riskLevel: result?.riskLevel ?? null,
         profileSummary: result?.profileSummary ?? '',
-        principle: modalPrinciple,
       });
+      setProfileVersion(result?.version ?? profileVersion + 1);
       setIsModalOpen(false);
     } catch (error) {
       console.error('투자 성향 저장 실패:', error);
@@ -252,10 +250,6 @@ export default function RiskManagePage() {
           </div>
         </div>
 
-        <div className="principle-box">
-          <h3>나의 매매 원칙</h3>
-          <p>{profile.principle ? `"${profile.principle}"` : '아직 등록된 매매 원칙이 없습니다.'}</p>
-        </div>
       </div>
 
       {/* 3. 정량적 리스크 룰셋 설정 */}
@@ -283,31 +277,6 @@ export default function RiskManagePage() {
                 onChange={(e) => handleRuleChange('stopLoss', e.target.value)}
               />
               <span className="unit">%</span>
-            </div>
-          </div>
-
-          <div className="input-group">
-            <label>1일 최대 주문 횟수 제한</label>
-            <div className="input-with-unit">
-              <input
-                type="number"
-                value={rules.maxDailyOrders}
-                onChange={(e) => handleRuleChange('maxDailyOrders', e.target.value)}
-              />
-              <span className="unit">회</span>
-            </div>
-          </div>
-
-          <div className="input-group">
-            <label>1일 최대 허용 손실 금액</label>
-            <div className="input-with-unit">
-              <input
-                type="number"
-                value={rules.maxLossLimit}
-                onChange={(e) => handleRuleChange('maxLossLimit', e.target.value)}
-                step="10000"
-              />
-              <span className="unit">원</span>
             </div>
           </div>
         </div>
@@ -352,15 +321,6 @@ export default function RiskManagePage() {
                 </div>
               ))}
 
-              <div className="survey-section" style={{ marginTop: '2rem' }}>
-                <h3>나의 매매 원칙 수정</h3>
-                <textarea
-                  className="principle-textarea"
-                  value={modalPrinciple}
-                  onChange={(e) => setModalPrinciple(e.target.value)}
-                  placeholder="예: 3일 연속 하락 시 분할 매수 진행"
-                />
-              </div>
             </div>
 
             <div className="modal-footer">
