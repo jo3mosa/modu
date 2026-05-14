@@ -164,4 +164,16 @@ public class Order {
         this.cancelledAt = cancelledAt;
         this.updatedAt   = OffsetDateTime.now();
     }
+
+    /**
+     * KIS 거부 / 비동기 처리 실패로 인한 주문 거절 처리
+     * KisOrderConsumer 가 KIS placeOrder 실패 시 호출 (S14P31B106-306)
+     *
+     * @param reason 거절 사유 (사용자에게 표시 가능한 메시지)
+     */
+    public void reject(String reason) {
+        this.status       = OrderStatus.REJECTED;
+        this.rejectReason = reason;
+        this.updatedAt    = OffsetDateTime.now();
+    }
 }
