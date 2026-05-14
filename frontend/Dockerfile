@@ -16,6 +16,8 @@ RUN npm ci
 
 # 소스코드 전체 복사 후 프로덕션 빌드 실행
 COPY . .
+ARG VITE_KAKAO_CLIENT_ID
+RUN echo "VITE_KAKAO_CLIENT_ID=${VITE_KAKAO_CLIENT_ID}" > .env.production
 RUN npm run build
 
 # ============================================================
