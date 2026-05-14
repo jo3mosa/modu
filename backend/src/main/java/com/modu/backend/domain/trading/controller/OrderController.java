@@ -3,15 +3,19 @@ package com.modu.backend.domain.trading.controller;
 import com.modu.backend.domain.trading.dto.BuyingPowerResponse;
 import com.modu.backend.domain.trading.dto.ModifyOrderRequest;
 import com.modu.backend.domain.trading.dto.ModifyOrderResponse;
+import com.modu.backend.domain.auth.service.SseTokenService;
 import com.modu.backend.domain.trading.dto.OrderHistoryResponse;
 import com.modu.backend.domain.trading.dto.OrderRequest;
 import com.modu.backend.domain.trading.dto.OrderResponse;
 import com.modu.backend.domain.trading.dto.PendingOrdersResponse;
+import com.modu.backend.domain.trading.dto.SseTokenResponse;
 import com.modu.backend.domain.trading.entity.HistorySourceFilter;
 import com.modu.backend.domain.trading.entity.OrderSide;
 import com.modu.backend.domain.trading.service.OrderHistoryService;
 import com.modu.backend.domain.trading.service.OrderService;
+import com.modu.backend.domain.trading.sse.OrderSseEmitterManager;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.LocalDate;
 import com.modu.backend.global.dto.ApiResponse;
@@ -38,6 +42,8 @@ public class OrderController {
 
     private final OrderService orderService;
     private final OrderHistoryService orderHistoryService;
+    private final SseTokenService sseTokenService;
+    private final OrderSseEmitterManager orderSseEmitterManager;
 
     @Operation(
             summary = "미체결 주문 조회",
@@ -206,5 +212,52 @@ public class OrderController {
         OrderResponse response = orderService.placeOrder(userId, request, idempotencyKey);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success("주문이 접수되었습니다.", response));
+    }
+
+    // ── 주문 처리 SSE ─────────────────────────────────────────────────────────
+
+    @Operation(
+            summary = "SSE 단기 토큰 발급",
+            description = """
+                    GET /api/v1/orders/connect 호출 시 query param 으로 사용할 단기 SSE 토큰을 발급합니다.
+
+                    - EventSource API 가 Authorization 헤더를 전송하지 못하는 제약 회피용입니다.
+                    - 토큰 수명은 60초이며, 일단 SSE 연결이 수립되면 토큰은 재사용하지 않아도 됩니다.
+                    - audience 클레임("sse")으로 Access Token 과 분리됩니다.
+                    """
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "SSE 토큰 발급 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "인증 필요")
+    })
+    @PostMapping("/sse-token")
+    public ResponseEntity<ApiResponse<SseTokenResponse>> issueSseToken(
+            @AuthenticationPrincipal Long userId
+    ) {
+        String token = sseTokenService.issue(userId);
+        SseTokenResponse response = new SseTokenResponse(token, SseTokenService.EXPIRATION_SECONDS);
+        return ResponseEntity.ok(ApiResponse.success("SSE 토큰이 발급되었습니다.", response));
+    }
+
+    @Operation(
+            summary = "주문 처리 SSE 연결",
+            description = """
+                    주문 접수/실패/체결 결과를 실시간으로 수신하는 SSE 스트림을 시작합니다.
+
+                    - 사전에 POST /api/v1/orders/sse-token 으로 단기 토큰을 발급받아야 합니다.
+                    - 토큰은 query param 으로 전달합니다 (EventSource 가 헤더를 못 보냄).
+                    - 모든 이벤트는 단일 event name "order" 로 전송되며, 본문 JSON 의 type 필드로 종류를 구분합니다.
+                    - 동일 사용자가 새로 연결하면 기존 연결은 종료되고 새 연결로 대체됩니다.
+                    """
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "SSE 스트림 시작"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "SSE 토큰 누락/만료/오류",
+                    content = @Content(schema = @Schema(example = "{\"success\":false,\"message\":\"SSE 토큰이 유효하지 않거나 만료되었습니다.\",\"errorCode\":\"AUTH_008\"}")))
+    })
+    @GetMapping(value = "/connect", produces = "text/event-stream")
+    public SseEmitter connect(@RequestParam("token") String token) {
+        Long userId = sseTokenService.verifyAndGetUserId(token);
+        return orderSseEmitterManager.connect(userId);
     }
 }
