@@ -230,13 +230,13 @@ public class KisRealtimeUpstreamClient {
             }
 
             parser.parse(payload).ifPresent(parsed -> {
-                if (subscriptionManager == null) {
-                    log.warn("KIS realtime subscription manager is not initialized, ignoring payload");
-                    return;
+                // (1) 프론트 broadcast — subscriptionManager 미초기화(부팅 race 등) 시 skip
+                if (subscriptionManager != null) {
+                    subscriptionManager.broadcast(parsed.key(), parsed.payload());
+                } else {
+                    log.warn("KIS realtime subscription manager is not initialized, skipping broadcast");
                 }
-                // (1) 프론트 broadcast — 시세 화면 표시용
-                subscriptionManager.broadcast(parsed.key(), parsed.payload());
-                // (2) Redis 캐시 (체결가 메시지만) — Position Monitor / AI 가 polling 으로 조회
+                // (2) Redis 캐시 (체결가 메시지만) — broadcast 와 독립 실행, Position Monitor / AI polling 용
                 if (parsed.payload() instanceof RealtimePriceResponse price) {
                     realtimePriceCacheService.cache(price);
                 }
