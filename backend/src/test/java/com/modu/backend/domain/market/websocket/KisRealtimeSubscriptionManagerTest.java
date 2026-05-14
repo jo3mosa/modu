@@ -138,6 +138,71 @@ class KisRealtimeSubscriptionManagerTest {
         verify(secondSession).sendMessage(any(TextMessage.class));
     }
 
+    @Test
+    @DisplayName("서버 사이드 첫 구독 시 KIS subscribe 요청")
+    void serverSideFirstRegisterSubscribes() {
+        KisRealtimeSubscriptionManager manager = new KisRealtimeSubscriptionManager(new ObjectMapper(), upstreamClient);
+        KisRealtimeStreamKey key = new KisRealtimeStreamKey(KisRealtimeStreamType.PRICE, "005930");
+
+        manager.registerServerSide(key);
+
+        verify(upstreamClient).subscribe(key);
+    }
+
+    @Test
+    @DisplayName("같은 키에 서버 사이드 중복 register 시 첫 호출만 KIS subscribe 요청")
+    void serverSideDuplicateRegisterIsIdempotent() {
+        KisRealtimeSubscriptionManager manager = new KisRealtimeSubscriptionManager(new ObjectMapper(), upstreamClient);
+        KisRealtimeStreamKey key = new KisRealtimeStreamKey(KisRealtimeStreamType.PRICE, "005930");
+
+        manager.registerServerSide(key);
+        manager.registerServerSide(key);
+
+        verify(upstreamClient, org.mockito.Mockito.times(1)).subscribe(key);
+    }
+
+    @Test
+    @DisplayName("서버 사이드 register 카운트가 0 으로 떨어지고 프론트 세션도 없으면 KIS unsubscribe 요청")
+    void serverSideUnregisterUnsubscribesWhenZero() {
+        KisRealtimeSubscriptionManager manager = new KisRealtimeSubscriptionManager(new ObjectMapper(), upstreamClient);
+        KisRealtimeStreamKey key = new KisRealtimeStreamKey(KisRealtimeStreamType.PRICE, "005930");
+
+        manager.registerServerSide(key);
+        manager.unregisterServerSide(key);
+
+        verify(upstreamClient).unsubscribe(key);
+    }
+
+    @Test
+    @DisplayName("서버 사이드 register 가 살아있으면 프론트 마지막 세션 해제 시 KIS unsubscribe 안 함")
+    void serverHoldKeepsUpstreamSubscribed() {
+        KisRealtimeSubscriptionManager manager = new KisRealtimeSubscriptionManager(new ObjectMapper(), upstreamClient);
+        KisRealtimeStreamKey key = new KisRealtimeStreamKey(KisRealtimeStreamType.PRICE, "005930");
+        when(firstSession.getId()).thenReturn("session-1");
+
+        manager.registerServerSide(key);
+        manager.register(firstSession, key);
+
+        manager.unregister(firstSession);
+
+        verify(upstreamClient, never()).unsubscribe(key);
+    }
+
+    @Test
+    @DisplayName("서버 사이드가 이미 구독 중이면 프론트 첫 세션 등록 시 KIS subscribe 중복 호출 안 함")
+    void frontendDoesNotResubscribeWhenServerSideHoldsKey() {
+        KisRealtimeSubscriptionManager manager = new KisRealtimeSubscriptionManager(new ObjectMapper(), upstreamClient);
+        KisRealtimeStreamKey key = new KisRealtimeStreamKey(KisRealtimeStreamType.PRICE, "005930");
+        when(firstSession.getId()).thenReturn("session-1");
+
+        manager.registerServerSide(key);
+        org.mockito.Mockito.clearInvocations(upstreamClient);
+
+        manager.register(firstSession, key);
+
+        verify(upstreamClient, never()).subscribe(key);
+    }
+
     private record RealtimePayload(
             String stockCode,
             Long currentPrice
