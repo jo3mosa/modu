@@ -67,7 +67,10 @@ export default function DashboardPage() {
   const [orderHistory, setOrderHistory] = useState([]);
 
   useEffect(() => {
-    setShowTutorial(true);
+    const hasSeenTutorial = localStorage.getItem('hasSeenDashboardTutorial');
+    if (!hasSeenTutorial) {
+      setShowTutorial(true);
+    }
 
     async function fetchDashboardData() {
       setIsLoading(true);
@@ -258,7 +261,10 @@ export default function DashboardPage() {
     };
   }, [summary, holdings]);
 
-  const handleCloseTutorial = () => setShowTutorial(false);
+  const handleCloseTutorial = () => {
+    localStorage.setItem('hasSeenDashboardTutorial', 'true');
+    setShowTutorial(false);
+  };
 
   const toggleAiStatus = () => {
     setAiStatus(prev => ({ ...prev, isActive: !prev.isActive }));
