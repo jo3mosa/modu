@@ -31,8 +31,12 @@ FROM nginx:alpine
 # 빌드된 정적 파일을 Nginx 서빙 디렉토리로 복사
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# React Router SPA 대응을 위한 Nginx 설정 파일 복사
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Nginx 설정 파일 선택 (환경별 분기)
+#   - docker-compose 환경: nginx.conf (기본값) — /api/, /ws/ proxy 포함
+#   - K8s 환경:           nginx.k8s.conf      — Ingress 가 proxy 처리하므로 정적 서빙만
+# 빌드 시: docker build --build-arg NGINX_CONF=nginx.k8s.conf ...
+ARG NGINX_CONF=nginx.conf
+COPY ${NGINX_CONF} /etc/nginx/conf.d/default.conf
 
 # Nginx 기본 포트
 EXPOSE 80

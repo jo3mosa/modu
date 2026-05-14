@@ -19,12 +19,14 @@ spec:
         ports:
         - containerPort: 6379
         resources:
+          # 종목 시세 캐싱 (technical:{stock}) + 신호/이벤트 캐시.
+          # 종목 수 증가 / TTL 길이에 따라 메모리 증가 대비.
           requests:
-            memory: "64Mi"
-            cpu: "50m"
-          limits:
-            memory: "128Mi"
+            memory: "256Mi"
             cpu: "100m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
         readinessProbe:
           exec:
             command: ["redis-cli", "ping"]
