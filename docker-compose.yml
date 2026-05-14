@@ -49,6 +49,8 @@ services:
   frontend:
     build:
       context: ./frontend
+      args:
+        VITE_KAKAO_CLIENT_ID: ${VITE_KAKAO_CLIENT_ID}
       dockerfile: Dockerfile
     container_name: modu-frontend
     ports:
@@ -81,6 +83,8 @@ services:
       KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI}
       KIS_API_URL: ${KIS_API_URL}
       KIS_APP_KEY: ${KIS_APP_KEY}
+      KIS_WEBSOCKET_URL: ${KIS_WEBSOCKET_URL}
+      KIS_WEBSOCKET_CONNECTION_TIMEOUT_MS: ${KIS_WEBSOCKET_CONNECTION_TIMEOUT_MS:-5000}
       KIS_APP_SECRET: ${KIS_APP_SECRET}
       KIS_ENCRYPTION_KEY: ${KIS_ENCRYPTION_KEY}
       REDIS_HOST: ${REDIS_HOST:-redis}
