@@ -33,7 +33,7 @@ export default function MainLayout() {
     }
   }, [latestEvent]);
 
-  // 검색어 변경 시 API 호출 (300ms debounce)
+  // 검색어 변경 시 API 호출
   useEffect(() => {
     if (!query.trim()) { setResults([]); setShowDropdown(false); return; }
     clearTimeout(debounceRef.current);
