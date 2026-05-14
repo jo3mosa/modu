@@ -46,6 +46,7 @@ public class KisHashKeyClient {
                 throw new ApiException(CommonErrorCode.EXTERNAL_API_ERROR);
             }
 
+            log.info("[HashKey] 발급 성공 - prefix: {}", response.hash().substring(0, Math.min(20, response.hash().length())));
             return response.hash();
 
         } catch (RestClientException e) {
