@@ -7,8 +7,9 @@ OpenDART `list.json` batch 호출 → 종목별 그룹화 → Redis `event:{stoc
 한 사이클 통상 1~10 페이지 (DART rate limit 10K/day 안에서 안전).
 
 architecture spec:
-    event:{stock_code} TTL 600s (10분), 3분 주기로 갱신
+    event:{stock_code} TTL 43200s (12시간), 3분 주기로 갱신
     값 = {"has_urgent_issue": bool, "recent_disclosures": [...]}
+    영구 보존은 MongoDB modu_mongo.disclosures (별도 영속화 — TODO).
 
 사용법:
     python -m collectors.disclosure_collector              # 1 사이클 후 종료 (테스트)
@@ -78,8 +79,13 @@ LOOP_INTERVAL_SEC = 180
 # 한 종목당 보존할 최근 공시 갯수 (event 페이로드 크기 제한).
 MAX_DISCLOSURES_PER_STOCK = 10
 
-# Redis TTL — architecture spec 10분 (사이클 3분 대비 충분한 margin).
-REDIS_TTL_SECONDS = 600
+# Redis TTL — 12h. 위험 공시(거래정지·관리종목 등) 가 트리거에 충분히 오래
+# 노출되도록 보장. 단순 사이클 margin (3분 폴링) 차원이면 10분으로 충분하지만,
+# collector 가 죽거나 DART quota 소진(KST 자정 reset) 으로 갱신이 멈춰도
+# 마지막 페이로드가 12 시간은 살아 있어야 engine 이 공시 신호를 잃지 않는다.
+# LOOKBACK_DAYS=2 와 정합: 정상 운영 중에는 48h 윈도우 안의 공시가 매 3분
+# 재발행되므로 사실상 48h 노출, TTL 12h 는 "collector 정지 시 최소 보장" 의미.
+REDIS_TTL_SECONDS = 43200
 
 # DART list.json 페이지당 항목 수 (DART 가 허용하는 max).
 PAGE_COUNT = 100
