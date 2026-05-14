@@ -66,12 +66,6 @@ export default function DashboardPage() {
   const [aiDecisions, setAiDecisions] = useState([]);
   const [orderHistory, setOrderHistory] = useState([]);
 
-  // 알림 UI
-  const [isAlarmOpen, setIsAlarmOpen] = useState(false);
-  const [notifications, setNotifications] = useState([]);
-  const alarmRef = useRef(null);
-  const unreadCount = notifications.filter(n => !n.isRead).length;
-
   useEffect(() => {
     setShowTutorial(true);
 
@@ -264,22 +258,6 @@ export default function DashboardPage() {
     };
   }, [summary, holdings]);
 
-  // 알림 팝업 외부 클릭 시 닫기
-  useEffect(() => {
-    if (!isAlarmOpen) return;
-    function handleClickOutside(e) {
-      if (alarmRef.current && !alarmRef.current.contains(e.target)) {
-        setIsAlarmOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isAlarmOpen]);
-
-  const handleReadAll = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
-  };
-
   const handleCloseTutorial = () => setShowTutorial(false);
 
   const toggleAiStatus = () => {
@@ -381,40 +359,6 @@ export default function DashboardPage() {
         <div className="page-title-group">
           <h1>대시보드</h1>
           <p>전체 자산 현황과 AI 매매 상태를 실시간으로 모니터링하세요.</p>
-        </div>
-
-        {/* 알림 버튼 */}
-        <div className="alarm-controls" ref={alarmRef}>
-          <button
-            className="alarm-btn"
-            onClick={() => setIsAlarmOpen(prev => !prev)}
-          >
-            알림
-            {unreadCount > 0 && <span className="alarm-badge">{unreadCount}</span>}
-          </button>
-
-          {isAlarmOpen && (
-            <div className="alarm-popup">
-              <div className="alarm-popup-header">
-                <span>알림 목록</span>
-                {unreadCount > 0 && (
-                  <button className="alarm-read-all" onClick={handleReadAll}>모두 읽음</button>
-                )}
-              </div>
-              <div className="alarm-popup-list">
-                {notifications.length === 0 ? (
-                  <div className="alarm-empty">알림이 없습니다.</div>
-                ) : (
-                  notifications.map(n => (
-                    <div key={n.id} className={`alarm-item${n.isRead ? '' : ' unread'}`}>
-                      <div className="alarm-item-content">{n.message}</div>
-                      <div className="alarm-item-time">{n.timestamp}</div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
         </div>
       </div>
 

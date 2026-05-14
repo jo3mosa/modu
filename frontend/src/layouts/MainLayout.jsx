@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Search } from 'lucide-react';
+import { Search, Bell } from 'lucide-react';
 import { getStocks } from '../api/market';
 import { useOrderSSE } from '../hooks/useOrderSSE';
 import './MainLayout.css';
@@ -14,6 +14,12 @@ export default function MainLayout() {
   const [showDropdown, setShowDropdown] = useState(false);
   const searchRef = useRef(null);
   const debounceRef = useRef(null);
+
+  // 알림 상태
+  const [isAlarmOpen, setIsAlarmOpen] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const alarmRef = useRef(null);
+  const unreadCount = notifications.filter(n => !n.isRead).length;
 
   const menuItems = [
     { path: '/home', label: '대시보드' },
@@ -29,6 +35,14 @@ export default function MainLayout() {
   useEffect(() => {
     if (!latestEvent) return;
     if (latestEvent.type === 'ORDER_EXECUTED') {
+      const newNoti = {
+        id: Date.now(),
+        message: `[체결] ${latestEvent.stockCode || '주문'} 체결 완료! (주문번호: ${latestEvent.kisOrderNo})`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        isRead: false
+      };
+      setNotifications(prev => [newNoti, ...prev]);
+      // 추후 전역 Toast UI 적용
       alert(`[체결 알림] ${latestEvent.stockCode || '주문'} 체결 완료! (주문번호: ${latestEvent.kisOrderNo})`);
     }
   }, [latestEvent]);
@@ -63,6 +77,22 @@ export default function MainLayout() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // 알림 팝업 외부 클릭 시 닫기
+  useEffect(() => {
+    if (!isAlarmOpen) return;
+    function handleClickOutside(e) {
+      if (alarmRef.current && !alarmRef.current.contains(e.target)) {
+        setIsAlarmOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isAlarmOpen]);
+
+  const handleReadAll = () => {
+    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+  };
 
   const handleSelect = (stock) => {
     setQuery('');
@@ -118,6 +148,40 @@ export default function MainLayout() {
                   </li>
                 ))}
               </ul>
+            )}
+          </div>
+
+          <div className="alarm-controls" ref={alarmRef}>
+            <button
+              className="global-notification-btn"
+              aria-label="알림"
+              onClick={() => setIsAlarmOpen(prev => !prev)}
+            >
+              <Bell size={20} />
+              {unreadCount > 0 && <span className="alarm-badge">{unreadCount}</span>}
+            </button>
+
+            {isAlarmOpen && (
+              <div className="alarm-popup">
+                <div className="alarm-popup-header">
+                  <span>알림 목록</span>
+                  {unreadCount > 0 && (
+                    <button className="alarm-read-all" onClick={handleReadAll}>모두 읽음</button>
+                  )}
+                </div>
+                <div className="alarm-popup-list">
+                  {notifications.length === 0 ? (
+                    <div className="alarm-empty">알림이 없습니다.</div>
+                  ) : (
+                    notifications.map(n => (
+                      <div key={n.id} className={`alarm-item${n.isRead ? '' : ' unread'}`}>
+                        <div className="alarm-item-content">{n.message}</div>
+                        <div className="alarm-item-time">{n.timestamp}</div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
             )}
           </div>
         </header>
