@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { placeOrder, getPendingOrders, updateOrder, getBuyingPower } from '../api/order';
+import { useOrderSSE } from '../hooks/useOrderSSE';
 import './OrderBook.css';
 
 export default function OrderBook({ stockCode }) {
@@ -10,6 +11,9 @@ export default function OrderBook({ stockCode }) {
   const [price, setPrice] = useState(0);
   const [quantity, setQuantity] = useState(1);
   const [submittingOrder, setSubmittingOrder] = useState(false);
+  const [pendingSubmitOrderId, setPendingSubmitOrderId] = useState(null);
+  const submitTimeoutRef = useRef(null);
+
   // 주문당 고유 키 생성 → 동일 키로 중복 호출 시 백엔드에서 멱등성 보호
   const idempotencyKeyRef = useRef(crypto.randomUUID());
 
@@ -84,6 +88,35 @@ export default function OrderBook({ stockCode }) {
     if (activeTab === 'PENDING') fetchPending();
   }, [activeTab, fetchPending]);
 
+  // SSE 이벤트 수신 콜백
+  const onOrderEvent = useCallback((event) => {
+    if (event.type === 'ORDER_SUBMITTED') {
+      setPendingSubmitOrderId((prevId) => {
+        if (prevId === String(event.orderId)) {
+          if (submitTimeoutRef.current) clearTimeout(submitTimeoutRef.current);
+          setSubmittingOrder(false);
+          alert(`주문 접수 완료 (접수번호: ${event.kisOrderNo || event.orderId})`);
+          fetchPending();
+          return null;
+        }
+        return prevId;
+      });
+    } else if (event.type === 'ORDER_FAILED') {
+      setPendingSubmitOrderId((prevId) => {
+        if (prevId === String(event.orderId)) {
+          if (submitTimeoutRef.current) clearTimeout(submitTimeoutRef.current);
+          setSubmittingOrder(false);
+          alert(`주문 실패: ${event.message || '잔고 부족 등의 사유로 거절되었습니다.'}`);
+          return null;
+        }
+        return prevId;
+      });
+    }
+  }, [fetchPending]);
+
+  // 커스텀 훅으로 SSE 구독
+  useOrderSSE({ onOrderEvent });
+
   // 매수가능 정보 조회: side/stockCode 변경 시 1초 debounce로 호출.
   // (price 변경마다 호출하면 KIS 초당 거래건수 한도(EGW00201)에 걸려서 의존성에서 제외)
   // 연결 실패 시 404 → null 유지 → 화면 영역 미표시.
@@ -155,14 +188,34 @@ export default function OrderBook({ stockCode }) {
         idempotencyKeyRef.current
       );
       idempotencyKeyRef.current = crypto.randomUUID();
-      alert(`주문이 접수되었습니다. (주문번호: ${result.orderId}, 상태: ${result.status})`);
-      // 주문 접수 직후 미체결 목록 갱신
-      fetchPending();
+
+      // 하위 호환성 분기 로직
+      // 백엔드 응답에 kisOrderNo가 있거나 status가 PENDING이 아니면 기존(동기) 모드
+      if (result.kisOrderNo || result.status !== 'PENDING') {
+        alert(`주문이 접수되었습니다. (주문번호: ${result.orderId}, 상태: ${result.status})`);
+        fetchPending();
+        setSubmittingOrder(false); // 즉시 해제
+      } else {
+        // 비동기 모드: 응답이 PENDING이면 SSE 수신 대기
+        setPendingSubmitOrderId(String(result.orderId));
+
+        if (submitTimeoutRef.current) clearTimeout(submitTimeoutRef.current);
+        submitTimeoutRef.current = setTimeout(() => {
+          setPendingSubmitOrderId((prevId) => {
+            if (prevId === String(result.orderId)) {
+              setSubmittingOrder(false);
+              alert('주문 결과 확인이 지연되고 있습니다. 미체결 내역을 확인해주세요.');
+              fetchPending(); // 늦게라도 처리됐을 수 있으니 1회 갱신
+              return null;
+            }
+            return prevId;
+          });
+        }, 5000);
+      }
     } catch (error) {
       console.error('주문 실패:', error);
       alert(error.message || '주문에 실패했습니다.');
-    } finally {
-      setSubmittingOrder(false);
+      setSubmittingOrder(false); // 에러 시 즉시 해제
     }
   };
 
@@ -212,7 +265,7 @@ export default function OrderBook({ stockCode }) {
     if (modifying[orderId]) return;
 
     const parsedPrice = Number(newPrice);
-    const parsedQty   = Number(newQuantity);
+    const parsedQty = Number(newQuantity);
     if (parsedPrice < 1 || parsedQty < 1) {
       alert('단가와 수량은 1 이상이어야 합니다.');
       return;
@@ -271,7 +324,7 @@ export default function OrderBook({ stockCode }) {
             <div className="asks-list">
               {asks.length === 0 ? (
                 <div className="order-row" style={{ color: '#666', justifyContent: 'center' }}>
-                  매도 호가 수신 대기 중…
+                  매도 호가 수신 대기 중 …
                 </div>
               ) : (
                 asks.slice().reverse().map((ask) => (
@@ -294,7 +347,7 @@ export default function OrderBook({ stockCode }) {
             <div className="bids-list">
               {bids.length === 0 ? (
                 <div className="order-row" style={{ color: '#666', justifyContent: 'center' }}>
-                  매수 호가 수신 대기 중…
+                  매수 호가 수신 대기 중 …
                 </div>
               ) : (
                 bids.map((bid) => (
@@ -377,7 +430,7 @@ export default function OrderBook({ stockCode }) {
                   margin: '0.5rem 0',
                 }}
               >
-                보유 종목이 없습니다. 매도할 수 없어요.
+                보유 종목이 없습니다.
               </div>
             )}
 
@@ -388,7 +441,7 @@ export default function OrderBook({ stockCode }) {
                 value={orderMethod === 'MARKET' ? '' : price}
                 onChange={(e) => setPrice(Number(e.target.value))}
                 disabled={orderMethod === 'MARKET'}
-                placeholder={orderMethod === 'MARKET' ? '시장가 (체결 시점 가격)' : ''}
+                placeholder={orderMethod === 'MARKET' ? '시장가' : ''}
               />
             </div>
             <div className="input-group">
@@ -468,22 +521,22 @@ export default function OrderBook({ stockCode }) {
                         </div>
                       </div>
                       <div className="pending-actions">
-                      <button
-                        className="modify-btn"
-                        onClick={() => handleOpenModify(order)}
-                        disabled={!order.orderId || !!modifying[order.orderId] || !!canceling[order.orderId]}
-                        title={!order.orderId ? '시스템에 기록된 주문만 정정 가능' : ''}
-                      >
-                        정정
-                      </button>
-                      <button
-                        className="cancel-btn"
-                        onClick={() => handleCancelOrder(order)}
-                        disabled={!order.orderId || !!canceling[order.orderId] || !!modifying[order.orderId]}
-                        title={!order.orderId ? '시스템에 기록된 주문만 취소 가능' : ''}
-                      >
-                        {canceling[order.orderId] ? '취소 중 …' : '취소'}
-                      </button>
+                        <button
+                          className="modify-btn"
+                          onClick={() => handleOpenModify(order)}
+                          disabled={!order.orderId || !!modifying[order.orderId] || !!canceling[order.orderId]}
+                          title={!order.orderId ? '시스템에 기록된 주문만 정정 가능' : ''}
+                        >
+                          정정
+                        </button>
+                        <button
+                          className="cancel-btn"
+                          onClick={() => handleCancelOrder(order)}
+                          disabled={!order.orderId || !!canceling[order.orderId] || !!modifying[order.orderId]}
+                          title={!order.orderId ? '시스템에 기록된 주문만 취소 가능' : ''}
+                        >
+                          {canceling[order.orderId] ? '취소 중 …' : '취소'}
+                        </button>
                       </div>
                     </div>
 
@@ -492,7 +545,7 @@ export default function OrderBook({ stockCode }) {
                       <div className="modify-form">
                         <div className="modify-inputs">
                           <div className="modify-input-group">
-                            <label>단가 (원)</label>
+                            <label>단가</label>
                             <input
                               type="number"
                               min={1}
@@ -503,7 +556,7 @@ export default function OrderBook({ stockCode }) {
                             />
                           </div>
                           <div className="modify-input-group">
-                            <label>수량 (주)</label>
+                            <label>수량</label>
                             <input
                               type="number"
                               min={1}

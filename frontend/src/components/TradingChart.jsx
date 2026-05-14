@@ -51,7 +51,7 @@ function calcMACD(candles) {
   const slowPeriod = 26;
   const signalPeriod = 9;
   if (candles.length < slowPeriod + signalPeriod) return { macd: [], signal: [], hist: [] };
-  
+
   const result = MACD.calculate({
     fastPeriod: 12,
     slowPeriod: 26,
@@ -88,11 +88,11 @@ const DAILY_PERIODS = new Set(['D', 'W', 'M']);
 // 무한 스크롤 시 한 번에 가져올 추가 범위 (period별)
 // 가장 오래된 캔들 기준 이 기간만큼 과거로 추가 fetch한다.
 const LOAD_MORE_RANGE = {
-  D:   { months: 6 },
-  W:   { years: 2 },
-  M:   { years: 5 },
-  '1':  { days: 3 },
-  '5':  { days: 7 },
+  D: { months: 6 },
+  W: { years: 2 },
+  M: { years: 5 },
+  '1': { days: 3 },
+  '5': { days: 7 },
   '60': { days: 30 },
 };
 
@@ -287,7 +287,7 @@ export default function TradingChart({ stockCode }) {
       const panelHeight = mainBottom / count;
       const top = 1 - mainBottom + panelHeight * idx;
       const bottom = 1 - (1 - mainBottom + panelHeight * (idx + 1));
-      
+
       const scaleId = key === 'volume' ? '' : key;
       chart.priceScale(scaleId).applyOptions({
         scaleMargins: { top: top + 0.02, bottom: bottom },
@@ -409,7 +409,7 @@ export default function TradingChart({ stockCode }) {
       lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: false,
-      title: 'BB Upper',
+      title: 'BB 상단',
     });
     bbSeriesRefs.current.middle = chart.addLineSeries({
       color: 'rgba(168, 162, 158, 0.4)',
@@ -417,14 +417,14 @@ export default function TradingChart({ stockCode }) {
       lineStyle: 2, // dashed
       priceLineVisible: false,
       lastValueVisible: false,
-      title: 'BB Mid',
+      title: 'BB 중단',
     });
     bbSeriesRefs.current.lower = chart.addLineSeries({
       color: 'rgba(168, 162, 158, 0.7)',
       lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: false,
-      title: 'BB Lower',
+      title: 'BB 하단',
     });
 
     volumeSeriesRef.current = chart.addHistogramSeries({
@@ -667,7 +667,7 @@ export default function TradingChart({ stockCode }) {
         if (price == null || !candlestickSeriesRef.current) return;
 
         let last = lastCandleRef.current;
-        
+
         // 초기 데이터가 없는 경우 현재 시각 기준으로 새 캔들 생성 시작
         if (!last) {
           const nowSeconds = Math.floor(Date.now() / 1000);
@@ -693,7 +693,7 @@ export default function TradingChart({ stockCode }) {
           low: Math.min(last.low ?? price, price),
           close: price,
         };
-        
+
         candlestickSeriesRef.current.update(updated);
         lastCandleRef.current = { ...updated, volume: last.volume };
       } catch (error) {

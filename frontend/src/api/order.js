@@ -5,6 +5,19 @@
 import apiClient from './apiClient';
 
 /**
+ * SSE 토큰 발급
+ * POST /api/v1/orders/sse-token
+ *
+ * @returns {Promise<{ token: string, expiresIn: number }>}
+ */
+export async function getSseToken() {
+  const data = await apiClient('/orders/sse-token', {
+    method: 'POST',
+  });
+  return data.data;
+}
+
+/**
  * 미체결 주문 조회
  * GET /api/v1/orders/pending
  *
