@@ -27,6 +27,15 @@ spec:
             name: backend-service
             port:
               number: 80
+      # /ws/* WebSocket 요청도 백엔드로 라우팅 (호가창, 실시간 체결가 등)
+      # ingress annotation 의 proxy-http-version=1.1 + proxy-*-timeout=3600 으로 WS 업그레이드/장기 연결 보장
+      - path: /ws
+        pathType: Prefix
+        backend:
+          service:
+            name: backend-service
+            port:
+              number: 80
       # 나머지 모든 요청은 React 프론트엔드로 라우팅
       - path: /
         pathType: Prefix
