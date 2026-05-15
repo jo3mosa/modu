@@ -17,21 +17,40 @@ class PortfolioSim:
         self._cash: int = initial_cash
         self._positions: dict[str, dict[str, float]] = {}
 
-    def snapshot(self) -> dict[str, Any]:
-        """그래프 노드들이 읽는 portfolio_snapshot 형태로 반환."""
-        holdings = [
-            {
+    def snapshot(self, current_prices: dict[str, float] | None = None) -> dict[str, Any]:
+        """그래프 노드들이 읽는 portfolio_snapshot 형태로 반환.
+
+        실시간 경로(triggers.user_trigger_matcher → RedisPortfolioSnapshotRepository)와
+        동일한 스키마를 사용해 LLM 프롬프트(strategy_manager.txt / decision_manager.txt)에
+        그대로 흘러간다.
+
+        current_prices: 종목별 현재가 (시뮬레이션 시점 종가). 미주입 시 평단가로 대체.
+        """
+        current_prices = current_prices or {}
+        holdings: list[dict[str, Any]] = []
+        total_evaluation = 0
+        for code, pos in self._positions.items():
+            qty = pos["quantity"]
+            if qty <= 0:
+                continue
+            avg_price = pos["avg_buy_price"]
+            cp = current_prices.get(code) or avg_price
+            evaluation = int(qty * cp)
+            profit_rate = round((cp - avg_price) / avg_price * 100, 2) if avg_price else 0.0
+            holdings.append({
                 "stock_code": code,
-                "quantity": pos["quantity"],
-                "avg_buy_price": pos["avg_buy_price"],
-            }
-            for code, pos in self._positions.items()
-            if pos["quantity"] > 0
-        ]
+                "stock_name": "",
+                "quantity": qty,
+                "average_price": int(avg_price),
+                "current_price": int(cp),
+                "evaluation_amount": evaluation,
+                "profit_rate": profit_rate,
+            })
+            total_evaluation += evaluation
         return {
-            "cash": self._cash,
+            "cash_balance": self._cash,
+            "total_assets": self._cash + total_evaluation,
             "holdings": holdings,
-            "total_assets": self._cash + self._unrealized_value(),
         }
 
     def apply_decision(
@@ -83,10 +102,3 @@ class PortfolioSim:
             pos["avg_buy_price"] = 0.0
         return {"executed": True, "side": "sell", "quantity": target_qty, "price": price}
 
-    def _unrealized_value(self) -> int:
-        # 평가금액 계산은 가격 fetcher가 필요하므로 평단가 기준 명목값으로 대체.
-        # 정확한 일일 mark-to-market은 scorer에서 별도 계산.
-        return int(sum(
-            pos["quantity"] * pos["avg_buy_price"]
-            for pos in self._positions.values()
-        ))

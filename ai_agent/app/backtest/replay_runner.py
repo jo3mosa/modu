@@ -103,7 +103,11 @@ def _process_event(
     output_file: Any,
 ) -> None:
     as_of = clock.current_as_of
-    user_event = _to_user_event(event, config, portfolio, as_of)
+    # 결정 이전에 현재가를 확보해 portfolio_snapshot에 주입한다.
+    # 실시간 경로(user_trigger_matcher.match_market_event_to_users)가
+    # portfolio_snapshot에 current_price를 넣는 동작과 동일하게 맞춤.
+    price = price_fetcher.close_price(event.stock_code, clock.current_date)
+    user_event = _to_user_event(event, config, portfolio, as_of, price)
 
     try:
         final_state = decision_provider.decide(user_event)
@@ -123,7 +127,6 @@ def _process_event(
         return
 
     decision = _extract_decision(final_state)
-    price = price_fetcher.close_price(event.stock_code, clock.current_date)
     exec_result = portfolio.apply_decision(
         stock_code=event.stock_code,
         side=decision.get("side"),
@@ -152,7 +155,7 @@ def _process_event(
         "confidence": decision.get("confidence"),
         "execution_price": price,
         "execution_result": exec_result,
-        "portfolio_after": portfolio.snapshot(),
+        "portfolio_after": portfolio.snapshot({event.stock_code: price}),
     })
 
 
@@ -161,7 +164,11 @@ def _to_user_event(
     config: BacktestConfig,
     portfolio: PortfolioSim,
     as_of: datetime,
+    current_price: float,
 ) -> UserTriggerEvent:
+    snapshot = portfolio.snapshot({event.stock_code: current_price})
+    # 실시간 user_trigger_matcher가 top-level current_price를 끼우는 동작 미러.
+    snapshot["current_price"] = int(current_price)
     return UserTriggerEvent(
         source_event_id=event.event_id,
         timestamp=event.timestamp,
@@ -170,7 +177,7 @@ def _to_user_event(
         stock_code=event.stock_code,
         trigger=event.trigger,
         analysis_snapshot=event.analysis_snapshot,
-        portfolio_snapshot=portfolio.snapshot(),
+        portfolio_snapshot=snapshot,
         user_context=config.user_context,
     )
 

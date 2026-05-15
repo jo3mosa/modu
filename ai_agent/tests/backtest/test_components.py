@@ -35,19 +35,23 @@ def test_portfolio_sim_buy_then_sell():
     pf = PortfolioSim(initial_cash=1_000_000)
     buy = pf.apply_decision("005930", "buy", order_amount=500_000, execution_price=50_000)
     assert buy["executed"] is True
-    snap = pf.snapshot()
-    assert snap["cash"] == 500_000
+    snap = pf.snapshot({"005930": 55_000})
+    assert snap["cash_balance"] == 500_000
     assert len(snap["holdings"]) == 1
+    holding = snap["holdings"][0]
+    assert holding["stock_code"] == "005930"
+    assert holding["average_price"] == 50_000
+    assert holding["current_price"] == 55_000
     sell = pf.apply_decision("005930", "sell", order_amount=300_000, execution_price=55_000)
     assert sell["executed"] is True
-    assert pf.snapshot()["cash"] > 500_000  # 매도 수익 반영
+    assert pf.snapshot()["cash_balance"] > 500_000  # 매도 수익 반영
 
 
 def test_portfolio_sim_hold_is_noop():
     pf = PortfolioSim(initial_cash=1_000_000)
     result = pf.apply_decision("005930", "hold", order_amount=0, execution_price=50_000)
     assert result["executed"] is False
-    assert pf.snapshot()["cash"] == 1_000_000
+    assert pf.snapshot()["cash_balance"] == 1_000_000
 
 
 class _FixedPriceFetcher:
