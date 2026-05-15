@@ -70,16 +70,19 @@
 }
 
 .global-header {
+  position: relative;
   margin-bottom: 2rem;
   flex-shrink: 0;
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
+  min-height: 44px; /* 알림 버튼 높이 — absolute 자식이 수직 중앙 정렬되게 base 확보 */
 }
 
 .global-search-wrapper {
   position: relative;
-  width: 50%;
+  width: 40%;
+  max-width: 560px;
 }
 
 .global-notification-btn {
@@ -105,7 +108,10 @@
    알림 팝업
    ============================ */
 .alarm-controls {
-  position: relative;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
   align-items: center;
 }
@@ -218,8 +224,8 @@
   display: flex;
   align-items: center;
   background: rgba(255, 255, 255, 0.05);
-  border-radius: 12px;
-  padding: 0.8rem 1.5rem;
+  border-radius: 10px;
+  padding: 0.6rem 1.2rem;
   border: 1px solid rgba(255, 255, 255, 0.1);
   transition: all 0.2s;
 }
@@ -234,10 +240,10 @@
   background: transparent;
   border: none;
   color: #fff;
-  font-size: 1.1rem;
+  font-size: 0.95rem;
   outline: none;
   font-family: inherit;
-  margin-left: 1rem;
+  margin-left: 0.75rem;
 }
 
 /* 검색 드롭다운 */
