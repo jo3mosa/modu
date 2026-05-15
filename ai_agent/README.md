@@ -237,7 +237,6 @@ python -m app.consumer
 
 ```json
 {
-  "decision_id": "dec_<uuid>",
   "user_id": 1,
   "source_event_id": "market_event_abc123",
   "stock_code": "005930",
@@ -263,7 +262,7 @@ python -m app.consumer
 }
 ```
 
-- `decision_id`: ai_agent 발행 측 멱등키. BE 컨슈머는 같은 ID 재수신 시 INSERT 무시.
+- `source_event_id`: 입력 트리거 식별자. BE 컨슈머는 `(user_id, source_event_id)` 조합으로 멱등 처리 (같은 트리거 재수신 시 INSERT 무시).
 - `created_at`: ai_agent 발행 시각(KST). BE 측 `ai_judgments.judged_at`에 매핑.
 - `final_decision`: `FinalDecision.model_dump()` 결과에서 `asset / risk_summary / expected_scenario / user_message`는 BE 매핑 컬럼이 없어 명시 `exclude`.
 - `debate.bull_claim` / `bear_claim`: 그래프 토론 상태(`investment_debate_state`)의 누적 발언 텍스트.

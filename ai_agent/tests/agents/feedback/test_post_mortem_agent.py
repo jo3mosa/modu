@@ -120,3 +120,23 @@ class TestPostMortemAgentFailure:
 
         assert result is None
         assert chain.invoke_count == 1
+
+    def test_returns_none_when_retry_raises_non_parser_exception(self, monkeypatch):
+        """1차 파싱 실패 → 재시도에서 LLM 호출 자체 실패해도 silent skip."""
+        chain = _FakeChain(
+            exceptions=[
+                OutputParserException("first invalid json"),
+                RuntimeError("API connection error during retry"),
+            ],
+        )
+        _patch_chain(monkeypatch, chain)
+
+        result = post_mortem_agent(
+            decision_content=_SAMPLE_DECISION,
+            raw_return=-0.034,
+            alpha_return=-0.012,
+            holding_days=7,
+        )
+
+        assert result is None
+        assert chain.invoke_count == 2

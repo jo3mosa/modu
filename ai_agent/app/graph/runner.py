@@ -1,6 +1,5 @@
 import logging
 from datetime import datetime, timedelta, timezone
-from uuid import uuid4
 
 from app.config.kafka import KafkaTopic, get_kafka_producer
 from app.context.memory_context import extract_key_signals
@@ -50,7 +49,6 @@ def _build_decision_payload(event: UserTriggerEvent, result: dict) -> dict:
     )
 
     return {
-        "decision_id": f"dec_{uuid4()}",
         "user_id": event.user_id,
         "source_event_id": event.event_id,
         "stock_code": event.stock_code,
@@ -85,8 +83,8 @@ def run_and_publish(event: UserTriggerEvent) -> None:
     producer.flush()
 
     logger.info(
-        "ai.decision.generated published: decision_id=%s, user_id=%s, stock_code=%s, flow_status=%s",
-        payload["decision_id"],
+        "ai.decision.generated published: source_event_id=%s, user_id=%s, stock_code=%s, flow_status=%s",
+        event.event_id,
         event.user_id,
         event.stock_code,
         result.get("flow_status"),

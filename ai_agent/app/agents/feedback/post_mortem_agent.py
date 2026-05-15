@@ -75,6 +75,10 @@ def post_mortem_agent(
         except OutputParserException as exc:
             logger.warning("post_mortem_agent: 출력 파싱 2회 실패, skip — %s", exc)
             return None
+        except Exception:
+            # 재시도 중 LLM 호출 자체가 실패하면 outer except에 닿지 않으므로 여기서 잡아야 silent-skip 보장.
+            logger.exception("post_mortem_agent: 재시도 중 LLM 호출 실패, skip")
+            return None
     except Exception:
         logger.exception("post_mortem_agent: LLM 호출 실패, skip")
         return None
