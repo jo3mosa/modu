@@ -5,6 +5,7 @@ import HighchartsReactPkg from 'highcharts-react-official';
 const HighchartsReact = HighchartsReactPkg.default || HighchartsReactPkg;
 import highcharts3d from 'highcharts/highcharts-3d';
 import TutorialOverlay from '../components/TutorialOverlay';
+import Skeleton from '../components/Skeleton';
 import { getAccountSummary, getPortfolio } from '../api/account';
 import { getAiDecisions } from '../api/aiAgent';
 import { getOrderHistory, ORDER_STATUS_DISPLAY } from '../api/order';
@@ -385,11 +386,14 @@ export default function DashboardPage() {
     }]
   };
 
-  // ── 연동 시 아래 주석 해제 (KIS 미연동/로딩 상태 처리) ──────────────────
-  if (isLoading) return <div className="dashboard-container"><p style={{ padding: '2rem', color: '#aaa' }}>자산 정보를 불러오는 중...</p></div>;
+  // KIS 미연결만 페이지 전체 차단. 로딩 중에는 페이지 레이아웃을 유지하면서
+  // 각 영역에서 isLoading 또는 데이터 null 여부에 따라 스켈레톤을 보여준다.
   if (!isKisConnected) return <div className="dashboard-container"><p style={{ padding: '2rem', color: '#ef4444' }}>한국투자증권 API 연동이 필요합니다. 마이페이지에서 설정해주세요.</p></div>;
-  if (!derivedSummary) return null;
-  // ─────────────────────────────────────────────────────────────────────────
+
+  // 데이터가 아직 없는 영역인지 판단 — 스켈레톤 렌더 조건
+  const summaryLoading = isLoading || !derivedSummary;
+  const holdingsLoading = isLoading && holdings.length === 0;
+  const logsLoading = isLoading && recentLogs.length === 0;
 
   return (
     <div className="dashboard-container">
@@ -412,36 +416,60 @@ export default function DashboardPage() {
               <div className="asset-huge">
                 <span className="label">총 자산</span>
                 <div className="value-row">
-                  <span className="value">{formatNumber(derivedSummary.totalAsset)}</span>
-                  <span className="unit">원</span>
+                  {summaryLoading ? (
+                    <Skeleton width={180} height={36} />
+                  ) : (
+                    <>
+                      <span className="value">{formatNumber(derivedSummary.totalAsset)}</span>
+                      <span className="unit">원</span>
+                    </>
+                  )}
                 </div>
               </div>
 
               <div className="asset-details">
                 <div className="detail-item">
                   <span className="detail-label">총 평가 손익</span>
-                  <span className={`detail-value ${getColorClass(derivedSummary.totalPnl)}`}>
-                    {derivedSummary.totalPnl > 0 ? '+' : ''}{formatNumber(derivedSummary.totalPnl)}원
-                    <span className="rate">({derivedSummary.totalPnlPct > 0 ? '+' : ''}{derivedSummary.totalPnlPct}%)</span>
-                  </span>
+                  {summaryLoading ? (
+                    <Skeleton width={140} height={20} />
+                  ) : (
+                    <span className={`detail-value ${getColorClass(derivedSummary.totalPnl)}`}>
+                      {derivedSummary.totalPnl > 0 ? '+' : ''}{formatNumber(derivedSummary.totalPnl)}원
+                      <span className="rate">({derivedSummary.totalPnlPct > 0 ? '+' : ''}{derivedSummary.totalPnlPct}%)</span>
+                    </span>
+                  )}
                 </div>
                 <div className="detail-item">
                   <span className="detail-label">투자 원금</span>
-                  <span className="detail-value">{formatNumber(derivedSummary.totalBuyAmount)}원</span>
+                  {summaryLoading ? (
+                    <Skeleton width={100} height={18} />
+                  ) : (
+                    <span className="detail-value">{formatNumber(derivedSummary.totalBuyAmount)}원</span>
+                  )}
                 </div>
                 <div className="detail-item">
                   <span className="detail-label">주문 가능 금액</span>
-                  <span className="detail-value cash">{formatNumber(derivedSummary.availableCash)}원</span>
+                  {summaryLoading ? (
+                    <Skeleton width={100} height={18} />
+                  ) : (
+                    <span className="detail-value cash">{formatNumber(derivedSummary.availableCash)}원</span>
+                  )}
                 </div>
               </div>
             </div>
 
             <div className="overview-chart">
-              <HighchartsReact
-                highcharts={Highcharts}
-                options={chartOptions}
-                containerProps={{ style: { width: '100%', height: '100%' } }}
-              />
+              {summaryLoading ? (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}>
+                  <Skeleton width={220} height={220} borderRadius="50%" />
+                </div>
+              ) : (
+                <HighchartsReact
+                  highcharts={Highcharts}
+                  options={chartOptions}
+                  containerProps={{ style: { width: '100%', height: '100%' } }}
+                />
+              )}
             </div>
           </div>
 
@@ -461,27 +489,45 @@ export default function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {holdings.map((item, idx) => (
-                    <tr
-                      key={idx}
-                      onClick={() => navigate(`/trading?stock=${item.stockCode}&name=${encodeURIComponent(item.stockName)}`)}
-                      className="clickable-row"
-                    >
-                      <td className="col-name">
-                        <span className="stock-name">{item.stockName}</span>
-                        <span className="stock-code">{item.stockCode}</span>
-                      </td>
-                      <td>{formatNumber(item.quantity)}주</td>
-                      <td>{formatNumber(item.avgBuyPrice)}원</td>
-                      <td>{formatNumber(item.currentPrice)}원</td>
-                      <td className={getColorClass(item.pnl)}>
-                        {item.pnl > 0 ? '+' : ''}{formatNumber(item.pnl)}원
-                      </td>
-                      <td className={getColorClass(item.pnlPct)}>
-                        {item.pnlPct > 0 ? '+' : ''}{item.pnlPct}%
-                      </td>
-                    </tr>
-                  ))}
+                  {holdingsLoading ? (
+                    // 로딩 중 — 가짜 row 3개로 테이블 형태 유지
+                    Array.from({ length: 3 }).map((_, idx) => (
+                      <tr key={`sk-${idx}`}>
+                        <td className="col-name">
+                          <Skeleton width="60%" height={14} />
+                          <br />
+                          <Skeleton width="40%" height={11} style={{ marginTop: 4 }} />
+                        </td>
+                        <td><Skeleton width={50} /></td>
+                        <td><Skeleton width={70} /></td>
+                        <td><Skeleton width={70} /></td>
+                        <td><Skeleton width={80} /></td>
+                        <td><Skeleton width={50} /></td>
+                      </tr>
+                    ))
+                  ) : (
+                    holdings.map((item, idx) => (
+                      <tr
+                        key={idx}
+                        onClick={() => navigate(`/trading?stock=${item.stockCode}&name=${encodeURIComponent(item.stockName)}`)}
+                        className="clickable-row"
+                      >
+                        <td className="col-name">
+                          <span className="stock-name">{item.stockName}</span>
+                          <span className="stock-code">{item.stockCode}</span>
+                        </td>
+                        <td>{formatNumber(item.quantity)}주</td>
+                        <td>{formatNumber(item.avgBuyPrice)}원</td>
+                        <td>{formatNumber(item.currentPrice)}원</td>
+                        <td className={getColorClass(item.pnl)}>
+                          {item.pnl > 0 ? '+' : ''}{formatNumber(item.pnl)}원
+                        </td>
+                        <td className={getColorClass(item.pnlPct)}>
+                          {item.pnlPct > 0 ? '+' : ''}{item.pnlPct}%
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -534,7 +580,22 @@ export default function DashboardPage() {
           <div className="panel logs-panel">
             <h2>최근 매매 로그</h2>
             <div className="logs-list">
-              {recentLogs.length > 0 ? recentLogs.map((log) => {
+              {logsLoading ? (
+                Array.from({ length: 4 }).map((_, idx) => (
+                  <div key={`sk-log-${idx}`} className="log-item">
+                    <Skeleton width={40} height={40} borderRadius={8} />
+                    <div className="log-content" style={{ flex: 1, marginLeft: 8 }}>
+                      <div className="log-top">
+                        <Skeleton width="50%" height={14} />
+                        <Skeleton width={50} height={11} />
+                      </div>
+                      <div className="log-bottom" style={{ marginTop: 6 }}>
+                        <Skeleton width="70%" height={12} />
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : recentLogs.length > 0 ? recentLogs.map((log) => {
                 const actionLower = (log.action ?? '').toLowerCase();
                 const actionLabel = log.action === 'BUY' ? '매수'
                   : log.action === 'SELL' ? '매도'
