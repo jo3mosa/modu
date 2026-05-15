@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from app.config.kafka import KafkaTopic, get_kafka_producer
 from app.context.memory_context import extract_key_signals
-from app.graph.builder import build_investment_graph
+from app.graph.builder import GraphMode, build_investment_graph
 from app.triggers.schemas import UserTriggerEvent
 from app.triggers.state_factory import build_state_from_user_trigger
 
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 _KST = timezone(timedelta(hours=9))
 
-_graph = None
+_graph_cache: dict[GraphMode, object] = {}
 
 
 def _get_graph(mode: GraphMode = "A"):
