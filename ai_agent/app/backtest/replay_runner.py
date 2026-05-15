@@ -127,6 +127,7 @@ def _process_event(
         return
 
     decision = _extract_decision(final_state)
+    reasoning = _extract_reasoning(final_state)
     exec_result = portfolio.apply_decision(
         stock_code=event.stock_code,
         side=decision.get("side"),
@@ -153,6 +154,10 @@ def _process_event(
         "target_price": decision.get("target_price"),
         "stop_loss_price": decision.get("stop_loss_price"),
         "confidence": decision.get("confidence"),
+        "bull_claim": reasoning["bull_claim"],
+        "bear_claim": reasoning["bear_claim"],
+        "winning_side": reasoning["winning_side"],
+        "judgment_reason": reasoning["judgment_reason"],
         "execution_price": price,
         "execution_result": exec_result,
         "portfolio_after": portfolio.snapshot({event.stock_code: price}),
@@ -195,6 +200,28 @@ def _extract_decision(final_state: Any) -> dict[str, Any]:
         "target_price": dump.get("target_price"),
         "stop_loss_price": dump.get("stop_loss_price"),
         "confidence": dump.get("confidence"),
+        "reason_summary": dump.get("reason_summary"),
+    }
+
+
+def _extract_reasoning(final_state: Any) -> dict[str, Any]:
+    """post_mortem decision_content 구성에 필요한 추론 텍스트를 추출.
+
+    Bull/Bear key_points + winning_side + judgment_reason 묶음.
+    scorer가 후처리로 post_mortem_agent에 전달한다.
+    """
+    verdict = _get_state_field(final_state, "research_verdict")
+    fd = _get_state_field(final_state, "final_decision")
+    verdict_dump = (
+        verdict.model_dump() if hasattr(verdict, "model_dump")
+        else dict(verdict) if verdict else {}
+    )
+    fd_dump = fd.model_dump() if hasattr(fd, "model_dump") else (dict(fd) if fd else {})
+    return {
+        "bull_claim": "\n".join(verdict_dump.get("key_bull_points", []) or []) or None,
+        "bear_claim": "\n".join(verdict_dump.get("key_bear_points", []) or []) or None,
+        "winning_side": (verdict_dump.get("winning_side") or "").upper() or None,
+        "judgment_reason": fd_dump.get("reason_summary") or verdict_dump.get("rationale") or "",
     }
 
 
