@@ -195,6 +195,47 @@ export default function OrderBook({ stockCode }) {
       return;
     }
 
+    // 사전 차단: 백엔드/KIS 거절 전 클라이언트에서 즉시 막아 사용자 피드백 명확화
+    // (buyingPower는 1초 debounce로 갱신되므로 직전에 side/stockCode 빠르게 전환한 경우 stale 가능 — 그땐 백엔드 검증으로 fallback)
+    if (buyingPower) {
+      const qty = Number(quantity);
+      if (orderType === 'BUY') {
+        if (orderMethod === 'LIMIT') {
+          const px = Number(price);
+          if (px > 0 && buyingPower.maxBuyAmount != null) {
+            const total = px * qty;
+            if (total > buyingPower.maxBuyAmount) {
+              alert(
+                `주문 가능 금액을 초과합니다.\n` +
+                `주문 금액: ${total.toLocaleString()}원\n` +
+                `가능 금액: ${buyingPower.maxBuyAmount.toLocaleString()}원`
+              );
+              return;
+            }
+          }
+        } else {
+          // MARKET: 단가 미정이라 수량으로만 검증
+          if (buyingPower.maxBuyQuantity != null && qty > buyingPower.maxBuyQuantity) {
+            alert(
+              `주문 가능 수량을 초과합니다.\n` +
+              `주문 수량: ${qty.toLocaleString()}주\n` +
+              `가능 수량: ${buyingPower.maxBuyQuantity.toLocaleString()}주`
+            );
+            return;
+          }
+        }
+      } else if (orderType === 'SELL') {
+        if (buyingPower.maxSellQuantity != null && qty > buyingPower.maxSellQuantity) {
+          alert(
+            `보유 수량을 초과합니다.\n` +
+            `주문 수량: ${qty.toLocaleString()}주\n` +
+            `보유 수량: ${buyingPower.maxSellQuantity.toLocaleString()}주`
+          );
+          return;
+        }
+      }
+    }
+
     setSubmittingOrder(true);
     try {
       const result = await placeOrder(
