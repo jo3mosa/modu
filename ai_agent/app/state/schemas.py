@@ -122,7 +122,8 @@ class FinalDecision(BaseModel):
     """
     Decision Manager가 내리는 최종 투자 결정
 
-    Risk Gate와 Executor는 이 객체를 기준으로 주문 가능 여부와 실행 여부를 판단
+    Risk Gate가 이 객체의 형식·정책을 검증하고, 통과 시 ai.decision.generated 토픽으로
+    백엔드(KisOrderConsumer)에 전달되어 실제 KIS 주문이 실행된다.
       - action: 최종 행동 결정 ("trade" 또는 "hold")
       - asset: 거래 대상 종목
       - side: 주문 방향
