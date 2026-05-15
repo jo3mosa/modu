@@ -10,8 +10,8 @@ import com.modu.backend.domain.trading.repository.OrderRepository;
 import com.modu.backend.domain.user.entity.KisCredential;
 import com.modu.backend.domain.user.exception.UserErrorCode;
 import com.modu.backend.domain.user.repository.KisCredentialRepository;
-import com.modu.backend.domain.user.service.KisTokenService;
 import com.modu.backend.global.error.ApiException;
+import com.modu.backend.global.kis.KisApiCallTemplate;
 import com.modu.backend.global.util.AesGcmEncryptor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -69,7 +69,7 @@ public class OrderHistoryService {
 
     private final OrderRepository orderRepository;
     private final KisCredentialRepository kisCredentialRepository;
-    private final KisTokenService kisTokenService;
+    private final KisApiCallTemplate kisApiCallTemplate;
     private final KisOrderHistoryClient kisOrderHistoryClient;
     private final AesGcmEncryptor encryptor;
 
@@ -96,16 +96,17 @@ public class OrderHistoryService {
             throw new ApiException(UserErrorCode.KIS_MOCK_ACCOUNT_NOT_SUPPORTED);
         }
 
-        String appKey      = encryptor.decrypt(credential.getAppKeyEnc());
-        String appSecret   = encryptor.decrypt(credential.getAppSecretEnc());
-        String accessToken = kisTokenService.getOrIssueAccessToken(userId, appKey, appSecret);
+        String appKey    = encryptor.decrypt(credential.getAppKeyEnc());
+        String appSecret = encryptor.decrypt(credential.getAppSecretEnc());
 
-        // 3. KIS 거래 이력 조회 (연속조회 자동 처리)
-        List<KisOrderHistoryClient.KisHistoryItem> kisItems = kisOrderHistoryClient.getOrderHistory(
-                accessToken, appKey, appSecret,
-                credential.getAccountNo(), credential.getAccountPrdtCd(),
-                resolvedFrom, resolvedTo
-        );
+        // 3. KIS 거래 이력 조회 (연속조회 자동 처리) — 토큰 무효화 시 자동 재발급+재시도
+        List<KisOrderHistoryClient.KisHistoryItem> kisItems = kisApiCallTemplate.callWithTokenRetry(
+                userId, appKey, appSecret,
+                token -> kisOrderHistoryClient.getOrderHistory(
+                        token, appKey, appSecret,
+                        credential.getAccountNo(), credential.getAccountPrdtCd(),
+                        resolvedFrom, resolvedTo
+                ));
 
         if (kisItems.isEmpty()) {
             return new OrderHistoryResponse(Collections.emptyList(), 0, resolvedPage, resolvedSize);

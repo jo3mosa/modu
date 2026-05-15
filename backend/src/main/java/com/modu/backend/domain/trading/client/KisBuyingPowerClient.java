@@ -3,6 +3,7 @@ package com.modu.backend.domain.trading.client;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.modu.backend.global.error.ApiException;
 import com.modu.backend.global.error.CommonErrorCode;
+import com.modu.backend.global.kis.KisErrorMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -87,10 +88,11 @@ public class KisBuyingPowerClient {
                     .body(BuyPowerResponse.class);
 
             if (response == null || !"0".equals(response.rtCd())) {
-                log.error("KIS 매수가능조회 실패 - rtCd: {}, msg: {}",
+                log.error("KIS 매수가능조회 실패 - rtCd: {}, msgCd: {}, msg: {}",
                         response != null ? response.rtCd() : "null",
+                        response != null ? response.msgCd() : "null",
                         response != null ? response.msg1() : "null");
-                throw new ApiException(CommonErrorCode.EXTERNAL_API_ERROR);
+                throw KisErrorMapper.toApiException(response != null ? response.msgCd() : null);
             }
 
             if (response.output() == null) {
@@ -136,10 +138,11 @@ public class KisBuyingPowerClient {
                     .body(SellQtyResponse.class);
 
             if (response == null || !"0".equals(response.rtCd())) {
-                log.error("KIS 매도가능수량조회 실패 - rtCd: {}, msg: {}",
+                log.error("KIS 매도가능수량조회 실패 - rtCd: {}, msgCd: {}, msg: {}",
                         response != null ? response.rtCd() : "null",
+                        response != null ? response.msgCd() : "null",
                         response != null ? response.msg1() : "null");
-                throw new ApiException(CommonErrorCode.EXTERNAL_API_ERROR);
+                throw KisErrorMapper.toApiException(response != null ? response.msgCd() : null);
             }
 
             if (response.output() == null) {
@@ -182,8 +185,9 @@ public class KisBuyingPowerClient {
     // ── KIS API 응답 파싱용 내부 레코드 ────────────────────────────────────────
 
     private record BuyPowerResponse(
-            @JsonProperty("rt_cd") String rtCd,
-            @JsonProperty("msg1")  String msg1,
+            @JsonProperty("rt_cd")  String rtCd,
+            @JsonProperty("msg_cd") String msgCd,
+            @JsonProperty("msg1")   String msg1,
             @JsonProperty("output") BuyPowerOutput output
     ) {}
 
@@ -194,8 +198,9 @@ public class KisBuyingPowerClient {
     ) {}
 
     private record SellQtyResponse(
-            @JsonProperty("rt_cd") String rtCd,
-            @JsonProperty("msg1")  String msg1,
+            @JsonProperty("rt_cd")  String rtCd,
+            @JsonProperty("msg_cd") String msgCd,
+            @JsonProperty("msg1")   String msg1,
             @JsonProperty("output") SellQtyOutput output
     ) {}
 

@@ -5,6 +5,7 @@ import com.modu.backend.domain.trading.entity.OrderModifyAction;
 import com.modu.backend.domain.trading.entity.OrderType;
 import com.modu.backend.global.error.ApiException;
 import com.modu.backend.global.error.CommonErrorCode;
+import com.modu.backend.global.kis.KisErrorMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -119,10 +120,11 @@ public class KisModifyOrderClient {
                     .body(ModifyResponse.class);
 
             if (response == null || !"0".equals(response.rtCd())) {
-                log.error("KIS 주문 정정/취소 실패 - rtCd: {}, msg: {}",
+                log.error("KIS 주문 정정/취소 실패 - rtCd: {}, msgCd: {}, msg: {}",
                         response != null ? response.rtCd() : "null",
+                        response != null ? response.msgCd() : "null",
                         response != null ? response.msg1() : "null");
-                throw new ApiException(CommonErrorCode.EXTERNAL_API_ERROR);
+                throw KisErrorMapper.toApiException(response != null ? response.msgCd() : null);
             }
 
             // rtCd=0 이지만 output이 없는 경우 — 새 주문번호를 받지 못하면 재정정/취소 불가
@@ -157,8 +159,9 @@ public class KisModifyOrderClient {
     // ── KIS API 응답 파싱용 내부 레코드 ────────────────────────────────────────
 
     private record ModifyResponse(
-            @JsonProperty("rt_cd") String rtCd,
-            @JsonProperty("msg1")  String msg1,
+            @JsonProperty("rt_cd")  String rtCd,
+            @JsonProperty("msg_cd") String msgCd,
+            @JsonProperty("msg1")   String msg1,
             @JsonProperty("output") ModifyOutput output
     ) {}
 
