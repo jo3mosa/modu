@@ -19,7 +19,7 @@ class KisApiClient:
     def __init__(self):
         self.app_key = os.getenv("KIS_APP_KEY")
         self.app_secret = os.getenv("KIS_APP_SECRET")
-        self.base_url = os.getenv("KIS_BASE_URL")
+        self.base_url = os.getenv("KIS_API_URL")
         # CWD에 무관하게 clients/ 옆에 토큰 캐시 — gitignored
         self.token_file = os.path.join(_MODULE_DIR, "kis_token.json")
         # 토큰 메모리 캐시 — fast path 에서 lock·파일 I/O 회피.

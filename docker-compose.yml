@@ -24,19 +24,16 @@ x-analysis-base: &analysis-base
     # 외부 API 키 (collectors 용)
     KIS_APP_KEY: ${KIS_APP_KEY}
     KIS_APP_SECRET: ${KIS_APP_SECRET}
-    KIS_BASE_URL: ${KIS_BASE_URL}
+    KIS_API_URL: ${KIS_API_URL}
     DART_API_KEY: ${DART_API_KEY}
     MONGO_URI: ${MONGO_URI}
-    # DB (backfill 스크립트용 — engine 은 SQLite 사용)
+    # Postgres — stock_master + daily_ohlcv/fundamentals/indicators + financial_statements 모두 Postgres 적재.
+    # 분석 서버는 backend 와 modu_db 를 공유 (stock_master 는 backend 가 관리, 나머지 4 테이블은 분석 서버가 R/W).
     DB_HOST: ${DB_HOST:-postgres}
     DB_PORT: ${DB_PORT:-5432}
     DB_NAME: ${DB_NAME:-modu_db}
     DB_USERNAME: ${DB_USERNAME:-postgres}
     DB_PASSWORD: ${DB_PASSWORD:-localpassword}
-  volumes:
-    # stock_master.db (SQLite) 공유 — engine/collectors 모두 read 또는 read+write.
-    # 호스트 파일 직접 마운트로 컨테이너 재기동 후에도 데이터 보존.
-    - ./analysis_server/data:/app/data
   networks:
     - modu-network
   restart: on-failure
@@ -325,6 +322,8 @@ services:
     container_name: modu-analysis-engine
     command: ["python", "-m", "main"]
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
       kafka-0:
@@ -335,15 +334,20 @@ services:
         condition: service_healthy
 
   # KIS 1분봉 → 6 지표 → Redis technical:{stock} (무한 루프, 1 사이클 ≈ 7~10분)
+  # --rate 8: KIS 모의투자 서버 초당 호출 한도 안전 마진 (default 16 은 "초당 거래건수 초과" 유발)
   analysis-candle-collector:
     <<: *analysis-base
     container_name: modu-candle-collector
-    command: ["python", "-m", "collectors.candle_collector", "--loop"]
+    command: ["python", "-m", "collectors.candle_collector", "--loop", "--rate", "8"]
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
 
   # DART list.json batch → Redis event:{stock} (3분 주기)
+  # disclosure_collector 자체는 Postgres 미사용이지만 분석 서버 이미지가 동일하므로
+  # postgres health 대기는 시작 순서 안정성 (다른 서비스 합류 타이밍과 동기) 확보 차원.
   analysis-disclosure-collector:
     <<: *analysis-base
     container_name: modu-disclosure-collector
@@ -352,12 +356,14 @@ services:
       redis:
         condition: service_healthy
 
-  # 한국경제·연합인포맥스 RSS → MongoDB news_articles (10분 주기)
+  # 한국경제·연합인포맥스 RSS → MongoDB news_articles + Postgres stock_master (10분 주기)
   analysis-news-collector:
     <<: *analysis-base
     container_name: modu-news-collector
     command: ["python", "-m", "collectors.news_collector", "--loop"]
     depends_on:
+      postgres:
+        condition: service_healthy
       mongo:
         condition: service_healthy
 

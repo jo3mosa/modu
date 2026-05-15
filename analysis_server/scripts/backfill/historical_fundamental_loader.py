@@ -28,12 +28,14 @@ API 중단 복구:
 
 import json
 import os
-import sqlite3
 import time
 import pandas as pd
 from datetime import datetime
 
+from sqlalchemy import text
+
 from clients.dart_api_client import DartApiClient, DartCriticalError
+from clients.postgres_client import get_engine
 from engine.signal_builder import (
     classify_valuation,
     classify_profitability,
@@ -42,62 +44,9 @@ from engine.signal_builder import (
 )
 
 
-# ---------- 스키마 ----------
-
-CREATE_FINANCIAL_STATEMENTS_SQL = """
-CREATE TABLE IF NOT EXISTS financial_statements (
-    stock_code           TEXT NOT NULL,
-    fiscal_year          INTEGER NOT NULL,
-    reprt_code           TEXT NOT NULL DEFAULT '11011',  -- 사업보고서
-    revenue              INTEGER,   -- 매출액
-    operating_income     INTEGER,   -- 영업이익
-    net_income           INTEGER,   -- 당기순이익
-    total_assets         INTEGER,   -- 자산총계
-    total_liabilities    INTEGER,   -- 부채총계
-    total_equity         INTEGER,   -- 자본총계
-    current_assets       INTEGER,   -- 유동자산
-    current_liabilities  INTEGER,   -- 유동부채
-    shares_outstanding   INTEGER,   -- 보통주 발행주식수
-    fetched_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (stock_code, fiscal_year, reprt_code)
-);
-"""
-
-CREATE_DAILY_FUNDAMENTALS_SQL = """
-CREATE TABLE IF NOT EXISTS daily_fundamentals (
-    stock_code           TEXT NOT NULL,
-    date                 TEXT NOT NULL,
-    fiscal_year          INTEGER,           -- 해당 시점에 사용된 사업연도 (point-in-time)
-    -- per-share
-    eps                  REAL,
-    bps                  REAL,
-    -- valuation (가격 의존, 매일 변동)
-    per                  REAL,
-    pbr                  REAL,
-    -- profitability
-    roe                  REAL,              -- %
-    -- stability ratios
-    debt_ratio           REAL,              -- 부채총계 / 자본총계 * 100
-    current_ratio        REAL,              -- 유동자산 / 유동부채 * 100
-    -- growth (YoY)
-    revenue_growth       REAL,              -- (curr-prev)/|prev| * 100
-    operating_growth     REAL,              -- 동일 공식
-    -- 분류 (fundamental_calculator.py 룰 그대로)
-    valuation_status     TEXT,              -- undervalued / fair / overvalued / unknown
-    profitability_status TEXT,              -- high_margin / normal / low_margin / unknown
-    growth_status        TEXT,              -- high_growth / steady_growth / stagnant / declining / unknown
-    stability_status     TEXT,              -- stable / moderate / risky / unknown
-    PRIMARY KEY (stock_code, date)
-);
-"""
-
-CREATE_INDEX_FUNDAMENTALS_DATE = (
-    "CREATE INDEX IF NOT EXISTS idx_daily_fundamentals_date "
-    "ON daily_fundamentals(date);"
-)
-
-
 # ---------- Point-in-time 헬퍼 ----------
+# 테이블 DDL 은 Flyway (V20260515120000__add_analysis_data_tables.sql) 에서 관리.
+# 이 모듈은 더이상 CREATE TABLE 하지 않음.
 
 def pick_fiscal_year(date_str):
     """주어진 날짜에 '공시되어 있을' 가장 최근 사업연도를 반환.
@@ -109,10 +58,8 @@ def pick_fiscal_year(date_str):
     return dt.year - 1 if dt.month >= 4 else dt.year - 2
 
 
-# scripts/backfill/ → analysis_server/data/stock_master.db
+# scripts/backfill/ → modu/ 루트의 dart_corp_code.json 캐시 (clients/ 옆, gitignored).
 _MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
-_DEFAULT_DB = os.path.join(_MODULE_DIR, "..", "..", "data", "stock_master.db")
-# dart_corp_code.json 은 clients/ 옆 (gitignored 캐시).
 CORP_CODE_JSON = os.path.join(_MODULE_DIR, "..", "..", "clients", "dart_corp_code.json")
 
 
@@ -129,6 +76,16 @@ def _load_corp_code_map():
         return json.load(f)
 
 
+_OHLCV_LISTING_WINDOW_SQL = text(
+    "SELECT stock_code, "
+    "       TO_CHAR(MIN(date), 'YYYY-MM-DD') AS min_d, "
+    "       TO_CHAR(MAX(date), 'YYYY-MM-DD') AS max_d "
+    "FROM daily_ohlcv "
+    "WHERE date BETWEEN :start_date AND :end_date "
+    "GROUP BY stock_code"
+)
+
+
 def _get_stock_fiscal_year_map(conn, start_date, end_date, stock_codes=None):
     """corp_code 매핑 ∩ daily_ohlcv 구간 데이터 ⇒ 종목별 처리 정보.
 
@@ -141,6 +98,7 @@ def _get_stock_fiscal_year_map(conn, start_date, end_date, stock_codes=None):
     daily_ohlcv 에 leading zero 없이 저장된 경우에도 zfill(6) 정규화로 매칭한다.
 
     Args:
+        conn        : SQLAlchemy Connection (Postgres).
         stock_codes : 명시 리스트 (6자리/짧은 형식 모두 허용 — 내부에서 zfill).
                       None이면 dart_corp_code.json 의 모든 상장 종목.
     """
@@ -156,11 +114,11 @@ def _get_stock_fiscal_year_map(conn, start_date, end_date, stock_codes=None):
     if not target:
         return {}
 
-    # 2차: daily_ohlcv listing window 조회 — DB 원본 코드 → canonical 6자리 정규화
+    # 2차: daily_ohlcv listing window 조회 — DB 원본 코드 → canonical 6자리 정규화.
+    # Postgres DATE 컬럼은 TO_CHAR 로 문자열 캐스팅 — pick_fiscal_year 가 str 입력 기대.
     rows = conn.execute(
-        "SELECT stock_code, MIN(date), MAX(date) FROM daily_ohlcv "
-        "WHERE date BETWEEN ? AND ? GROUP BY stock_code",
-        (start_date, end_date),
+        _OHLCV_LISTING_WINDOW_SQL,
+        {"start_date": start_date, "end_date": end_date},
     ).fetchall()
 
     ohlcv_window = {}   # canonical 6자리 → (db_code, min_d, max_d)
@@ -189,8 +147,33 @@ def _get_stock_fiscal_year_map(conn, start_date, end_date, stock_codes=None):
 
 # ---------- Phase 1: DART → financial_statements ----------
 
+FINANCIAL_STMT_UPSERT_SQL = """
+INSERT INTO financial_statements
+    (stock_code, fiscal_year, reprt_code,
+     revenue, operating_income, net_income,
+     total_assets, total_liabilities, total_equity,
+     current_assets, current_liabilities, shares_outstanding)
+VALUES (%s, %s, '11011', %s, %s, %s, %s, %s, %s, %s, %s, %s)
+ON CONFLICT (stock_code, fiscal_year, reprt_code) DO UPDATE SET
+    revenue              = EXCLUDED.revenue,
+    operating_income     = EXCLUDED.operating_income,
+    net_income           = EXCLUDED.net_income,
+    total_assets         = EXCLUDED.total_assets,
+    total_liabilities    = EXCLUDED.total_liabilities,
+    total_equity         = EXCLUDED.total_equity,
+    current_assets       = EXCLUDED.current_assets,
+    current_liabilities  = EXCLUDED.current_liabilities,
+    shares_outstanding   = EXCLUDED.shares_outstanding,
+    fetched_at           = NOW()
+"""
+
+_FINANCIAL_STMT_EXISTS_SQL = (
+    "SELECT 1 FROM financial_statements "
+    "WHERE stock_code = %s AND fiscal_year = %s AND reprt_code = '11011'"
+)
+
+
 def fetch_annual_statements(
-    db_path=_DEFAULT_DB,
     start_date="2023-01-01",
     end_date="2025-12-31",
     stock_codes=None,
@@ -206,112 +189,106 @@ def fetch_annual_statements(
     API quota(status=020) 소진 감지 시:
       stdout 에 status=020 노출 → Ctrl+C → .env 의 DART_API_KEY 교체 → 재실행
       이전까지 적재된 분은 캐시 hit으로 즉시 통과.
+
+    Postgres: row 단위 commit 으로 강제 종료 / 재시작 idempotent 보장 (캐시 hit).
+    psycopg2 raw cursor 사용 — DART 호출 사이 sleep 이 있어 prepared statement
+    재사용 가치 낮고, executemany 대신 단일 INSERT 가 quota 단위 진행상황 추적에 유리.
     """
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute(CREATE_FINANCIAL_STATEMENTS_SQL)
-    conn.commit()
-
-    fy_map = _get_stock_fiscal_year_map(conn, start_date, end_date, stock_codes)
-    if not fy_map:
-        print("[WARN] dart_corp_code.json ∩ daily_ohlcv 교집합에 해당 구간 종목이 없습니다.")
-        print("       원인 후보:")
-        print("        - daily_ohlcv 의 stock_code 가 6자리 형식이 아님 (leading zero 누락 등)")
-        print("        - 학습 구간 [start_date, end_date] 안에 OHLCV 데이터 부재")
-        print("        - 명시한 stock_codes 가 dart_corp_code.json 에 없음 (비상장/매핑 누락)")
-        conn.close()
-        return
-
-    stock_list = sorted(fy_map.keys())
-    total_targets = sum(len(info["fiscal_years"]) for info in fy_map.values())
-    total_stocks = len(stock_list)
-
-    dart = DartApiClient()
-    fetched = skipped = failed = 0
-    critical_error = None
-
-    print(f"[START] DART 사업보고서 적재 — {total_stocks}개 종목, "
-          f"누적 호출 후보 {total_targets}건 (구간: {start_date} ~ {end_date})")
-
+    raw_conn = get_engine().raw_connection()
     try:
-        for s_idx, stock_code in enumerate(stock_list, start=1):
-            info = fy_map[stock_code]
-            corp_code = info["corp_code"]   # 8자리 — DART API 호출용
-            years = info["fiscal_years"]
+        cursor = raw_conn.cursor()
 
-            stock_fetched = stock_skipped = stock_failed = 0
+        # SQLAlchemy 측 helper 가 conn.execute(text(...)) 를 쓰므로 별도 connect.
+        with get_engine().connect() as sa_conn:
+            fy_map = _get_stock_fiscal_year_map(sa_conn, start_date, end_date, stock_codes)
+        if not fy_map:
+            print("[WARN] dart_corp_code.json ∩ daily_ohlcv 교집합에 해당 구간 종목이 없습니다.")
+            print("       원인 후보:")
+            print("        - daily_ohlcv 의 stock_code 가 6자리 형식이 아님 (leading zero 누락 등)")
+            print("        - 학습 구간 [start_date, end_date] 안에 OHLCV 데이터 부재")
+            print("        - 명시한 stock_codes 가 dart_corp_code.json 에 없음 (비상장/매핑 누락)")
+            return
 
-            print(f"[{s_idx}/{total_stocks}] {stock_code} (corp={corp_code}) fy={years[0]}~{years[-1]}")
+        stock_list = sorted(fy_map.keys())
+        total_targets = sum(len(info["fiscal_years"]) for info in fy_map.values())
+        total_stocks = len(stock_list)
 
-            for year in years:
-                existing = cursor.execute(
-                    "SELECT 1 FROM financial_statements "
-                    "WHERE stock_code = ? AND fiscal_year = ? AND reprt_code = '11011'",
-                    (stock_code, year),
-                ).fetchone()
-                if existing:
-                    skipped += 1
-                    stock_skipped += 1
-                    continue
+        dart = DartApiClient()
+        fetched = skipped = failed = 0
+        critical_error = None
 
-                try:
-                    accounts = dart.get_financial_accounts(corp_code, year)
-                    if not accounts:
-                        # dart_api_client 가 직전에 [ERROR] status 출력함 — 여기서는 종목 매핑 추가
-                        print(f"   ↳ {stock_code}/{year} 미공시 처리")
+        print(f"[START] DART 사업보고서 적재 — {total_stocks}개 종목, "
+              f"누적 호출 후보 {total_targets}건 (구간: {start_date} ~ {end_date})")
+
+        try:
+            for s_idx, stock_code in enumerate(stock_list, start=1):
+                info = fy_map[stock_code]
+                corp_code = info["corp_code"]   # 8자리 — DART API 호출용
+                years = info["fiscal_years"]
+
+                stock_fetched = stock_skipped = stock_failed = 0
+
+                print(f"[{s_idx}/{total_stocks}] {stock_code} (corp={corp_code}) fy={years[0]}~{years[-1]}")
+
+                for year in years:
+                    cursor.execute(_FINANCIAL_STMT_EXISTS_SQL, (stock_code, year))
+                    existing = cursor.fetchone()
+                    if existing:
+                        skipped += 1
+                        stock_skipped += 1
+                        continue
+
+                    try:
+                        accounts = dart.get_financial_accounts(corp_code, year)
+                        if not accounts:
+                            print(f"   x {stock_code}/{year} 미공시 처리")
+                            failed += 1
+                            stock_failed += 1
+                            time.sleep(sleep_between)
+                            continue
+
+                        shares = dart.get_shares_outstanding(corp_code, year)
+
+                        cursor.execute(
+                            FINANCIAL_STMT_UPSERT_SQL,
+                            (
+                                stock_code, year,
+                                accounts.get("매출액"),
+                                accounts.get("영업이익"),
+                                accounts.get("당기순이익"),
+                                accounts.get("자산총계"),
+                                accounts.get("부채총계"),
+                                accounts.get("자본총계"),
+                                accounts.get("유동자산"),
+                                accounts.get("유동부채"),
+                                shares,
+                            ),
+                        )
+                        raw_conn.commit()
+                        fetched += 1
+                        stock_fetched += 1
+                        time.sleep(sleep_between)
+
+                    except DartCriticalError:
+                        raise
+                    except Exception as e:
+                        raw_conn.rollback()
+                        print(f"[ERROR] {stock_code}/{corp_code}/{year}: {e}")
                         failed += 1
                         stock_failed += 1
                         time.sleep(sleep_between)
-                        continue
 
-                    shares = dart.get_shares_outstanding(corp_code, year)
+                print(f"   -> {stock_code} 완료 (fetched={stock_fetched}, "
+                      f"skipped={stock_skipped}, failed={stock_failed})")
 
-                    cursor.execute(
-                        """
-                        REPLACE INTO financial_statements
-                        (stock_code, fiscal_year, reprt_code,
-                         revenue, operating_income, net_income,
-                         total_assets, total_liabilities, total_equity,
-                         current_assets, current_liabilities, shares_outstanding)
-                        VALUES (?, ?, '11011', ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            stock_code, year,   # canonical 6자리 stock_code 로 적재
-                            accounts.get("매출액"),
-                            accounts.get("영업이익"),
-                            accounts.get("당기순이익"),
-                            accounts.get("자산총계"),
-                            accounts.get("부채총계"),
-                            accounts.get("자본총계"),
-                            accounts.get("유동자산"),
-                            accounts.get("유동부채"),
-                            shares,
-                        ),
-                    )
-                    conn.commit()
-                    fetched += 1
-                    stock_fetched += 1
-                    time.sleep(sleep_between)
+                if s_idx % 50 == 0 or s_idx == total_stocks:
+                    print(f"\n[{s_idx}/{total_stocks}] 누적 — "
+                          f"fetched={fetched}, skipped={skipped}, failed={failed}\n")
 
-                except DartCriticalError:
-                    raise  # 즉시 외부 try 로 전파 → 사유별 안내 후 종료
-                except Exception as e:
-                    print(f"[ERROR] {stock_code}/{corp_code}/{year}: {e}")
-                    failed += 1
-                    stock_failed += 1
-                    time.sleep(sleep_between)
-
-            print(f"   → {stock_code} 완료 (fetched={stock_fetched}, "
-                  f"skipped={stock_skipped}, failed={stock_failed})")
-
-            if s_idx % 50 == 0 or s_idx == total_stocks:
-                print(f"\n[{s_idx}/{total_stocks}] 누적 — "
-                      f"fetched={fetched}, skipped={skipped}, failed={failed}\n")
-
-    except DartCriticalError as e:
-        critical_error = e
+        except DartCriticalError as e:
+            critical_error = e
     finally:
-        conn.close()
+        raw_conn.close()
 
     if critical_error is not None:
         e = critical_error
@@ -410,113 +387,141 @@ def _compute_one_row(stock_code, date, close, curr_row, prev_row):
 
 
 DAILY_FUND_INSERT_SQL = """
-REPLACE INTO daily_fundamentals
-(stock_code, date, fiscal_year,
- eps, bps, per, pbr, roe,
- debt_ratio, current_ratio,
- revenue_growth, operating_growth,
- valuation_status, profitability_status, growth_status, stability_status)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO daily_fundamentals
+    (stock_code, date, fiscal_year,
+     eps, bps, per, pbr, roe,
+     debt_ratio, current_ratio,
+     revenue_growth, operating_growth,
+     valuation_status, profitability_status, growth_status, stability_status)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+ON CONFLICT (stock_code, date) DO UPDATE SET
+    fiscal_year          = EXCLUDED.fiscal_year,
+    eps                  = EXCLUDED.eps,
+    bps                  = EXCLUDED.bps,
+    per                  = EXCLUDED.per,
+    pbr                  = EXCLUDED.pbr,
+    roe                  = EXCLUDED.roe,
+    debt_ratio           = EXCLUDED.debt_ratio,
+    current_ratio        = EXCLUDED.current_ratio,
+    revenue_growth       = EXCLUDED.revenue_growth,
+    operating_growth     = EXCLUDED.operating_growth,
+    valuation_status     = EXCLUDED.valuation_status,
+    profitability_status = EXCLUDED.profitability_status,
+    growth_status        = EXCLUDED.growth_status,
+    stability_status     = EXCLUDED.stability_status
 """
 
 
+_FS_PANEL_SQL = text(
+    "SELECT fiscal_year, revenue, operating_income, net_income, "
+    "       total_assets, total_liabilities, total_equity, "
+    "       current_assets, current_liabilities, shares_outstanding "
+    "FROM financial_statements "
+    "WHERE stock_code = :stock_code AND reprt_code = '11011'"
+)
+
+# date 는 DATE 타입 — pick_fiscal_year 가 'YYYY-MM-DD' str 입력 기대하므로 TO_CHAR.
+_OHLCV_PANEL_SQL = text(
+    "SELECT TO_CHAR(date, 'YYYY-MM-DD') AS date, close "
+    "FROM daily_ohlcv "
+    "WHERE stock_code = :stock_code AND date BETWEEN :start_date AND :end_date "
+    "ORDER BY date ASC"
+)
+
+
 def build_daily_fundamentals(
-    db_path=_DEFAULT_DB,
     start_date="2023-01-01",
     end_date="2025-12-31",
     stock_codes=None,
 ):
-    """financial_statements + daily_ohlcv → daily_fundamentals panel 적재."""
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute(CREATE_DAILY_FUNDAMENTALS_SQL)
-    cursor.execute(CREATE_INDEX_FUNDAMENTALS_DATE)
-    conn.commit()
+    """financial_statements + daily_ohlcv → daily_fundamentals panel 적재.
 
-    fy_map = _get_stock_fiscal_year_map(conn, start_date, end_date, stock_codes)
-    if not fy_map:
-        print("[WARN] dart_corp_code.json ∩ daily_ohlcv 교집합에 해당 구간 종목이 없습니다.")
-        conn.close()
-        return
+    panel 한 종목당 일봉 수백~수천 행 → psycopg2 executemany 로 batch upsert.
+    SQLAlchemy text() executemany 대비 prepared-statement reuse 로 더 빠름.
+    """
+    engine = get_engine()
+    raw_conn = engine.raw_connection()
+    try:
+        cursor = raw_conn.cursor()
 
-    stock_list = sorted(fy_map.keys())
-    total = len(stock_list)
-    print(f"[START] daily_fundamentals panel 적재 — {total}개 종목 ({start_date} ~ {end_date})")
+        with engine.connect() as sa_conn:
+            fy_map = _get_stock_fiscal_year_map(sa_conn, start_date, end_date, stock_codes)
+        if not fy_map:
+            print("[WARN] dart_corp_code.json ∩ daily_ohlcv 교집합에 해당 구간 종목이 없습니다.")
+            return
 
-    inserted_total = 0
-    skipped_no_stmt = 0
-    skipped_no_ohlcv = 0
-    failed = 0
+        stock_list = sorted(fy_map.keys())
+        total = len(stock_list)
+        print(f"[START] daily_fundamentals panel 적재 — {total}개 종목 ({start_date} ~ {end_date})")
 
-    for idx, stock_code in enumerate(stock_list, start=1):
-        try:
-            db_code = fy_map[stock_code]["db_code"]   # daily_ohlcv 원본 형식
+        inserted_total = 0
+        skipped_no_stmt = 0
+        skipped_no_ohlcv = 0
+        failed = 0
 
-            # canonical 6자리로 financial_statements 조회
-            stmts = pd.read_sql(
-                """
-                SELECT fiscal_year, revenue, operating_income, net_income,
-                       total_assets, total_liabilities, total_equity,
-                       current_assets, current_liabilities, shares_outstanding
-                FROM financial_statements
-                WHERE stock_code = ? AND reprt_code = '11011'
-                """,
-                conn, params=(stock_code,),
-            )
-            if stmts.empty:
-                skipped_no_stmt += 1
-                continue
+        for idx, stock_code in enumerate(stock_list, start=1):
+            try:
+                db_code = fy_map[stock_code]["db_code"]   # daily_ohlcv 원본 형식
 
-            stmts_by_year = {row["fiscal_year"]: row for _, row in stmts.iterrows()}
+                stmts = pd.read_sql(
+                    _FS_PANEL_SQL,
+                    engine,
+                    params={"stock_code": stock_code},
+                )
+                if stmts.empty:
+                    skipped_no_stmt += 1
+                    continue
 
-            # daily_ohlcv 는 db_code(원본 형식)로 조회
-            ohlcv = pd.read_sql(
-                """
-                SELECT date, close FROM daily_ohlcv
-                WHERE stock_code = ? AND date BETWEEN ? AND ?
-                ORDER BY date ASC
-                """,
-                conn, params=(db_code, start_date, end_date),
-            )
-            if ohlcv.empty:
-                skipped_no_ohlcv += 1
-                continue
+                stmts_by_year = {row["fiscal_year"]: row for _, row in stmts.iterrows()}
 
-            tuples = []
-            for _, ohlcv_row in ohlcv.iterrows():
-                date = ohlcv_row["date"]
-                close = ohlcv_row["close"]
-                fy = pick_fiscal_year(date)
+                ohlcv = pd.read_sql(
+                    _OHLCV_PANEL_SQL,
+                    engine,
+                    params={
+                        "stock_code": db_code,
+                        "start_date": start_date,
+                        "end_date": end_date,
+                    },
+                )
+                if ohlcv.empty:
+                    skipped_no_ohlcv += 1
+                    continue
 
-                curr_row = stmts_by_year.get(fy)
-                prev_row = stmts_by_year.get(fy - 1)
-                # daily_fundamentals 도 canonical 6자리로 적재
-                computed = _compute_one_row(stock_code, date, close, curr_row, prev_row)
-                if computed is not None:
-                    tuples.append(computed)
+                tuples = []
+                for _, ohlcv_row in ohlcv.iterrows():
+                    date = ohlcv_row["date"]
+                    close = ohlcv_row["close"]
+                    fy = pick_fiscal_year(date)
 
-            if tuples:
-                cursor.executemany(DAILY_FUND_INSERT_SQL, tuples)
-                conn.commit()
-                inserted_total += len(tuples)
+                    curr_row = stmts_by_year.get(fy)
+                    prev_row = stmts_by_year.get(fy - 1)
+                    computed = _compute_one_row(stock_code, date, close, curr_row, prev_row)
+                    if computed is not None:
+                        tuples.append(computed)
 
-            if idx % 25 == 0 or idx == total:
-                print(f"[{idx}/{total}] 진행 — 누적 {inserted_total}건 적재 "
-                      f"(stmt없음 {skipped_no_stmt}, ohlcv없음 {skipped_no_ohlcv}, fail {failed})")
+                if tuples:
+                    cursor.executemany(DAILY_FUND_INSERT_SQL, tuples)
+                    raw_conn.commit()
+                    inserted_total += len(tuples)
 
-        except Exception as e:
-            failed += 1
-            print(f"[ERROR] {stock_code}: {e}")
+                if idx % 25 == 0 or idx == total:
+                    print(f"[{idx}/{total}] 진행 — 누적 {inserted_total}건 적재 "
+                          f"(stmt없음 {skipped_no_stmt}, ohlcv없음 {skipped_no_ohlcv}, fail {failed})")
 
-    conn.close()
-    print(f"[FIN] daily_fundamentals 적재 — 총 {inserted_total}건 / "
-          f"stmt없음 {skipped_no_stmt} / ohlcv없음 {skipped_no_ohlcv} / fail {failed}")
+            except Exception as e:
+                raw_conn.rollback()
+                failed += 1
+                print(f"[ERROR] {stock_code}: {e}")
+
+        print(f"[FIN] daily_fundamentals 적재 — 총 {inserted_total}건 / "
+              f"stmt없음 {skipped_no_stmt} / ohlcv없음 {skipped_no_ohlcv} / fail {failed}")
+    finally:
+        raw_conn.close()
 
 
 # ---------- 통합 진입점 ----------
 
 def run_full_pipeline(
-    db_path=_DEFAULT_DB,
     start_date="2023-01-01",
     end_date="2025-12-31",
     stock_codes=None,
@@ -528,7 +533,6 @@ def run_full_pipeline(
     반쯤 갱신된 financial_statements 기반으로 panel 을 만드는 silent corruption 방지.
     """
     ok = fetch_annual_statements(
-        db_path=db_path,
         start_date=start_date,
         end_date=end_date,
         stock_codes=stock_codes,
@@ -538,7 +542,6 @@ def run_full_pipeline(
         print("[SKIP] Phase 1 중단 — Phase 2 (daily_fundamentals 빌드) 도 건너뜀")
         return
     build_daily_fundamentals(
-        db_path=db_path,
         start_date=start_date,
         end_date=end_date,
         stock_codes=stock_codes,
@@ -555,7 +558,6 @@ if __name__ == "__main__":
                         help="OHLCV 기준 시작 날짜 (YYYY-MM-DD). 이 구간 내 종목만 처리")
     parser.add_argument("--end-date", default="2025-12-31",
                         help="OHLCV 기준 끝 날짜. fiscal_year 는 pick_fiscal_year(end_date) 까지 적재")
-    parser.add_argument("--db", default=_DEFAULT_DB, help="stock_master.db 경로")
     parser.add_argument("--stocks", help="쉼표 구분 종목 코드 리스트 (테스트용)")
     parser.add_argument("--sleep", type=float, default=0.5,
                         help="DART 호출 간 sleep (초, 기본 0.5)")
@@ -563,7 +565,6 @@ if __name__ == "__main__":
 
     stock_codes = [s.strip() for s in args.stocks.split(",")] if args.stocks else None
     run_full_pipeline(
-        db_path=args.db,
         start_date=args.start_date,
         end_date=args.end_date,
         stock_codes=stock_codes,

@@ -19,22 +19,20 @@ DB 의 status 컬럼을 채울 때 쓴다. signal_builder.build() 자체는 이�
 """
 
 import logging
-import os
-import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import text
+
+from clients.postgres_client import get_engine
 from clients.redis_client import get_json
 
 logger = logging.getLogger(__name__)
 
 KST = ZoneInfo("Asia/Seoul")
-
-_MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_DB = os.path.join(_MODULE_DIR, "..", "data", "stock_master.db")
 
 
 def classify_valuation(per, pbr):
@@ -117,20 +115,21 @@ class Signal:
     signals: dict = field(default_factory=dict)
 
 
-def _load_fundamental_from_db(stock_code: str, db_path: str = DEFAULT_DB) -> Optional[dict]:
+_FUNDAMENTAL_SQL = text(
+    "SELECT * FROM daily_fundamentals WHERE stock_code = :stock_code "
+    "ORDER BY date DESC LIMIT 1"
+)
+
+
+def _load_fundamental_from_db(stock_code: str) -> Optional[dict]:
     """daily_fundamentals 의 가장 최근 1행 → analysis_signals.fundamental 형태.
 
     fundamental_loader 가 매일 적재해두므로 가장 최근 = 오늘 (또는 직전 영업일).
     행이 없으면 None — signal_builder 가 그대로 None 으로 채워 detection_engine 이
     safe-access 로 처리.
     """
-    with sqlite3.connect(db_path) as conn:
-        conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT * FROM daily_fundamentals WHERE stock_code = ? "
-            "ORDER BY date DESC LIMIT 1",
-            (stock_code,),
-        ).fetchone()
+    with get_engine().connect() as conn:
+        row = conn.execute(_FUNDAMENTAL_SQL, {"stock_code": stock_code}).mappings().first()
     if row is None:
         return None
     return {
@@ -169,7 +168,7 @@ def _safe(label: str, fn: Callable[[], Optional[dict]]) -> Optional[dict]:
         return None
 
 
-def build(stock_code: str, db_path: str = DEFAULT_DB) -> Signal:
+def build(stock_code: str) -> Signal:
     """4 소스 통합 Signal 생성. 모든 소스 None 가능 — caller 가 안전 처리.
 
     이 함수는 read-only (Redis GET x 3 + DB SELECT x 1). 사이드 이펙트 없음.
@@ -180,7 +179,7 @@ def build(stock_code: str, db_path: str = DEFAULT_DB) -> Signal:
         timestamp=datetime.now(KST),
         signals={
             "technical":   _safe("technical",   lambda: get_json(f"technical:{stock_code}")),
-            "fundamental": _safe("fundamental", lambda: _load_fundamental_from_db(stock_code, db_path)),
+            "fundamental": _safe("fundamental", lambda: _load_fundamental_from_db(stock_code)),
             "event":       _safe("event",       lambda: get_json(f"event:{stock_code}")),
             "sentiment":   _safe("sentiment",   lambda: get_json(f"sentiment:{stock_code}")),
         },
