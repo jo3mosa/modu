@@ -54,9 +54,11 @@ pipeline {
                 script {
                     env.FAILED_STAGE = "1. 변경 서비스 감지"
 
-                    // HEAD~1이 없는 경우(첫 커밋, shallow clone 등) 전체 빌드로 폴백
+                    // HEAD~1..HEAD 범위는 머지 commit 의 두 parent 사이 모든 변경을 합집합으로 반환.
+                    // 기존 `git diff HEAD~1 HEAD` 는 `--no-ff` merge commit 에서 빈 결과 → 빌드 스킵 문제 있었음.
+                    // HEAD~1 이 없는 경우(첫 커밋, shallow clone 등) 전체 빌드로 폴백.
                     def diff = sh(
-                        script: "git diff --name-only HEAD~1 HEAD 2>/dev/null || echo 'ALL'",
+                        script: "git log --name-only --pretty=format: HEAD~1..HEAD 2>/dev/null | sort -u | grep -v '^\$' || echo 'ALL'",
                         returnStdout: true
                     ).trim()
 
