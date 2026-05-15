@@ -133,6 +133,7 @@ ${log}
                                     {
                                       docker build \
                                         --build-arg VITE_KAKAO_CLIENT_ID="$VITE_KAKAO_CLIENT_ID" \
+                                        --build-arg NGINX_CONF=nginx.k8s.conf \
                                         -t "$FULL_URI_FE:$BUILD_NUMBER" \
                                         -t "$FULL_URI_FE:latest" \
                                         frontend
