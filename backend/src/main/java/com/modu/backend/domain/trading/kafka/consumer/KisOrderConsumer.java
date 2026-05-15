@@ -4,7 +4,6 @@ import com.modu.backend.domain.trading.client.KisOrderClient;
 import com.modu.backend.domain.trading.entity.Order;
 import com.modu.backend.domain.trading.entity.OrderSide;
 import com.modu.backend.domain.trading.entity.OrderType;
-import com.modu.backend.domain.trading.exception.OrderErrorCode;
 import com.modu.backend.domain.trading.repository.OrderRepository;
 import com.modu.backend.domain.trading.sse.OrderSseEmitterManager;
 import com.modu.backend.domain.trading.sse.OrderSseEvent;
@@ -12,7 +11,6 @@ import com.modu.backend.domain.user.entity.KisCredential;
 import com.modu.backend.domain.user.exception.UserErrorCode;
 import com.modu.backend.domain.user.repository.KisCredentialRepository;
 import com.modu.backend.global.error.ApiException;
-import com.modu.backend.global.error.CommonErrorCode;
 import com.modu.backend.global.kis.KisApiCallTemplate;
 import com.modu.backend.global.kafka.constant.KafkaConsumerGroup;
 import com.modu.backend.global.kafka.constant.KafkaTopic;
@@ -111,22 +109,24 @@ public class KisOrderConsumer {
                     .orElseThrow(() -> new ApiException(UserErrorCode.KIS_NOT_CONNECTED));
             appKey    = encryptor.decrypt(credential.getAppKeyEnc());
             appSecret = encryptor.decrypt(credential.getAppSecretEnc());
+        } catch (IllegalStateException e) {
+            // AesGcmEncryptor 가 복호화 실패 시 IllegalStateException 을 던짐 — ApiException 으로 변환해
+            // handleFailure 경로로 보내 주문 상태/SSE 가 누락되지 않도록 처리.
+            handleFailure(order, userId, orderId, stockCode,
+                    new ApiException(UserErrorCode.KIS_CREDENTIAL_DECRYPT_FAILED, e));
+            return;
         } catch (ApiException e) {
             handleFailure(order, userId, orderId, stockCode, e);
             return;
         }
 
-        // 4) KIS placeOrder 호출 — 토큰 무효화 시 템플릿이 자동 재발급+1회 재시도
+        // 4) KIS placeOrder 호출 — 토큰 무효화(EGW00202) 시 템플릿이 자동 재발급+1회 재시도
         KisOrderClient.KisOrderResult result;
         try {
             result = kisApiCallTemplate.callWithTokenRetry(userId, appKey, appSecret,
                     token -> callKisPlaceOrder(message, credential, token, appKey, appSecret));
         } catch (ApiException e) {
-            // 재시도 후에도 EXTERNAL_API_ERROR 면 토큰 무효화로 간주해 도메인 에러로 변환
-            ApiException finalError = CommonErrorCode.EXTERNAL_API_ERROR.equals(e.getErrorCode())
-                    ? new ApiException(OrderErrorCode.KIS_TOKEN_INVALIDATED)
-                    : e;
-            handleFailure(order, userId, orderId, stockCode, finalError);
+            handleFailure(order, userId, orderId, stockCode, e);
             return;
         }
 
