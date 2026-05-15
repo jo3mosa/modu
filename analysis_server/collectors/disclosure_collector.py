@@ -7,8 +7,10 @@ OpenDART `list.json` batch 호출 → 종목별 그룹화 → Redis `event:{stoc
 한 사이클 통상 1~10 페이지 (DART rate limit 10K/day 안에서 안전).
 
 architecture spec:
-    event:{stock_code} TTL 600s (10분), 3분 주기로 갱신
+    event:{stock_code} TTL 43200s (12시간), 3분 주기로 갱신
     값 = {"has_urgent_issue": bool, "recent_disclosures": [...]}
+    영구 보존: MongoDB modu_mongo.disclosures (라이브 cycle 마다 idempotent upsert).
+    23년~현재 백필은 scripts/backfill/historical_disclosure_loader.py 로 1회 실행.
 
 사용법:
     python -m collectors.disclosure_collector              # 1 사이클 후 종료 (테스트)
@@ -17,11 +19,21 @@ architecture spec:
 """
 
 import argparse
+import atexit
 import logging
+import os
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+
+try:
+    from pymongo import MongoClient, UpdateOne
+    from pymongo.errors import PyMongoError
+except ImportError:   # pymongo 미설치 환경 (테스트 등) 에서도 import 자체는 성공
+    MongoClient = None
+    UpdateOne = None
+    PyMongoError = Exception
 
 from clients.dart_api_client import DartApiClient, DartCriticalError
 from clients.redis_client import set_json
@@ -66,6 +78,98 @@ def format_disclosure(d: dict) -> dict:
     }
 
 
+def _to_mongo_doc(d: dict) -> dict:
+    """DART list.json 원본 → Mongo 문서. _id = rcept_no.
+
+    백필 스크립트(historical_disclosure_loader._to_doc) 와 동일 스키마 —
+    백테스트가 백필분과 라이브 적재분을 구분 없이 같은 쿼리로 읽도록 한다.
+    """
+    rcept_dt = d.get("rcept_dt", "")
+    title = d.get("report_nm", "")
+    rcept_date = None
+    if rcept_dt:
+        try:
+            rcept_date = datetime.strptime(rcept_dt, "%Y%m%d").replace(tzinfo=KST)
+        except ValueError:
+            pass   # 비정상 포맷은 rcept_date=None 으로 두고 그래도 적재
+    return {
+        "_id": d.get("rcept_no"),
+        "stock_code": (d.get("stock_code") or "").strip() or None,
+        "corp_code": d.get("corp_code"),
+        "corp_name": d.get("corp_name"),
+        "corp_cls": d.get("corp_cls"),
+        "rcept_dt": rcept_dt,
+        "rcept_date": rcept_date,
+        "report_nm": title,
+        "flr_nm": d.get("flr_nm"),
+        "impact_level": classify_impact(title),
+        "raw": d,
+    }
+
+
+def _get_mongo_collection():
+    """lazy 연결. 실패 시 None 반환 — Mongo write 자체를 skip.
+
+    pymongo 미설치·MONGO_URI 미설정·연결 실패 모두 silent skip 으로 처리.
+    Redis 갱신이 라이브 의사결정 임계 경로이므로 Mongo 가 죽어도 사이클은 진행.
+    """
+    global _mongo_coll
+    if _mongo_coll is not None:
+        return _mongo_coll
+    if MongoClient is None:
+        logger.warning("pymongo 미설치 — Mongo 영속화 skip")
+        return None
+    uri = os.getenv("MONGO_URI")
+    if not uri:
+        logger.warning("MONGO_URI 미설정 — Mongo 영속화 skip")
+        return None
+    try:
+        client = MongoClient(
+            uri,
+            serverSelectionTimeoutMS=10000,
+            socketTimeoutMS=30000,
+            connectTimeoutMS=20000,
+            retryWrites=True,
+        )
+        client.admin.command("ping")
+        coll = client[MONGO_DB][MONGO_COLL]
+        # idempotent — 이미 있으면 무동작
+        coll.create_index([("stock_code", 1), ("rcept_date", -1)],
+                          name="stock_rcept_date")
+        coll.create_index([("rcept_date", -1)], name="rcept_date")
+        atexit.register(client.close)
+        _mongo_coll = coll
+        logger.info("✓ MongoDB 연결 — %s.%s", MONGO_DB, MONGO_COLL)
+        return coll
+    except Exception as e:
+        logger.warning("MongoDB 연결 실패 — Mongo 영속화 skip: %s", e)
+        return None
+
+
+def persist_to_mongo(disclosures: list[dict]) -> int:
+    """모든 fetched 공시(상장사+비상장) 를 idempotent upsert. 적재 건수 반환.
+
+    실패 시 logger.exception 으로만 남기고 0 반환 — caller(run_once) 가
+    Mongo 실패로 Redis write 를 막거나 사이클 stats 를 깨뜨리지 않게 한다.
+    """
+    coll = _get_mongo_collection()
+    if coll is None or not disclosures:
+        return 0
+    ops = [
+        UpdateOne({"_id": doc["_id"]}, {"$set": doc}, upsert=True)
+        for doc in (_to_mongo_doc(d) for d in disclosures)
+        if doc["_id"]   # rcept_no 없는 비정상 응답 방어
+    ]
+    if not ops:
+        return 0
+    try:
+        res = coll.bulk_write(ops, ordered=False)
+        return res.upserted_count + res.modified_count
+    except PyMongoError:
+        logger.exception("Mongo bulk_write 실패 — 다음 사이클 재시도")
+        return 0
+
+
 # ─── 설정 ────────────────────────────────────────────────────────────────────
 
 # event 윈도우 — engine 의 DART-* 룰이 "최근" 으로 보는 기간.
@@ -78,11 +182,26 @@ LOOP_INTERVAL_SEC = 180
 # 한 종목당 보존할 최근 공시 갯수 (event 페이로드 크기 제한).
 MAX_DISCLOSURES_PER_STOCK = 10
 
-# Redis TTL — architecture spec 10분 (사이클 3분 대비 충분한 margin).
-REDIS_TTL_SECONDS = 600
+# Redis TTL — 12h. 위험 공시(거래정지·관리종목 등) 가 트리거에 충분히 오래
+# 노출되도록 보장. 단순 사이클 margin (3분 폴링) 차원이면 10분으로 충분하지만,
+# collector 가 죽거나 DART quota 소진(KST 자정 reset) 으로 갱신이 멈춰도
+# 마지막 페이로드가 12 시간은 살아 있어야 engine 이 공시 신호를 잃지 않는다.
+# LOOKBACK_DAYS=2 와 정합: 정상 운영 중에는 48h 윈도우 안의 공시가 매 3분
+# 재발행되므로 사실상 48h 노출, TTL 12h 는 "collector 정지 시 최소 보장" 의미.
+REDIS_TTL_SECONDS = 43200
 
 # DART list.json 페이지당 항목 수 (DART 가 허용하는 max).
 PAGE_COUNT = 100
+
+# ─── MongoDB 영속화 ─────────────────────────────────────────────────────────
+# Redis 는 12h hot cache (engine 1분 사이클이 읽는 곳), MongoDB 는 영구 보존
+# (백테스트·재학습용). 둘은 독립 — Mongo write 실패해도 Redis write 와 cycle
+# 진행은 영향받지 않게 격리한다.
+
+MONGO_DB = "modu_mongo"
+MONGO_COLL = "disclosures"
+
+_mongo_coll = None   # lazy singleton — 첫 사이클에서 연결, 이후 재사용
 
 # safety cap — 비정상 응답으로 무한 페이지네이션 방지.
 MAX_PAGES = 100
@@ -171,15 +290,22 @@ def run_once(dart: DartApiClient) -> dict:
         except Exception:
             logger.exception("redis SET failed for %s", stock_code)
 
+    # Redis 갱신(engine 임계 경로) 이후 Mongo 영속화 — 백테스트·재학습용.
+    # persist_to_mongo 는 실패 시 내부에서 logger.exception + 0 반환하므로
+    # 사이클 stats 와 흐름은 영향받지 않는다.
+    persisted = persist_to_mongo(disclosures)
+
     elapsed = time.monotonic() - started
     logger.info(
-        "cycle done: %d disclosures / %d listed stocks / %d wrote / %.1fs",
-        len(disclosures), len(by_stock), wrote, elapsed,
+        "cycle done: %d disclosures / %d listed stocks / %d wrote / "
+        "%d persisted / %.1fs",
+        len(disclosures), len(by_stock), wrote, persisted, elapsed,
     )
     return {
         "disclosures": len(disclosures),
         "stocks": len(by_stock),
         "wrote": wrote,
+        "persisted": persisted,
         "elapsed_sec": elapsed,
     }
 
