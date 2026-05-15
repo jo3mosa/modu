@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, ArrowLeft } from 'lucide-react';
+import { toast } from 'sonner';
 import { getProfileQuestions, updateProfile, updateRules } from '../api/strategy';
 import { registerKisKey } from '../api/user';
 import './OnboardingPage.css';
@@ -89,7 +90,7 @@ export default function OnboardingPage() {
       nextStep();
     } catch (error) {
       console.error('투자 성향 저장 실패:', error);
-      alert(error.message || '투자 성향 저장 중 오류가 발생했습니다. 다시 시도해 주세요.');
+      toast.error(error.message || '투자 성향 저장 중 오류가 발생했습니다. 다시 시도해 주세요.');
     } finally {
       setSubmittingProfile(false);
     }
@@ -106,7 +107,7 @@ export default function OnboardingPage() {
       !Number.isFinite(stopLossRate) || stopLossRate < 1 ||
       !Number.isFinite(takeProfitRate) || takeProfitRate < 1
     ) {
-      alert('익절/손절 기준은 1 이상의 숫자로 입력해 주세요.');
+      toast.error('익절/손절 기준은 1 이상의 숫자로 입력해 주세요.');
       return;
     }
 
@@ -132,14 +133,16 @@ export default function OnboardingPage() {
           });
         } catch (kisError) {
           console.warn('KIS 키 등록 실패:', kisError);
-          alert('KIS API 키 등록에 실패했습니다.\n마이페이지에서 다시 등록해 주세요.');
+          toast.error('KIS API 키 등록에 실패했습니다', {
+            description: '마이페이지에서 다시 등록해 주세요.',
+          });
         }
       }
 
       navigate('/home');
     } catch (error) {
       console.error('룰셋 저장 실패:', error);
-      alert(error.message || '설정 저장 중 오류가 발생했습니다.');
+      toast.error(error.message || '설정 저장 중 오류가 발생했습니다.');
     } finally {
       setSubmittingComplete(false);
     }

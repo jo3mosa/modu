@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { Toaster } from 'sonner';
 import AuthLayout from './layouts/AuthLayout';
 import MainLayout from './layouts/MainLayout';
 import { OrderSSEProvider } from './hooks/useOrderSSE';
@@ -16,6 +17,8 @@ import MyPage from './pages/MyPage';
 function App() {
   return (
     <BrowserRouter>
+      {/* 전역 토스트 — sonner. 우측 상단, 성공/실패 색상 구분, 기본 표시 시간 3초 */}
+      <Toaster position="top-right" richColors closeButton duration={3000} />
       <Routes>
         <Route element={<AuthLayout />}>
           <Route path="/" element={<LandingPage />} />

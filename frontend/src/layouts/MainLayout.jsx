@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Search, Bell } from 'lucide-react';
+import { toast } from 'sonner';
 import { getStocks } from '../api/market';
 import { useOrderSSE } from '../hooks/useOrderSSE';
 import './MainLayout.css';
@@ -42,8 +43,9 @@ export default function MainLayout() {
         isRead: false
       };
       setNotifications(prev => [newNoti, ...prev]);
-      // 추후 전역 Toast UI 적용
-      alert(`[체결 알림] ${latestEvent.stockCode || '주문'} 체결 완료! (주문번호: ${latestEvent.kisOrderNo})`);
+      toast.success(`${latestEvent.stockCode || '주문'} 체결 완료`, {
+        description: `주문번호: ${latestEvent.kisOrderNo}`,
+      });
     }
   }, [latestEvent]);
 

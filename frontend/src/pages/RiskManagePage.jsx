@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { getProfile, getProfileQuestions, getRules, updateProfile, updateRules } from '../api/strategy';
 import './RiskManagePage.css';
 
@@ -155,7 +156,7 @@ export default function RiskManagePage() {
       setIsModalOpen(false);
     } catch (error) {
       console.error('투자 성향 저장 실패:', error);
-      alert(error.message || '투자 성향 저장 중 오류가 발생했습니다.');
+      toast.error(error.message || '투자 성향 저장 중 오류가 발생했습니다.');
     } finally {
       setSubmittingProfile(false);
     }
@@ -176,7 +177,7 @@ export default function RiskManagePage() {
       !Number.isFinite(maxDailyOrderCount) || maxDailyOrderCount < 1 ||
       !Number.isFinite(maxDailyLossAmount) || maxDailyLossAmount < 1
     ) {
-      alert('모든 룰셋 값은 1 이상의 숫자여야 합니다.');
+      toast.error('모든 룰셋 값은 1 이상의 숫자여야 합니다.');
       return;
     }
 
@@ -197,10 +198,10 @@ export default function RiskManagePage() {
         maxLossLimit: result?.maxDailyLossAmount ?? maxDailyLossAmount,
       });
       setRuleVersion(result?.version ?? ruleVersion + 1);
-      alert('변경사항이 성공적으로 저장되었습니다.');
+      toast.success('변경사항이 성공적으로 저장되었습니다');
     } catch (error) {
       console.error('룰셋 저장 실패:', error);
-      alert(error.message || '룰셋 저장 중 오류가 발생했습니다.');
+      toast.error(error.message || '룰셋 저장 중 오류가 발생했습니다.');
     } finally {
       setSavingRules(false);
     }
