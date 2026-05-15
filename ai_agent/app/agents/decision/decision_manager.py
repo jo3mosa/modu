@@ -79,6 +79,14 @@ def decision_manager(state: InvestmentAgentState) -> dict[str, Any]:
                 risk_summary=[str(exc)],
                 history_context_tokens=history_context_tokens,
             )
+        except Exception as exc:
+            # 재시도 중 LLM 호출 자체가 실패하면 outer except에 닿지 않으므로 여기서 잡아 hold 강등.
+            return _hold(
+                reason="재시도 중 LLM 호출 실패",
+                asset=verdict.asset,
+                risk_summary=[str(exc)],
+                history_context_tokens=history_context_tokens,
+            )
     except Exception as exc:
         return _hold(
             reason="LLM 호출 실패",
