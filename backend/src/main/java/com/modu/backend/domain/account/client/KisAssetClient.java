@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.modu.backend.domain.account.dto.AccountSummaryResponse;
 import com.modu.backend.global.error.ApiException;
 import com.modu.backend.global.error.CommonErrorCode;
+import com.modu.backend.global.kis.KisErrorMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -66,10 +67,11 @@ public class KisAssetClient {
                     .body(AssetResponse.class);
 
             if (response == null || !"0".equals(response.rtCd())) {
-                log.error("KIS 자산 조회 실패 - rtCd: {}, msg: {}",
+                log.error("KIS 자산 조회 실패 - rtCd: {}, msgCd: {}, msg: {}",
                         response != null ? response.rtCd() : "null",
+                        response != null ? response.msgCd() : "null",
                         response != null ? response.msg1() : "null");
-                throw new ApiException(CommonErrorCode.EXTERNAL_API_ERROR);
+                throw KisErrorMapper.toApiException(response != null ? response.msgCd() : null);
             }
 
             return mapToResponse(response.output2());

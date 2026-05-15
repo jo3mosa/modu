@@ -24,9 +24,8 @@ public enum OrderErrorCode implements ErrorCode {
     /** 거래 이력 조회 — 기간이 1년을 초과 */
     HISTORY_PERIOD_TOO_LONG("ORDER_007", HttpStatus.BAD_REQUEST, "조회 기간은 최대 1년까지 가능합니다."),
     /** 거래 이력 조회 — from > to */
-    HISTORY_INVALID_DATE_RANGE("ORDER_008", HttpStatus.BAD_REQUEST, "시작일이 종료일보다 늦을 수 없습니다."),
-    /** KIS 토큰이 외부에서 갱신되어 무효화됨 — KIS 분당 1회 발급 제한으로 즉시 재발급 불가 */
-    KIS_TOKEN_INVALIDATED("ORDER_009", HttpStatus.SERVICE_UNAVAILABLE, "KIS 토큰이 갱신 중입니다. 1분 후 다시 시도해주세요.");
+    HISTORY_INVALID_DATE_RANGE("ORDER_008", HttpStatus.BAD_REQUEST, "시작일이 종료일보다 늦을 수 없습니다.");
+    // KIS_TOKEN_INVALIDATED 는 KIS 인증 공통 영역이라 UserErrorCode 로 이동됨 (USER_007)
 
     private final String code;
     private final HttpStatus status;
