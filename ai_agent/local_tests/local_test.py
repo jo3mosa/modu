@@ -9,9 +9,13 @@
     GMS_KEY=<SSAFY GMS 키>
     LANGCHAIN_TRACING_V2=true   # LangSmith 사용 시
     LANGCHAIN_API_KEY=<키>      # LangSmith 사용 시
+
+다른 스크립트(local_test_feedback.py)에서 이 파일의 run_decision_pipeline()을
+import 해서 결정 → 회고 흐름을 한 번에 검증한다.
 """
 import os
 import sys
+from typing import Any
 
 # ── 더미 입력 신호 ─────────────────────────────────────────────────────────
 # analysis_snapshot은 반드시 "signals" 키 아래 4개 분야로 구성해야 합니다.
@@ -307,15 +311,34 @@ def dummy_context_loader(state) -> dict:
     return DUMMY_CONTEXT
 
 
-# ── 메인 ──────────────────────────────────────────────────────────────────
-
-def main() -> None:
-    sys.stdout.reconfigure(encoding="utf-8")
-    sys.stderr.reconfigure(encoding="utf-8")
+# ── 부트스트랩 (sys.path / encoding / env) ─────────────────────────────────
+# 함수형 진입점에서도 단독 실행에서도 동일하게 호출되며, 두 번 불러도 안전(idempotent).
+def _bootstrap_runtime() -> None:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        # 일부 환경(IDE/리다이렉션)에서는 reconfigure 불가. 무시하고 계속.
+        pass
     # local_tests/ 안에 있으므로 부모(ai_agent/)를 path에 추가해 app.* import 가능하게 한다
-    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+    parent_dir = os.path.dirname(os.path.dirname(__file__))
+    if parent_dir not in sys.path:
+        sys.path.insert(0, parent_dir)
     os.environ.setdefault("LANGCHAIN_PROJECT", "modu-mvp")
     os.environ.setdefault("DATABASE_URL", "postgresql://dummy:dummy@localhost/dummy")
+
+
+# ── 함수형 진입점 ─────────────────────────────────────────────────────────
+# local_test_feedback.py가 import해서 final_state를 받기 위해 사용한다.
+def run_decision_pipeline(verbose: bool = True) -> dict[str, Any]:
+    """
+    Decision graph를 더미 데이터로 실행하고 final_state를 반환한다.
+
+    verbose=True이면 main()과 동일한 단계별 출력을 그대로 찍는다.
+    feedback 파이프라인이 결정 결과(final_decision / debate / verdict)를
+    회고 입력으로 그대로 받기 위해 사용한다.
+    """
+    _bootstrap_runtime()
 
     import app.graph.builder as builder_module
     from app.state.investment_state import InvestmentAgentState
@@ -334,26 +357,37 @@ def main() -> None:
         portfolio_snapshot=DUMMY_PORTFOLIO_SNAPSHOT,
     )
 
-    tracing = os.getenv("LANGCHAIN_TRACING_V2", "false")
-    _section(f"AI Agent 더미 파이프라인  |  LangSmith: {tracing}")
-    _row("종목", f'{DUMMY_ANALYSIS_SNAPSHOT["stock_code"]} (삼성전자)', 1)
-    _row("LangSmith 프로젝트", os.getenv("LANGCHAIN_PROJECT", "-"), 1)
+    if verbose:
+        tracing = os.getenv("LANGCHAIN_TRACING_V2", "false")
+        _section(f"AI Agent 더미 파이프라인  |  LangSmith: {tracing}")
+        _row("종목", f'{DUMMY_ANALYSIS_SNAPSHOT["stock_code"]} (삼성전자)', 1)
+        _row("LangSmith 프로젝트", os.getenv("LANGCHAIN_PROJECT", "-"), 1)
 
-    _print_input()
+        _print_input()
 
-    _section("파이프라인 실행")
+        _section("파이프라인 실행")
 
     step = 0
-    final_state = None
+    final_state: dict[str, Any] = {}
     for mode, event in graph.stream(initial_state, stream_mode=["updates", "values"]):
         if mode == "updates":
-            for node_name, node_output in event.items():
-                step += 1
-                _print_node(step, node_name, node_output)
+            if verbose:
+                for node_name, node_output in event.items():
+                    step += 1
+                    _print_node(step, node_name, node_output)
         else:
             final_state = event
 
-    _print_summary(final_state)
+    if verbose:
+        _print_summary(final_state)
+
+    return final_state
+
+
+# ── 메인 ──────────────────────────────────────────────────────────────────
+
+def main() -> None:
+    run_decision_pipeline(verbose=True)
 
 
 if __name__ == "__main__":
