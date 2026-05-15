@@ -54,12 +54,13 @@ spec:
         - name: mongodb-storage
           mountPath: /data/db
         resources:
+          # WiredTiger 캐시 = (메모리 - 1Gi) × 50% — 뉴스 데이터 증가 대비 여유 확보.
           requests:
-            memory: "256Mi"
-            cpu: "200m"
-          limits:
             memory: "512Mi"
-            cpu: "500m"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
         readinessProbe:
           exec:
             command: ["mongosh", "--eval", "db.adminCommand('ping')"]

@@ -28,9 +28,10 @@ spec:
         ports:
         - containerPort: 80 # 컨테이너 내부에서 사용하는 포트 (Nginx 등)
         resources:
+          # Nginx 정적 파일 서빙만 — 매우 가벼움. requests 는 낮게.
           requests:
-            memory: "128Mi"
-            cpu: "100m"
+            memory: "64Mi"
+            cpu: "50m"
           limits:
             memory: "256Mi"
             cpu: "200m"

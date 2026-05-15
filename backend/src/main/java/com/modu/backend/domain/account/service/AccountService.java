@@ -5,8 +5,8 @@ import com.modu.backend.domain.account.dto.AccountSummaryResponse;
 import com.modu.backend.domain.user.entity.KisCredential;
 import com.modu.backend.domain.user.exception.UserErrorCode;
 import com.modu.backend.domain.user.repository.KisCredentialRepository;
-import com.modu.backend.domain.user.service.KisTokenService;
 import com.modu.backend.global.error.ApiException;
+import com.modu.backend.global.kis.KisApiCallTemplate;
 import com.modu.backend.global.util.AesGcmEncryptor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -31,7 +31,7 @@ import org.springframework.stereotype.Service;
 public class AccountService {
 
     private final KisCredentialRepository kisCredentialRepository;
-    private final KisTokenService kisTokenService;
+    private final KisApiCallTemplate kisApiCallTemplate;
     private final KisAssetClient kisAssetClient;
     private final AesGcmEncryptor encryptor;
 
@@ -42,14 +42,14 @@ public class AccountService {
         String decryptedAppKey = encryptor.decrypt(credential.getAppKeyEnc());
         String decryptedAppSecret = encryptor.decrypt(credential.getAppSecretEnc());
 
-        String accessToken = kisTokenService.getOrIssueAccessToken(userId, decryptedAppKey, decryptedAppSecret);
-
-        return kisAssetClient.getAssetSummary(
-                accessToken,
-                decryptedAppKey,
-                decryptedAppSecret,
-                credential.getAccountNo(),
-                credential.getAccountPrdtCd()
-        );
+        // 토큰 발급/재발급은 템플릿 lazy 처리, 무효화 감지 시 자동 재시도
+        return kisApiCallTemplate.callWithTokenRetry(userId, decryptedAppKey, decryptedAppSecret,
+                token -> kisAssetClient.getAssetSummary(
+                        token,
+                        decryptedAppKey,
+                        decryptedAppSecret,
+                        credential.getAccountNo(),
+                        credential.getAccountPrdtCd()
+                ));
     }
 }

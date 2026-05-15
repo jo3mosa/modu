@@ -5,6 +5,7 @@ import com.modu.backend.domain.trading.entity.OrderSide;
 import com.modu.backend.domain.trading.entity.OrderType;
 import com.modu.backend.global.error.ApiException;
 import com.modu.backend.global.error.CommonErrorCode;
+import com.modu.backend.global.kis.KisErrorMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -75,10 +76,11 @@ public class KisOrderClient {
                     .body(BuyPowerResponse.class);
 
             if (response == null || !"0".equals(response.rtCd())) {
-                log.error("KIS 매수가능조회 실패 - rtCd: {}, msg: {}",
+                log.error("KIS 매수가능조회 실패 - rtCd: {}, msgCd: {}, msg: {}",
                         response != null ? response.rtCd() : "null",
+                        response != null ? response.msgCd() : "null",
                         response != null ? response.msg1() : "null");
-                throw new ApiException(CommonErrorCode.EXTERNAL_API_ERROR);
+                throw KisErrorMapper.toApiException(response != null ? response.msgCd() : null);
             }
 
             return parseLong(response.output() != null ? response.output().nrcvbBuyAmt() : null);
@@ -129,10 +131,11 @@ public class KisOrderClient {
                     .readValue(rawJson, SellQtyResponse.class);
 
             if (response == null || !"0".equals(response.rtCd())) {
-                log.error("KIS 매도가능수량조회 실패 - rtCd: {}, msg: {}",
+                log.error("KIS 매도가능수량조회 실패 - rtCd: {}, msgCd: {}, msg: {}",
                         response != null ? response.rtCd() : "null",
+                        response != null ? response.msgCd() : "null",
                         response != null ? response.msg1() : "null");
-                throw new ApiException(CommonErrorCode.EXTERNAL_API_ERROR);
+                throw KisErrorMapper.toApiException(response != null ? response.msgCd() : null);
             }
 
             return parseLong(response.output() != null ? response.output().psblQty() : null);
@@ -187,10 +190,11 @@ public class KisOrderClient {
                     .body(PlaceOrderResponse.class);
 
             if (response == null || !"0".equals(response.rtCd())) {
-                log.error("KIS 주문 실패 - rtCd: {}, msg: {}",
+                log.error("KIS 주문 실패 - rtCd: {}, msgCd: {}, msg: {}",
                         response != null ? response.rtCd() : "null",
+                        response != null ? response.msgCd() : "null",
                         response != null ? response.msg1() : "null");
-                throw new ApiException(CommonErrorCode.EXTERNAL_API_ERROR);
+                throw KisErrorMapper.toApiException(response != null ? response.msgCd() : null);
             }
 
             return new KisOrderResult(
@@ -239,6 +243,7 @@ public class KisOrderClient {
     @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
     private record BuyPowerResponse(
             @JsonProperty("rt_cd") String rtCd,
+            @JsonProperty("msg_cd") String msgCd,
             @JsonProperty("msg1") String msg1,
             @JsonProperty("output") BuyPowerOutput output
     ) {}
@@ -252,6 +257,7 @@ public class KisOrderClient {
     @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
     private record SellQtyResponse(
             @JsonProperty("rt_cd") String rtCd,
+            @JsonProperty("msg_cd") String msgCd,
             @JsonProperty("msg1") String msg1,
             @JsonProperty("output") SellQtyOutput output
     ) {}
@@ -264,6 +270,7 @@ public class KisOrderClient {
     @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
     private record PlaceOrderResponse(
             @JsonProperty("rt_cd") String rtCd,
+            @JsonProperty("msg_cd") String msgCd,
             @JsonProperty("msg1") String msg1,
             @JsonProperty("output") PlaceOrderOutput output
     ) {}
