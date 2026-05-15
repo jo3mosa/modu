@@ -37,14 +37,14 @@ class RedisMarketPriceRepository:
     def get(self, stock_code: str) -> int | None:
         try:
             raw = self.redis_client.get(self._key(stock_code))
+
+            if raw is None:
+                return None
+
+            return int(raw)
         except Exception:
-            logger.exception("Redis 조회 실패: stock_code=%s", stock_code)
+            logger.exception("Redis 현재가 조회/파싱 실패: stock_code=%s", stock_code)
             raise
-
-        if raw is None:
-            return None
-
-        return int(raw)
 
 
 class MockMarketPriceRepository:

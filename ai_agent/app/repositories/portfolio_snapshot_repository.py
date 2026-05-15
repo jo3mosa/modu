@@ -38,14 +38,24 @@ class RedisPortfolioSnapshotRepository:
     def get(self, user_id: int) -> dict:
         try:
             raw = self.redis_client.get(self._key(user_id))
+
+            if raw is None:
+                return {}
+
+            parsed = json.loads(raw)
         except Exception:
-            logger.exception("Redis 조회 실패: user_id=%s", user_id)
+            logger.exception("Redis 포트폴리오 스냅샷 조회/파싱 실패: user_id=%s", user_id)
             raise
 
-        if raw is None:
+        if not isinstance(parsed, dict):
+            logger.error(
+                "포트폴리오 스냅샷이 dict가 아님: user_id=%s, type=%s",
+                user_id,
+                type(parsed).__name__,
+            )
             return {}
 
-        return json.loads(raw)
+        return parsed
 
 
 class MockPortfolioSnapshotRepository:

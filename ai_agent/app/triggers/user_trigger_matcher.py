@@ -133,8 +133,7 @@ def match_market_event_to_users(
     for user_id in holding_user_ids:
         portfolio_snapshot = get_portfolio_snapshot(user_id, portfolio_snapshot_repository)
 
-        if current_price is not None:
-            portfolio_snapshot = {**portfolio_snapshot, "current_price": current_price}
+        portfolio_snapshot = {**portfolio_snapshot, "current_price": current_price}
 
         user_context = get_user_context(user_id)
 
