@@ -106,10 +106,13 @@ public class SignalHandlerService {
     // ───────────────────────────────────────────────────────────────────
 
     private void validate(AiDecisionMessage m) {
+        // 명세상 필수 필드 (AiDecisionMessage JavaDoc 참조)
         if (m == null
                 || m.userId() == null
                 || isBlank(m.stockCode())
-                || isBlank(m.sourceEventId())) {
+                || isBlank(m.sourceEventId())
+                || m.finalDecision() == null
+                || isBlank(m.flowStatus())) {
             throw new ApiException(AiErrorCode.INVALID_DECISION_MESSAGE);
         }
         if ("running".equalsIgnoreCase(m.flowStatus())) {

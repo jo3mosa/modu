@@ -17,6 +17,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
+import java.util.Objects;
 
 /**
  * AI 판단 결과 엔티티 (ai_judgments 테이블)
@@ -147,7 +148,7 @@ public class AiJudgment {
         this.indicatorsSnapshot = indicatorsSnapshot;
         this.judgmentReason = judgmentReason;
         this.judgedAt = judgedAt;
-        this.keySignals = keySignals;
+        this.keySignals = Objects.requireNonNull(keySignals, "keySignals must not be null (DB NOT NULL DEFAULT '[]')");
         this.bullClaim = bullClaim;
         this.bearClaim = bearClaim;
         this.sector = sector;

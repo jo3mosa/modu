@@ -44,10 +44,20 @@ public record AiDecisionMessage(
     /**
      * AI 최종 결정 페이로드
      *
-     * action="hold" → side / order_amount / target_price / stop_loss_price 가 null/0 일 수 있음
-     * action="trade" → side ∈ {buy, sell} + 가격/금액 필드 필수
-     * confidence: 0~1 float (BE 가 0~100 정수로 변환 저장)
-     * target_price / stop_loss_price: float (BE 가 round 후 long 변환 저장)
+     * [필드 의미 및 허용 범위]
+     *  - action       : "trade" / "hold"
+     *  - side         : "buy" / "sell" (action="trade" 일 때만 값, "hold" 면 null)
+     *  - orderAmount  : 매수 의도 금액(원). 양수. action="hold" 면 null 가능
+     *  - targetPrice  : 익절 목표가(원). 양수. BE 가 Math.round → long 으로 변환 저장.
+     *                   action="trade" 시 INVALID_ORDER_PARAMS 회피하려면 필수
+     *  - stopLossPrice: 손절가(원). 양수. BE 가 Math.round → long 으로 변환 저장
+     *  - reasonSummary: 판단 사유 텍스트. ai_judgments.judgment_reason 에 매핑
+     *  - confidence   : AI 신뢰도 [0.0 ~ 1.0]. BE 가 round(c * 100) → 0~100 long 으로 변환 (0~100 clamp)
+     *  - riskLevel    : "low" / "medium" / "high". "high" 면 APPROVAL_REQUIRED 분기
+     *
+     * [BE 검증]
+     *  명세 범위를 벗어난 값(음수 가격 / confidence > 1.0 등) 은 SignalHandlerService 런타임 검증에서
+     *  INVALID_ORDER_PARAMS 또는 0~100 clamp 처리. JSON 역직렬화 단계엔 별도 강제 없음.
      */
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record FinalDecision(
