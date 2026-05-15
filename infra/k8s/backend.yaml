@@ -73,3 +73,18 @@ spec:
     targetPort: 8080 # 실제 컨테이너 내부로 전달할 포트
   # [보안/설계] 백엔드는 외부 노출 없이 클러스터 내부(프론트엔드 -> 백엔드) 통신만 허용하는 ClusterIP 타입을 사용합니다.
   type: ClusterIP
+
+---
+
+# 3. PodDisruptionBudget — 노드 drain/유지보수 시 최소 1개 backend 가용 보장.
+# replicas 2 라 K8s 가 한 번에 둘 다 evict 하지 못하게 막아 무중단 보장.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-pdb
+  namespace: modu-apps
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: backend
