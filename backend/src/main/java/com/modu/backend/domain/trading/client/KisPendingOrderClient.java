@@ -3,6 +3,7 @@ package com.modu.backend.domain.trading.client;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.modu.backend.global.error.ApiException;
 import com.modu.backend.global.error.CommonErrorCode;
+import com.modu.backend.global.kis.KisErrorMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -90,10 +91,11 @@ public class KisPendingOrderClient {
                     .body(PendingResponse.class);
 
             if (response == null || !"0".equals(response.rtCd())) {
-                log.error("KIS 미체결 주문 조회 실패 - rtCd: {}, msg: {}",
+                log.error("KIS 미체결 주문 조회 실패 - rtCd: {}, msgCd: {}, msg: {}",
                         response != null ? response.rtCd() : "null",
+                        response != null ? response.msgCd() : "null",
                         response != null ? response.msg1() : "null");
-                throw new ApiException(CommonErrorCode.EXTERNAL_API_ERROR);
+                throw KisErrorMapper.toApiException(response != null ? response.msgCd() : null);
             }
 
             if (response.output() == null) {
@@ -177,8 +179,9 @@ public class KisPendingOrderClient {
     // ── KIS API 응답 파싱용 내부 레코드 ─────────────────────────────────────────
 
     private record PendingResponse(
-            @JsonProperty("rt_cd") String rtCd,
-            @JsonProperty("msg1") String msg1,
+            @JsonProperty("rt_cd")  String rtCd,
+            @JsonProperty("msg_cd") String msgCd,
+            @JsonProperty("msg1")   String msg1,
             @JsonProperty("output") List<RawPendingItem> output
     ) {}
 
