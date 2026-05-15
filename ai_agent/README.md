@@ -188,7 +188,9 @@ ai_agent/
 | Reasoning 결과 | `research_verdict`, `strategy_draft`, `final_decision` | strategy/decision manager |
 | 리스크 | `risk_check_result`, `risk_cleared` | risk_gate |
 | 제어 | `flow_status` (`running`/`hold`/`blocked`/`completed`/`failed`), `error_context` | 모든 노드 |
-| 사후 | `later_market_data`, `postmortem_report`, `approval_result` | (별도 Feedback graph / 백엔드 — 현재 MVP 범위 밖) |
+| 사후 | `later_market_data`, `postmortem_report` | (별도 Feedback graph / 백엔드 — 현재 MVP 범위 밖) |
+
+> 실행 결과(주문 ID/체결가 등)는 ai_agent State에 들어오지 않는다. 백엔드가 `trade.order.executed` 컨슈머에서 `ai_judgments.order_id`를 UPDATE 하는 흐름으로 합류한다.
 
 > 실행 결과(주문 ID/체결가 등)는 ai_agent State에 들어오지 않는다. 백엔드가 `trade.order.executed` 컨슈머에서 `ai_judgments.order_id`를 UPDATE 하는 흐름으로 합류한다.
 
@@ -225,9 +227,65 @@ python -m app.consumer
 | 스레드 | 입력 토픽 | 처리 | 출력 토픽 |
 |---|---|---|---|
 | `market-signal-consumer` | `market.signal.detected` | `match_market_event_to_users` 로 보유 사용자별 분기 | `ai.trigger.requested` |
-| `user-trigger-consumer` | `ai.trigger.requested` | `run_and_publish` (graph 실행 + 결과 publish) | `ai.decision.generated` |
+| `user-trigger-consumer` | `ai.trigger.requested` | `run_and_publish` (graph 실행 + 페이로드 빌더 `_build_decision_payload`) | `ai.decision.generated` |
 
 분리 이유: 사용자 매칭은 가볍고, LLM 실행은 무겁다. 백프레셔/재시도/스로틀을 단계별로 독립 관리하기 위함.
+
+**출력 페이로드 (`ai.decision.generated`, BE 합의)**
+
+`app/graph/runner.py:_build_decision_payload` 가 구성한다:
+
+```json
+{
+  "decision_id": "dec_<uuid>",
+  "user_id": 1,
+  "source_event_id": "market_event_abc123",
+  "stock_code": "005930",
+  "created_at": "2026-05-14T02:07:00+09:00",
+  "final_decision": {
+    "action": "trade",
+    "side": "buy",
+    "order_amount": 500000,
+    "target_price": 75000,
+    "stop_loss_price": 67000,
+    "reason_summary": "...",
+    "confidence": 0.78,
+    "risk_level": "low"
+  },
+  "debate": {
+    "bull_claim": "...",
+    "bear_claim": "...",
+    "winner": "bull",
+    "key_signals": ["technical_signal", "sentiment_signal"]
+  },
+  "indicators_snapshot": { "technical": {...}, "fundamental": {...} },
+  "flow_status": "completed"
+}
+```
+
+- `decision_id`: ai_agent 발행 측 멱등키. BE 컨슈머는 같은 ID 재수신 시 INSERT 무시.
+- `created_at`: ai_agent 발행 시각(KST). BE 측 `ai_judgments.judged_at`에 매핑.
+- `final_decision`: `FinalDecision.model_dump()` 결과에서 `asset / risk_summary / expected_scenario / user_message`는 BE 매핑 컬럼이 없어 명시 `exclude`.
+- `debate.bull_claim` / `bear_claim`: 그래프 토론 상태(`investment_debate_state`)의 누적 발언 텍스트.
+- `debate.winner`: `research_verdict.winning_side`.
+- `debate.key_signals`: `extract_key_signals(analysis_snapshot)` 결과.
+- `indicators_snapshot`: 분석 서버가 보낸 `analysis_snapshot.signals` 원본을 그대로 forwarding (BE는 `ai_judgments.indicators_snapshot` JSONB로 저장).
+
+### 5-3. 회고 컨슈머 (별도 프로세스)
+
+매도 체결 후 사후 회고를 실행하는 컨슈머는 **결정 컨슈머와 분리된 별도 entry point**다:
+
+```bash
+python -m app.feedback.consumer
+```
+
+| 프로세스 | 입력 토픽 | 처리 | 출력 |
+|---|---|---|---|
+| `trade-settled-consumer` | `trade.settled` | `run_post_mortem` (`app/feedback/pipeline.py`) — 과거 결정 컨텍스트 조회 + Post-Mortem LLM 실행 | DB INSERT (`post_mortem_reports`) |
+
+분리 이유: 회고는 비동기/지연 허용 영역이라 결정 컨슈머와 자원·장애를 격리한다 (k8s 배포 시 별도 Pod 권장). 컨슈머 그룹은 `ai-agent-trade-settled`.
+
+> 현재 `trade.settled` 토픽은 BE 측 발행이 합의/구현 진행 중이며, 토픽이 비어 있으면 컨슈머는 polling 상태로 대기한다.
 
 ---
 
