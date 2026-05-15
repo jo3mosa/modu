@@ -92,6 +92,25 @@ export default function OrderBook({ stockCode }) {
   // (useOrderSSE 는 인자를 받지 않는 Context 훅이라 콜백 등록 방식이 아닌 latestEvent watch 패턴 사용)
   const { latestEvent } = useOrderSSE();
 
+  // 매수가능 정보 조회 — 즉시 fetch. 주문 접수/체결/취소/정정 후 즉시 호출 가능.
+  // 연결 실패 시 404 → null 유지 → 화면 영역 미표시.
+  // (SSE useEffect 의존성에 들어가므로 그보다 먼저 선언되어야 TDZ 회피)
+  const fetchBuyingPower = useCallback(async () => {
+    if (!stockCode) {
+      setBuyingPower(null);
+      return;
+    }
+    try {
+      const data = await getBuyingPower({ stockCode, side: orderType });
+      setBuyingPower(data ?? null);
+    } catch (error) {
+      if (error.status !== 404) {
+        console.warn('매수가능 조회 실패:', error);
+      }
+      setBuyingPower(null);
+    }
+  }, [stockCode, orderType]);
+
   // SSE 이벤트 → 주문 상태 동기화
   // ORDER_SUBMITTED : 비동기 주문의 KIS 접수 완료. 대기 중인 5초 타임아웃 해제 후 미체결 갱신.
   // ORDER_FAILED    : KIS 접수 거절. 타임아웃 해제 후 실패 알림.
@@ -110,6 +129,8 @@ export default function OrderBook({ stockCode }) {
         }
         return prevId;
       });
+      // 매수 주문이 KIS에 접수되면 가용 현금이 잠기므로 매수가능 즉시 갱신
+      fetchBuyingPower();
     } else if (latestEvent.type === 'ORDER_FAILED') {
       setPendingSubmitOrderId((prevId) => {
         if (prevId === String(latestEvent.orderId)) {
@@ -120,42 +141,31 @@ export default function OrderBook({ stockCode }) {
         }
         return prevId;
       });
+      // 접수 실패 시 잠겼던 자금 해제 — 정확한 잔고 반영 위해 갱신
+      fetchBuyingPower();
     } else if (latestEvent.type === 'ORDER_EXECUTED') {
       if (latestEvent.stockCode === stockCode && activeTab === 'PENDING') {
         fetchPending();
       }
+      // 체결로 자산/잔고 변동 — 매수가능 즉시 갱신
+      fetchBuyingPower();
     }
-  }, [latestEvent, fetchPending, stockCode, activeTab]);
+  }, [latestEvent, fetchPending, fetchBuyingPower, stockCode, activeTab]);
 
-  // 매수가능 정보 조회: side/stockCode 변경 시 1초 debounce로 호출.
+  // side/stockCode 변경 시 1초 debounce로 호출.
   // (price 변경마다 호출하면 KIS 초당 거래건수 한도(EGW00201)에 걸려서 의존성에서 제외)
-  // 연결 실패 시 404 → null 유지 → 화면 영역 미표시.
   useEffect(() => {
     if (!stockCode) {
       setBuyingPower(null);
       return;
     }
     if (buyingPowerTimerRef.current) clearTimeout(buyingPowerTimerRef.current);
-
-    buyingPowerTimerRef.current = setTimeout(async () => {
-      try {
-        const data = await getBuyingPower({
-          stockCode,
-          side: orderType,
-        });
-        setBuyingPower(data ?? null);
-      } catch (error) {
-        if (error.status !== 404) {
-          console.warn('매수가능 조회 실패:', error);
-        }
-        setBuyingPower(null);
-      }
-    }, 1000);
+    buyingPowerTimerRef.current = setTimeout(fetchBuyingPower, 1000);
 
     return () => {
       if (buyingPowerTimerRef.current) clearTimeout(buyingPowerTimerRef.current);
     };
-  }, [stockCode, orderType]);
+  }, [fetchBuyingPower]);
 
   const maxQuantity = useMemo(() => {
     const allQuantities = [...asks, ...bids].map((lv) => lv?.quantity ?? 0);
@@ -204,6 +214,7 @@ export default function OrderBook({ stockCode }) {
       if (result.kisOrderNo || result.status !== 'PENDING') {
         alert(`주문이 접수되었습니다. (주문번호: ${result.orderId}, 상태: ${result.status})`);
         fetchPending();
+        fetchBuyingPower();
         setSubmittingOrder(false); // 즉시 해제
       } else {
         // 비동기 모드: 응답이 PENDING이면 SSE 수신 대기
@@ -244,6 +255,7 @@ export default function OrderBook({ stockCode }) {
       await updateOrder(order.orderId, { action: 'CANCEL' });
       alert('주문이 취소되었습니다.');
       fetchPending();
+      fetchBuyingPower();
     } catch (error) {
       console.error('주문 취소 실패:', error);
       alert(error.message || '주문 취소에 실패했습니다.');
@@ -291,6 +303,7 @@ export default function OrderBook({ stockCode }) {
       alert('주문이 정정되었습니다.');
       setModifyingOrder(null);
       fetchPending();
+      fetchBuyingPower();
     } catch (error) {
       console.error('주문 정정 실패:', error);
       alert(error.message || '주문 정정에 실패했습니다.');
