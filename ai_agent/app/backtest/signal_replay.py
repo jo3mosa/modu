@@ -82,7 +82,10 @@ class MockSignalSource:
                 "sentiment": {"daily_score": ((h % 200) - 100) / 100.0},
             },
         }
+        # event_id를 결정론적으로 만들어 mode A/B/random 간 paired matching 가능
+        deterministic_id = f"mock_event_{code}_{d.isoformat()}_{rule_id}"
         return MarketTriggerEvent(
+            event_id=deterministic_id,
             stock_code=code,
             timestamp=ts,
             trigger=MarketTrigger(rule_ids=[rule_id], trigger_reason=[reason]),

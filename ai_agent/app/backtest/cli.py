@@ -14,6 +14,7 @@ import logging
 from datetime import date
 from pathlib import Path
 
+from app.backtest.baselines import GraphDecisionProvider, RandomDecisionProvider
 from app.backtest.replay_runner import BacktestConfig, run_backtest, StubPriceFetcher
 from app.backtest.scorer import score_jsonl
 
@@ -42,6 +43,19 @@ def _parse_args() -> argparse.Namespace:
         default=7,
         help="채점 시 T+N일 (기본 7)",
     )
+    p.add_argument(
+        "--mode",
+        type=str,
+        choices=["A", "B", "random"],
+        default="A",
+        help="A=Bull/Bear 토론(기본), B=단일 에이전트(ablation), random=LLM 미호출 baseline",
+    )
+    p.add_argument(
+        "--random-seed",
+        type=int,
+        default=42,
+        help="--mode random일 때 결정 재현용 seed",
+    )
     return p.parse_args()
 
 
@@ -60,9 +74,15 @@ def main() -> None:
 
     memory_store = _build_memory_store() if args.use_memory else None
 
+    if args.mode == "random":
+        provider = RandomDecisionProvider(seed=args.random_seed)
+    else:
+        provider = GraphDecisionProvider(mode=args.mode)
+
     run_backtest(
         config=config,
         memory_store=memory_store,
+        decision_provider=provider,
     )
 
     if args.score_after:

@@ -15,10 +15,10 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
+from app.backtest.baselines import DecisionProvider, GraphDecisionProvider
 from app.backtest.clock import SimulatedClock
 from app.backtest.portfolio_sim import PortfolioSim
 from app.backtest.signal_replay import MockSignalSource, SignalSource
-from app.graph.runner import run_pipeline
 from app.memory.interfaces import MemoryStore
 from app.triggers.schemas import MarketTriggerEvent, UserTriggerEvent
 
@@ -57,15 +57,19 @@ def run_backtest(
     signal_source: SignalSource | None = None,
     memory_store: MemoryStore | None = None,
     price_fetcher: PriceFetcher | None = None,
+    decision_provider: DecisionProvider | None = None,
 ) -> None:
     """backtest 메인 루프.
 
     signal_source: 미주입 시 MockSignalSource 사용
     memory_store: 주입 시 결정을 시뮬 시각으로 저장해 retrieval 누적 (콜드 스타트 → 자연 누적)
     price_fetcher: 미주입 시 StubPriceFetcher 사용
+    decision_provider: 결정 생성기. 미주입 시 GraphDecisionProvider(mode='A').
+        baseline 비교 시 RandomDecisionProvider 또는 GraphDecisionProvider(mode='B') 주입.
     """
     signal_source = signal_source or MockSignalSource()
     price_fetcher = price_fetcher or StubPriceFetcher()
+    decision_provider = decision_provider or GraphDecisionProvider(mode="A")
     clock = SimulatedClock(config.start, config.end)
     portfolio = PortfolioSim(config.initial_cash)
 
@@ -81,6 +85,7 @@ def run_backtest(
                     portfolio=portfolio,
                     memory_store=memory_store,
                     price_fetcher=price_fetcher,
+                    decision_provider=decision_provider,
                     output_file=f,
                 )
             clock.tick()
@@ -94,17 +99,22 @@ def _process_event(
     portfolio: PortfolioSim,
     memory_store: MemoryStore | None,
     price_fetcher: PriceFetcher,
+    decision_provider: DecisionProvider,
     output_file: Any,
 ) -> None:
     as_of = clock.current_as_of
     user_event = _to_user_event(event, config, portfolio, as_of)
 
     try:
-        final_state = run_pipeline(user_event)
+        final_state = decision_provider.decide(user_event)
     except Exception as exc:
-        logger.exception("run_pipeline 실패 %s %s", clock.current_date, event.stock_code)
+        logger.exception(
+            "decision_provider(%s) 실패 %s %s",
+            decision_provider.mode_label, clock.current_date, event.stock_code,
+        )
         _write_record(output_file, {
             "date": clock.current_date.isoformat(),
+            "mode": decision_provider.mode_label,
             "stock_code": event.stock_code,
             "rule_ids": event.trigger.rule_ids,
             "flow_status": "failed",
@@ -127,6 +137,8 @@ def _process_event(
     _write_record(output_file, {
         "date": clock.current_date.isoformat(),
         "as_of": as_of.isoformat(),
+        "mode": decision_provider.mode_label,
+        "event_id": event.event_id,
         "user_id": config.user_id,
         "stock_code": event.stock_code,
         "rule_ids": event.trigger.rule_ids,
