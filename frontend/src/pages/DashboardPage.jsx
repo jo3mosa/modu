@@ -563,8 +563,10 @@ export default function DashboardPage() {
                       <div className="log-bottom">
                         {log.orderType === 'MARKET' && log.quantity != null
                           ? `시장가 · ${log.quantity}주`
-                          : log.price != null && log.quantity != null
+                          : log.price != null && log.price > 0 && log.quantity != null
                           ? `${log.price.toLocaleString()}원 · ${log.quantity}주`
+                          : log.quantity != null
+                          ? `${log.quantity}주`
                           : (log.source === 'AI' ? 'AI 판단' : '-')}
                       </div>
                     </div>
