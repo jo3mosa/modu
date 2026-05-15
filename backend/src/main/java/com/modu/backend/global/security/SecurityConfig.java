@@ -70,6 +70,9 @@ public class SecurityConfig {
                                 // SSE 연결은 EventSource 제약상 query param 토큰으로 인증하므로
                                 // SecurityFilterChain 은 통과시키고 컨트롤러에서 SseTokenService 가 직접 검증
                                 "/api/v1/orders/connect",
+                                // 실시간 시세 WebSocket — 핸드셰이크 시 헤더 인증 불가
+                                // HandshakeInterceptor 에서 stockCode 검증만 수행 (KIS 시세는 공용 데이터)
+                                "/ws/stocks/**",
                                 "/actuator/**",
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**"
