@@ -59,6 +59,11 @@ class PastDecision(TypedDict):
     order_status: OrderStatus | None            # 실제 주문 상태
     realized_profit_loss_rate: float | None     # 최종 실현 손익률
 
+    # 사후 회고에서 도출된 메타 — Reflection 루프 닫기용
+    # 한 ai_judgment에 회고가 여러 개 있으면 가장 최근 1건만 조회한다 (retrieval LATERAL LIMIT 1)
+    post_mortem_lessons: list[str] | None       # 다음 결정에 적용할 룰 (post_mortem_reports.lessons)
+    post_mortem_summary: str | None             # 회고 요약 (post_mortem_reports.summary)
+
 
 # ============================================================
 # 새로운 AI 판단 저장용 타입

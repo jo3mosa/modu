@@ -31,12 +31,14 @@ spec:
         - secretRef:
             name: modu-secret
         resources:
+          # LLM 외부 API 호출 위주 — 자체 메모리는 적음.
+          # 신호 발생 시 응답 처리 burst 대응 위해 CPU limit ↑.
           requests:
-            memory: "512Mi"   # LLM 호출 포함 파이프라인이므로 메모리 여유 확보
+            memory: "512Mi"
             cpu: "200m"
           limits:
             memory: "1Gi"
-            cpu: "500m"
+            cpu: "1000m"
         # Kafka 컨슈머 프로세스 생존 여부 확인 — 스레드 비정상 종료 시 재시작
         livenessProbe:
           exec:

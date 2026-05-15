@@ -133,11 +133,20 @@ class DecisionRetrieval:
                 CASE WHEN tpr.id IS NOT NULL
                      THEN tpr.net_pnl::float / NULLIF(tpr.avg_buy_price * tpr.quantity, 0)
                      ELSE NULL
-                END                  AS realized_profit_loss_rate
+                END                  AS realized_profit_loss_rate,
+                pmr.lessons          AS post_mortem_lessons,
+                pmr.summary          AS post_mortem_summary
             FROM ai_judgments aj
             LEFT JOIN stock_master sm      ON sm.stock_code = aj.stock_code
             LEFT JOIN orders o             ON o.id = aj.order_id
             LEFT JOIN trade_pnl_records tpr ON tpr.buy_order_id = aj.order_id
+            LEFT JOIN LATERAL (
+                SELECT lessons, summary
+                FROM post_mortem_reports
+                WHERE ai_judgment_id = aj.id
+                ORDER BY created_at DESC
+                LIMIT 1
+            ) pmr ON TRUE
             WHERE {where_clause}
             ORDER BY aj.judged_at DESC
             LIMIT :limit
@@ -154,6 +163,12 @@ class DecisionRetrieval:
             raw_key_signals if isinstance(raw_key_signals, list)
             else json.loads(raw_key_signals)
             if raw_key_signals else []
+        )
+        raw_lessons = row["post_mortem_lessons"]
+        post_mortem_lessons: list[str] | None = (
+            raw_lessons if isinstance(raw_lessons, list)
+            else json.loads(raw_lessons) if raw_lessons
+            else None
         )
         return PastDecision(
             ai_judgment_id=row["ai_judgment_id"],
@@ -175,4 +190,6 @@ class DecisionRetrieval:
             order_amount=row["order_amount"],
             order_status=row["order_status"],
             realized_profit_loss_rate=row["realized_profit_loss_rate"],
+            post_mortem_lessons=post_mortem_lessons,
+            post_mortem_summary=row["post_mortem_summary"],
         )
