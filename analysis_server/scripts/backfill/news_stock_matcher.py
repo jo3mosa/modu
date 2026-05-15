@@ -34,7 +34,6 @@ import argparse
 import json
 import os
 import re
-import sqlite3
 import sys
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -42,14 +41,16 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from pymongo import MongoClient, UpdateOne
+from sqlalchemy import text
+
+from clients.postgres_client import get_engine
 
 
 # ---------- 경로/상수 ----------
 
-# scripts/backfill/ → modu/ 루트로 3단계 상위 (.env), analysis_server/data (stock_master.db)
+# scripts/backfill/ → modu/ 루트로 3단계 상위 (.env)
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT_ENV = SCRIPT_DIR / ".." / ".." / ".." / ".env"
-DEFAULT_DB_PATH = SCRIPT_DIR / ".." / ".." / "data" / "stock_master.db"
 DEFAULT_ALIAS_PATH = SCRIPT_DIR / "news_stock_alias.json"
 
 DB_NAME = "modu_mongo"
@@ -67,20 +68,20 @@ _ASCII_ONLY = re.compile(r"^[A-Za-z0-9\s\-&]+$")
 
 # ---------- 사전 로딩 ----------
 
-def load_stock_dict(db_path):
+_STOCK_DICT_SQL = text(
+    "SELECT stock_code, stock_name FROM stock_master "
+    "WHERE is_active = TRUE AND stock_name IS NOT NULL AND stock_name != ''"
+)
+
+
+def load_stock_dict():
     """stock_master → {stock_code: stock_name}. 우선주/비활성 종목은 제외.
 
     한글 1자 종목명은 false-positive 위험이 너무 커 사전에서 제외하지만,
     종목코드 직접 매칭과 alias 매칭은 그대로 가능.
     """
-    conn = sqlite3.connect(str(db_path))
-    try:
-        rows = conn.execute(
-            "SELECT stock_code, stock_name FROM stock_master "
-            "WHERE is_active = 1 AND stock_name IS NOT NULL AND stock_name != ''"
-        ).fetchall()
-    finally:
-        conn.close()
+    with get_engine().connect() as conn:
+        rows = conn.execute(_STOCK_DICT_SQL).fetchall()
 
     by_code = {}
     by_name_lower = {}
@@ -255,7 +256,6 @@ def _connect_mongo():
 
 
 def run_matching(
-    db_path=DEFAULT_DB_PATH,
     alias_path=DEFAULT_ALIAS_PATH,
     force=False,
     limit=None,
@@ -268,7 +268,7 @@ def run_matching(
         limit: 디버깅용 처리 건수 상한
         batch_size: bulk_write 묶음 크기
     """
-    by_code, name_to_code = load_stock_dict(db_path)
+    by_code, name_to_code = load_stock_dict()
     alias_to_code = load_alias_dict(alias_path)
     print(f"[DICT] 종목코드 {len(by_code)} / 종목명 {len(name_to_code)} / alias {len(alias_to_code)}")
 
@@ -339,7 +339,6 @@ def parse_args():
     p.add_argument("--force", action="store_true", help="이미 처리된 기사도 재처리")
     p.add_argument("--limit", type=int, default=None, help="처리 건수 상한 (디버깅)")
     p.add_argument("--batch", type=int, default=500, help="bulk_write 묶음 크기")
-    p.add_argument("--db", default=str(DEFAULT_DB_PATH), help="stock_master.db 경로")
     p.add_argument("--alias", default=str(DEFAULT_ALIAS_PATH), help="alias JSON 경로")
     return p.parse_args()
 
@@ -348,7 +347,6 @@ if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
     args = parse_args()
     run_matching(
-        db_path=args.db,
         alias_path=args.alias,
         force=args.force,
         limit=args.limit,

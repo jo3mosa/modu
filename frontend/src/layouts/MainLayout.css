@@ -72,10 +72,146 @@
 .global-header {
   margin-bottom: 2rem;
   flex-shrink: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .global-search-wrapper {
   position: relative;
+  width: 50%;
+}
+
+.global-notification-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: #fff;
+}
+
+.global-notification-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  transform: scale(1.05);
+}
+
+/* ============================
+   알림 팝업
+   ============================ */
+.alarm-controls {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.alarm-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
+
+.alarm-popup {
+  position: absolute;
+  top: calc(100% + 12px);
+  right: 0;
+  width: 320px;
+  max-height: 400px;
+  background: #1a1a2e;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.alarm-popup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.2rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.alarm-read-all {
+  background: none;
+  border: none;
+  color: #84cc16;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: 'Pretendard', sans-serif;
+}
+
+.alarm-read-all:hover {
+  text-decoration: underline;
+}
+
+.alarm-popup-list {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.alarm-empty {
+  padding: 2rem 1.2rem;
+  text-align: center;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.alarm-item {
+  padding: 0.9rem 1.2rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  transition: background 0.15s;
+  cursor: pointer;
+}
+
+.alarm-item:last-child {
+  border-bottom: none;
+}
+
+.alarm-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.alarm-item.unread {
+  border-left: 3px solid #84cc16;
+  padding-left: calc(1.2rem - 3px);
+}
+
+.alarm-item-content {
+  color: #ddd;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.alarm-item-time {
+  color: #666;
+  font-size: 0.8rem;
 }
 
 .global-search-bar {

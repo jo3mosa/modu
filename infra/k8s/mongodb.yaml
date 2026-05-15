@@ -21,6 +21,10 @@ metadata:
   namespace: modu-apps
 spec:
   replicas: 1
+  # PVC(ReadWriteOnce) 환경에서 RollingUpdate 는 새/옛 Pod 동시 존재 시 PVC lock 충돌.
+  # Recreate 는 옛 Pod 먼저 종료 후 새 Pod 시작 — 단일 PVC 운영에 안전.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: mongodb
