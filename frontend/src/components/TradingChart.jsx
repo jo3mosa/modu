@@ -392,14 +392,14 @@ export default function TradingChart({ stockCode }) {
       wickDownColor: '#3b82f6',
     });
 
-    // 이동평균선 (5/20/60일) — 가격 차트 위 오버레이 (기본 priceScale 공유)
+    // 이동평균선 (5/20/60일) — 가격 차트 위 오버레이
     MA_PERIODS.forEach((period) => {
       maSeriesRefs.current[period] = chart.addLineSeries({
         color: MA_COLORS[period],
         lineWidth: 1,
         priceLineVisible: false,
         lastValueVisible: false,
-        title: `MA${period}`,
+        title: `${period}일`,
       });
     });
 

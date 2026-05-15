@@ -88,34 +88,44 @@ export default function OrderBook({ stockCode }) {
     if (activeTab === 'PENDING') fetchPending();
   }, [activeTab, fetchPending]);
 
-  // SSE 이벤트 수신 콜백
-  const onOrderEvent = useCallback((event) => {
-    if (event.type === 'ORDER_SUBMITTED') {
+  // 전역 SSE 구독 — Provider 가 단일 EventSource 를 유지하고 최신 이벤트만 흘려준다.
+  // (useOrderSSE 는 인자를 받지 않는 Context 훅이라 콜백 등록 방식이 아닌 latestEvent watch 패턴 사용)
+  const { latestEvent } = useOrderSSE();
+
+  // SSE 이벤트 → 주문 상태 동기화
+  // ORDER_SUBMITTED : 비동기 주문의 KIS 접수 완료. 대기 중인 5초 타임아웃 해제 후 미체결 갱신.
+  // ORDER_FAILED    : KIS 접수 거절. 타임아웃 해제 후 실패 알림.
+  // ORDER_EXECUTED  : 체결 완료. 미체결 탭이면 해당 주문이 빠진 목록으로 즉시 갱신.
+  useEffect(() => {
+    if (!latestEvent) return;
+
+    if (latestEvent.type === 'ORDER_SUBMITTED') {
       setPendingSubmitOrderId((prevId) => {
-        if (prevId === String(event.orderId)) {
+        if (prevId === String(latestEvent.orderId)) {
           if (submitTimeoutRef.current) clearTimeout(submitTimeoutRef.current);
           setSubmittingOrder(false);
-          alert(`주문 접수 완료 (접수번호: ${event.kisOrderNo || event.orderId})`);
+          alert(`주문 접수 완료 (접수번호: ${latestEvent.kisOrderNo || latestEvent.orderId})`);
           fetchPending();
           return null;
         }
         return prevId;
       });
-    } else if (event.type === 'ORDER_FAILED') {
+    } else if (latestEvent.type === 'ORDER_FAILED') {
       setPendingSubmitOrderId((prevId) => {
-        if (prevId === String(event.orderId)) {
+        if (prevId === String(latestEvent.orderId)) {
           if (submitTimeoutRef.current) clearTimeout(submitTimeoutRef.current);
           setSubmittingOrder(false);
-          alert(`주문 실패: ${event.message || '잔고 부족 등의 사유로 거절되었습니다.'}`);
+          alert(`주문 실패: ${latestEvent.message || '잔고 부족 등의 사유로 거절되었습니다.'}`);
           return null;
         }
         return prevId;
       });
+    } else if (latestEvent.type === 'ORDER_EXECUTED') {
+      if (latestEvent.stockCode === stockCode && activeTab === 'PENDING') {
+        fetchPending();
+      }
     }
-  }, [fetchPending]);
-
-  // 커스텀 훅으로 SSE 구독
-  useOrderSSE({ onOrderEvent });
+  }, [latestEvent, fetchPending, stockCode, activeTab]);
 
   // 매수가능 정보 조회: side/stockCode 변경 시 1초 debounce로 호출.
   // (price 변경마다 호출하면 KIS 초당 거래건수 한도(EGW00201)에 걸려서 의존성에서 제외)

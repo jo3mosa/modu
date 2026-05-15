@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Highcharts from 'highcharts';
 import HighchartsReactPkg from 'highcharts-react-official';
@@ -9,6 +9,7 @@ import { getAccountSummary, getPortfolio } from '../api/account';
 import { getAiDecisions } from '../api/aiAgent';
 import { getOrderHistory } from '../api/order';
 import { getProfile } from '../api/strategy';
+import { useOrderSSE } from '../hooks/useOrderSSE';
 import './DashboardPage.css';
 
 if (typeof Highcharts === 'object') {
@@ -52,6 +53,22 @@ const RISK_LEVEL_DISPLAY = {
 };
 
 const CHART_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#84cc16'];
+
+// 백엔드가 avgBuyPrice를 0으로 내려주는 케이스 보정:
+//   avgBuyPrice = (currentPrice × quantity − pnl) / quantity
+// (KIS는 종목별 pnl 값을 정상적으로 내려주므로 역산 가능)
+function normalizeHoldings(holdings) {
+  return (holdings ?? []).map((h) => {
+    const quantity = h.quantity ?? 0;
+    const currentPrice = h.currentPrice ?? 0;
+    const pnl = h.pnl ?? 0;
+    const incomingAvg = h.avgBuyPrice ?? 0;
+    const derivedAvg =
+      quantity > 0 ? Math.round((currentPrice * quantity - pnl) / quantity) : 0;
+    const avgBuyPrice = incomingAvg > 0 ? incomingAvg : derivedAvg;
+    return { ...h, avgBuyPrice };
+  });
+}
 
 export default function DashboardPage() {
   const navigate = useNavigate();
@@ -97,20 +114,7 @@ export default function DashboardPage() {
 
         setProfileRiskLevel(profileResult?.riskLevel ?? null);
         setSummary(summaryData);
-        // 백엔드가 avgBuyPrice를 0으로 내려주는 케이스 보정:
-        //   avgBuyPrice = (currentPrice × quantity − pnl) / quantity
-        // (KIS는 종목별 pnl 값을 정상적으로 내려주므로 역산 가능)
-        const normalizedHoldings = (portfolioData.holdings ?? []).map((h) => {
-          const quantity = h.quantity ?? 0;
-          const currentPrice = h.currentPrice ?? 0;
-          const pnl = h.pnl ?? 0;
-          const incomingAvg = h.avgBuyPrice ?? 0;
-          const derivedAvg =
-            quantity > 0 ? Math.round((currentPrice * quantity - pnl) / quantity) : 0;
-          const avgBuyPrice = incomingAvg > 0 ? incomingAvg : derivedAvg;
-          return { ...h, avgBuyPrice };
-        });
-        setHoldings(normalizedHoldings);
+        setHoldings(normalizeHoldings(portfolioData.holdings));
         setAiDecisions(decisionsData?.content ?? []);
         setOrderHistory(historyResult?.orders ?? []);
       } catch (error) {
@@ -125,6 +129,34 @@ export default function DashboardPage() {
     }
     fetchDashboardData();
   }, []);
+
+  // SSE ORDER_EXECUTED 수신 시 자산/포트폴리오/매매 로그를 즉시 재조회.
+  // (자동매매 손절·익절 또는 수동 주문 체결 직후 60초 폴링을 기다리지 않고 화면을 갱신)
+  // 투자 성향(profile)은 변동 없으므로 갱신 대상에서 제외.
+  const refreshAccountData = useCallback(async () => {
+    try {
+      const [summaryData, portfolioData, decisionsData, historyResult] = await Promise.all([
+        getAccountSummary(),
+        getPortfolio(),
+        getAiDecisions({ page: 0, size: 10 }),
+        getOrderHistory({ page: 1, size: 10 }).catch(() => ({ orders: [] })),
+      ]);
+      setSummary(summaryData);
+      setHoldings(normalizeHoldings(portfolioData.holdings));
+      setAiDecisions(decisionsData?.content ?? []);
+      setOrderHistory(historyResult?.orders ?? []);
+    } catch (error) {
+      console.warn('체결 후 대시보드 갱신 실패:', error);
+    }
+  }, []);
+
+  const { latestEvent } = useOrderSSE();
+  useEffect(() => {
+    if (!latestEvent) return;
+    if (latestEvent.type === 'ORDER_EXECUTED') {
+      refreshAccountData();
+    }
+  }, [latestEvent, refreshAccountData]);
 
   // 보유 종목 코드 리스트 — 가격 변경 시에도 동일 참조를 유지해 WS 재구독을 방지한다.
   const stockCodesKey = useMemo(
@@ -226,6 +258,7 @@ export default function DashboardPage() {
       stockName: o.stockName,
       price: o.price,
       quantity: o.quantity,
+      orderType: o.orderType, // 'LIMIT' | 'MARKET' — 시장가는 가격 표시 대신 라벨로 대체
       decidedAt: o.createdAt,
     }));
     return [...aiItems, ...manualItems]
@@ -516,7 +549,9 @@ export default function DashboardPage() {
                         <span className="log-time">{timeLabel}</span>
                       </div>
                       <div className="log-bottom">
-                        {log.price != null && log.quantity != null
+                        {log.orderType === 'MARKET' && log.quantity != null
+                          ? `시장가 · ${log.quantity}주`
+                          : log.price != null && log.quantity != null
                           ? `${log.price.toLocaleString()}원 · ${log.quantity}주`
                           : (log.source === 'AI' ? 'AI 판단' : '-')}
                       </div>
