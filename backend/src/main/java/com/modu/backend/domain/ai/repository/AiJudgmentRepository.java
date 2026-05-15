@@ -12,4 +12,9 @@ public interface AiJudgmentRepository extends JpaRepository<AiJudgment, Long> {
     Page<AiJudgment> findByUserIdOrderByJudgedAtDesc(Long userId, Pageable pageable);
 
     Optional<AiJudgment> findFirstByUserIdAndOrderIdOrderByJudgedAtDesc(Long userId, Long orderId);
+
+    /**
+     * 멱등 체크 — (user_id, source_event_id) 조합 중복 INSERT 사전 차단용 (S14P31B106-263)
+     */
+    boolean existsByUserIdAndSourceEventId(Long userId, String sourceEventId);
 }
