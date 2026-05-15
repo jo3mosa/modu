@@ -15,22 +15,30 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
- * 트리거 발동 실행자 — 단일 트랜잭션 안에서 Order INSERT + Kafka 발행 + PositionThreshold 비활성화
+ * 트리거 발동 실행자 — 단일 트랜잭션 안에서 Order INSERT + PositionThreshold 비활성화,
+ * Kafka 발행은 commit 후 (afterCommit) 실행
  *
  * [트랜잭션 경계]
  *  메서드 전체 @Transactional. OrderService.doPlaceOrder 와 동일 패턴.
- *  - Kafka 발행 실패 → ApiException 전파 → tx 롤백 → Order INSERT/markTriggered 둘 다 무효 → 다음 폴링 사이클 재시도
- *  - tx commit 후 Kafka 발행이 이미 끝난 시점이므로 발행 후 DB 실패 시나리오는 발생 X
+ *  - Order INSERT + markTriggered 가 같은 tx 에서 commit
+ *  - Kafka 발행은 afterCommit 콜백 — commit 완료 후 실행돼 Consumer race 차단
+ *    (commit 전 발행하면 Consumer 가 uncommitted row 못 찾고 메시지 drop → 트리거 유실)
+ *
+ * [트레이드오프]
+ *  - publish 실패 시: Order=PENDING orphan + position is_active=FALSE → 자동 재시도 없음
+ *  - sweeper 로 PENDING orphan 정리 + 필요 시 position 재활성화 (별도 이슈)
  *
  * [멱등성]
  *  - Order.idempotencyKey = UUID — 매 트리거마다 새 UUID. position_thresholds 의 partial unique index 가
  *    같은 (user, stock) 활성 row 1개 보장 → 트리거 자체가 1회성
- *  - 발행 직후 markTriggered 로 is_active=FALSE → 다음 사이클 폴링 대상에서 제외
+ *  - markTriggered 로 is_active=FALSE → 다음 사이클 폴링 대상에서 제외
  */
 @Slf4j
 @Component
@@ -79,7 +87,15 @@ public class PositionTriggerExecutor {
                 null,
                 OffsetDateTime.now()
         );
-        tradeOrderProducer.publishOrderSubmitted(message);
+        // commit 후 발행 — Consumer race 차단 (클래스 주석 [트랜잭션 경계] 참조)
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                tradeOrderProducer.publishOrderSubmitted(message);
+                log.info("Position 트리거 Kafka 발행 완료(afterCommit) - userId: {}, stockCode: {}, orderId: {}",
+                        position.getUserId(), position.getStockCode(), order.getId());
+            }
+        });
 
         position.markTriggered(reason, order.getId());
 

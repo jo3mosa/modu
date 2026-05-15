@@ -28,6 +28,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.*;
 import java.time.format.DateTimeFormatter;
@@ -138,8 +140,13 @@ public class OrderService {
         }
 
         // KIS 호출은 KisOrderConsumer 가 비동기 수행 (S14P31B106-306)
-        // 발행 실패 시 ApiException 으로 전파되어 @Transactional 롤백 → DB 도 함께 취소
-        // orderId(=idempotencyKey) 로 Consumer 가 본 주문을 재조회한다
+        // orderId(=idempotencyKey) 로 Consumer 가 본 주문을 재조회한다.
+        //
+        // [트랜잭션 commit 후 발행]
+        // commit 이전에 publish 하면 Consumer 가 아직 보이지 않는(uncommitted) row 를 찾으려다
+        // "주문 row 없음" 으로 메시지를 drop 하는 race condition 발생.
+        // afterCommit 콜백으로 commit 완료 후 발행해 race 를 차단한다.
+        // 트레이드오프: publish 실패 시 PENDING orphan 가능 — sweeper 로 정리(별도 이슈).
         TradeOrderMessage message = TradeOrderMessage.of(
                 idempotencyKey,
                 null,                        // 수동 주문은 부모 없음
@@ -153,10 +160,14 @@ public class OrderService {
                 null,                        // 수동 주문은 룰 history 없음
                 OffsetDateTime.now()
         );
-        tradeOrderProducer.publishOrderSubmitted(message);
-
-        log.info("수동 주문 Kafka 발행 완료 - userId: {}, stockCode: {}, side: {}, orderId(idempotencyKey): {}",
-                userId, request.stockCode(), request.side(), idempotencyKey);
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                tradeOrderProducer.publishOrderSubmitted(message);
+                log.info("수동 주문 Kafka 발행 완료(afterCommit) - userId: {}, stockCode: {}, side: {}, orderId(idempotencyKey): {}",
+                        userId, request.stockCode(), request.side(), idempotencyKey);
+            }
+        });
 
         // kisOrderNo / kisOrgNo / submittedAt 은 Consumer 가 KIS 응답 수신 후 DB 갱신.
         // 현 시점 응답은 PENDING + kisOrderNo=null 상태이며, 프론트는 SSE 로 후속 수신.
