@@ -20,6 +20,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * KIS 실시간 시세 WebSocket Upstream 클라이언트
@@ -60,6 +61,10 @@ public class KisRealtimeUpstreamClient {
     private final Map<KisRealtimeStreamType, WebSocketSession> sessions = new ConcurrentHashMap<>();
     /** TR 종류별 현재 구독 중인 종목 코드 집합 — 재연결 시 복원 기준 */
     private final Map<KisRealtimeStreamType, Set<String>> subscriptions = new ConcurrentHashMap<>();
+    /** TR 종류별 마지막 approval_key 복구 시각 — 거부 응답 폭주 시 중복 복구 방지 */
+    private final Map<KisRealtimeStreamType, AtomicLong> lastRecoveryAt = new ConcurrentHashMap<>();
+    /** approval_key 복구 cooldown — 같은 type 에 대해 이 시간 안에는 1회만 복구 시도 */
+    private static final long RECOVERY_COOLDOWN_MS = 30_000L;
     /** 메시지 수신 시 프론트 broadcast 위임 대상. 순환 참조 회피용으로 setter 주입 */
     private KisRealtimeSubscriptionManager subscriptionManager;
 
@@ -266,7 +271,7 @@ public class KisRealtimeUpstreamClient {
         /**
          * KIS 시스템 메시지 (JSON) 처리
          *  - PINGPONG: 동일 페이로드로 즉시 응답 (keepalive)
-         *  - 구독 응답 (rt_cd=1): 거부됨 → 경고 로그만
+         *  - 구독 응답 (rt_cd=1): 거부됨 → 경고 로그 + "invalid approval" 이면 자가복구 트리거
          *  - rt_cd=0: 정상 응답 (별도 처리 없음)
          */
         private void handleSystemMessage(WebSocketSession session, String payload) throws Exception {
@@ -279,8 +284,11 @@ public class KisRealtimeUpstreamClient {
 
             String resultCode = root.path("body").path("rt_cd").asText();
             if ("1".equals(resultCode)) {
-                log.warn("KIS realtime subscription rejected - trId: {}, message: {}",
-                        trId, root.path("body").path("msg1").asText());
+                String msg = root.path("body").path("msg1").asText();
+                log.warn("KIS realtime subscription rejected - trId: {}, message: {}", trId, msg);
+                if (msg.contains("invalid approval") && tryAcquireRecovery(type)) {
+                    recoverInvalidApproval(type);
+                }
             }
         }
     }
@@ -316,5 +324,32 @@ public class KisRealtimeUpstreamClient {
     private boolean hasActiveSubscriptions(KisRealtimeStreamType type) {
         Set<String> stockCodes = subscriptions.get(type);
         return stockCodes != null && !stockCodes.isEmpty();
+    }
+
+    /**
+     * approval_key 복구 시도 권한 획득 — RECOVERY_COOLDOWN_MS 안에 같은 type 은 1회만 통과.
+     *
+     * 거부 응답이 종목 수만큼 한꺼번에 쏟아져도 복구는 한 번만 실행되도록 직렬화.
+     * 새로 발급한 키도 거부되면 cooldown 경과 후 다시 시도 — 무한 폭주 차단 + 자가복구 균형.
+     */
+    private boolean tryAcquireRecovery(KisRealtimeStreamType type) {
+        long now = System.currentTimeMillis();
+        AtomicLong last = lastRecoveryAt.computeIfAbsent(type, t -> new AtomicLong(0L));
+        long prev = last.get();
+        if (now - prev < RECOVERY_COOLDOWN_MS) return false;
+        return last.compareAndSet(prev, now);
+    }
+
+    /**
+     * approval_key 무효화 복구 — Redis 캐시 evict 후 활성 구독 일괄 재전송.
+     *
+     * KIS WS 핸드셰이크 자체엔 approval 이 들어가지 않고 SUBSCRIBE 메시지마다 헤더에 실리므로,
+     * 세션은 유지하고 캐시만 비운 뒤 재구독하면 subscriptionMessage() 가 자동으로 신규 키를 사용한다.
+     * KIS 이벤트 루프 스레드(handleTextMessage 호출 스레드)를 막지 않도록 가상 스레드로 분리.
+     */
+    private void recoverInvalidApproval(KisRealtimeStreamType type) {
+        log.warn("KIS approval key 복구 시작 - trId: {}", type.trId());
+        webSocketKeyService.evictApprovalKey();
+        Thread.ofVirtual().start(() -> restoreSubscriptions(type));
     }
 }

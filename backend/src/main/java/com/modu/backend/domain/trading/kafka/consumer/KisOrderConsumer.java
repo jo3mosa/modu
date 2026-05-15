@@ -11,9 +11,9 @@ import com.modu.backend.domain.trading.sse.OrderSseEvent;
 import com.modu.backend.domain.user.entity.KisCredential;
 import com.modu.backend.domain.user.exception.UserErrorCode;
 import com.modu.backend.domain.user.repository.KisCredentialRepository;
-import com.modu.backend.domain.user.service.KisTokenService;
 import com.modu.backend.global.error.ApiException;
 import com.modu.backend.global.error.CommonErrorCode;
+import com.modu.backend.global.kis.KisApiCallTemplate;
 import com.modu.backend.global.kafka.constant.KafkaConsumerGroup;
 import com.modu.backend.global.kafka.constant.KafkaTopic;
 import com.modu.backend.global.kafka.dto.TradeOrderMessage;
@@ -37,8 +37,8 @@ import java.util.Optional;
  * [처리 흐름]
  * 1. orderId(= idempotencyKey) 로 PENDING Order 조회 — 없으면 메시지 무시 + ack
  * 2. kisOrderNo 이미 있으면 중복 처리로 보고 skip + ack
- * 3. KIS 자격증명·토큰 준비 — 없으면 REJECTED 처리 + SSE ORDER_FAILED + ack
- * 4. KisOrderClient.placeOrder 호출 (EGW00202 토큰 무효화 시 1회 재시도)
+ * 3. KIS 자격증명 준비 — 없으면 REJECTED 처리 + SSE ORDER_FAILED + ack
+ * 4. KisOrderClient.placeOrder 호출 — 토큰 무효화는 KisApiCallTemplate 가 자동 재발급+1회 재시도
  * 5. 성공: order.updateKisInfo + SSE ORDER_SUBMITTED + ack
  * 6. 실패: order.reject(reason) + SSE ORDER_FAILED + ack
  *
@@ -61,7 +61,7 @@ public class KisOrderConsumer {
 
     private final OrderRepository orderRepository;
     private final KisCredentialRepository kisCredentialRepository;
-    private final KisTokenService kisTokenService;
+    private final KisApiCallTemplate kisApiCallTemplate;
     private final KisOrderClient kisOrderClient;
     private final AesGcmEncryptor encryptor;
     private final OrderSseEmitterManager sseEmitterManager;
@@ -102,45 +102,32 @@ public class KisOrderConsumer {
             return;
         }
 
-        // 3) KIS 자격증명 / 토큰 준비
+        // 3) KIS 자격증명 준비 (토큰 발급/재발급은 KisApiCallTemplate 가 처리)
         KisCredential credential;
         String appKey;
         String appSecret;
-        String accessToken;
         try {
             credential = kisCredentialRepository.findByUserId(userId)
                     .orElseThrow(() -> new ApiException(UserErrorCode.KIS_NOT_CONNECTED));
-            appKey      = encryptor.decrypt(credential.getAppKeyEnc());
-            appSecret   = encryptor.decrypt(credential.getAppSecretEnc());
-            accessToken = kisTokenService.getOrIssueAccessToken(userId, appKey, appSecret);
+            appKey    = encryptor.decrypt(credential.getAppKeyEnc());
+            appSecret = encryptor.decrypt(credential.getAppSecretEnc());
         } catch (ApiException e) {
             handleFailure(order, userId, orderId, stockCode, e);
             return;
         }
 
-        // 4) KIS placeOrder 호출 (토큰 무효화 시 1회 재시도) — OrderService 의 기존 로직 동등 이관
+        // 4) KIS placeOrder 호출 — 토큰 무효화 시 템플릿이 자동 재발급+1회 재시도
         KisOrderClient.KisOrderResult result;
         try {
-            result = callKisPlaceOrder(message, credential, accessToken, appKey, appSecret);
+            result = kisApiCallTemplate.callWithTokenRetry(userId, appKey, appSecret,
+                    token -> callKisPlaceOrder(message, credential, token, appKey, appSecret));
         } catch (ApiException e) {
-            if (CommonErrorCode.EXTERNAL_API_ERROR.equals(e.getErrorCode())) {
-                // EGW00202 등 — 토큰 무효화 가능성. 재발급 후 1회 재시도
-                log.warn("[Consumer] KIS API 오류 → 토큰 강제 재발급 후 재시도 - userId: {}", userId);
-                try {
-                    accessToken = kisTokenService.issueAndSaveAccessToken(userId, appKey, appSecret);
-                    result = callKisPlaceOrder(message, credential, accessToken, appKey, appSecret);
-                } catch (ApiException retryEx) {
-                    // 재발급 자체 실패(EGW00133 rate limit 등) 또는 재시도 실패
-                    ApiException finalError = CommonErrorCode.EXTERNAL_API_ERROR.equals(retryEx.getErrorCode())
-                            ? new ApiException(OrderErrorCode.KIS_TOKEN_INVALIDATED)
-                            : retryEx;
-                    handleFailure(order, userId, orderId, stockCode, finalError);
-                    return;
-                }
-            } else {
-                handleFailure(order, userId, orderId, stockCode, e);
-                return;
-            }
+            // 재시도 후에도 EXTERNAL_API_ERROR 면 토큰 무효화로 간주해 도메인 에러로 변환
+            ApiException finalError = CommonErrorCode.EXTERNAL_API_ERROR.equals(e.getErrorCode())
+                    ? new ApiException(OrderErrorCode.KIS_TOKEN_INVALIDATED)
+                    : e;
+            handleFailure(order, userId, orderId, stockCode, finalError);
+            return;
         }
 
         // 5) 성공 처리 — order 갱신 + SSE ORDER_SUBMITTED
