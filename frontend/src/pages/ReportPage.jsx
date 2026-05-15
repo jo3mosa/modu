@@ -10,7 +10,7 @@ import {
   ACTION_DISPLAY,
   EXECUTION_STATUS_DISPLAY,
 } from '../api/aiAgent';
-import { getOrderHistory } from '../api/order';
+import { getOrderHistory, ORDER_STATUS_DISPLAY } from '../api/order';
 
 import './ReportPage.css';
 
@@ -162,9 +162,8 @@ export default function ReportPage() {
       action: log.side, // 'BUY' | 'SELL'
       price: log.price,
       quantity: log.quantity,
-      status: log.status, // 'FILLED' | 'CANCELED' | 'PENDING'
+      status: log.status, // 'FILLED' | 'CANCELED' | 'MODIFIED' | 'PENDING' | 'REJECTED'
       decidedAt: log.createdAt,
-      executionStatus: log.status === 'FILLED' ? 'READY' : 'NONE',
       confidence: null,
       reason: null,
       orderId: log.orderId ?? null,
@@ -369,7 +368,10 @@ export default function ReportPage() {
             const isAI = log.source === 'AI';
             const isExpanded = isAI && expandedLogId === log.id;
             const actionDisplay = ACTION_DISPLAY[log.action] ?? ACTION_DISPLAY.UNKNOWN;
-            const statusDisplay = isAI ? EXECUTION_STATUS_DISPLAY[log.executionStatus] : null;
+            // AI는 판단 실행 status(READY/HOLD/...) 표시, 수동은 주문 status(체결/정정/취소/...) 표시
+            const statusDisplay = isAI
+              ? EXECUTION_STATUS_DISPLAY[log.executionStatus]
+              : ORDER_STATUS_DISPLAY[log.status];
             const detail = detailedDecisions[log.id];
             return (
               <div key={log.id} className={`trade-log-item ${isExpanded ? 'expanded' : ''}`}>

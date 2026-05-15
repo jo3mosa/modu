@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createChart } from 'lightweight-charts';
 import { SMA, BollingerBands, RSI, MACD } from 'technicalindicators';
 import { getStockCandles } from '../api/market';
+import { getOrderHistory } from '../api/order';
 import './TradingChart.css';
 
 // 보조지표 키
@@ -147,6 +148,43 @@ function buildOlderDateRange(period, oldestTimestampSec) {
  * - 일/주/월봉: timestamp 'YYYYMMDD' → 'YYYY-MM-DD'
  * - 분봉: timestamp 'HHmmss' → 오늘 날짜 + 해당 시각의 unix seconds
  */
+// 주문 createdAt(ISO 8601) → 캔들 time 형식과 동일한 키
+// (일/주/월봉은 'YYYY-MM-DD' 문자열, 분봉은 unix seconds)
+function buildMarkerTime(period, isoTimestamp) {
+  if (DAILY_PERIODS.has(period)) {
+    return isoTimestamp.split('T')[0];
+  }
+  return Math.floor(new Date(isoTimestamp).getTime() / 1000);
+}
+
+// 한 마커의 정렬용 epoch(ms) — setMarkers는 time 오름차순이 필수
+function markerEpoch(marker) {
+  return typeof marker.time === 'string'
+    ? new Date(marker.time).getTime()
+    : marker.time * 1000;
+}
+
+// AI 자동매매 주문 → 차트 마커 변환
+// 백엔드 AI 판단 응답에는 매수/매도 정보가 없어 주문 이력의 side를 사용한다.
+async function fetchAiMarkers(stockCode, period) {
+  // size=100: 한 종목당 자동매매 표시는 최근 100개로 충분. 더 과거는 무한 스크롤 시 별도 조회 대상.
+  const result = await getOrderHistory({ source: 'AUTO', size: 100 });
+  const orders = result?.orders ?? [];
+  return orders
+    .filter((o) => o.stockCode === stockCode && (o.side === 'BUY' || o.side === 'SELL'))
+    .map((o) => {
+      const isBuy = o.side === 'BUY';
+      return {
+        time: buildMarkerTime(period, o.createdAt),
+        position: isBuy ? 'belowBar' : 'aboveBar',
+        color: isBuy ? '#ef4444' : '#3b82f6',
+        shape: isBuy ? 'arrowUp' : 'arrowDown',
+        text: isBuy ? 'AI 매수' : 'AI 매도',
+      };
+    })
+    .sort((a, b) => markerEpoch(a) - markerEpoch(b));
+}
+
 function adaptCandle(period, c) {
   const ts = String(c.timestamp ?? '');
   // timestamp 없는 캔들은 무의미 → null로 표시해 호출부에서 filter
@@ -612,6 +650,18 @@ export default function TradingChart({ stockCode }) {
         lastCandleRef.current = uniqueAdapted.length > 0 ? { ...uniqueAdapted[uniqueAdapted.length - 1] } : null;
         // 종목/기간이 바뀌면 이전 마커는 의미가 없으므로 비워둔다.
         candlestickSeriesRef.current?.setMarkers([]);
+
+        // AI 자동매매 주문 마커: 캔들 setData 직후에 그려야 race condition이 없다.
+        // 주문 이력 호출이 실패해도 차트 자체는 정상 표시되어야 하므로 별도 try/catch.
+        try {
+          const markers = await fetchAiMarkers(stockCode, timeframe);
+          if (cancelled) return;
+          if (stockCode !== stockCodeRef.current || timeframe !== timeframeRef.current) return;
+          candlestickSeriesRef.current?.setMarkers(markers);
+        } catch (markerError) {
+          // 404(주문 이력 없음)나 백엔드 미준비 상황은 차트 표시를 막지 않고 경고만 남긴다.
+          console.warn('AI 매매 마커 로드 실패:', markerError);
+        }
       } catch (error) {
         if (cancelled) return;
         console.error('캔들 데이터 로드 실패:', error);
@@ -623,34 +673,6 @@ export default function TradingChart({ stockCode }) {
       cancelled = true;
     };
   }, [stockCode, timeframe]);
-
-  // ── TODO: AI 매매 내역 마커 시각화 ──
-  // useEffect(() => {
-  //   if (!stockCode || !candlestickSeriesRef.current) return;
-  //   async function fetchAiDecisions() {
-  //     try {
-  //       const decisions = await getAiDecisions();
-  //       const stockDecisions = decisions.filter(
-  //         (d) => d.stockCode === stockCode && d.decisionType !== 'HOLD'
-  //       );
-  //       const markers = stockDecisions.map((d) => {
-  //         const timeFormatted = d.decidedAt.split('T')[0];
-  //         const isBuy = d.decisionType === 'BUY';
-  //         return {
-  //           time: timeFormatted,
-  //           position: isBuy ? 'belowBar' : 'aboveBar',
-  //           color: isBuy ? '#ef4444' : '#3b82f6',
-  //           shape: isBuy ? 'arrowUp' : 'arrowDown',
-  //           text: `AI ${isBuy ? '매수' : '매도'}`,
-  //         };
-  //       });
-  //       candlestickSeriesRef.current.setMarkers(markers);
-  //     } catch (error) {
-  //       console.error('AI 판단 데이터 로드 실패:', error);
-  //     }
-  //   }
-  //   fetchAiDecisions();
-  // }, [stockCode]);
 
   // 실시간 체결가 WebSocket: /ws/stocks/{code}/price
   // 메시지(RealtimePriceResponse)의 currentPrice를 마지막 캔들에 누적해 update

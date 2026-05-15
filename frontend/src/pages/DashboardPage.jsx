@@ -7,7 +7,7 @@ import highcharts3d from 'highcharts/highcharts-3d';
 import TutorialOverlay from '../components/TutorialOverlay';
 import { getAccountSummary, getPortfolio } from '../api/account';
 import { getAiDecisions } from '../api/aiAgent';
-import { getOrderHistory } from '../api/order';
+import { getOrderHistory, ORDER_STATUS_DISPLAY } from '../api/order';
 import { getProfile } from '../api/strategy';
 import { useOrderSSE } from '../hooks/useOrderSSE';
 import './DashboardPage.css';
@@ -259,6 +259,7 @@ export default function DashboardPage() {
       price: o.price,
       quantity: o.quantity,
       orderType: o.orderType, // 'LIMIT' | 'MARKET' — 시장가는 가격 표시 대신 라벨로 대체
+      status: o.status,       // 'FILLED' | 'CANCELED' | 'MODIFIED' | 'PENDING' | 'REJECTED'
       decidedAt: o.createdAt,
     }));
     return [...aiItems, ...manualItems]
@@ -540,12 +541,23 @@ export default function DashboardPage() {
                   : log.action === 'HOLD' ? '관망' : '판단';
                 const date = new Date(log.decidedAt);
                 const timeLabel = `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+                // 수동 매매 주문 상태 라벨 (체결/정정/취소/대기/거절). FILLED는 기본값이라 굳이 표시하지 않는다.
+                const statusDisplay = log.source !== 'AI' && log.status && log.status !== 'FILLED'
+                  ? ORDER_STATUS_DISPLAY[log.status]
+                  : null;
                 return (
                   <div key={log.id} className="log-item">
                     <div className={`log-icon ${actionLower}`}>{actionLabel}</div>
                     <div className="log-content">
                       <div className="log-top">
-                        <span className="log-stock">{log.stockName ?? log.stockCode}</span>
+                        <span className="log-stock">
+                          {log.stockName ?? log.stockCode}
+                          {statusDisplay && (
+                            <span style={{ marginLeft: 6, fontSize: '0.85em', color: statusDisplay.color }}>
+                              · {statusDisplay.label}
+                            </span>
+                          )}
+                        </span>
                         <span className="log-time">{timeLabel}</span>
                       </div>
                       <div className="log-bottom">
