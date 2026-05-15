@@ -3,6 +3,8 @@ package com.modu.backend.domain.ai.entity;
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -16,6 +18,14 @@ import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
 
+/**
+ * AI 판단 결과 엔티티 (ai_judgments 테이블)
+ *
+ * 매핑 출처:
+ *  - 기본 필드: V20260429... init 마이그레이션
+ *  - 확장 필드 (key_signals 외 9개): V20260509205300 마이그레이션
+ *  - decision_id / source_event_id / execution_status: V20260515103200 마이그레이션 (S14P31B106-263)
+ */
 @Entity
 @Table(name = "ai_judgments")
 @Getter
@@ -54,6 +64,55 @@ public class AiJudgment {
     @Column(name = "judged_at", nullable = false)
     private OffsetDateTime judgedAt;
 
+    // ─────────────────────────────────────────────────────────────────────
+    // V20260509205300 확장 컬럼
+    // ─────────────────────────────────────────────────────────────────────
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "key_signals", nullable = false, columnDefinition = "jsonb")
+    private JsonNode keySignals;
+
+    @Column(name = "bull_claim")
+    private String bullClaim;
+
+    @Column(name = "bear_claim")
+    private String bearClaim;
+
+    @Column(name = "sector")
+    private String sector;
+
+    @Column(name = "risk_grade", length = 20)
+    private String riskGrade;
+
+    @Column(name = "target_price")
+    private Long targetPrice;
+
+    @Column(name = "stop_loss_price")
+    private Long stopLossPrice;
+
+    @Column(name = "order_amount")
+    private Long orderAmount;
+
+    @Column(name = "winning_side", length = 20)
+    private String winningSide;
+
+    @Column(name = "expected_scenario", length = 20)
+    private String expectedScenario;
+
+    // ─────────────────────────────────────────────────────────────────────
+    // V20260515103200 (S14P31B106-263) 추가 컬럼
+    // ─────────────────────────────────────────────────────────────────────
+
+    @Column(name = "decision_id")
+    private String decisionId;
+
+    @Column(name = "source_event_id")
+    private String sourceEventId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "execution_status", length = 20)
+    private AiExecutionStatus executionStatus;
+
     @Builder
     public AiJudgment(
             Long userId,
@@ -64,7 +123,20 @@ public class AiJudgment {
             Long confidenceScore,
             JsonNode indicatorsSnapshot,
             String judgmentReason,
-            OffsetDateTime judgedAt
+            OffsetDateTime judgedAt,
+            JsonNode keySignals,
+            String bullClaim,
+            String bearClaim,
+            String sector,
+            String riskGrade,
+            Long targetPrice,
+            Long stopLossPrice,
+            Long orderAmount,
+            String winningSide,
+            String expectedScenario,
+            String decisionId,
+            String sourceEventId,
+            AiExecutionStatus executionStatus
     ) {
         this.userId = userId;
         this.stockCode = stockCode;
@@ -75,5 +147,26 @@ public class AiJudgment {
         this.indicatorsSnapshot = indicatorsSnapshot;
         this.judgmentReason = judgmentReason;
         this.judgedAt = judgedAt;
+        this.keySignals = keySignals;
+        this.bullClaim = bullClaim;
+        this.bearClaim = bearClaim;
+        this.sector = sector;
+        this.riskGrade = riskGrade;
+        this.targetPrice = targetPrice;
+        this.stopLossPrice = stopLossPrice;
+        this.orderAmount = orderAmount;
+        this.winningSide = winningSide;
+        this.expectedScenario = expectedScenario;
+        this.decisionId = decisionId;
+        this.sourceEventId = sourceEventId;
+        this.executionStatus = executionStatus;
+    }
+
+    /**
+     * 체결 이후 우리 orders.id 를 채우는 도메인 메서드
+     * 발행 시점에는 order_id 가 null, 후속 trade.order.executed 컨슈머가 호출 예정
+     */
+    public void linkOrder(Long orderId) {
+        this.orderId = orderId;
     }
 }
