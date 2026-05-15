@@ -5,8 +5,8 @@ import com.modu.backend.domain.account.dto.PortfolioResponse;
 import com.modu.backend.domain.user.entity.KisCredential;
 import com.modu.backend.domain.user.exception.UserErrorCode;
 import com.modu.backend.domain.user.repository.KisCredentialRepository;
-import com.modu.backend.domain.user.service.KisTokenService;
 import com.modu.backend.global.error.ApiException;
+import com.modu.backend.global.kis.KisApiCallTemplate;
 import com.modu.backend.global.util.AesGcmEncryptor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,7 +33,7 @@ import org.springframework.stereotype.Service;
 public class PortfolioService {
 
     private final KisCredentialRepository kisCredentialRepository;
-    private final KisTokenService kisTokenService;
+    private final KisApiCallTemplate kisApiCallTemplate;
     private final KisBalanceClient kisBalanceClient;
     private final AesGcmEncryptor encryptor;
 
@@ -56,14 +56,14 @@ public class PortfolioService {
             throw new ApiException(UserErrorCode.KIS_CREDENTIAL_DECRYPT_FAILED);
         }
 
-        String accessToken = kisTokenService.getOrIssueAccessToken(userId, decryptedAppKey, decryptedAppSecret);
-
-        return kisBalanceClient.getPortfolio(
-                accessToken,
-                decryptedAppKey,
-                decryptedAppSecret,
-                credential.getAccountNo(),
-                credential.getAccountPrdtCd()
-        );
+        // 토큰 발급/재발급은 템플릿 lazy 처리, 무효화 감지 시 자동 재시도
+        return kisApiCallTemplate.callWithTokenRetry(userId, decryptedAppKey, decryptedAppSecret,
+                token -> kisBalanceClient.getPortfolio(
+                        token,
+                        decryptedAppKey,
+                        decryptedAppSecret,
+                        credential.getAccountNo(),
+                        credential.getAccountPrdtCd()
+                ));
     }
 }

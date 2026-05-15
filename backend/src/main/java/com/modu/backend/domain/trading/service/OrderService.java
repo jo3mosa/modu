@@ -19,15 +19,17 @@ import com.modu.backend.global.kafka.dto.TradeOrderMessage;
 import com.modu.backend.domain.user.entity.KisCredential;
 import com.modu.backend.domain.user.exception.UserErrorCode;
 import com.modu.backend.domain.user.repository.KisCredentialRepository;
-import com.modu.backend.domain.user.service.KisTokenService;
 import com.modu.backend.global.error.ApiException;
 import com.modu.backend.global.error.CommonErrorCode;
+import com.modu.backend.global.kis.KisApiCallTemplate;
 import com.modu.backend.global.util.AesGcmEncryptor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.*;
 import java.time.format.DateTimeFormatter;
@@ -75,7 +77,7 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final KisCredentialRepository kisCredentialRepository;
     private final TradingRuleRepository tradingRuleRepository;
-    private final KisTokenService kisTokenService;
+    private final KisApiCallTemplate kisApiCallTemplate;
     private final KisOrderClient kisOrderClient;
     private final KisPendingOrderClient kisPendingOrderClient;
     private final KisModifyOrderClient kisModifyOrderClient;
@@ -106,11 +108,10 @@ public class OrderService {
         validateMarketHours();
         validateDailyOrderLimit(userId, request);
 
-        String appKey      = encryptor.decrypt(credential.getAppKeyEnc());
-        String appSecret   = encryptor.decrypt(credential.getAppSecretEnc());
-        String accessToken = kisTokenService.getOrIssueAccessToken(userId, appKey, appSecret);
+        String appKey    = encryptor.decrypt(credential.getAppKeyEnc());
+        String appSecret = encryptor.decrypt(credential.getAppSecretEnc());
 
-        validateBalance(accessToken, appKey, appSecret,
+        validateBalance(userId, appKey, appSecret,
                 credential.getAccountNo(), credential.getAccountPrdtCd(), request);
 
         // KIS 호출 전 PENDING 상태로 먼저 저장
@@ -138,8 +139,13 @@ public class OrderService {
         }
 
         // KIS 호출은 KisOrderConsumer 가 비동기 수행 (S14P31B106-306)
-        // 발행 실패 시 ApiException 으로 전파되어 @Transactional 롤백 → DB 도 함께 취소
-        // orderId(=idempotencyKey) 로 Consumer 가 본 주문을 재조회한다
+        // orderId(=idempotencyKey) 로 Consumer 가 본 주문을 재조회한다.
+        //
+        // [트랜잭션 commit 후 발행]
+        // commit 이전에 publish 하면 Consumer 가 아직 보이지 않는(uncommitted) row 를 찾으려다
+        // "주문 row 없음" 으로 메시지를 drop 하는 race condition 발생.
+        // afterCommit 콜백으로 commit 완료 후 발행해 race 를 차단한다.
+        // 트레이드오프: publish 실패 시 PENDING orphan 가능 — sweeper 로 정리(별도 이슈).
         TradeOrderMessage message = TradeOrderMessage.of(
                 idempotencyKey,
                 null,                        // 수동 주문은 부모 없음
@@ -153,10 +159,14 @@ public class OrderService {
                 null,                        // 수동 주문은 룰 history 없음
                 OffsetDateTime.now()
         );
-        tradeOrderProducer.publishOrderSubmitted(message);
-
-        log.info("수동 주문 Kafka 발행 완료 - userId: {}, stockCode: {}, side: {}, orderId(idempotencyKey): {}",
-                userId, request.stockCode(), request.side(), idempotencyKey);
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                tradeOrderProducer.publishOrderSubmitted(message);
+                log.info("수동 주문 Kafka 발행 완료(afterCommit) - userId: {}, stockCode: {}, side: {}, orderId(idempotencyKey): {}",
+                        userId, request.stockCode(), request.side(), idempotencyKey);
+            }
+        });
 
         // kisOrderNo / kisOrgNo / submittedAt 은 Consumer 가 KIS 응답 수신 후 DB 갱신.
         // 현 시점 응답은 PENDING + kisOrderNo=null 상태이며, 프론트는 SSE 로 후속 수신.
@@ -189,20 +199,22 @@ public class OrderService {
         });
     }
 
-    private void validateBalance(String accessToken, String appKey, String appSecret,
+    private void validateBalance(Long userId, String appKey, String appSecret,
                                  String cano, String acntPrdtCd, OrderRequest request) {
         if (request.side() == OrderSide.BUY) {
-            long buyable     = kisOrderClient.getBuyableAmount(
-                    accessToken, appKey, appSecret, cano, acntPrdtCd,
-                    request.stockCode(), request.orderMethod(), request.price());
+            long buyable = kisApiCallTemplate.callWithTokenRetry(userId, appKey, appSecret,
+                    token -> kisOrderClient.getBuyableAmount(
+                            token, appKey, appSecret, cano, acntPrdtCd,
+                            request.stockCode(), request.orderMethod(), request.price()));
             long orderAmount = (long) request.quantity() * request.price();
             if (orderAmount > buyable) {
                 throw new ApiException(OrderErrorCode.INSUFFICIENT_BALANCE);
             }
         } else {
-            long sellable = kisOrderClient.getSellableQuantity(
-                    accessToken, appKey, appSecret, cano, acntPrdtCd,
-                    request.stockCode(), request.orderMethod(), request.price());
+            long sellable = kisApiCallTemplate.callWithTokenRetry(userId, appKey, appSecret,
+                    token -> kisOrderClient.getSellableQuantity(
+                            token, appKey, appSecret, cano, acntPrdtCd,
+                            request.stockCode(), request.orderMethod(), request.price()));
             if (request.quantity() > sellable) {
                 throw new ApiException(OrderErrorCode.INSUFFICIENT_BALANCE);
             }
@@ -235,15 +247,16 @@ public class OrderService {
             throw new ApiException(UserErrorCode.KIS_MOCK_ACCOUNT_NOT_SUPPORTED);
         }
 
-        String appKey      = encryptor.decrypt(credential.getAppKeyEnc());
-        String appSecret   = encryptor.decrypt(credential.getAppSecretEnc());
-        String accessToken = kisTokenService.getOrIssueAccessToken(userId, appKey, appSecret);
+        String appKey    = encryptor.decrypt(credential.getAppKeyEnc());
+        String appSecret = encryptor.decrypt(credential.getAppSecretEnc());
 
-        // KIS 실시간 미체결 주문 목록 조회 (최대 50건)
-        List<KisPendingOrderClient.KisPendingItem> kisItems = kisPendingOrderClient.getPendingOrders(
-                accessToken, appKey, appSecret,
-                credential.getAccountNo(), credential.getAccountPrdtCd()
-        );
+        // KIS 실시간 미체결 주문 목록 조회 (최대 50건) — 토큰 무효화 시 자동 재발급+재시도
+        List<KisPendingOrderClient.KisPendingItem> kisItems = kisApiCallTemplate.callWithTokenRetry(
+                userId, appKey, appSecret,
+                token -> kisPendingOrderClient.getPendingOrders(
+                        token, appKey, appSecret,
+                        credential.getAccountNo(), credential.getAccountPrdtCd()
+                ));
 
         if (kisItems.isEmpty()) {
             return new PendingOrdersResponse(Collections.emptyList());
@@ -341,23 +354,24 @@ public class OrderService {
             throw new ApiException(OrderErrorCode.ORDER_ALREADY_FILLED);
         }
 
-        // 4. KIS 연동 확인 및 토큰 준비
+        // 4. KIS 연동 확인 및 자격증명 준비 (토큰 발급은 템플릿 lazy 처리)
         KisCredential credential = kisCredentialRepository.findByUserId(userId)
                 .orElseThrow(() -> new ApiException(UserErrorCode.KIS_NOT_CONNECTED));
 
-        String appKey      = encryptor.decrypt(credential.getAppKeyEnc());
-        String appSecret   = encryptor.decrypt(credential.getAppSecretEnc());
-        String accessToken = kisTokenService.getOrIssueAccessToken(userId, appKey, appSecret);
+        String appKey    = encryptor.decrypt(credential.getAppKeyEnc());
+        String appSecret = encryptor.decrypt(credential.getAppSecretEnc());
 
-        // 5. KIS 정정/취소 실행
-        KisModifyOrderClient.KisModifyResult result = kisModifyOrderClient.execute(
-                accessToken, appKey, appSecret,
-                credential.getAccountNo(), credential.getAccountPrdtCd(),
-                order.getKisOrgNo(), order.getKisOrderNo(),
-                order.getOrderType(), request.action(),
-                order.getQuantity(), order.getLimitPrice() != null ? order.getLimitPrice() : 0L,
-                request.newQuantity(), request.newPrice()
-        );
+        // 5. KIS 정정/취소 실행 — 토큰 무효화 시 자동 재발급+재시도
+        KisModifyOrderClient.KisModifyResult result = kisApiCallTemplate.callWithTokenRetry(
+                userId, appKey, appSecret,
+                token -> kisModifyOrderClient.execute(
+                        token, appKey, appSecret,
+                        credential.getAccountNo(), credential.getAccountPrdtCd(),
+                        order.getKisOrgNo(), order.getKisOrderNo(),
+                        order.getOrderType(), request.action(),
+                        order.getQuantity(), order.getLimitPrice() != null ? order.getLimitPrice() : 0L,
+                        request.newQuantity(), request.newPrice()
+                ));
 
         // 6. DB 업데이트
         OffsetDateTime now = OffsetDateTime.now();
@@ -409,26 +423,29 @@ public class OrderService {
             throw new ApiException(OrderErrorCode.SELL_REQUIRES_STOCK_CODE);
         }
 
-        String appKey      = encryptor.decrypt(credential.getAppKeyEnc());
-        String appSecret   = encryptor.decrypt(credential.getAppSecretEnc());
-        String accessToken = kisTokenService.getOrIssueAccessToken(userId, appKey, appSecret);
+        String appKey    = encryptor.decrypt(credential.getAppKeyEnc());
+        String appSecret = encryptor.decrypt(credential.getAppSecretEnc());
 
         // inquire-psbl-order: maxBuyAmount + availableCash (side 무관하게 항상 호출)
         // stockCode=null 이면 PDNO/ORD_UNPR 공란으로 호출 → 매수금액+예수금만 조회 (수량 미제공)
-        KisBuyingPowerClient.KisBuyPowerInfo buyPowerInfo = kisBuyingPowerClient.getBuyPowerInfo(
-                accessToken, appKey, appSecret,
-                credential.getAccountNo(), credential.getAccountPrdtCd(),
-                stockCode, orderPrice
-        );
+        // 토큰 무효화 시 템플릿이 자동 재발급+재시도
+        KisBuyingPowerClient.KisBuyPowerInfo buyPowerInfo = kisApiCallTemplate.callWithTokenRetry(
+                userId, appKey, appSecret,
+                token -> kisBuyingPowerClient.getBuyPowerInfo(
+                        token, appKey, appSecret,
+                        credential.getAccountNo(), credential.getAccountPrdtCd(),
+                        stockCode, orderPrice
+                ));
 
         // inquire-psbl-sell: side=SELL 일 때만 호출 (stockCode 필수 보장됨)
         long maxSellQty = 0L;
         if (side == OrderSide.SELL) {
-            maxSellQty = kisBuyingPowerClient.getSellableQuantity(
-                    accessToken, appKey, appSecret,
-                    credential.getAccountNo(), credential.getAccountPrdtCd(),
-                    stockCode
-            );
+            maxSellQty = kisApiCallTemplate.callWithTokenRetry(userId, appKey, appSecret,
+                    token -> kisBuyingPowerClient.getSellableQuantity(
+                            token, appKey, appSecret,
+                            credential.getAccountNo(), credential.getAccountPrdtCd(),
+                            stockCode
+                    ));
         }
 
         // SELL 시 maxBuyQuantity=0 (API 계약: BUY 시에만 제공)

@@ -6,6 +6,9 @@ metadata:
   namespace: modu-apps
 spec:
   clusterIP: None
+  # Ready 가 아닌 Pod 도 DNS 에 등록 — KRaft quorum 형성 시
+  # broker 들이 서로를 찾기 위해 필수 (없으면 순환 데드락).
+  publishNotReadyAddresses: true
   selector:
     app: kafka
   ports:
@@ -58,6 +61,9 @@ metadata:
 spec:
   serviceName: kafka-headless
   replicas: 3
+  # KRaft controller quorum 은 voter 들이 동시에 시작되어 서로를 찾아야 형성됨.
+  # 기본 OrderedReady 면 kafka-0 가 Ready 될 때까지 kafka-1 시작 보류 → 영구 데드락.
+  podManagementPolicy: Parallel
   selector:
     matchLabels:
       app: kafka
@@ -83,6 +89,10 @@ spec:
         - containerPort: 9093
           name: controller
         env:
+        # PVC 마운트 경로를 명시 — 미설정 시 기본값 /tmp/kafka-logs 로 떨어져
+        # Pod 재시작마다 데이터 소실 + 매번 새 cluster id 로 시작 → quorum 형성 불가.
+        - name: KAFKA_LOG_DIRS
+          value: "/var/lib/kafka/data"
         - name: KAFKA_PROCESS_ROLES
           value: "broker,controller"
         - name: CLUSTER_ID
@@ -113,29 +123,33 @@ spec:
             drop:
               - ALL
         resources:
+          # Kafka JVM heap(~1Gi) + OS file cache(성능 핵심).
+          # 운영 안정성 위해 limit 을 JVM heap 2배로 — JVM 1Gi + page cache 1Gi.
           requests:
-            memory: "512Mi"
-            cpu: "250m"
-          limits:
             memory: "1Gi"
-            cpu: "500m"
-        readinessProbe:
-          exec:
-            command:
-              - sh
-              - -c
-              - "kafka-topics.sh --bootstrap-server localhost:9092 --list > /dev/null 2>&1"
+            cpu: "400m"
+          limits:
+            memory: "2Gi"
+            cpu: "1500m"
+        # broker port (9092) TCP listen 여부로 헬스 판정.
+        # kafka-topics.sh 가 PATH 에 없는 이미지 / 권한 이슈에 영향받지 않음.
+        # 토픽 생성은 backend 가 기동 시 처리하므로 broker 가 떠 있는 것이 곧 Ready.
+        startupProbe:
+          tcpSocket:
+            port: 9092
           initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 30
+        readinessProbe:
+          tcpSocket:
+            port: 9092
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
         livenessProbe:
-          exec:
-            command:
-              - sh
-              - -c
-              - "kafka-topics.sh --bootstrap-server localhost:9092 --list > /dev/null 2>&1"
-          initialDelaySeconds: 60
+          tcpSocket:
+            port: 9092
           periodSeconds: 15
           timeoutSeconds: 5
           failureThreshold: 5

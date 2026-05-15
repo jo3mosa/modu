@@ -12,6 +12,7 @@ class KafkaTopic:
     MARKET_SIGNAL_DETECTED = "market.signal.detected"
     AI_TRIGGER_REQUESTED = "ai.trigger.requested"
     AI_DECISION_GENERATED = "ai.decision.generated"
+    TRADE_SETTLED = "trade.settled"
 
 
 def _get_bootstrap_servers() -> list[str]:

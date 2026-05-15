@@ -21,6 +21,10 @@ metadata:
   namespace: modu-apps
 spec:
   replicas: 1
+  # PVC(ReadWriteOnce) 환경에서 RollingUpdate 는 새/옛 Pod 동시 존재 시 PVC lock 충돌.
+  # Recreate 는 옛 Pod 먼저 종료 후 새 Pod 시작 — 단일 PVC 운영에 안전.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: mongodb
@@ -54,12 +58,13 @@ spec:
         - name: mongodb-storage
           mountPath: /data/db
         resources:
+          # WiredTiger 캐시 = (메모리 - 1Gi) × 50% — 뉴스 데이터 증가 대비 여유 확보.
           requests:
-            memory: "256Mi"
-            cpu: "200m"
-          limits:
             memory: "512Mi"
-            cpu: "500m"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
         readinessProbe:
           exec:
             command: ["mongosh", "--eval", "db.adminCommand('ping')"]

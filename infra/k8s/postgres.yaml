@@ -22,6 +22,10 @@ metadata:
   namespace: modu-apps
 spec:
   replicas: 1
+  # PVC(ReadWriteOnce) 환경에서 RollingUpdate 는 새/옛 Pod 동시 존재 시 PVC lock 충돌.
+  # Recreate 는 옛 Pod 먼저 종료 후 새 Pod 시작 — 단일 PVC 운영에 안전.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: postgres
@@ -56,12 +60,14 @@ spec:
         - name: postgres-storage
           mountPath: /var/lib/postgresql/data
         resources:
+          # shared_buffers + work_mem + OS page cache 여유 확보.
+          # 거래시간 트랜잭션 burst 대응.
           requests:
-            memory: "256Mi"
-            cpu: "200m"
-          limits:
             memory: "512Mi"
-            cpu: "500m"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
         # DB가 준비됐는지 확인 — 준비 전까지 백엔드 트래픽 차단
         readinessProbe:
           exec:

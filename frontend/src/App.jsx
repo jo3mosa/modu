@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import AuthLayout from './layouts/AuthLayout';
 import MainLayout from './layouts/MainLayout';
+import { OrderSSEProvider } from './hooks/useOrderSSE';
 import PrivateRoute from './components/PrivateRoute';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
@@ -33,7 +34,9 @@ function App() {
         <Route
           element={
             <PrivateRoute>
-              <MainLayout />
+              <OrderSSEProvider>
+                <MainLayout />
+              </OrderSSEProvider>
             </PrivateRoute>
           }
         >

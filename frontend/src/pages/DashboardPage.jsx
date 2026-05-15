@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Highcharts from 'highcharts';
 import HighchartsReactPkg from 'highcharts-react-official';
@@ -7,8 +7,9 @@ import highcharts3d from 'highcharts/highcharts-3d';
 import TutorialOverlay from '../components/TutorialOverlay';
 import { getAccountSummary, getPortfolio } from '../api/account';
 import { getAiDecisions } from '../api/aiAgent';
-import { getOrderHistory } from '../api/order';
+import { getOrderHistory, ORDER_STATUS_DISPLAY } from '../api/order';
 import { getProfile } from '../api/strategy';
+import { useOrderSSE } from '../hooks/useOrderSSE';
 import './DashboardPage.css';
 
 if (typeof Highcharts === 'object') {
@@ -53,6 +54,22 @@ const RISK_LEVEL_DISPLAY = {
 
 const CHART_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#84cc16'];
 
+// 백엔드가 avgBuyPrice를 0으로 내려주는 케이스 보정:
+//   avgBuyPrice = (currentPrice × quantity − pnl) / quantity
+// (KIS는 종목별 pnl 값을 정상적으로 내려주므로 역산 가능)
+function normalizeHoldings(holdings) {
+  return (holdings ?? []).map((h) => {
+    const quantity = h.quantity ?? 0;
+    const currentPrice = h.currentPrice ?? 0;
+    const pnl = h.pnl ?? 0;
+    const incomingAvg = h.avgBuyPrice ?? 0;
+    const derivedAvg =
+      quantity > 0 ? Math.round((currentPrice * quantity - pnl) / quantity) : 0;
+    const avgBuyPrice = incomingAvg > 0 ? incomingAvg : derivedAvg;
+    return { ...h, avgBuyPrice };
+  });
+}
+
 export default function DashboardPage() {
   const navigate = useNavigate();
   const [showTutorial, setShowTutorial] = useState(false);
@@ -66,14 +83,11 @@ export default function DashboardPage() {
   const [aiDecisions, setAiDecisions] = useState([]);
   const [orderHistory, setOrderHistory] = useState([]);
 
-  // 알림 UI
-  const [isAlarmOpen, setIsAlarmOpen] = useState(false);
-  const [notifications, setNotifications] = useState([]);
-  const alarmRef = useRef(null);
-  const unreadCount = notifications.filter(n => !n.isRead).length;
-
   useEffect(() => {
-    setShowTutorial(true);
+    const hasSeenTutorial = localStorage.getItem('hasSeenDashboardTutorial');
+    if (!hasSeenTutorial) {
+      setShowTutorial(true);
+    }
 
     async function fetchDashboardData() {
       setIsLoading(true);
@@ -100,20 +114,7 @@ export default function DashboardPage() {
 
         setProfileRiskLevel(profileResult?.riskLevel ?? null);
         setSummary(summaryData);
-        // 백엔드가 avgBuyPrice를 0으로 내려주는 케이스 보정:
-        //   avgBuyPrice = (currentPrice × quantity − pnl) / quantity
-        // (KIS는 종목별 pnl 값을 정상적으로 내려주므로 역산 가능)
-        const normalizedHoldings = (portfolioData.holdings ?? []).map((h) => {
-          const quantity = h.quantity ?? 0;
-          const currentPrice = h.currentPrice ?? 0;
-          const pnl = h.pnl ?? 0;
-          const incomingAvg = h.avgBuyPrice ?? 0;
-          const derivedAvg =
-            quantity > 0 ? Math.round((currentPrice * quantity - pnl) / quantity) : 0;
-          const avgBuyPrice = incomingAvg > 0 ? incomingAvg : derivedAvg;
-          return { ...h, avgBuyPrice };
-        });
-        setHoldings(normalizedHoldings);
+        setHoldings(normalizeHoldings(portfolioData.holdings));
         setAiDecisions(decisionsData?.content ?? []);
         setOrderHistory(historyResult?.orders ?? []);
       } catch (error) {
@@ -128,6 +129,34 @@ export default function DashboardPage() {
     }
     fetchDashboardData();
   }, []);
+
+  // SSE ORDER_EXECUTED 수신 시 자산/포트폴리오/매매 로그를 즉시 재조회.
+  // (자동매매 손절·익절 또는 수동 주문 체결 직후 60초 폴링을 기다리지 않고 화면을 갱신)
+  // 투자 성향(profile)은 변동 없으므로 갱신 대상에서 제외.
+  const refreshAccountData = useCallback(async () => {
+    try {
+      const [summaryData, portfolioData, decisionsData, historyResult] = await Promise.all([
+        getAccountSummary(),
+        getPortfolio(),
+        getAiDecisions({ page: 0, size: 10 }),
+        getOrderHistory({ page: 1, size: 10 }).catch(() => ({ orders: [] })),
+      ]);
+      setSummary(summaryData);
+      setHoldings(normalizeHoldings(portfolioData.holdings));
+      setAiDecisions(decisionsData?.content ?? []);
+      setOrderHistory(historyResult?.orders ?? []);
+    } catch (error) {
+      console.warn('체결 후 대시보드 갱신 실패:', error);
+    }
+  }, []);
+
+  const { latestEvent } = useOrderSSE();
+  useEffect(() => {
+    if (!latestEvent) return;
+    if (latestEvent.type === 'ORDER_EXECUTED') {
+      refreshAccountData();
+    }
+  }, [latestEvent, refreshAccountData]);
 
   // 보유 종목 코드 리스트 — 가격 변경 시에도 동일 참조를 유지해 WS 재구독을 방지한다.
   const stockCodesKey = useMemo(
@@ -229,6 +258,8 @@ export default function DashboardPage() {
       stockName: o.stockName,
       price: o.price,
       quantity: o.quantity,
+      orderType: o.orderType, // 'LIMIT' | 'MARKET' — 시장가는 가격 표시 대신 라벨로 대체
+      status: o.status,       // 'FILLED' | 'CANCELED' | 'MODIFIED' | 'PENDING' | 'REJECTED'
       decidedAt: o.createdAt,
     }));
     return [...aiItems, ...manualItems]
@@ -264,23 +295,10 @@ export default function DashboardPage() {
     };
   }, [summary, holdings]);
 
-  // 알림 팝업 외부 클릭 시 닫기
-  useEffect(() => {
-    if (!isAlarmOpen) return;
-    function handleClickOutside(e) {
-      if (alarmRef.current && !alarmRef.current.contains(e.target)) {
-        setIsAlarmOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isAlarmOpen]);
-
-  const handleReadAll = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+  const handleCloseTutorial = () => {
+    localStorage.setItem('hasSeenDashboardTutorial', 'true');
+    setShowTutorial(false);
   };
-
-  const handleCloseTutorial = () => setShowTutorial(false);
 
   const toggleAiStatus = () => {
     setAiStatus(prev => ({ ...prev, isActive: !prev.isActive }));
@@ -381,40 +399,6 @@ export default function DashboardPage() {
         <div className="page-title-group">
           <h1>대시보드</h1>
           <p>전체 자산 현황과 AI 매매 상태를 실시간으로 모니터링하세요.</p>
-        </div>
-
-        {/* 알림 버튼 */}
-        <div className="alarm-controls" ref={alarmRef}>
-          <button
-            className="alarm-btn"
-            onClick={() => setIsAlarmOpen(prev => !prev)}
-          >
-            알림
-            {unreadCount > 0 && <span className="alarm-badge">{unreadCount}</span>}
-          </button>
-
-          {isAlarmOpen && (
-            <div className="alarm-popup">
-              <div className="alarm-popup-header">
-                <span>알림 목록</span>
-                {unreadCount > 0 && (
-                  <button className="alarm-read-all" onClick={handleReadAll}>모두 읽음</button>
-                )}
-              </div>
-              <div className="alarm-popup-list">
-                {notifications.length === 0 ? (
-                  <div className="alarm-empty">알림이 없습니다.</div>
-                ) : (
-                  notifications.map(n => (
-                    <div key={n.id} className={`alarm-item${n.isRead ? '' : ' unread'}`}>
-                      <div className="alarm-item-content">{n.message}</div>
-                      <div className="alarm-item-time">{n.timestamp}</div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
@@ -557,17 +541,32 @@ export default function DashboardPage() {
                   : log.action === 'HOLD' ? '관망' : '판단';
                 const date = new Date(log.decidedAt);
                 const timeLabel = `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+                // 수동 매매 주문 상태 라벨 (체결/정정/취소/대기/거절). FILLED는 기본값이라 굳이 표시하지 않는다.
+                const statusDisplay = log.source !== 'AI' && log.status && log.status !== 'FILLED'
+                  ? ORDER_STATUS_DISPLAY[log.status]
+                  : null;
                 return (
                   <div key={log.id} className="log-item">
                     <div className={`log-icon ${actionLower}`}>{actionLabel}</div>
                     <div className="log-content">
                       <div className="log-top">
-                        <span className="log-stock">{log.stockName ?? log.stockCode}</span>
+                        <span className="log-stock">
+                          {log.stockName ?? log.stockCode}
+                          {statusDisplay && (
+                            <span style={{ marginLeft: 6, fontSize: '0.85em', color: statusDisplay.color }}>
+                              · {statusDisplay.label}
+                            </span>
+                          )}
+                        </span>
                         <span className="log-time">{timeLabel}</span>
                       </div>
                       <div className="log-bottom">
-                        {log.price != null && log.quantity != null
+                        {log.orderType === 'MARKET' && log.quantity != null
+                          ? `시장가 · ${log.quantity}주`
+                          : log.price != null && log.price > 0 && log.quantity != null
                           ? `${log.price.toLocaleString()}원 · ${log.quantity}주`
+                          : log.quantity != null
+                          ? `${log.quantity}주`
                           : (log.source === 'AI' ? 'AI 판단' : '-')}
                       </div>
                     </div>
