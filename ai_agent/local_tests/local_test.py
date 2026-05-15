@@ -2,7 +2,8 @@
 더미 데이터로 AI Agent 전체 파이프라인을 실행하는 개발/테스트용 스크립트.
 
 실행 방법:
-    PYTHONUTF8=1 conda run -n modu-ai python local_test.py
+    PYTHONUTF8=1 conda run -n modu-ai python local_tests/local_test.py
+    (ai_agent/ 디렉토리에서 실행)
 
 필요한 ai_agent/.env 설정:
     GMS_KEY=<SSAFY GMS 키>
@@ -311,7 +312,8 @@ def dummy_context_loader(state) -> dict:
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
-    sys.path.insert(0, os.path.dirname(__file__))
+    # local_tests/ 안에 있으므로 부모(ai_agent/)를 path에 추가해 app.* import 가능하게 한다
+    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
     os.environ.setdefault("LANGCHAIN_PROJECT", "modu-mvp")
     os.environ.setdefault("DATABASE_URL", "postgresql://dummy:dummy@localhost/dummy")
 
