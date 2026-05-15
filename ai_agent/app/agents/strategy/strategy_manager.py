@@ -59,6 +59,9 @@ def strategy_manager(state: InvestmentAgentState) -> dict[str, Any]:
             verdict = chain.invoke(inputs)
         except OutputParserException as exc:
             return _hold("LLM 출력 파싱 2회 실패", str(exc))
+        except Exception as exc:
+            # 재시도 중 LLM 호출 자체가 실패하면 outer except에 닿지 않으므로 여기서 잡아 hold 강등.
+            return _hold("재시도 중 LLM 호출 실패", str(exc))
     except Exception as exc:
         return _hold("LLM 호출 실패", str(exc))
 

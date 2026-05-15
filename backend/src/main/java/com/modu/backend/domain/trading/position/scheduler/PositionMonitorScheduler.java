@@ -3,6 +3,7 @@ package com.modu.backend.domain.trading.position.scheduler;
 import com.modu.backend.domain.trading.position.service.PositionMonitorService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -20,10 +21,19 @@ import java.time.ZonedDateTime;
  * [장 시간 가드]
  *  KST 평일 09:00 ~ 15:30 외에는 스킵. 시세 캐시(304) 가 갱신되지 않아 비교 의미 없음.
  *  공휴일은 별도 가드 없음 — KIS 가 시세를 안 보내므로 market:price:* 가 갱신되지 않아 evaluateOne 단계에서 자연 skip.
+ *
+ * [로컬 디버깅 토글]
+ *  modu.position-monitor.enabled=false 로 컴포넌트 자체 비활성화 가능 (기본 true).
+ *  로컬에서 다른 도메인 디버깅 시 폴링 SQL 노이즈 제거용.
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@ConditionalOnProperty(
+        name = "modu.position-monitor.enabled",
+        havingValue = "true",
+        matchIfMissing = true
+)
 public class PositionMonitorScheduler {
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");

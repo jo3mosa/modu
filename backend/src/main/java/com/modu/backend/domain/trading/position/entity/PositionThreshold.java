@@ -124,6 +124,38 @@ public class PositionThreshold {
     }
 
     /**
+     * AI 임계가 갱신 (S14P31B106-263)
+     * AI 판단 수신 시 ai_target_price / ai_stop_loss_price 덮어쓰기 + active_*_price 재계산
+     *
+     * 둘 중 "더 빨리 발동되는" 쪽 채택 — 위험 차단 우선:
+     *  - active_target_price    = min(user_take_profit, ai_target)
+     *      익절은 낮은 가격이 가격 상승 시 먼저 도달
+     *  - active_stop_loss_price = max(user_stop_loss, ai_stop_loss)
+     *      손절은 높은 가격이 가격 하락 시 먼저 도달
+     *
+     * null 안전: user/ai 한 쪽만 있으면 그 값을 그대로 active 로 사용
+     */
+    public void updateAiThresholds(Long aiTargetPrice, Long aiStopLossPrice) {
+        this.aiTargetPrice = aiTargetPrice;
+        this.aiStopLossPrice = aiStopLossPrice;
+        this.activeTargetPrice = minNullable(this.userTakeProfitPrice, aiTargetPrice);
+        this.activeStopLossPrice = maxNullable(this.userStopLossPrice, aiStopLossPrice);
+        this.updatedAt = OffsetDateTime.now();
+    }
+
+    private static Long minNullable(Long a, Long b) {
+        if (a == null) return b;
+        if (b == null) return a;
+        return Math.min(a, b);
+    }
+
+    private static Long maxNullable(Long a, Long b) {
+        if (a == null) return b;
+        if (b == null) return a;
+        return Math.max(a, b);
+    }
+
+    /**
      * 트리거 발동 처리 — is_active=FALSE 전환 + 사유/종료시각 기록
      * Position Monitor 가 Kafka 발행 성공 후 호출
      */

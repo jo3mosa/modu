@@ -195,6 +195,7 @@ class AiJudgmentServiceTest {
                 .indicatorsSnapshot(indicatorsSnapshot)
                 .judgmentReason("거래량 증가와 단기 추세 개선으로 매수 조건을 충족했습니다.")
                 .judgedAt(OffsetDateTime.parse("2026-05-08T09:00:00+09:00"))
+                .keySignals(objectMapper.createArrayNode())
                 .build();
 
         ReflectionTestUtils.setField(judgment, "id", id);

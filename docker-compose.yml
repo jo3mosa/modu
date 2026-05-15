@@ -24,7 +24,7 @@ x-analysis-base: &analysis-base
     # 외부 API 키 (collectors 용)
     KIS_APP_KEY: ${KIS_APP_KEY}
     KIS_APP_SECRET: ${KIS_APP_SECRET}
-    KIS_BASE_URL: ${KIS_API_URL}
+    KIS_API_URL: ${KIS_API_URL}
     DART_API_KEY: ${DART_API_KEY}
     MONGO_URI: ${MONGO_URI}
     # DB (backfill 스크립트용 — engine 은 SQLite 사용)

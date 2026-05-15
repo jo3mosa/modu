@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 public interface PositionThresholdRepository extends JpaRepository<PositionThreshold, Long> {
@@ -34,4 +35,10 @@ public interface PositionThresholdRepository extends JpaRepository<PositionThres
      * 전량 매도 시 해당 종목에 다른 사용자의 활성 임계가 남아있는지 확인 — 자동 구독 해제 가드용
      */
     boolean existsByStockCodeAndIsActiveTrue(String stockCode);
+
+    /**
+     * 활성 row 단건 조회 — partial unique index (user_id, stock_code) WHERE is_active=TRUE 가 1개 보장
+     * AI 판단 수신 시 ai_*_price 갱신용 (S14P31B106-263)
+     */
+    Optional<PositionThreshold> findByUserIdAndStockCodeAndIsActiveTrue(Long userId, String stockCode);
 }
