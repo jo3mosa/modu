@@ -30,7 +30,6 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.OffsetDateTime;
@@ -283,14 +282,19 @@ class SignalHandlerServiceTest {
     // ───────────────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("중복 메시지 (DataIntegrityViolation): silent skip, Order/Kafka 없음")
+    @DisplayName("중복 메시지 (사전 SELECT 가 true): silent skip, INSERT/Order/Kafka 없음")
     void duplicateMessageSilentSkip() {
         AiDecisionMessage msg = buildMessage("completed", "trade", "buy", 700_000L, 70_000.0, 65_000.0, "low");
-        when(aiJudgmentRepository.saveAndFlush(any(AiJudgment.class)))
-                .thenThrow(new DataIntegrityViolationException("unique violation"));
+        when(aiJudgmentRepository.existsByUserIdAndSourceEventId(USER_ID, "evt-buy-001"))
+                .thenReturn(true);
+
+        // 메시지 source_event_id 가 buildMessage 기본값(EVENT_ID=market_event_abc) 라
+        // 위 stub 이 매칭되지 않을 수 있어 어떤 sourceEventId 든 true 반환으로 설정
+        when(aiJudgmentRepository.existsByUserIdAndSourceEventId(any(), anyString())).thenReturn(true);
 
         service.handle(msg); // 예외 던지지 않음
 
+        verify(aiJudgmentRepository, never()).saveAndFlush(any(AiJudgment.class));
         verify(orderRepository, never()).saveAndFlush(any());
         verify(tradeOrderProducer, never()).publishOrderSubmitted(any());
     }

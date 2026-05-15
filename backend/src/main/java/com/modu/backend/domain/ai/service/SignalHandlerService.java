@@ -22,9 +22,10 @@ import com.modu.backend.global.kafka.dto.AiDecisionMessage;
 import com.modu.backend.global.kafka.dto.TradeOrderMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -40,12 +41,22 @@ import java.util.UUID;
  *  5. AiJudgment INSERT (중복 시 silent skip — partial unique index 가 1차 방어선)
  *
  * [트랜잭션]
- *  메서드 전체 @Transactional — Kafka 발행 실패 시 Order INSERT 도 롤백 (OrderService 동일 패턴)
+ *  메서드 전체 @Transactional. Order/AiJudgment INSERT 와 PositionThreshold 갱신은 같은 tx 에서 커밋.
+ *
+ *  Kafka 발행은 TransactionSynchronization.afterCommit 으로 분리 — DB 커밋 후 발행.
+ *  이유: tx 안에서 발행하면 Consumer (KisOrderConsumer) 가 미커밋 row 를 SELECT 못 해 "주문 row 없음"
+ *  으로 메시지를 폐기하는 race condition 발생.
+ *
+ *  단점: 발행 실패 시 Order 만 PENDING 으로 stuck (orphan). 진짜 운영급 원자성은 Transactional
+ *  Outbox 패턴 필요 — 별도 이슈로 분리.
  *
  * [멱등성]
- *  ai_judgments (user_id, source_event_id) partial unique index → DataIntegrityViolationException
- *  catch + silent return. AiJudgment INSERT 를 가장 먼저 수행해 중복 발견 시 Order INSERT /
- *  Kafka 발행을 아예 시작 안 함 (orphan Kafka 메시지 방지).
+ *  1차 방어선: handle() 진입 직후 existsByUserIdAndSourceEventId 사전 SELECT.
+ *  2차 방어선: ai_judgments (user_id, source_event_id) partial unique index.
+ *
+ *  사전 SELECT 가 정상 경로에서 중복을 막음. DB unique violation 까지 도달하면 @Transactional 이
+ *  rollback-only 마크되어 catch 해도 UnexpectedRollbackException 발생 → 재시도 후 SELECT 통과로 회수.
+ *  Kafka 파티션 키 = user_id 라 같은 user 메시지는 같은 컨슈머가 순차 처리 → race 거의 없음.
  *
  * [실패 정책]
  *  - 비즈니스 예외: ApiException 던짐 → Consumer 가 ack
@@ -67,16 +78,20 @@ public class SignalHandlerService {
     public void handle(AiDecisionMessage message) {
         validate(message);
 
-        AiExecutionStatus status = resolveExecutionStatus(message);
-        String decision = resolveDecision(message);
-
-        // 1. AiJudgment 먼저 INSERT — 멱등 위반 시 즉시 return (Order/Kafka 발행 회피)
-        AiJudgment judgment = insertJudgment(message, status, decision);
-        if (judgment == null) {
+        // 1. 사전 멱등 체크 — DB unique 위반까지 가지 않게 정상 경로 차단
+        if (aiJudgmentRepository.existsByUserIdAndSourceEventId(message.userId(), message.sourceEventId())) {
+            log.info("AI 판단 중복 메시지 무시 - userId: {}, sourceEventId: {}",
+                    message.userId(), message.sourceEventId());
             return;
         }
 
-        // 2. READY 케이스에만 Order INSERT + Kafka 발행
+        AiExecutionStatus status = resolveExecutionStatus(message);
+        String decision = resolveDecision(message);
+
+        // 2. AiJudgment INSERT (race 발생 시 unique violation → 시스템 예외 → 재시도 시 위 SELECT 가 회수)
+        AiJudgment judgment = insertJudgment(message, status, decision);
+
+        // 3. READY 케이스에만 Order INSERT + Kafka 발행
         if (status == AiExecutionStatus.READY) {
             Long orderId = publishOrder(message, decision);
             judgment.linkOrder(orderId);
@@ -210,12 +225,39 @@ public class SignalHandlerService {
                 null,
                 OffsetDateTime.now()
         );
-        tradeOrderProducer.publishOrderSubmitted(payload);
+        registerAfterCommitPublish(payload, order.getId());
 
-        log.info("AI 주문 발행 - userId: {}, stockCode: {}, side: {}, orderId: {}, qty: {}, price: {}",
+        log.info("AI 주문 INSERT 완료 (Kafka 발행은 commit 후) - userId: {}, stockCode: {}, side: {}, orderId: {}, qty: {}, price: {}",
                 m.userId(), m.stockCode(), side, order.getId(), quantity, limitPrice);
 
         return order.getId();
+    }
+
+    /**
+     * Kafka 발행을 트랜잭션 커밋 이후로 미루기 — Consumer (KisOrderConsumer) 가 커밋된 Order row 를
+     * SELECT 할 수 있도록 보장. 단 커밋 후 발행 실패 시 Order 만 PENDING 으로 남는 orphan 위험은 Outbox 도입까지 잔재.
+     *
+     * 트랜잭션 sync 가 비활성인 컨텍스트 (단위 테스트 등) 에선 즉시 발행으로 폴백.
+     */
+    private void registerAfterCommitPublish(TradeOrderMessage payload, Long orderId) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            publishOrderMessage(payload, orderId);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                publishOrderMessage(payload, orderId);
+            }
+        });
+    }
+
+    private void publishOrderMessage(TradeOrderMessage payload, Long orderId) {
+        try {
+            tradeOrderProducer.publishOrderSubmitted(payload);
+        } catch (Exception e) {
+            log.error("AI 주문 Kafka 발행 실패 (커밋 후, orphan 위험) - orderId: {}", orderId, e);
+        }
     }
 
     // ───────────────────────────────────────────────────────────────────
@@ -238,8 +280,8 @@ public class SignalHandlerService {
     // ───────────────────────────────────────────────────────────────────
 
     /**
-     * AiJudgment INSERT 시도. 멱등 위반 (DataIntegrityViolationException) 시 null 반환.
-     * orderId 는 후속 publishOrder 단계에서 linkOrder() 로 채움.
+     * AiJudgment INSERT. 정상 경로에선 사전 SELECT 가 중복을 차단해 이 단계에 도달.
+     * race 로 unique violation 발생 시 그대로 예외 전파 → Consumer 미커밋 → 재시도 시 사전 SELECT 회수.
      */
     private AiJudgment insertJudgment(AiDecisionMessage m, AiExecutionStatus status, String decision) {
         AiDecisionMessage.FinalDecision fd = m.finalDecision();
@@ -269,15 +311,8 @@ public class SignalHandlerService {
                 .executionStatus(status)
                 .build();
 
-        try {
-            aiJudgmentRepository.saveAndFlush(judgment);
-            return judgment;
-        } catch (DataIntegrityViolationException e) {
-            // (user_id, source_event_id) 중복 — 같은 트리거 재발행. silent skip
-            log.info("AI 판단 중복 메시지 무시 - userId: {}, sourceEventId: {}",
-                    m.userId(), m.sourceEventId());
-            return null;
-        }
+        aiJudgmentRepository.saveAndFlush(judgment);
+        return judgment;
     }
 
     // ───────────────────────────────────────────────────────────────────

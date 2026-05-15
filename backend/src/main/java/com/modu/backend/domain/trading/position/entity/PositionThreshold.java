@@ -127,14 +127,19 @@ public class PositionThreshold {
      * AI 임계가 갱신 (S14P31B106-263)
      * AI 판단 수신 시 ai_target_price / ai_stop_loss_price 덮어쓰기 + active_*_price 재계산
      *
-     * active_*_price = min(user_*_price, ai_*_price) — 더 보수적인 쪽
+     * 둘 중 "더 빨리 발동되는" 쪽 채택 — 위험 차단 우선:
+     *  - active_target_price    = min(user_take_profit, ai_target)
+     *      익절은 낮은 가격이 가격 상승 시 먼저 도달
+     *  - active_stop_loss_price = max(user_stop_loss, ai_stop_loss)
+     *      손절은 높은 가격이 가격 하락 시 먼저 도달
+     *
      * null 안전: user/ai 한 쪽만 있으면 그 값을 그대로 active 로 사용
      */
     public void updateAiThresholds(Long aiTargetPrice, Long aiStopLossPrice) {
         this.aiTargetPrice = aiTargetPrice;
         this.aiStopLossPrice = aiStopLossPrice;
         this.activeTargetPrice = minNullable(this.userTakeProfitPrice, aiTargetPrice);
-        this.activeStopLossPrice = minNullable(this.userStopLossPrice, aiStopLossPrice);
+        this.activeStopLossPrice = maxNullable(this.userStopLossPrice, aiStopLossPrice);
         this.updatedAt = OffsetDateTime.now();
     }
 
@@ -142,6 +147,12 @@ public class PositionThreshold {
         if (a == null) return b;
         if (b == null) return a;
         return Math.min(a, b);
+    }
+
+    private static Long maxNullable(Long a, Long b) {
+        if (a == null) return b;
+        if (b == null) return a;
+        return Math.max(a, b);
     }
 
     /**
