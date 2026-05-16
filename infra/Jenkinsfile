@@ -54,13 +54,39 @@ pipeline {
                 script {
                     env.FAILED_STAGE = "1. 변경 서비스 감지"
 
-                    // HEAD~1..HEAD 범위는 머지 commit 의 두 parent 사이 모든 변경을 합집합으로 반환.
-                    // 기존 `git diff HEAD~1 HEAD` 는 `--no-ff` merge commit 에서 빈 결과 → 빌드 스킵 문제 있었음.
-                    // HEAD~1 이 없는 경우(첫 커밋, shallow clone 등) 전체 빌드로 폴백.
+                    // 머지 commit(--no-ff) 의 HEAD~1..HEAD 가 빈 결과로 떨어지던 문제 해결:
+                    //   - merge commit 이면 두 parent 사이 diff (PR 전체 변경 포착)
+                    //   - 일반 commit / squash merge 면 HEAD~1 vs HEAD
+                    //   - shallow clone 자동 unshallow (옛 commit 들 fetch)
+                    //   - HEAD~1 없는 경우(첫 커밋 등) 전체 빌드로 폴백
                     def diff = sh(
-                        script: "git log --name-only --pretty=format: HEAD~1..HEAD 2>/dev/null | sort -u | grep -v '^\$' || echo 'ALL'",
+                        script: '''
+                            set +e
+
+                            # shallow clone 이면 unshallow (옛 commit / 두 번째 parent fetch 보장)
+                            if [ -f .git/shallow ]; then
+                                echo "▶ shallow clone 감지 — unshallow 시도" >&2
+                                git fetch --unshallow 2>/dev/null || git fetch --depth=100 2>/dev/null
+                            fi
+
+                            # HEAD 의 parent 갯수로 merge commit 판별 (2개 이상이면 merge)
+                            PARENTS=$(git cat-file -p HEAD | grep -c '^parent ')
+
+                            if [ "$PARENTS" -gt 1 ]; then
+                                echo "▶ merge commit (parents=$PARENTS) — HEAD^1 vs HEAD^2 diff" >&2
+                                git diff --name-only HEAD^1 HEAD^2
+                            elif git rev-parse HEAD~1 >/dev/null 2>&1; then
+                                echo "▶ 일반 commit — HEAD~1 vs HEAD diff" >&2
+                                git diff --name-only HEAD~1 HEAD
+                            else
+                                echo "▶ HEAD~1 없음 — ALL 폴백" >&2
+                                echo "ALL"
+                            fi
+                        ''',
                         returnStdout: true
                     ).trim()
+
+                    echo "▶ 감지된 변경 파일:\n${diff}"
 
                     // infra/ 변경 시 yaml·Jenkinsfile도 배포에 영향을 주므로 전체 재빌드
                     def forceAll = (diff == 'ALL') || diff.contains('infra/')
