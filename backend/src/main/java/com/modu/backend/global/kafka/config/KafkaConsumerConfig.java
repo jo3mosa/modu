@@ -1,5 +1,6 @@
 package com.modu.backend.global.kafka.config;
 
+import com.modu.backend.global.kafka.dto.AiDecisionMessage;
 import com.modu.backend.global.kafka.dto.TradeOrderExecutedMessage;
 import com.modu.backend.global.kafka.dto.TradeOrderMessage;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -59,14 +60,11 @@ public class KafkaConsumerConfig {
     }
 
     /**
-     * AI 판단 메시지 Listener Factory
-     *
-     * AiDecisionMessage DTO 는 S14P31B106-263 에서 정의 예정이므로 현재는 Object 로 둠.
-     * 263 에서 DTO 정의 후 본 메서드의 제네릭과 buildFactory 타입 인자만 변경하면 됨.
+     * AI 판단 메시지 Listener Factory (S14P31B106-263)
      */
     @Bean
-    public ConcurrentKafkaListenerContainerFactory<String, Object> aiDecisionListenerContainerFactory() {
-        return buildFactory(Object.class, 3, 10);
+    public ConcurrentKafkaListenerContainerFactory<String, AiDecisionMessage> aiDecisionListenerContainerFactory() {
+        return buildFactory(AiDecisionMessage.class, 3, 10);
     }
 
     /**

@@ -16,6 +16,7 @@ desktop.ini
 
 ### Environment Variables ###
 .env
+.env.k8s
 local.properties
 
 ### Java & Build Tools ###
@@ -82,8 +83,12 @@ venv/
 .vscode/
 .idea/
 .env
+.env.k8s
 
 data/
+
+# 로컬 K8s 검증 전용 매니페스트 (운영 배포 대상 아님)
+infra/k8s/ingress-local.yaml
 
 # Backtest 실행 산출물 (summary JSON, trigger jsonl 등)
 backtest_out_*/

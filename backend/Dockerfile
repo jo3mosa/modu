@@ -24,8 +24,13 @@ RUN ./gradlew bootJar --no-daemon
 # Stage 2: Run
 # 실행에 필요한 JRE만 포함한 경량 이미지로 JAR를 실행합니다.
 # JDK 없이 JRE만 사용해 이미지 크기를 최소화합니다.
+#
+# [base 이미지 선택]
+#   alpine 변형은 musl libc 라 Kafka Snappy native 라이브러리(glibc 빌드)가
+#   초기화 실패 → "Could not initialize class org.xerial.snappy.Snappy" 발생.
+#   Debian 기반 jre 이미지로 두어 Snappy/lz4 등 native 라이브러리 호환성 확보.
 # ============================================================
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:21-jre
 
 # 작업 디렉토리 설정
 WORKDIR /app

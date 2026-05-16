@@ -19,7 +19,8 @@ class KisApiClient:
     def __init__(self):
         self.app_key = os.getenv("KIS_APP_KEY")
         self.app_secret = os.getenv("KIS_APP_SECRET")
-        self.base_url = os.getenv("KIS_API_URL")
+        # docker-compose 환경변수 KIS_API_URL 에 동기화. 구 KIS_BASE_URL 도 fallback 으로 허용 (로컬 .env 호환)
+        self.base_url = os.getenv("KIS_API_URL") or os.getenv("KIS_BASE_URL")
         # CWD에 무관하게 clients/ 옆에 토큰 캐시 — gitignored
         self.token_file = os.path.join(_MODULE_DIR, "kis_token.json")
         # 토큰 메모리 캐시 — fast path 에서 lock·파일 I/O 회피.

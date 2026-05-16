@@ -5,6 +5,31 @@
 import apiClient from './apiClient';
 
 /**
+ * 주문 상태 표시용 라벨/색상 매핑.
+ * 백엔드 status 값(FILLED/CANCELED/MODIFIED/PENDING/REJECTED)을 그대로 키로 사용.
+ */
+export const ORDER_STATUS_DISPLAY = {
+  FILLED:   { label: '체결', color: '#84cc16' },
+  MODIFIED: { label: '정정', color: '#eab308' },
+  CANCELED: { label: '취소', color: '#888'   },
+  PENDING:  { label: '대기', color: '#aaa'   },
+  REJECTED: { label: '거절', color: '#ef4444' },
+};
+
+/**
+ * SSE 토큰 발급
+ * POST /api/v1/orders/sse-token
+ *
+ * @returns {Promise<{ token: string, expiresIn: number }>}
+ */
+export async function getSseToken() {
+  const data = await apiClient('/orders/sse-token', {
+    method: 'POST',
+  });
+  return data.data;
+}
+
+/**
  * 미체결 주문 조회
  * GET /api/v1/orders/pending
  *

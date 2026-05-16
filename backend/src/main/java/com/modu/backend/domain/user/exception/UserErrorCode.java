@@ -31,7 +31,14 @@ public enum UserErrorCode implements ErrorCode {
     KIS_MOCK_ACCOUNT_NOT_SUPPORTED("USER_005", HttpStatus.BAD_REQUEST, "모의투자 계좌는 지원하지 않습니다. 실전투자 계좌로 연동해주세요."),
 
     /** KIS 자격증명 복호화 실패 (암호화 키 변경 또는 데이터 손상) */
-    KIS_CREDENTIAL_DECRYPT_FAILED("USER_006", HttpStatus.INTERNAL_SERVER_ERROR, "한국투자증권 API 자격증명 복호화에 실패했습니다.");
+    KIS_CREDENTIAL_DECRYPT_FAILED("USER_006", HttpStatus.INTERNAL_SERVER_ERROR, "한국투자증권 API 자격증명 복호화에 실패했습니다."),
+
+    /**
+     * KIS 액세스 토큰이 외부에서 갱신되어 무효화됨 (EGW00202)
+     * KisApiCallTemplate 가 이 코드를 보고만 자동 재발급+1회 재시도 — 다른 EXTERNAL_API_ERROR 에는 재시도 X
+     * 비멱등 호출(주문/정정/취소) 안전성을 위해 정밀 식별 필요
+     */
+    KIS_TOKEN_INVALIDATED("USER_007", HttpStatus.SERVICE_UNAVAILABLE, "KIS 토큰이 갱신 중입니다. 1분 후 다시 시도해주세요.");
 
     private final String code;
     private final HttpStatus status;
