@@ -11,13 +11,12 @@ metadata:
     # SSE/WebSocket: 연결을 1시간 유지 (기본값 60초면 SSE 연결이 끊김)
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
-    # WebSocket: HTTP/1.1 필수 (Upgrade 헤더 지원)
+    # WebSocket: HTTP/1.1 필수 (Upgrade 헤더 지원).
     nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
     # WebSocket Upgrade/Connection 헤더 명시 전달.
-    # map 디렉티브는 http 컨텍스트에만 정의 가능 → configuration-snippet (server/location)
-    # 에서는 사용 불가. if 분기로 우회해 WebSocket 만 'upgrade', 일반 HTTP/SSE 는 'close'.
-    # SSE(/api/v1/orders/connect) 와 안전하게 공존.
-    # ⚠️ 이 annotation 이 적용되려면 ingress-nginx ConfigMap 에 `allow-snippet-annotations: "true"` 필수.
+    # SSAFY 클러스터의 ingress-nginx 는 자동 처리 안 함 (backend 가 400 Bad Request 반환).
+    # configuration-snippet 사용 가능 (ingress-nginx ConfigMap 의 allow-snippet-annotations=true 확인 완료).
+    # if ($http_upgrade) 분기로 WebSocket 만 'upgrade', 일반 HTTP/SSE 는 'close' → SSE 와 안전하게 공존.
     nginx.ingress.kubernetes.io/configuration-snippet: |
       set $proxy_connection close;
       if ($http_upgrade) {
