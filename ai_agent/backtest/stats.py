@@ -1,11 +1,9 @@
-"""두 모드 결과의 통계적 비교.
+"""두 모드 결과의 통계적 비교 — paired McNemar + bootstrap CI.
 
-함수 두 개만 제공한다:
-- mcnemar_paired: 같은 trigger에 대한 paired 결정 → 한쪽이 다른쪽보다 hit를 더 자주 만드는지 p-value
-- bootstrap_ci: hit_rate 또는 avg_return의 비모수 95% CI
+DA framework가 직접 제공하지 않는 통계 검정 레이어. AI 팀이 작성.
+발표 시 "Bull/Bear가 단일 에이전트보다 유의미하게 더 낫다" 주장의 근거.
 
-이 둘만 있으면 "Bull/Bear가 단일 에이전트보다 유의미하게 더 낫다"를 발표용으로 주장 가능.
-scipy 미설치 환경 대비 mcnemar는 직접 구현(binomial 정확검정).
+scipy 미설치 환경 대비: McNemar는 binomial 정확검정 직접 구현.
 """
 from dataclasses import dataclass
 from math import comb

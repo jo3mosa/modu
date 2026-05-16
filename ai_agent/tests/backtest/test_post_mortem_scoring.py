@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-from app.backtest.scorer import score_with_post_mortem, _compose_decision_content
+from ai_agent.backtest.scoring import score_with_post_mortem, _compose_decision_content
 
 
 @dataclass

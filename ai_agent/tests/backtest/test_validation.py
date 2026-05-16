@@ -1,48 +1,53 @@
-"""Validation 컴포넌트(baselines, stats) LLM/DB 의존성 없이 검증.
+"""Validation 컴포넌트(stats, random adapter) LLM/DB 의존성 없이 검증.
 
-GraphDecisionProvider는 LLM 호출하므로 여기서 미테스트. compare CLI 통합 테스트는 별도 환경.
+LangGraph adapter는 LLM 호출하므로 여기서 미테스트. 통합 테스트는 별도 환경.
 """
-from app.backtest.baselines import RandomDecisionProvider
-from app.backtest.stats import bootstrap_ci, mcnemar_paired
-from app.triggers.schemas import MarketTrigger, UserTriggerEvent
-from datetime import datetime
+from datetime import date
+
+from ai_agent.backtest.adapters.random_decision import make_random_decision_fn
+from ai_agent.backtest.interfaces import Trigger
+from ai_agent.backtest.stats import bootstrap_ci, mcnemar_paired
 
 
-def _make_event(stock_code: str = "005930") -> UserTriggerEvent:
-    return UserTriggerEvent(
-        timestamp=datetime(2025, 3, 15, 9, 0),
-        user_id=1,
+def _make_trigger(stock_code: str = "005930") -> Trigger:
+    return Trigger(
+        as_of_date=date(2025, 3, 15),
         stock_code=stock_code,
-        trigger=MarketTrigger(rule_ids=["RSI-002"]),
+        rule_ids=["RSI-002"],
+        rule_reasons=["RSI 과매수"],
+        technical=None,
+        fundamental=None,
+        event=None,
+        sentiment=None,
+        close_price=70_000.0,
     )
 
 
 def test_random_provider_is_reproducible():
-    p1 = RandomDecisionProvider(seed=42)
-    p2 = RandomDecisionProvider(seed=42)
-    event = _make_event()
-    r1 = p1.decide(event)
-    r2 = p2.decide(event)
-    assert r1["final_decision"].action == r2["final_decision"].action
-    assert r1["final_decision"].side == r2["final_decision"].side
+    fn1 = make_random_decision_fn(seed=42)
+    fn2 = make_random_decision_fn(seed=42)
+    trig = _make_trigger()
+    d1 = fn1(trig, {}, {})
+    d2 = fn2(trig, {}, {})
+    assert d1.action == d2.action
+    assert d1.order_amount == d2.order_amount
 
 
 def test_random_provider_does_not_call_llm():
     """LLM 키 없는 환경에서도 동작해야 한다."""
-    provider = RandomDecisionProvider(seed=1)
+    fn = make_random_decision_fn(seed=1)
     for _ in range(20):
-        result = provider.decide(_make_event())
-        assert result["final_decision"] is not None
-        assert result["flow_status"] == "completed"
+        decision = fn(_make_trigger(), {}, {})
+        assert decision is not None
+        assert decision.action in ("buy", "sell", "hold")
 
 
 def test_random_provider_respects_weights():
     """weights=(1, 0, 0)이면 항상 buy."""
-    p = RandomDecisionProvider(seed=1, weights=(1.0, 0.0, 0.0))
+    fn = make_random_decision_fn(seed=1, weights=(1.0, 0.0, 0.0))
     for _ in range(10):
-        result = p.decide(_make_event())
-        assert result["final_decision"].side == "buy"
-        assert result["final_decision"].action == "trade"
+        d = fn(_make_trigger(), {}, {})
+        assert d.action == "buy"
 
 
 def test_mcnemar_identical_modes_have_p1():

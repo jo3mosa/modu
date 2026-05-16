@@ -30,7 +30,10 @@ import streamlit as st
 
 @st.cache_data(show_spinner=False)
 def load_jsonl(path: str) -> pd.DataFrame:
-    """JSONL 한 파일을 DataFrame으로. 누락 컬럼은 NaN으로 채움."""
+    """JSONL을 DataFrame으로. 두 포맷 자동 정규화:
+      1. app.backtest (우리 모듈): date / action / side / event_id / bull_claim / ...
+      2. ai_agent.backtest (DA framework + adapter): as_of_date / decision.action / fill / ...
+    """
     rows: list[dict[str, Any]] = []
     p = Path(path)
     if not p.exists():
@@ -47,9 +50,75 @@ def load_jsonl(path: str) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame()
     df = pd.DataFrame(rows)
+    if "as_of_date" in df.columns and "date" not in df.columns:
+        df = _normalize_da_format(df)
     if "date" in df.columns:
         df["date"] = pd.to_datetime(df["date"], errors="coerce")
     return df
+
+
+def _normalize_da_format(df: pd.DataFrame) -> pd.DataFrame:
+    """DA framework output을 우리 dashboard 스키마로 매핑.
+
+    DA 포맷                  → 우리 dashboard 컬럼
+    ─────────────────────────────────────────────
+    as_of_date              → date
+    decision.action         → action / side (변환)
+    decision.order_amount   → order_amount
+    decision.target_price   → target_price
+    decision.stop_loss_price→ stop_loss_price
+    decision.confidence     → confidence
+    decision.extras.*       → bull_claim / bear_claim / winning_side
+    close_price             → execution_price (fill 없을 때 fallback)
+    fill.fill_price         → execution_price (체결 시 우선)
+    rule_ids                → rule_ids
+    rule_reasons            → trigger_reason
+    """
+    out = df.copy()
+    out["date"] = out["as_of_date"]
+    out["mode"] = out.get("mode", "DA")  # DA 포맷은 mode 컬럼 없을 수 있음
+
+    def _pluck(row, *path, default=None):
+        cur = row
+        for k in path:
+            if isinstance(cur, dict):
+                cur = cur.get(k)
+            else:
+                return default
+        return cur if cur is not None else default
+
+    decisions = out.get("decision")
+    fills = out.get("fill")
+
+    if decisions is not None:
+        da_action = decisions.apply(lambda d: _pluck(d, "action") if isinstance(d, dict) else None)
+        out["action"] = da_action.apply(lambda a: "hold" if a == "hold" else "trade")
+        out["side"] = da_action.apply(lambda a: a if a in ("buy", "sell") else None)
+        out["order_amount"] = decisions.apply(lambda d: _pluck(d, "order_amount"))
+        out["target_price"] = decisions.apply(lambda d: _pluck(d, "target_price"))
+        out["stop_loss_price"] = decisions.apply(lambda d: _pluck(d, "stop_loss_price"))
+        out["confidence"] = decisions.apply(lambda d: _pluck(d, "confidence"))
+        out["judgment_reason"] = decisions.apply(lambda d: _pluck(d, "reasoning"))
+        out["winning_side"] = decisions.apply(lambda d: _pluck(d, "extras", "winning_side"))
+        out["bull_claim"] = decisions.apply(lambda d: _pluck(d, "extras", "bull_claim"))
+        out["bear_claim"] = decisions.apply(lambda d: _pluck(d, "extras", "bear_claim"))
+
+    if fills is not None:
+        fill_price = fills.apply(lambda f: _pluck(f, "fill_price") if isinstance(f, dict) else None)
+        close_price = out.get("close_price", pd.Series([None] * len(out)))
+        out["execution_price"] = fill_price.where(fill_price.notna(), close_price)
+
+    if "rule_reasons" in out.columns and "trigger_reason" not in out.columns:
+        out["trigger_reason"] = out["rule_reasons"]
+
+    if "event_id" not in out.columns:
+        # paired 비교용 동일 trigger 식별자: stock_code + as_of_date + rule_ids
+        out["event_id"] = out.apply(
+            lambda r: f"{r.get('stock_code')}_{r.get('as_of_date')}_{','.join(r.get('rule_ids', []) or [])}",
+            axis=1,
+        )
+
+    return out
 
 
 def detect_scored(df: pd.DataFrame) -> bool:
@@ -434,9 +503,9 @@ def tab_comparison(df: pd.DataFrame, scored: bool) -> None:
     if scored:
         # McNemar (paired hits)
         try:
-            from app.backtest.stats import mcnemar_paired
+            from ai_agent.backtest.stats import mcnemar_paired
         except Exception:
-            st.warning("app.backtest.stats import 실패 — McNemar skip")
+            st.warning("ai_agent.backtest.stats import 실패 — McNemar skip")
             return
         a_hits, b_hits = [], []
         for eid in common:
