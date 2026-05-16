@@ -33,11 +33,10 @@ pipeline {
         // 실패 원인 상세 내용을 저장 (Mattermost 알림에서 상세 원인 표시용)
         ERROR_DETAILS  = ""
 
-        // ── 선택적 빌드 플래그 (Stage 1에서 결정) ─────────────
-        // 각 서비스 빌드 여부 (git diff 결과에 따라 설정)
-        BUILD_BACKEND  = 'false'
-        BUILD_FRONTEND = 'false'
-        BUILD_AI       = 'false'
+        // ── 선택적 빌드 플래그 ─────────────────────────────────
+        // BUILD_BACKEND / BUILD_FRONTEND / BUILD_AI 는 Stage 1 의 script 블록에서
+        // env.BUILD_* 로 동적 설정. environment {} 블록에서 초기화하면 immutable 이
+        // 되어 script 의 재할당이 무시되므로 의도적으로 여기서 제거.
 
     }
 
