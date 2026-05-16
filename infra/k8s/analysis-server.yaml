@@ -1,0 +1,257 @@
+# ============================================================
+# analysis_server: engine + 3 collectors + 1 daily CronJob
+# ------------------------------------------------------------
+# 같은 이미지(./analysis_server/Dockerfile)를 5 워크로드가 공유하며 command 로 entrypoint 차별화.
+# SQLite → PostgreSQL 마이그레이션 완료로 모든 워크로드 stateless (PVC 불필요).
+# 환경변수는 modu-secret 에서 envFrom 으로 일괄 주입.
+# ============================================================
+
+# ============================================================
+# 1. analysis-pipeline (CronJob) — 매일 KRX 종목 마스터 적재
+# ============================================================
+# UTC 23:00 = KST 08:00 — 장 시작 1시간 전에 master_data_loader 실행.
+# concurrencyPolicy: Forbid — 이전 실행이 안 끝났으면 새 실행 스킵 (중복 방지).
+# successfulJobsHistoryLimit / failedJobsHistoryLimit — 보관할 과거 Job 갯수.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: modu-analysis-pipeline
+  namespace: modu-apps
+  labels:
+    app: analysis-pipeline
+spec:
+  schedule: "0 23 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: analysis-pipeline
+        spec:
+          imagePullSecrets:
+          - name: regcred
+          containers:
+          - name: pipeline
+            image: ANALYSIS_IMAGE
+            command: ["python", "scripts/backfill/master_data_loader.py"]
+            envFrom:
+            - secretRef:
+                name: modu-secret
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "250m"
+              limits:
+                memory: "1Gi"
+                cpu: "1000m"
+          restartPolicy: OnFailure
+
+---
+
+# ============================================================
+# 2. analysis-engine (Deployment) — 1분 cron cycle
+# ============================================================
+# APScheduler 가 컨테이너 내부에서 1분 주기 cron 처리 (deployment 로 무한 유지).
+# read-only 동작 (Redis 데이터 읽고 Kafka 신호 발행) — replicas 1 충분.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: modu-analysis-engine
+  namespace: modu-apps
+  labels:
+    app: analysis-engine
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: analysis-engine
+  template:
+    metadata:
+      labels:
+        app: analysis-engine
+    spec:
+      imagePullSecrets:
+      - name: regcred
+      containers:
+      - name: engine
+        image: ANALYSIS_IMAGE
+        command: ["python", "-m", "main"]
+        envFrom:
+        - secretRef:
+            name: modu-secret
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - "import os; os.kill(1, 0)"
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          failureThreshold: 3
+
+---
+
+# ============================================================
+# 3. analysis-candle-collector — KIS 1분봉 → Redis technical:{stock}
+# ============================================================
+# 무한 루프 (1 사이클 ≈ 7~10분, KIS API rate limit 고려).
+# KIS API 호출 위주라 메모리는 적게 쓰지만 CPU 활용도 높음.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: modu-analysis-candle-collector
+  namespace: modu-apps
+  labels:
+    app: analysis-candle-collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: analysis-candle-collector
+  template:
+    metadata:
+      labels:
+        app: analysis-candle-collector
+    spec:
+      imagePullSecrets:
+      - name: regcred
+      containers:
+      - name: candle-collector
+        image: ANALYSIS_IMAGE
+        command: ["python", "-m", "collectors.candle_collector", "--loop"]
+        envFrom:
+        - secretRef:
+            name: modu-secret
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - "import os; os.kill(1, 0)"
+          initialDelaySeconds: 60
+          periodSeconds: 60
+          failureThreshold: 3
+
+---
+
+# ============================================================
+# 4. analysis-disclosure-collector — DART list.json → Redis event:{stock}
+# ============================================================
+# 3분 주기 무한 루프. DART API 호출 + Redis 적재 — 가벼움.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: modu-analysis-disclosure-collector
+  namespace: modu-apps
+  labels:
+    app: analysis-disclosure-collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: analysis-disclosure-collector
+  template:
+    metadata:
+      labels:
+        app: analysis-disclosure-collector
+    spec:
+      imagePullSecrets:
+      - name: regcred
+      containers:
+      - name: disclosure-collector
+        image: ANALYSIS_IMAGE
+        command: ["python", "-m", "collectors.disclosure_collector", "--loop"]
+        envFrom:
+        - secretRef:
+            name: modu-secret
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "300m"
+        livenessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - "import os; os.kill(1, 0)"
+          initialDelaySeconds: 60
+          periodSeconds: 60
+          failureThreshold: 3
+
+---
+
+# ============================================================
+# 5. analysis-news-collector — RSS → MongoDB news_articles + FinBERT 감성 분석
+# ============================================================
+# 10분 주기 무한 루프. FinBERT 모델 로드로 초기 메모리 부담 큼 (~1Gi).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: modu-analysis-news-collector
+  namespace: modu-apps
+  labels:
+    app: analysis-news-collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: analysis-news-collector
+  template:
+    metadata:
+      labels:
+        app: analysis-news-collector
+    spec:
+      imagePullSecrets:
+      - name: regcred
+      containers:
+      - name: news-collector
+        image: ANALYSIS_IMAGE
+        command: ["python", "-m", "collectors.news_collector", "--loop"]
+        envFrom:
+        - secretRef:
+            name: modu-secret
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "200m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        # FinBERT 모델 로드 시간 여유 (5분)
+        startupProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - "import os; os.kill(1, 0)"
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          failureThreshold: 10
+        livenessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - "import os; os.kill(1, 0)"
+          periodSeconds: 60
+          failureThreshold: 3
