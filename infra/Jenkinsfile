@@ -87,9 +87,12 @@ pipeline {
                     ).trim()
 
                     echo "▶ 감지된 변경 파일:\n${diff}"
+                    echo "▶ diff 길이: ${diff.length()}, 빈 문자열?: ${diff.isEmpty()}"
+                    echo "▶ contains 검증 — infra/: ${diff.contains('infra/')} | backend/: ${diff.contains('backend/')} | frontend/: ${diff.contains('frontend/')} | ai_agent/: ${diff.contains('ai_agent/')}"
 
                     // infra/ 변경 시 yaml·Jenkinsfile도 배포에 영향을 주므로 전체 재빌드
                     def forceAll = (diff == 'ALL') || diff.contains('infra/')
+                    echo "▶ forceAll: ${forceAll}"
 
                     env.BUILD_BACKEND  = (forceAll || diff.contains('backend/'))  ? 'true' : 'false'
                     env.BUILD_FRONTEND = (forceAll || diff.contains('frontend/')) ? 'true' : 'false'
