@@ -22,7 +22,6 @@ import atexit
 import logging
 import os
 import re
-import sqlite3
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -32,6 +31,7 @@ import feedparser
 import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
+from sqlalchemy import text
 
 try:
     from pymongo import MongoClient
@@ -40,6 +40,7 @@ except ImportError:
     MongoClient = None
     PyMongoError = Exception
 
+from clients.postgres_client import get_engine
 from clients.redis_client import set_json
 
 
@@ -79,10 +80,6 @@ DEFAULT_LOOP_INTERVAL = 600   # 무한 루프 간격 — 10분 (RSS 갱신 빈�
 # ─── sentiment / 종목 매핑 설정 ─────────────────────────────────────────────
 
 KST = ZoneInfo("Asia/Seoul")
-
-# stock_master 캐시 위치 (collectors/ → ../data/stock_master.db).
-_MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
-STOCK_DB_PATH = os.path.join(_MODULE_DIR, "..", "data", "stock_master.db")
 
 # 회사명 substring 매칭 최소 길이 — LG/SK 같은 2자리는 false positive 다수.
 MIN_STOCK_NAME_LEN = 3
@@ -127,6 +124,10 @@ def get_sentiment_analyzer():
 
 _STOCK_NAME_TO_CODE: dict[str, str] | None = None
 
+_STOCK_NAMES_SQL = text(
+    "SELECT stock_code, stock_name FROM stock_master WHERE is_active = TRUE"
+)
+
 
 def _load_stock_names() -> dict[str, str]:
     """{회사명: 종목코드} dict. 활성 + 길이 ≥ MIN_STOCK_NAME_LEN 만.
@@ -138,12 +139,10 @@ def _load_stock_names() -> dict[str, str]:
     if _STOCK_NAME_TO_CODE is not None:
         return _STOCK_NAME_TO_CODE
     try:
-        with sqlite3.connect(STOCK_DB_PATH) as conn:
-            rows = conn.execute(
-                "SELECT stock_code, stock_name FROM stock_master WHERE is_active=1"
-            ).fetchall()
-    except sqlite3.Error:
-        # 파일 락 / 권한 / 손상 등 일시 오류 — 빈 매핑으로 폴백.
+        with get_engine().connect() as conn:
+            rows = conn.execute(_STOCK_NAMES_SQL).fetchall()
+    except Exception:
+        # Postgres 일시 단절 / auth 등 — 빈 매핑으로 폴백.
         # cache 안 하므로 다음 호출에 재시도. 매핑 없는 동안 그 cycle 의
         # stock_codes 가 [] 가 되어 sentiment 갱신만 누락 (기사 자체는 적재됨).
         logger.exception("stock_master 로드 실패 — 빈 매핑 폴백 (다음 호출에 재시도)")

@@ -88,4 +88,3 @@ urllib3==2.6.3
 uvicorn==0.46.0
 wrapt==2.1.2
 zope.interface==8.4
-psycopg2-binary==2.9.10
