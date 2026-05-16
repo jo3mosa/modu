@@ -185,8 +185,11 @@ _INDICATOR_UPSERT_SQL = (
     + ", ".join(f"{c} = EXCLUDED.{c}" for c in _INDICATOR_UPDATE_COLS)
 )
 
-_ACTIVE_STOCKS_SQL = text(
-    "SELECT stock_code FROM stock_master WHERE is_active = TRUE"
+# 백테스트 panel 은 과거 분석용이라 현재 활성 종목만 보면 상장폐지된 종목이
+# 통째로 빠진다 (survivorship bias). 기본 universe = daily_ohlcv 에 적재된
+# 모든 종목 (= 그 시점에 실제 거래되던 종목 합집합).
+_HISTORICAL_STOCKS_SQL = text(
+    "SELECT DISTINCT stock_code FROM daily_ohlcv ORDER BY stock_code"
 )
 
 # date 는 Postgres DATE — pandas 비교 시 string 으로 유지하면 기존 로직 변경 최소.
@@ -207,7 +210,8 @@ def load_indicators(
     Args:
         start_date / end_date : 'YYYY-MM-DD' (포함). None 이면 전 기간.
                                 지표 계산엔 OHLCV 전체를 사용하고, 적재 시점에만 이 구간으로 잘라낸다 (워밍업 자연 확보).
-        stock_codes : 명시 리스트 또는 None (None이면 stock_master.is_active=TRUE 전체).
+        stock_codes : 명시 리스트 또는 None (None이면 daily_ohlcv 에 적재된 모든
+                      종목 — 상장폐지 종목도 포함. survivorship bias 회피).
         min_history_rows : 종목별 최소 OHLCV 행수. sma_60/macd 가 의미를 가지려면 60 이상 권장.
     """
     engine = get_engine()
@@ -217,7 +221,7 @@ def load_indicators(
 
         if stock_codes is None:
             with engine.connect() as sa_conn:
-                rows = sa_conn.execute(_ACTIVE_STOCKS_SQL).fetchall()
+                rows = sa_conn.execute(_HISTORICAL_STOCKS_SQL).fetchall()
             stock_codes = [r[0] for r in rows]
 
         total = len(stock_codes)

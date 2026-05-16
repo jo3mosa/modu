@@ -112,10 +112,14 @@ def run(
             next_day_market = _next_market(engine, day,
                                             [t.stock_code for t in triggers])
 
+            # user_context_fn 은 일자당 1 회만 호출 — 트리거 수만큼 호출 시
+            # 외부 DB hit 비용이 누적되고, 같은 일자 의사결정 간 user 상태가
+            # 어긋날 수 있어 트리거 루프 밖에서 결정.
+            user_ctx = _safe_user_context(user_context_fn, day, user_id)
+
             for trig in triggers:
                 record_decision = None
                 record_fill: Optional[Fill] = None
-                user_ctx = _safe_user_context(user_context_fn, day, user_id)
                 snapshot = portfolio.snapshot()
 
                 try:
@@ -183,10 +187,12 @@ def _run_one_day(*, engine: Engine, mongo, day: date,
                  watchlist_override: Optional[list[str]]
                  ) -> tuple[list, dict]:
     """하루치 bulk fetch + 트리거 검출. (triggers, ohlcv_by_stock) 반환."""
-    if watchlist_override:
-        watchlist = watchlist_override
-    else:
+    # None 만 자동 산출 트리거. 빈 리스트는 "명시적으로 0 종목" 의도이므로
+    # 그대로 빈 watchlist 로 흘려보내 트리거 0 건으로 마감.
+    if watchlist_override is None:
         watchlist = data_sources.fetch_watchlist_on(engine, day)
+    else:
+        watchlist = watchlist_override
     if not watchlist:
         return [], {}
 

@@ -70,15 +70,19 @@ _ASCII_ONLY = re.compile(r"^[A-Za-z0-9\s\-&]+$")
 
 _STOCK_DICT_SQL = text(
     "SELECT stock_code, stock_name FROM stock_master "
-    "WHERE is_active = TRUE AND stock_name IS NOT NULL AND stock_name != ''"
+    "WHERE stock_name IS NOT NULL AND stock_name != ''"
 )
 
 
 def load_stock_dict():
-    """stock_master → {stock_code: stock_name}. 우선주/비활성 종목은 제외.
+    """stock_master → {stock_code: stock_name}.
 
     한글 1자 종목명은 false-positive 위험이 너무 커 사전에서 제외하지만,
     종목코드 직접 매칭과 alias 매칭은 그대로 가능.
+
+    이 스크립트는 전체 news_articles 히스토리 재처리용이라 is_active 필터를
+    걸지 않는다 (걸면 현재는 inactive 인 종목의 과거 기사 매칭이 빠짐 —
+    survivorship-style 누락).
     """
     with get_engine().connect() as conn:
         rows = conn.execute(_STOCK_DICT_SQL).fetchall()

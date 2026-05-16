@@ -353,6 +353,8 @@ services:
     container_name: modu-disclosure-collector
     command: ["python", "-m", "collectors.disclosure_collector", "--loop"]
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
 

@@ -277,14 +277,20 @@ def fetch_news_window(
     필드(sentiment_score, pos_prob, neg_prob 등) 가 이미 적재되어 있어야
     signal_generator 의 sentiment payload 빌드 가능.
     """
+    # end_dt = day 익일 00:00 KST (배타적), start_dt = end_dt - lookback_days.
+    # 윈도우 길이 = lookback_days 일자 (예: lookback=1 → 당일 1 일치만).
     end_dt = datetime.combine(day, datetime.min.time(), tzinfo=KST) + timedelta(days=1)
-    start_dt = end_dt - timedelta(days=lookback_days + 1)
+    start_dt = end_dt - timedelta(days=lookback_days)
 
     coll = client[config.MONGO_DB][config.MONGO_NEWS_COLL]
-    # published_at 이 ISO 문자열이면 lexicographic 비교가 정확하므로 string 형태로도 OK.
+    # news_articles 의 published_at 은 naive ISO 문자열로 저장되므로 (news_collector
+    # 의 _normalize_published_at 결과) tz-aware 와 lexicographic 비교가 어긋난다.
+    # 두 경계를 모두 naive(KST wall-clock) 로 통일해 비교 일관성 확보.
+    start_str = start_dt.replace(tzinfo=None).isoformat()
+    end_str = end_dt.replace(tzinfo=None).isoformat()
     cursor = coll.find({
         "stock_codes": {"$in": stock_codes},
-        "published_at": {"$gte": start_dt.isoformat(), "$lt": end_dt.isoformat()},
+        "published_at": {"$gte": start_str, "$lt": end_str},
     })
 
     grouped: dict[str, list[dict]] = {}
