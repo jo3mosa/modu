@@ -5,7 +5,7 @@ from langchain_core.exceptions import OutputParserException
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.runnables import Runnable
 
-from app.config.llm import get_strategy_llm
+from app.config.llm import get_structured_llm
 from app.feedback.schemas import PostMortemReflection
 from app.observability.langsmith_helpers import add_run_metadata
 from app.utils.json_utils import to_json
@@ -23,7 +23,7 @@ def _build_chain() -> Runnable:
     Reflection 체인 구성을 단일 함수로 분리한다.
     테스트에서 이 함수를 monkeypatch해 LLM 호출 없이 검증한다.
     """
-    return load_prompt(str(_PROMPT_PATH)) | get_strategy_llm() | _parser
+    return load_prompt(str(_PROMPT_PATH)) | get_structured_llm() | _parser
 
 
 def post_mortem_agent(

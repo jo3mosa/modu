@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Any
 
-from app.config.llm import get_strategy_llm
+from app.config.llm import get_debate_llm
 from app.observability.langsmith_helpers import add_run_metadata
 from app.state.investment_state import InvestmentAgentState
 from app.utils.json_utils import to_json
@@ -24,15 +24,15 @@ def bull_researcher(state: InvestmentAgentState) -> dict[str, Any]:
       (Bull 발언이 비어도 Bear가 독립 분석할 수 있고 Manager가 hold로 종합 가능)
     """
 
-    chain = load_prompt(str(_PROMPT_PATH)) | get_strategy_llm()
+    chain = load_prompt(str(_PROMPT_PATH)) | get_debate_llm()
 
     debate_state = state.investment_debate_state or {}
-    history = debate_state.get("history", "")
-    bull_history = debate_state.get("bull_history", "")
-    last_bear_argument = debate_state.get("current_response", "")
-    count = debate_state.get("count", 0)
+    bull_history: list[str] = debate_state.get("bull_history", [])
+    latest_bear_argument: str | None = debate_state.get("latest_bear_argument")
+    round_count: int = debate_state.get("round_count", 0)
+    current_round = round_count + 1  # 계산만, 증가는 Bear에서
 
-    add_run_metadata({"node": "bull_researcher", "round": count + 1})
+    add_run_metadata({"node": "bull_researcher", "round": current_round})
 
     signals = state.analysis_snapshot.get("signals", {}) if state.analysis_snapshot else {}
 
@@ -47,8 +47,7 @@ def bull_researcher(state: InvestmentAgentState) -> dict[str, Any]:
         "policy_context": to_json(state.policy_context),
         "memory_context": to_json(state.memory_context),
         "history_context": to_json(state.history_context),
-        "debate_history": history or "(첫 라운드 — 토론 누적 없음)",
-        "last_bear_argument": last_bear_argument or "(첫 라운드 — 직전 Bear 주장 없음)",
+        "last_bear_argument": latest_bear_argument or "(첫 라운드 — 직전 Bear 주장 없음)",
     }
 
     try:
@@ -62,16 +61,13 @@ def bull_researcher(state: InvestmentAgentState) -> dict[str, Any]:
 
     return {
         "investment_debate_state": {
-            "history": _append(history, argument),
-            "bull_history": _append(bull_history, argument),
-            "bear_history": debate_state.get("bear_history", ""),
-            "current_response": argument,
-            "count": count + 1,
+            "bull_history": bull_history + [argument],
+            "bear_history": debate_state.get("bear_history", []),
+            "debate_rounds": debate_state.get("debate_rounds", []),
+            "latest_bull_argument": argument,
+            "latest_bear_argument": latest_bear_argument,
+            "round_count": round_count,  # Bear에서만 증가
         }
     }
 
 
-def _append(existing: str, new_line: str) -> str:
-    if not existing:
-        return new_line
-    return f"{existing}\n{new_line}"

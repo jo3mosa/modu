@@ -4,7 +4,7 @@ from typing import Any
 from langchain_core.exceptions import OutputParserException
 from langchain_core.output_parsers import PydanticOutputParser
 
-from app.config.llm import get_strategy_llm
+from app.config.llm import get_structured_llm
 from app.observability.langsmith_helpers import add_run_metadata
 from app.state.investment_state import InvestmentAgentState
 from app.state.schemas import ResearchVerdict, StrategyDraft
@@ -14,6 +14,13 @@ from app.utils.prompt_loader import load_prompt
 _PROMPT_PATH = Path(__file__).resolve().parents[2] / "config" / "prompts" / "strategy_manager.txt"
 
 _parser = PydanticOutputParser(pydantic_object=ResearchVerdict)
+
+
+def _format_arguments(history: list[str], side: str) -> str:
+    if not history:
+        return f"({side} 발언 없음)"
+    parts = [f"Round {i}:\n{arg}" for i, arg in enumerate(history, 1)]
+    return "\n\n".join(parts)
 
 
 def strategy_manager(state: InvestmentAgentState) -> dict[str, Any]:
@@ -30,10 +37,11 @@ def strategy_manager(state: InvestmentAgentState) -> dict[str, Any]:
     - 후보 외 종목 선택 시에도 hold로 강등한다.
     """
 
-    chain = load_prompt(str(_PROMPT_PATH)) | get_strategy_llm() | _parser
+    chain = load_prompt(str(_PROMPT_PATH)) | get_structured_llm() | _parser
 
     debate_state = state.investment_debate_state or {}
-    debate_history = debate_state.get("history") or "(토론 history 없음)"
+    bull_history: list[str] = debate_state.get("bull_history", [])
+    bear_history: list[str] = debate_state.get("bear_history", [])
 
     signals = state.analysis_snapshot.get("signals", {}) if state.analysis_snapshot else {}
 
@@ -48,7 +56,8 @@ def strategy_manager(state: InvestmentAgentState) -> dict[str, Any]:
         "policy_context": to_json(state.policy_context),
         "memory_context": to_json(state.memory_context),
         "history_context": to_json(state.history_context),
-        "debate_history": debate_history,
+        "bull_arguments": _format_arguments(bull_history, "Bull"),
+        "bear_arguments": _format_arguments(bear_history, "Bear"),
         "format_instructions": _parser.get_format_instructions(),
     }
 
