@@ -133,18 +133,29 @@ for f in sorted(Path('ai_agent/backtest/dummy').glob('triggers_*.jsonl')):
 streamlit run ai_agent/dashboards/backtest_viewer.py
 ```
 
-## 출력 디렉터리 구조
+## 디렉터리 구조
+
+모든 backtest 자산이 `ai_agent/backtest/` 한 곳에 모입니다.
 
 ```
-backtest_out/mode_A/
-├── triggers_2024-01-02.jsonl   # DA event_loop 결과 (결정 + 체결)
-├── triggers_2024-01-03.jsonl
-├── ...
-├── scored_2024-01-02.jsonl     # --score-after 결과 (raw_return + post_mortem)
-├── scored_2024-01-03.jsonl
-├── ...
-└── summary_<run_id>.json       # 전체 통계
+ai_agent/backtest/
+├── (DA framework + AI 어댑터 코드)
+├── adapters/                 # graph_decision, random_decision
+├── examples/                 # mock_decision, generate_dummy_jsonl
+├── scripts/                  # fetch_kospi 등 1회성 스크립트
+├── data/                     # 정적 입력 (kospi_daily.csv 등) — gitignore
+├── dummy/                    # dummy JSONL 산출물 — gitignore
+├── runs/                     # ★ backtest 실행 결과 — gitignore
+│   ├── mode_A_2week/
+│   │   ├── triggers_2024-01-02.jsonl   # DA event_loop 결과
+│   │   ├── scored_2024-01-02.jsonl     # --score-after 결과
+│   │   └── summary_<run_id>.json       # 전체 통계
+│   ├── mode_A_2024/
+│   └── ...
+└── logs/                     # nohup 로그 — gitignore
 ```
+
+`run_ai_backtest --output` default가 `runs/default`. 모드/기간별로 `runs/mode_A_2024` 같이 지정 권장.
 
 `scored_*.jsonl`이 dashboard / LLM-as-Judge의 평가 입력.
 

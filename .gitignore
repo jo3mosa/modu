@@ -91,8 +91,12 @@ data/
 infra/k8s/ingress-local.yaml
 
 # Backtest 실행 산출물 (summary JSON, trigger jsonl 등)
-backtest_out_*/
-**/backtest_out_*/
+backtest_out*/
+**/backtest_out*/
+ai_agent/backtest/runs/
+ai_agent/backtest/logs/
+ai_agent/backtest/dummy/
+ai_agent/backtest/data/
 
 # 외부 레포 — 트래킹 금지
 open-trading-api/

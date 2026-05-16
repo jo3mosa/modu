@@ -190,7 +190,9 @@ def main() -> int:
                         help="쉼표 구분 종목. 미지정 시 활성 종목 자동")
     parser.add_argument("--initial-cash", type=float, default=10_000_000,
                         help="가상 포트폴리오 초기 현금 (KRW). 기본 1천만원")
-    parser.add_argument("--output", default="./backtest_out", type=Path)
+    parser.add_argument("--output", type=Path,
+                        default=Path(__file__).resolve().parent / "runs" / "default",
+                        help="기본: ai_agent/backtest/runs/default — 모드/날짜로 디렉터리 분리 권장")
     parser.add_argument("--score-after", action="store_true",
                         help="run() 종료 후 score_with_post_mortem 자동 호출")
     parser.add_argument("--pm-mock", action="store_true",

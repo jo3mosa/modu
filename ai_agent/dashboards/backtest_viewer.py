@@ -1034,8 +1034,12 @@ def tab_reasoning(df: pd.DataFrame) -> None:
 
 
 def tab_trade_chart(df: pd.DataFrame) -> None:
-    """종목별 실 주식 차트 위에 우리 매매 시점을 표시."""
-    st.markdown("### 거래 차트 — 실제 주가 위에 매매 시점 표시")
+    """종목별 실 주식 차트 위에 우리 매매 시점을 표시 — 비전문가 친화."""
+    st.markdown("### 📈 거래 차트 — 실제 주가 위에 AI 매매 시점 표시")
+    st.caption(
+        "AI 에이전트가 **언제** **어떤 가격**에 매수/매도 추천을 냈는지 실제 주가 차트 위에 표시합니다.  \n"
+        "🟢 위쪽 화살표 = 매수 추천  ·  🔴 아래쪽 화살표 = 매도 추천  ·  점선 영역 = AI가 설정한 목표가(녹색) / 손절가(빨강)"
+    )
 
     if df.empty or "stock_code" not in df.columns:
         st.warning("데이터 없음.")
@@ -1046,10 +1050,17 @@ def tab_trade_chart(df: pd.DataFrame) -> None:
         st.warning("종목 정보 없음.")
         return
 
-    c_stock, c_pad = st.columns([2, 3])
+    c_stock, c_style = st.columns([2, 1])
     with c_stock:
         selected = st.selectbox(
             "종목 선택", options=stocks, format_func=label_stock, key="trade_chart_stock"
+        )
+    with c_style:
+        chart_style = st.radio(
+            "차트 스타일",
+            options=["가격선 (단순)", "캔들봉 (전문가용)"],
+            index=0,
+            horizontal=True,
         )
 
     stock_df = df[df["stock_code"] == selected].copy()
@@ -1065,98 +1076,123 @@ def tab_trade_chart(df: pd.DataFrame) -> None:
     ohlcv = fetch_ohlcv(selected, start.isoformat(), end.isoformat())
     if ohlcv.empty:
         st.warning(
-            f"Postgres daily_ohlcv에서 {selected} {start}~{end} 데이터를 가져올 수 없습니다. "
-            "DB 연결 또는 데이터 범위 확인."
+            f"DB에서 {selected} {start}~{end} 가격 데이터를 가져올 수 없습니다."
         )
         return
+
+    # 종목 거래 요약 KPI
+    trades_only = stock_df[stock_df["side"].isin(["buy", "sell"])]
+    n_buy = (trades_only["side"] == "buy").sum()
+    n_sell = (trades_only["side"] == "sell").sum()
+    n_hold = (stock_df["action"] == "hold").sum()
+    avg_ret = trades_only["raw_return"].mean() if "raw_return" in trades_only.columns and not trades_only.empty else 0.0
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("매수 추천", f"{n_buy}건")
+    c2.metric("매도 추천", f"{n_sell}건")
+    c3.metric("관망(HOLD)", f"{n_hold}건")
+    c4.metric("평균 수익률", f"{avg_ret:+.2%}" if pd.notna(avg_ret) else "-")
 
     # === 차트 ===
     from plotly.subplots import make_subplots
 
     fig = make_subplots(
         rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.04,
-        row_heights=[0.75, 0.25],
-        subplot_titles=(f"{label_stock(selected)} — 일봉 + 매매 시점", "거래량"),
+        row_heights=[0.78, 0.22],
+        subplot_titles=(f"{label_stock(selected)} 주가", "거래량"),
     )
 
-    # 1) 캔들스틱
-    fig.add_trace(
-        go.Candlestick(
-            x=ohlcv["date"],
-            open=ohlcv["open"], high=ohlcv["high"],
-            low=ohlcv["low"], close=ohlcv["close"],
-            increasing_line_color="#DC2626",   # 한국 관습: 상승 빨강
-            decreasing_line_color="#2563EB",   # 하락 파랑
-            name="OHLC",
-            showlegend=False,
-        ),
-        row=1, col=1,
-    )
+    # 1) 가격 — line 또는 캔들
+    if chart_style.startswith("가격선"):
+        fig.add_trace(
+            go.Scatter(
+                x=ohlcv["date"], y=ohlcv["close"],
+                mode="lines", name="종가",
+                line=dict(color="#1F2937", width=2),
+                hovertemplate="<b>%{x|%Y-%m-%d}</b><br>종가 %{y:,.0f}원<extra></extra>",
+            ),
+            row=1, col=1,
+        )
+    else:
+        fig.add_trace(
+            go.Candlestick(
+                x=ohlcv["date"],
+                open=ohlcv["open"], high=ohlcv["high"],
+                low=ohlcv["low"], close=ohlcv["close"],
+                increasing_line_color="#DC2626",
+                decreasing_line_color="#2563EB",
+                name="OHLC",
+                showlegend=False,
+            ),
+            row=1, col=1,
+        )
 
-    # 2) 거래 마커 — BUY/SELL/HOLD
+    # 2) 매수/매도 시점 마커 + annotation (한글)
     marker_specs = [
-        ("buy",  "triangle-up",   ACTION_COLORS["buy"],  "BUY"),
-        ("sell", "triangle-down", ACTION_COLORS["sell"], "SELL"),
+        ("buy",  "triangle-up",   ACTION_COLORS["buy"],  "🟢 AI 매수"),
+        ("sell", "triangle-down", ACTION_COLORS["sell"], "🔴 AI 매도"),
     ]
+    close_lookup = dict(zip(ohlcv["date"], ohlcv["close"]))
     for side, symbol, color, legend in marker_specs:
         side_df = stock_df[stock_df["side"] == side].copy()
         if side_df.empty:
             continue
-        # marker y는 execution_price 또는 그날 close
         side_df["marker_y"] = side_df["execution_price"]
         side_df["marker_y"] = side_df["marker_y"].fillna(
-            side_df["date"].map(dict(zip(ohlcv["date"], ohlcv["close"])))
+            side_df["date"].map(close_lookup)
         )
 
-        # hover text
         def _hover(r):
-            parts = [f"{label_stock(selected)}"]
-            parts.append(f"{r.get('date').strftime('%Y-%m-%d') if pd.notna(r.get('date')) else ''}")
+            parts = [f"<b>{legend} — {label_stock(selected)}</b>"]
+            parts.append(f"날짜: {r.get('date').strftime('%Y-%m-%d') if pd.notna(r.get('date')) else ''}")
             if pd.notna(r.get("execution_price")):
-                parts.append(f"진입 {float(r['execution_price']):,.0f}원")
+                parts.append(f"매매가: {float(r['execution_price']):,.0f}원")
             if pd.notna(r.get("target_price")):
-                parts.append(f"target {float(r['target_price']):,.0f}원")
+                parts.append(f"목표가: {float(r['target_price']):,.0f}원")
             if pd.notna(r.get("stop_loss_price")):
-                parts.append(f"stop {float(r['stop_loss_price']):,.0f}원")
+                parts.append(f"손절가: {float(r['stop_loss_price']):,.0f}원")
             if pd.notna(r.get("raw_return")):
-                parts.append(f"수익률 {r['raw_return']:+.2%}")
+                parts.append(f"7일 후 수익률: {r['raw_return']:+.2%}")
             if pd.notna(r.get("confidence")):
-                parts.append(f"conf {r['confidence']:.2f}")
+                parts.append(f"AI 자신감: {r['confidence']:.0%}")
             return "<br>".join(parts)
 
         fig.add_trace(
             go.Scatter(
                 x=side_df["date"], y=side_df["marker_y"],
-                mode="markers",
-                marker=dict(symbol=symbol, size=18, color=color,
+                mode="markers+text",
+                marker=dict(symbol=symbol, size=20, color=color,
                             line=dict(width=2, color="white")),
                 name=legend,
-                text=side_df.apply(_hover, axis=1),
-                hovertemplate="%{text}<extra></extra>",
+                text=["매수" if side == "buy" else "매도"] * len(side_df),
+                textposition="top center" if side == "buy" else "bottom center",
+                textfont=dict(size=11, color=color),
+                hovertext=side_df.apply(_hover, axis=1),
+                hovertemplate="%{hovertext}<extra></extra>",
             ),
             row=1, col=1,
         )
 
-    # 3) target / stop 가로 선 — 선택한 거래가 있으면
+    # 3) target / stop 영역 (선이 아닌 옅은 가로 띠) — 최근 거래만 (너무 많아지면 가려짐)
     has_trade = stock_df[stock_df["side"].isin(["buy", "sell"])].copy()
     for _, r in has_trade.iterrows():
         if pd.notna(r.get("target_price")):
             fig.add_hline(
                 y=float(r["target_price"]),
-                line=dict(color=ACTION_COLORS["buy"], dash="dot", width=1),
-                row=1, col=1, opacity=0.4,
-                annotation_text=f"target {float(r['target_price']):,.0f}",
+                line=dict(color=ACTION_COLORS["buy"], dash="dot", width=1.2),
+                row=1, col=1, opacity=0.5,
+                annotation_text=f"🎯 목표 {float(r['target_price']):,.0f}",
                 annotation_position="right",
-                annotation_font_size=10,
+                annotation_font=dict(size=10, color=ACTION_COLORS["buy"]),
             )
         if pd.notna(r.get("stop_loss_price")):
             fig.add_hline(
                 y=float(r["stop_loss_price"]),
-                line=dict(color=ACTION_COLORS["sell"], dash="dot", width=1),
-                row=1, col=1, opacity=0.4,
-                annotation_text=f"stop {float(r['stop_loss_price']):,.0f}",
+                line=dict(color=ACTION_COLORS["sell"], dash="dot", width=1.2),
+                row=1, col=1, opacity=0.5,
+                annotation_text=f"⚠️ 손절 {float(r['stop_loss_price']):,.0f}",
                 annotation_position="right",
-                annotation_font_size=10,
+                annotation_font=dict(size=10, color=ACTION_COLORS["sell"]),
             )
 
     # 4) 거래량 막대 (상승봉=빨강, 하락봉=파랑)
@@ -1167,27 +1203,56 @@ def tab_trade_chart(df: pd.DataFrame) -> None:
     fig.add_trace(
         go.Bar(
             x=ohlcv_v["date"], y=ohlcv_v["volume"],
-            marker_color=ohlcv_v["color"], showlegend=False,
+            marker_color=ohlcv_v["color"], showlegend=False, opacity=0.6,
             hovertemplate="%{x|%Y-%m-%d}<br>거래량 %{y:,.0f}<extra></extra>",
         ),
         row=2, col=1,
     )
 
     fig.update_layout(xaxis_rangeslider_visible=False)
-    fig.update_yaxes(title="원", row=1, col=1)
+    fig.update_yaxes(title="가격 (원)", row=1, col=1, tickformat=",.0f")
     fig.update_yaxes(title="거래량", row=2, col=1)
-    _apply_chart_style(fig, height=620)
+    _apply_chart_style(fig, height=640)
     fig.update_layout(hovermode="x unified")
     st.plotly_chart(fig, use_container_width=True)
 
-    # 그 종목의 거래 요약 표
-    st.markdown("##### 이 종목의 거래 내역")
-    show_cols = [c for c in [
-        "date", "side", "execution_price", "target_price", "stop_loss_price",
-        "exit_price", "raw_return", "confidence", "winning_side",
-    ] if c in stock_df.columns]
-    summary = stock_df[show_cols].copy()
-    summary = summary.sort_values("date").reset_index(drop=True)
+    # === 한글 설명 ===
+    with st.expander("📖 차트 보는 법"):
+        st.markdown("""
+        - **검은색 가격선**: 실제 주식 종가의 시간 흐름
+        - **🟢 매수 (위쪽 화살표)**: AI가 "이 시점에 사라"고 추천한 시각과 가격
+        - **🔴 매도 (아래쪽 화살표)**: AI가 "팔라"고 추천한 시각과 가격
+        - **🎯 목표가 (녹색 점선)**: 매수 시 AI가 설정한 익절 가격 — 여기 도달하면 익절
+        - **⚠️ 손절가 (빨강 점선)**: AI가 설정한 손실 한도 — 여기 떨어지면 손절
+        - **하단 막대**: 거래량. 색은 그날 상승(빨강) / 하락(파랑)
+        - 마커에 마우스 올리면 그 결정의 모든 정보 (목표/손절/수익률/자신감)
+        """)
+
+    # === 거래 내역 표 (한글) ===
+    st.markdown("##### 📋 이 종목의 AI 매매 기록")
+    rename_map = {
+        "date": "날짜", "side": "매매", "execution_price": "체결가",
+        "target_price": "목표가", "stop_loss_price": "손절가",
+        "exit_price": "청산가", "raw_return": "수익률",
+        "confidence": "자신감", "winning_side": "토론 우세",
+    }
+    show_cols = [c for c in rename_map if c in stock_df.columns]
+    summary = stock_df[show_cols].copy().sort_values("date").reset_index(drop=True)
+    summary = summary.rename(columns=rename_map)
+    # 매매 한글화
+    if "매매" in summary.columns:
+        summary["매매"] = summary["매매"].map(
+            {"buy": "🟢 매수", "sell": "🔴 매도"}
+        ).fillna("⚪ 관망")
+    # 수익률 % 포맷
+    if "수익률" in summary.columns:
+        summary["수익률"] = summary["수익률"].apply(
+            lambda x: f"{x:+.2%}" if pd.notna(x) else "-"
+        )
+    if "자신감" in summary.columns:
+        summary["자신감"] = summary["자신감"].apply(
+            lambda x: f"{x:.0%}" if pd.notna(x) else "-"
+        )
     st.dataframe(summary, use_container_width=True, hide_index=True)
 
 
@@ -1293,14 +1358,17 @@ def main() -> None:
     st.sidebar.markdown("### 데이터 입력")
 
     # 여러 후보 위치 자동 검색 — JSONL 들어있는 디렉터리들
+    # 우선순위: ai_agent/backtest/runs (메인) → dummy → 레거시 위치
     search_roots = [
+        Path("backtest/runs"),                # cwd=ai_agent
+        Path("ai_agent/backtest/runs"),       # cwd=repo root
         Path("backtest/dummy"),
         Path("ai_agent/backtest/dummy"),
+        # 레거시 (이전 산출물이 남아있으면)
         Path("runs"),
         Path("ai_agent/runs"),
         Path("backtest_out"),
         Path("../backtest_out"),
-        Path("ai_agent/backtest_out"),
     ]
 
     # 1년치 통합 로드를 위해 디렉터리 단위로 모음
