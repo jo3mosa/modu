@@ -84,6 +84,46 @@ def label_stock(code: str | None) -> str:
     return f"{code} {name}" if name else str(code)
 
 
+def _run_dir_label(run_dir: Path) -> str:
+    """run 디렉터리 → '2024-01-02 ~ 2024-01-15 · 8 files' 형식.
+
+    날짜 추출 우선순위:
+      1. summary_<start>_<end>_*.json 파일명 파싱
+      2. triggers_*.jsonl 또는 scored_*.jsonl 의 min/max 날짜
+      3. 둘 다 실패 시 폴더명
+    """
+    files = list(run_dir.glob("*.jsonl"))
+    n_files = len(files)
+
+    # summary 파일에서 추출 시도
+    for s in run_dir.glob("summary_*.json"):
+        # 형식: summary_<YYYY-MM-DD>_<YYYY-MM-DD>_<user>_<hash>.json
+        parts = s.stem.split("_")
+        if len(parts) >= 3:
+            try:
+                from datetime import date as _d
+                start = _d.fromisoformat(parts[1])
+                end = _d.fromisoformat(parts[2])
+                return f"{start.isoformat()} ~ {end.isoformat()} · {n_files} files"
+            except (ValueError, IndexError):
+                pass
+
+    # triggers/scored 파일명에서 추출
+    date_files = [
+        f for f in files
+        if f.stem.startswith(("triggers_", "scored_"))
+    ]
+    if date_files:
+        try:
+            dates = [f.stem.split("_", 1)[1] for f in date_files]
+            return f"{min(dates)} ~ {max(dates)} · {n_files} files"
+        except (ValueError, IndexError):
+            pass
+
+    # fallback: 폴더명
+    return f"{run_dir.name} · {n_files} files"
+
+
 def _apply_chart_style(fig: go.Figure, height: int = 420) -> go.Figure:
     """모든 차트에 적용할 공통 스타일 — 마진 / 폰트 / 그리드 / 호버."""
     fig.update_layout(
@@ -973,7 +1013,9 @@ def tab_reasoning(df: pd.DataFrame) -> None:
     if pd.notna(row.get("raw_return")):
         c4.metric("Raw return", f"{row['raw_return']:+.2%}")
     else:
-        c4.metric("Order amount", f"{int(row.get('order_amount') or 0):,}")
+        oa = row.get("order_amount")
+        oa_int = int(oa) if pd.notna(oa) else 0
+        c4.metric("Order amount", f"{oa_int:,}")
 
     # 추론 텍스트 — 2열로
     st.divider()
@@ -1173,26 +1215,37 @@ def tab_trade_chart(df: pd.DataFrame) -> None:
             row=1, col=1,
         )
 
-    # 3) target / stop 영역 (선이 아닌 옅은 가로 띠) — 최근 거래만 (너무 많아지면 가려짐)
+    # 3) target / stop 가로 점선 — line 자체만, annotation은 차트 내부 top에 배치
+    # (외부 right로 두면 잘림 — 마진 안 보장)
     has_trade = stock_df[stock_df["side"].isin(["buy", "sell"])].copy()
+    seen_targets: set[float] = set()  # 같은 가격 중복 표시 방지
+    seen_stops: set[float] = set()
     for _, r in has_trade.iterrows():
-        if pd.notna(r.get("target_price")):
+        tp = r.get("target_price")
+        if pd.notna(tp) and float(tp) not in seen_targets:
+            seen_targets.add(float(tp))
             fig.add_hline(
-                y=float(r["target_price"]),
+                y=float(tp),
                 line=dict(color=ACTION_COLORS["buy"], dash="dot", width=1.2),
                 row=1, col=1, opacity=0.5,
-                annotation_text=f"🎯 목표 {float(r['target_price']):,.0f}",
-                annotation_position="right",
+                annotation_text=f"🎯 목표 {float(tp):,.0f}",
+                annotation_position="top left",
                 annotation_font=dict(size=10, color=ACTION_COLORS["buy"]),
+                annotation_xanchor="left",
+                annotation_x=0.01,
             )
-        if pd.notna(r.get("stop_loss_price")):
+        sp = r.get("stop_loss_price")
+        if pd.notna(sp) and float(sp) not in seen_stops:
+            seen_stops.add(float(sp))
             fig.add_hline(
-                y=float(r["stop_loss_price"]),
+                y=float(sp),
                 line=dict(color=ACTION_COLORS["sell"], dash="dot", width=1.2),
                 row=1, col=1, opacity=0.5,
-                annotation_text=f"⚠️ 손절 {float(r['stop_loss_price']):,.0f}",
-                annotation_position="right",
+                annotation_text=f"⚠️ 손절 {float(sp):,.0f}",
+                annotation_position="bottom left",
                 annotation_font=dict(size=10, color=ACTION_COLORS["sell"]),
+                annotation_xanchor="left",
+                annotation_x=0.01,
             )
 
     # 4) 거래량 막대 (상승봉=빨강, 하락봉=파랑)
@@ -1213,7 +1266,10 @@ def tab_trade_chart(df: pd.DataFrame) -> None:
     fig.update_yaxes(title="가격 (원)", row=1, col=1, tickformat=",.0f")
     fig.update_yaxes(title="거래량", row=2, col=1)
     _apply_chart_style(fig, height=640)
-    fig.update_layout(hovermode="x unified")
+    fig.update_layout(
+        hovermode="x unified",
+        margin=dict(l=60, r=80, t=60, b=40),   # 우측 여백 확보
+    )
     st.plotly_chart(fig, use_container_width=True)
 
     # === 한글 설명 ===
@@ -1390,7 +1446,7 @@ def main() -> None:
         path_str = st.sidebar.text_input("디렉터리 경로", value="backtest_out/mode_A_2024")
         run_dir = Path(path_str)
     else:
-        labels = [f"{p} ({len(list(p.glob('*.jsonl')))} files)" for p in run_dirs]
+        labels = [_run_dir_label(p) for p in run_dirs]
         idx = st.sidebar.selectbox(
             "Backtest run 선택",
             options=range(len(run_dirs)),
