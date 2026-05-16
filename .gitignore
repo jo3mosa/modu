@@ -93,4 +93,3 @@ infra/k8s/ingress-local.yaml
 # Backtest 실행 산출물 (summary JSON, trigger jsonl 등)
 backtest_out_*/
 **/backtest_out_*/
->>>>>>>>> Temporary merge branch 2
