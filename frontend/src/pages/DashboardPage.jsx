@@ -6,6 +6,7 @@ const HighchartsReact = HighchartsReactPkg.default || HighchartsReactPkg;
 import highcharts3d from 'highcharts/highcharts-3d';
 import TutorialOverlay from '../components/TutorialOverlay';
 import Skeleton from '../components/Skeleton';
+import InlineError from '../components/InlineError';
 import { getAccountSummary, getPortfolio } from '../api/account';
 import { getAiDecisions } from '../api/aiAgent';
 import { getOrderHistory, ORDER_STATUS_DISPLAY } from '../api/order';
@@ -77,79 +78,110 @@ export default function DashboardPage() {
 
   const [summary, setSummary] = useState(null);
   const [holdings, setHoldings] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [isKisConnected, setIsKisConnected] = useState(true);
   const [aiStatus, setAiStatus] = useState(MOCK_AI_STATUS);
   const [profileRiskLevel, setProfileRiskLevel] = useState(null);
   const [aiDecisions, setAiDecisions] = useState([]);
   const [orderHistory, setOrderHistory] = useState([]);
 
+  // 영역별 로딩/에러 상태 — 한 영역 실패가 다른 영역 로드를 막지 않도록 분리
+  const [summaryState, setSummaryState] = useState({ loading: true, error: null });
+  const [holdingsState, setHoldingsState] = useState({ loading: true, error: null });
+  const [aiState, setAiState] = useState({ loading: true, error: null });
+  const [orderState, setOrderState] = useState({ loading: true, error: null });
+
+  // KIS 미연결 에러 코드 — summary/portfolio 어느 쪽에서 잡아도 페이지 전체 차단 트리거
+  const isKisNotConnected = (error) =>
+    error?.errorCode === 'KIS_NOT_CONNECTED' || error?.errorCode === 'USER_002';
+
+  // 영역별 fetch — silent=true면 loading 토글 없이 데이터만 갱신 (SSE 등 백그라운드 갱신용)
+  const fetchSummary = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setSummaryState((s) => ({ ...s, loading: true }));
+    try {
+      const data = await getAccountSummary();
+      setSummary(data);
+      setSummaryState({ loading: false, error: null });
+    } catch (error) {
+      if (isKisNotConnected(error)) { setIsKisConnected(false); return; }
+      setSummaryState({ loading: false, error });
+    }
+  }, []);
+
+  const fetchPortfolio = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setHoldingsState((s) => ({ ...s, loading: true }));
+    try {
+      const data = await getPortfolio();
+      setHoldings(normalizeHoldings(data.holdings));
+      setHoldingsState({ loading: false, error: null });
+    } catch (error) {
+      if (isKisNotConnected(error)) { setIsKisConnected(false); return; }
+      setHoldingsState({ loading: false, error });
+    }
+  }, []);
+
+  const fetchAi = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setAiState((s) => ({ ...s, loading: true }));
+    try {
+      const data = await getAiDecisions({ page: 0, size: 10 });
+      setAiDecisions(data?.content ?? []);
+      setAiState({ loading: false, error: null });
+    } catch (error) {
+      setAiState({ loading: false, error });
+    }
+  }, []);
+
+  const fetchOrders = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setOrderState((s) => ({ ...s, loading: true }));
+    try {
+      const data = await getOrderHistory({ page: 1, size: 10 });
+      setOrderHistory(data?.orders ?? []);
+      setOrderState({ loading: false, error: null });
+    } catch (error) {
+      // 404(이력 없음)는 정상 흐름으로 처리 — 빈 배열만 세팅하고 에러 미표시
+      if (error.status === 404) {
+        setOrderHistory([]);
+        setOrderState({ loading: false, error: null });
+        return;
+      }
+      setOrderState({ loading: false, error });
+    }
+  }, []);
+
+  // 투자 성향은 미설정(404/INVEST_001)이 정상 흐름이라 별도 에러 state 안 둠
+  const fetchProfile = useCallback(async () => {
+    try {
+      const result = await getProfile();
+      setProfileRiskLevel(result?.riskLevel ?? null);
+    } catch (error) {
+      if (error.status !== 404 && error.errorCode !== 'INVEST_001') {
+        console.warn('투자 성향 로드 실패:', error);
+      }
+      setProfileRiskLevel(null);
+    }
+  }, []);
+
   useEffect(() => {
     const hasSeenTutorial = localStorage.getItem('hasSeenDashboardTutorial');
     if (!hasSeenTutorial) {
       setShowTutorial(true);
     }
-
-    async function fetchDashboardData() {
-      setIsLoading(true);
-      try {
-        const [summaryData, portfolioData, decisionsData, historyResult, profileResult] = await Promise.all([
-          getAccountSummary(),
-          getPortfolio(),
-          // 최근 매매 로그용 — AI 10개 + 수동 10개 가져와서 합치고 최신 8개 표시
-          getAiDecisions({ page: 0, size: 10 }),
-          getOrderHistory({ page: 1, size: 10 }).catch((error) => {
-            if (error.status !== 404) {
-              console.warn('거래 이력 로드 실패:', error);
-            }
-            return { orders: [] };
-          }),
-          // 투자 성향 미설정(404) 케이스를 정상 흐름으로 흡수해 다른 데이터 로드를 막지 않음
-          getProfile().catch((error) => {
-            if (error.status !== 404 && error.errorCode !== 'INVEST_001') {
-              console.warn('투자 성향 로드 실패:', error);
-            }
-            return null;
-          }),
-        ]);
-
-        setProfileRiskLevel(profileResult?.riskLevel ?? null);
-        setSummary(summaryData);
-        setHoldings(normalizeHoldings(portfolioData.holdings));
-        setAiDecisions(decisionsData?.content ?? []);
-        setOrderHistory(historyResult?.orders ?? []);
-      } catch (error) {
-        if (error.errorCode === 'KIS_NOT_CONNECTED' || error.errorCode === 'USER_002') {
-          setIsKisConnected(false);
-        } else {
-          console.error('대시보드 데이터 로드 실패:', error);
-        }
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    fetchDashboardData();
-  }, []);
+    fetchSummary();
+    fetchPortfolio();
+    fetchAi();
+    fetchOrders();
+    fetchProfile();
+  }, [fetchSummary, fetchPortfolio, fetchAi, fetchOrders, fetchProfile]);
 
   // SSE ORDER_EXECUTED 수신 시 자산/포트폴리오/매매 로그를 즉시 재조회.
   // (자동매매 손절·익절 또는 수동 주문 체결 직후 60초 폴링을 기다리지 않고 화면을 갱신)
+  // silent=true로 호출해 loading 깜빡임 없이 데이터만 갱신.
   // 투자 성향(profile)은 변동 없으므로 갱신 대상에서 제외.
-  const refreshAccountData = useCallback(async () => {
-    try {
-      const [summaryData, portfolioData, decisionsData, historyResult] = await Promise.all([
-        getAccountSummary(),
-        getPortfolio(),
-        getAiDecisions({ page: 0, size: 10 }),
-        getOrderHistory({ page: 1, size: 10 }).catch(() => ({ orders: [] })),
-      ]);
-      setSummary(summaryData);
-      setHoldings(normalizeHoldings(portfolioData.holdings));
-      setAiDecisions(decisionsData?.content ?? []);
-      setOrderHistory(historyResult?.orders ?? []);
-    } catch (error) {
-      console.warn('체결 후 대시보드 갱신 실패:', error);
-    }
-  }, []);
+  const refreshAccountData = useCallback(() => {
+    fetchSummary({ silent: true });
+    fetchPortfolio({ silent: true });
+    fetchAi({ silent: true });
+    fetchOrders({ silent: true });
+  }, [fetchSummary, fetchPortfolio, fetchAi, fetchOrders]);
 
   const { latestEvent } = useOrderSSE();
   useEffect(() => {
@@ -386,14 +418,19 @@ export default function DashboardPage() {
     }]
   };
 
-  // KIS 미연결만 페이지 전체 차단. 로딩 중에는 페이지 레이아웃을 유지하면서
-  // 각 영역에서 isLoading 또는 데이터 null 여부에 따라 스켈레톤을 보여준다.
+  // KIS 미연결만 페이지 전체 차단. 그 외엔 페이지 레이아웃 유지하면서
+  // 각 영역에서 자체적으로 로딩/에러를 표시한다.
   if (!isKisConnected) return <div className="dashboard-container"><p style={{ padding: '2rem', color: '#ef4444' }}>한국투자증권 API 연동이 필요합니다. 마이페이지에서 설정해주세요.</p></div>;
 
-  // 데이터가 아직 없는 영역인지 판단 — 스켈레톤 렌더 조건
-  const summaryLoading = isLoading || !derivedSummary;
-  const holdingsLoading = isLoading && holdings.length === 0;
-  const logsLoading = isLoading && recentLogs.length === 0;
+  // 영역별 표시 분기 — 우선순위: error > loading > 정상
+  // 자산 요약: summary + holdings 둘 다 의존(derivedSummary 계산용) → 둘 중 하나라도 실패면 영역 에러
+  const summaryError = summaryState.error || holdingsState.error;
+  const summaryLoading = (summaryState.loading || holdingsState.loading) || !derivedSummary;
+  const holdingsError = holdingsState.error;
+  const holdingsLoading = holdingsState.loading && holdings.length === 0;
+  // 매매 로그는 AI + 주문 둘 다 의존. 한 쪽만 실패 시 다른 쪽만 조용히 표시, 둘 다 실패 시에만 에러 카드.
+  const logsError = aiState.error && orderState.error;
+  const logsLoading = (aiState.loading || orderState.loading) && recentLogs.length === 0;
 
   return (
     <div className="dashboard-container">
@@ -411,6 +448,14 @@ export default function DashboardPage() {
         <div className="dashboard-main">
           {/* 자산 요약 + 차트 */}
           <div className="panel overview-panel">
+            {summaryError ? (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
+                <InlineError
+                  message="자산 정보를 불러오지 못했습니다."
+                  onRetry={() => { fetchSummary(); fetchPortfolio(); }}
+                />
+              </div>
+            ) : (<>
             <div className="overview-text">
               <h2>포트폴리오 요약</h2>
               <div className="asset-huge">
@@ -471,11 +516,18 @@ export default function DashboardPage() {
                 />
               )}
             </div>
+            </>)}
           </div>
 
           {/* 보유 종목 리스트 */}
           <div className="panel holdings-panel">
             <h2>보유 종목 상세</h2>
+            {holdingsError ? (
+              <InlineError
+                message="보유 종목을 불러오지 못했습니다."
+                onRetry={() => fetchPortfolio()}
+              />
+            ) : (
             <div className="table-wrapper">
               <table className="data-table">
                 <thead>
@@ -531,6 +583,7 @@ export default function DashboardPage() {
                 </tbody>
               </table>
             </div>
+            )}
           </div>
         </div>
 
@@ -580,7 +633,13 @@ export default function DashboardPage() {
           <div className="panel logs-panel">
             <h2>최근 매매 로그</h2>
             <div className="logs-list">
-              {logsLoading ? (
+              {logsError ? (
+                <InlineError
+                  compact
+                  message="거래 이력을 불러오지 못했습니다."
+                  onRetry={() => { fetchAi(); fetchOrders(); }}
+                />
+              ) : logsLoading ? (
                 Array.from({ length: 4 }).map((_, idx) => (
                   <div key={`sk-log-${idx}`} className="log-item">
                     <Skeleton width={40} height={40} borderRadius={8} />

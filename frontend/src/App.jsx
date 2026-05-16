@@ -3,6 +3,8 @@ import { Toaster } from 'sonner';
 import AuthLayout from './layouts/AuthLayout';
 import MainLayout from './layouts/MainLayout';
 import { OrderSSEProvider } from './hooks/useOrderSSE';
+import { AiChatProvider } from './hooks/useAiChat';
+import AiChatButton from './components/AiChatButton';
 import PrivateRoute from './components/PrivateRoute';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
@@ -38,7 +40,10 @@ function App() {
           element={
             <PrivateRoute>
               <OrderSSEProvider>
-                <MainLayout />
+                <AiChatProvider>
+                  <MainLayout />
+                  <AiChatButton />
+                </AiChatProvider>
               </OrderSSEProvider>
             </PrivateRoute>
           }
