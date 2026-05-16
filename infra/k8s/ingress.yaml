@@ -13,6 +13,12 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
     # WebSocket: HTTP/1.1 필수 (Upgrade 헤더 지원)
     nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    # WebSocket Upgrade/Connection 헤더 명시 전달.
+    # $connection_upgrade 는 nginx-ingress 기본 map 변수 — WebSocket 요청만 'upgrade',
+    # 일반 HTTP/SSE 는 'close'. SSE(/api/v1/orders/connect) 와 충돌 방지.
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection $connection_upgrade;
 spec:
   ingressClassName: nginx
   rules:
