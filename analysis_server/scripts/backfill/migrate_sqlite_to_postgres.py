@@ -131,9 +131,13 @@ def _format_row(values: tuple, schema: list[tuple[str, str]]) -> str:
     """tuple → TAB-separated text for COPY FROM STDIN.
 
     BLOB(bytes) 값은 schema 타입에 맞춰 디코딩. NULL → \\N.
+
+    stock_code 는 항상 6자리 zero-pad — SQLite 가 leading zero 를 잃고 '5930'
+    으로 저장된 경우, Postgres 적재 후 다른 백필 스크립트가 '005930' 기준으로
+    매칭하면 같은 종목이 두 코드로 split 되는 사고를 방지.
     """
     parts = []
-    for v, (_, typ) in zip(values, schema, strict=True):
+    for v, (name, typ) in zip(values, schema, strict=True):
         if v is None:
             parts.append(r"\N")
             continue
@@ -142,6 +146,8 @@ def _format_row(values: tuple, schema: list[tuple[str, str]]) -> str:
             if v is None:
                 parts.append(r"\N")
                 continue
+        if name == "stock_code":
+            v = str(v).strip().zfill(6)
         s = str(v)
         s = s.replace("\\", "\\\\").replace("\t", "\\t").replace("\n", "\\n").replace("\r", "\\r")
         parts.append(s)

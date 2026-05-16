@@ -9,8 +9,11 @@ from sqlalchemy import text
 from clients.postgres_client import get_engine
 
 
-_ACTIVE_STOCKS_SQL = text(
-    "SELECT stock_code FROM stock_master WHERE is_active = TRUE"
+# 백테스트·학습 panel 용 과거 캔들 백필은 현재 상장 여부 무관 — 2023~2024 에
+# 거래되다 지금은 상폐된 종목도 적재해야 survivorship bias 가 안 생긴다.
+# stock_master 전체를 universe 로 잡고 pykrx 가 데이터 없는 종목은 자연스럽게 skip.
+_ALL_STOCKS_SQL = text(
+    "SELECT stock_code FROM stock_master ORDER BY stock_code"
 )
 
 # 기존 SQLite 의 INSERT OR IGNORE 와 동치: PK 충돌 시 무시 (이미 적재된 과거 행은 보존).
@@ -28,7 +31,7 @@ def fetch_and_insert_historical_candles(years=5):
         cursor = raw_conn.cursor()
 
         try:
-            target_stocks = pd.read_sql(_ACTIVE_STOCKS_SQL, engine)
+            target_stocks = pd.read_sql(_ALL_STOCKS_SQL, engine)
             stock_codes = target_stocks["stock_code"].tolist()
         except Exception as e:
             print("[ERROR] 마스터 테이블을 읽을 수 없습니다. (에러:", e, ")")
