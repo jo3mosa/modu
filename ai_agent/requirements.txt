@@ -1,8 +1,10 @@
 langgraph==1.1.10
 langchain-core==1.3.2
 langchain-openai==1.2.1
-langchain-anthropic==0.3.21
-langchain-xai==0.2.5
+# 멀티 프로바이더 (claude_*/grok_* profile 사용 시 필요). MODEL_PROFILE이 gms_*만이면 사실상 미사용.
+# langchain-core 1.3.2와 호환되는 버전을 pip가 자동 선택.
+langchain-anthropic
+langchain-xai
 langsmith==0.4.27
 tiktoken==0.8.0
 pydantic==2.13.3
@@ -10,6 +12,7 @@ PyYAML==6.0.3
 SQLAlchemy==2.0.49
 psycopg2-binary==2.9.12
 pymongo==4.17.0
+yfinance
 python-dotenv==1.2.2
 redis==7.4.0
 kafka-python==2.0.3

@@ -1,0 +1,45 @@
+{
+  "run_id": "2024-01-02_2024-01-15_backtest-user_e22fea71",
+  "started_at": "2026-05-16T14:55:50.147552Z",
+  "ended_at": "2026-05-16T15:08:04.883287Z",
+  "elapsed_sec": 734.735735,
+  "config": {
+    "start": "2024-01-02",
+    "end": "2024-01-15",
+    "user_id": "backtest-user",
+    "watchlist_override": [
+      "005930",
+      "000660",
+      "035720",
+      "051910",
+      "068270"
+    ],
+    "event_lookback_days": 2,
+    "sentiment_lookback_days": 1
+  },
+  "stats": {
+    "days": 10,
+    "triggers_total": 17,
+    "triggers_with_decision": 17,
+    "decision_errors": 0,
+    "fills": 15,
+    "action_distribution": {
+      "sell": 15,
+      "hold": 2
+    },
+    "rule_distribution": {
+      "RSI-001": 8,
+      "BB-001": 6,
+      "MFI-001": 6,
+      "RSI-003": 2,
+      "MACD-001": 1,
+      "PRICE-001": 1,
+      "MACD-002": 4,
+      "BB-002": 2,
+      "MFI-002": 2,
+      "RSI-002": 1,
+      "RSI-004": 1,
+      "ATR-001": 1
+    }
+  }
+}

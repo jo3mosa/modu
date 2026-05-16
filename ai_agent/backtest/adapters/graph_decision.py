@@ -19,14 +19,21 @@ DA framework가 한 트리거마다 호출하는 `decision_fn(trigger, user_ctx,
 from __future__ import annotations
 
 import logging
+import sys
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from ..interfaces import Decision, Trigger
 
-# DA framework는 ai_agent/backtest/에 있고 app/은 동일 ai_agent 패키지 안.
-# 따라서 app.graph.runner 같은 절대 import가 가능 (ai_agent가 sys.path에 있을 때).
+# repo 루트에서 `python -m ai_agent.backtest.run_ai_backtest`로 실행 시
+# cwd는 repo 루트이고 sys.path에 `ai_agent/`가 없어 `app.*` import 실패.
+# 명시적으로 ai_agent/ 디렉터리를 추가해 production import 경로(app.*)를 살린다.
+_AI_AGENT_ROOT = Path(__file__).resolve().parents[2]
+if str(_AI_AGENT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_AI_AGENT_ROOT))
+
 from app.graph.builder import GraphMode  # noqa: E402
 from app.graph.runner import run_pipeline  # noqa: E402
 from app.triggers.schemas import MarketTrigger, UserTriggerEvent  # noqa: E402
