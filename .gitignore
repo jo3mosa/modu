@@ -93,3 +93,9 @@ infra/k8s/ingress-local.yaml
 # Backtest 실행 산출물 (summary JSON, trigger jsonl 등)
 backtest_out_*/
 **/backtest_out_*/
+
+# 외부 레포 — 트래킹 금지
+open-trading-api/
+TradingGoose.github.io/
+TradingAgents/
+Vibe-Trading/
