@@ -16,6 +16,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneId;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 /**
@@ -170,11 +171,11 @@ class MarketHourPolicyTest {
     // ──────────────────────────────────────────────────────────
 
     private void givenOpen() {
-        when(tradingCalendarService.isMarketOpen(any())).thenReturn(true);
+        when(tradingCalendarService.isMarketOpen(any(LocalDate.class))).thenReturn(true);
     }
 
     private void givenClosed() {
-        when(tradingCalendarService.isMarketOpen(any())).thenReturn(false);
+        when(tradingCalendarService.isMarketOpen(any(LocalDate.class))).thenReturn(false);
     }
 
     /** KST 임의의 평일 날짜 (2026-05-20 수요일) 기준 시:분으로 OffsetDateTime 생성 */
@@ -183,9 +184,5 @@ class MarketHourPolicyTest {
         return LocalDateTime.of(fixedDay, java.time.LocalTime.of(hour, minute))
                 .atZone(KST)
                 .toOffsetDateTime();
-    }
-
-    private static LocalDate any() {
-        return org.mockito.ArgumentMatchers.any(LocalDate.class);
     }
 }
