@@ -143,11 +143,39 @@ def _is_word_boundary(text, start, end):
     return left_ok and right_ok
 
 
+# (name_dict id, alias_dict id) 키로 sorted term 리스트 캐싱.
+# 사전이 바뀌지 않는 한 매 article 마다 list 빌드 + sort + ascii 분류를 재사용.
+_combined_terms_cache = (None, None, None)
+
+
+def _get_combined_terms(name_to_code, alias_to_code):
+    """[(term_lower, code, method, ascii_only), ...] 를 길이 desc 정렬해 반환."""
+    global _combined_terms_cache
+    cache_key = (id(name_to_code), id(alias_to_code))
+    if _combined_terms_cache[0] == cache_key[0] and _combined_terms_cache[1] == cache_key[1]:
+        return _combined_terms_cache[2]
+
+    combined = []
+    for name, code in name_to_code.items():
+        combined.append((name, code, "name", bool(_ASCII_ONLY.match(name))))
+    for alias, code in alias_to_code.items():
+        combined.append((alias, code, "alias", bool(_ASCII_ONLY.match(alias))))
+    combined.sort(key=lambda x: -len(x[0]))
+    _combined_terms_cache = (cache_key[0], cache_key[1], combined)
+    return combined
+
+
 def match_text(text, by_code, name_to_code, alias_to_code):
     """텍스트 1개에 대해 매칭 수행.
 
     반환: {stock_code: {"hits": int, "methods": set[str]}}
       methods: {"code", "name", "alias"} 중 일부
+
+    구현 메모: longest-match-first 의 "이미 잡힌 구간 재매칭 방지" 를
+    masked string 재생성 대신 bytearray bitmap (`covered`) 으로 처리.
+    이전 구현은 매 term · 매 매칭마다 본문 전체를 `"".join(masked)` 로
+    재생성해 종목 사전 크기 × 본문 길이 만큼 비용이 곱해졌다.
+    bytearray slice 검사·할당은 C-level 이라 수십 배 빠르다.
     """
     if not text:
         return {}
@@ -161,44 +189,32 @@ def match_text(text, by_code, name_to_code, alias_to_code):
             results[code]["hits"] += 1
             results[code]["methods"].add("code")
 
-    # ── (B) 종목명 / Alias 매칭 — longest-match-first + masking ──
-    # 두 사전을 (term, code, method) 튜플로 통합 후 길이 desc 정렬.
-    # 매칭된 구간은 placeholder 문자로 덮어써서 짧은 이름이 다시 잡히지 않게.
+    # ── (B) 종목명 / Alias 매칭 — longest-match-first + interval skip ──
     text_lower = text.lower()
-    masked = list(text_lower)
+    covered = bytearray(len(text_lower))   # 0=free, 1=이미 잡힌 구간
 
-    combined = []
-    for name, code in name_to_code.items():
-        combined.append((name, code, "name"))
-    for alias, code in alias_to_code.items():
-        combined.append((alias, code, "alias"))
-    combined.sort(key=lambda x: -len(x[0]))
-
-    for term, code, method in combined:
-        if not term:
-            continue
-        ascii_only = bool(_ASCII_ONLY.match(term))
+    for term, code, method, ascii_only in _get_combined_terms(name_to_code, alias_to_code):
         tlen = len(term)
-        masked_str = "".join(masked)
-
+        if tlen == 0:
+            continue
         start = 0
         while True:
-            pos = masked_str.find(term, start)
+            pos = text_lower.find(term, start)
             if pos == -1:
                 break
             end = pos + tlen
-            # 영문/숫자 패턴은 word-boundary 필요
-            if ascii_only and not _is_word_boundary(masked_str, pos, end):
+            # 이미 더 긴 term 이 차지한 구간이면 건너뜀
+            if any(covered[pos:end]):
+                start = pos + 1
+                continue
+            # ASCII-only term 은 원본 기준 word-boundary 검사
+            if ascii_only and not _is_word_boundary(text_lower, pos, end):
                 start = pos + 1
                 continue
 
             results[code]["hits"] += 1
             results[code]["methods"].add(method)
-
-            # 매칭 구간 mask (\x00 은 영숫자가 아니므로 word-boundary 도 깨지 않음)
-            for i in range(pos, end):
-                masked[i] = "\x00"
-            masked_str = "".join(masked)
+            covered[pos:end] = b"\x01" * tlen
             start = end
 
     return dict(results)
