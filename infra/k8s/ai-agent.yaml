@@ -11,6 +11,10 @@ metadata:
 spec:
   # 컨슈머는 단일 인스턴스로 실행 (Kafka 컨슈머 그룹이 파티션을 나눠 처리)
   replicas: 1
+  # 단일 replica — RollingUpdate 가 새 Pod 먼저 띄우려다 자원 부족 시 deadlock.
+  # Recreate: 옛 Pod 먼저 종료 후 새 Pod 시작 — 30s 정도 짧은 중단 감수.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: ai-agent
@@ -33,9 +37,11 @@ spec:
         resources:
           # LLM 외부 API 호출 위주 — 자체 메모리는 적음.
           # 신호 발생 시 응답 처리 burst 대응 위해 CPU limit ↑.
+          # CPU request: 실측 10m — Kafka 컨슈머 idle 시간 길어 50m 충분.
+          # memory request: 실측 76Mi (14%) — 256Mi 로 축소.
           requests:
-            memory: "512Mi"
-            cpu: "200m"
+            memory: "256Mi"
+            cpu: "50m"
           limits:
             memory: "1Gi"
             cpu: "1000m"

@@ -154,6 +154,7 @@ class MemoryStore(Protocol):
     """
 
     # 최근 AI 판단 사례 조회
+    # as_of: 조회 기준 시각. None이면 NOW(). backtest에서는 시뮬레이션 시점을 주입.
     def get_recent_decisions(
         self,
         user_id: int,
@@ -162,6 +163,7 @@ class MemoryStore(Protocol):
         key_signals: list[str],
         limit: int = 10,
         days: int = 30,
+        as_of: datetime | None = None,
     ) -> list[PastDecision]: ...
 
     # 현재 상황과 유사한 과거 판단 조회
@@ -174,12 +176,15 @@ class MemoryStore(Protocol):
         limit: int = 5,
         days: int = 30,
         only_loss: bool = False,
+        as_of: datetime | None = None,
     ) -> list[PastDecision]: ...
 
     # 새로운 AI 판단 저장
+    # judged_at: 저장 시각 오버라이드. None이면 NOW(). backtest는 시뮬레이션 시점을 주입.
     def store_decision(
         self,
         log: DecisionLog,
+        judged_at: datetime | None = None,
     ) -> int: ...
 
     # 사후 복기 데이터 저장

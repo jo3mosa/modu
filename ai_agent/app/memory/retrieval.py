@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import text
@@ -21,6 +22,7 @@ class DecisionRetrieval:
         key_signals: list[str],
         limit: int = 10,
         days: int = 30,
+        as_of: datetime | None = None,
     ) -> list[PastDecision]:
         return self._query(
             user_id=user_id,
@@ -30,6 +32,7 @@ class DecisionRetrieval:
             limit=limit,
             days=days,
             only_loss=False,
+            as_of=as_of,
         )
 
     def get_similar_decisions(
@@ -41,6 +44,7 @@ class DecisionRetrieval:
         limit: int = 5,
         days: int = 30,
         only_loss: bool = False,
+        as_of: datetime | None = None,
     ) -> list[PastDecision]:
         return self._query(
             user_id=user_id,
@@ -50,6 +54,7 @@ class DecisionRetrieval:
             limit=limit,
             days=days,
             only_loss=only_loss,
+            as_of=as_of,
         )
 
     def _query(
@@ -61,6 +66,7 @@ class DecisionRetrieval:
         limit: int,
         days: int,
         only_loss: bool,
+        as_of: datetime | None = None,
     ) -> list[PastDecision]:
         # 그룹 내부(stock_codes / sectors / key_signals)는 OR, 그룹 간은 AND
         and_clauses: list[str] = []
@@ -68,6 +74,7 @@ class DecisionRetrieval:
             "user_id": user_id,
             "limit": limit,
             "days": days,
+            "as_of": as_of,
         }
 
         if stock_codes:
@@ -93,7 +100,8 @@ class DecisionRetrieval:
 
         where_conditions = [
             "aj.user_id = :user_id",
-            "aj.judged_at >= NOW() - (:days * INTERVAL '1 day')",
+            "aj.judged_at >= COALESCE(:as_of, NOW()) - (:days * INTERVAL '1 day')",
+            "aj.judged_at <= COALESCE(:as_of, NOW())",
             *and_clauses,
         ]
 

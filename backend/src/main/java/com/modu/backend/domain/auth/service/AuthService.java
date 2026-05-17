@@ -75,7 +75,7 @@ public class AuthService {
         }
 
         Long userId = refreshToken.getUserId();
-        refreshTokenRepository.delete(refreshToken);
+        refreshTokenRepository.deleteByUserId(userId);
 
         String newAccessToken = jwtProvider.generateAccessToken(userId);
         String newRefreshToken = jwtProvider.generateRefreshToken();

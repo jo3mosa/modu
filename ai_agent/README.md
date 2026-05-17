@@ -192,6 +192,8 @@ ai_agent/
 
 > 실행 결과(주문 ID/체결가 등)는 ai_agent State에 들어오지 않는다. 백엔드가 `trade.order.executed` 컨슈머에서 `ai_judgments.order_id`를 UPDATE 하는 흐름으로 합류한다.
 
+> 실행 결과(주문 ID/체결가 등)는 ai_agent State에 들어오지 않는다. 백엔드가 `trade.order.executed` 컨슈머에서 `ai_judgments.order_id`를 UPDATE 하는 흐름으로 합류한다.
+
 ### 핵심 Pydantic 스키마 (`app/state/schemas.py`)
 
 - **`ResearchVerdict`** — Strategy Manager 출력. `winning_side`, `recommended_side`, `target_price`, `stop_loss_price`, `order_amount`, `confidence` 포함. `recommended_side != hold` 일 때 가격/금액 필드 필수 (`@model_validator`).
