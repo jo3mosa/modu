@@ -30,6 +30,7 @@ DA의 run_backtest.py는 mock_decision으로 인프라 검증만. 이 모듈은 
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import sys
@@ -241,6 +242,35 @@ def _parse_date(s: str) -> date:
     return datetime.strptime(s, "%Y-%m-%d").date()
 
 
+def _find_last_done_portfolio(output_root: Path) -> tuple[date | None, dict | None]:
+    """resume용 — 마지막 .done 영업일과 그 시점 portfolio dump 반환.
+
+    triggers_YYYY-MM-DD.done 중 가장 최근 영업일을 찾고,
+    동일 날짜의 portfolio_YYYY-MM-DD.json을 로드한다.
+    .done은 있는데 portfolio dump가 없으면 (last_date, None) 반환 → 호출자가 경고.
+    .done 자체가 없으면 (None, None) 반환 → fresh start.
+    """
+    if not output_root.exists():
+        return None, None
+    done_files = sorted(output_root.glob("triggers_*.done"))
+    if not done_files:
+        return None, None
+    last_done = done_files[-1]
+    try:
+        last_date = date.fromisoformat(last_done.stem.replace("triggers_", ""))
+    except ValueError:
+        return None, None
+    portfolio_path = output_root / f"portfolio_{last_date.isoformat()}.json"
+    if not portfolio_path.exists():
+        return last_date, None
+    try:
+        data = json.loads(portfolio_path.read_text(encoding="utf-8"))
+        return last_date, data
+    except Exception:
+        logger.exception("resume: portfolio dump 로드 실패 path=%s", portfolio_path)
+        return last_date, None
+
+
 def _maybe_compose_database_url() -> None:
     """DATABASE_URL이 비어 있으면 DB_HOST/PORT/NAME/USERNAME/PASSWORD에서 합성.
 
@@ -324,7 +354,17 @@ def main() -> int:
     parser.add_argument("--reset-memory", action="store_true",
                         help="run 시작 전 --backtest-user-id의 ai_judgments / "
                              "post_mortem_reports DELETE. 이전 회차 회고가 섞이지 않도록.")
+    parser.add_argument("--resume", action="store_true",
+                        help="이전에 끊긴 backtest를 같은 --output 폴더로 이어서 실행. "
+                             "triggers_*.done 영업일은 skip, .partial 또는 부분 jsonl은 "
+                             "재처리. portfolio는 마지막 .done 영업일의 dump에서 복원.")
     args = parser.parse_args()
+
+    # --resume과 --reset-memory가 동시에 켜져 있으면 모순 — portfolio는 이어가는데
+    # 회고 DB는 비우는 이상한 상태가 됨. resume 우선 + reset-memory 무시.
+    if args.resume and args.reset_memory:
+        logger.warning("--resume과 --reset-memory 동시 지정 — reset-memory 무시 (resume 우선)")
+        args.reset_memory = False
 
     # OS sleep 방지 — backtest 실행 중 Windows가 절전 모드로 빠지면 백그라운드
     # 프로세스도 일시정지된다. 프로세스 종료(atexit)까지 자동 유지.
@@ -387,11 +427,37 @@ def main() -> int:
         signal_fn = mode_spec.signal_factory(args.backtest_user_id, engine)
         logger.info("signal_fn 교체: %s", mode_spec.signal_factory)
 
-    portfolio = SimplePortfolio(
-        user_id=args.user_id,
-        initial_cash_krw=args.initial_cash,
-        initial_holdings=initial_holdings,
-    )
+    # resume이면 마지막 .done 영업일의 portfolio dump 복원 시도.
+    # 복원 실패(.done 없음 / dump 없음 / 손상)면 fresh start로 fallback.
+    portfolio: SimplePortfolio
+    if args.resume:
+        last_date, portfolio_dump = _find_last_done_portfolio(args.output)
+        if portfolio_dump is not None:
+            portfolio = SimplePortfolio.from_dict(portfolio_dump)
+            logger.info(
+                "resume: portfolio 복원 from %s (cash=%.0f, holdings=%d, equity_curve=%d일)",
+                last_date, portfolio.cash, len(portfolio.holdings),
+                len(portfolio.equity_curve),
+            )
+        else:
+            portfolio = SimplePortfolio(
+                user_id=args.user_id,
+                initial_cash_krw=args.initial_cash,
+                initial_holdings=initial_holdings,
+            )
+            if last_date is None:
+                logger.info("resume: 이전 .done 영업일 없음 — fresh start로 진행")
+            else:
+                logger.warning(
+                    "resume: %s.done은 있으나 portfolio dump 누락/손상 — fresh start로 진행",
+                    last_date,
+                )
+    else:
+        portfolio = SimplePortfolio(
+            user_id=args.user_id,
+            initial_cash_krw=args.initial_cash,
+            initial_holdings=initial_holdings,
+        )
 
     result = run(
         env=env,
@@ -404,6 +470,7 @@ def main() -> int:
         user_id=args.user_id,
         watchlist_override=watchlist,
         signal_fn=signal_fn,
+        resume=args.resume,
     )
     print(f"run_id={result['run_id']}  summary={result['summary_path']}")
 

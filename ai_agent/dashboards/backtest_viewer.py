@@ -1570,6 +1570,8 @@ def _build_run_command(args: dict[str, Any], output_dir: Path) -> list[str]:
         cmd.append("--pm-mock")
     if args.get("reset_memory"):
         cmd.append("--reset-memory")
+    if args.get("resume"):
+        cmd.append("--resume")
     return cmd
 
 
@@ -1985,7 +1987,7 @@ def tab_run() -> None:
                 help="ai_agent/backtest/runs/<이름>/ 에 저장",
             )
 
-        c4, c5, c6 = st.columns(3)
+        c4, c5, c6, c7 = st.columns(4)
         with c4:
             score_after = st.checkbox("score-after", value=True,
                                        help="scored_*.jsonl 생성 (PnL/회고/Calibration 탭 활성)")
@@ -1996,6 +1998,13 @@ def tab_run() -> None:
             reset_memory = st.checkbox("reset-memory", value=True,
                                         help="run 시작 전 backtest_user_id의 ai_judgments / "
                                              "post_mortem_reports DELETE. 회차 격리.")
+        with c7:
+            resume = st.checkbox(
+                "이어서 실행", value=False,
+                help="끊긴 backtest를 같은 결과 폴더로 이어서. triggers_*.done 영업일은 "
+                     "skip, .partial 또는 부분 jsonl은 재처리. 체크 시 reset-memory는 "
+                     "자동 무시 (portfolio는 이어가는데 회고만 비우는 모순 회피).",
+            )
 
         with st.expander("고급 옵션", expanded=False):
             holding_days = st.number_input(
@@ -2042,7 +2051,8 @@ def tab_run() -> None:
             "watchlist": watchlist, "initial_cash": initial_cash,
             "initial_holdings": initial_holdings, "holding_days": holding_days,
             "backtest_user_id": int(backtest_user_id),
-            "score_after": score_after, "pm_mock": pm_mock, "reset_memory": reset_memory,
+            "score_after": score_after, "pm_mock": pm_mock,
+            "reset_memory": reset_memory, "resume": resume,
         }
         cmd = _build_run_command(args, output_dir)
         # 디스크 영속화에 isoformat 문자열로 저장 (json 호환)
