@@ -1,39 +1,20 @@
-from app.triggers.schemas import MarketTriggerEvent, TriggerType, UserTriggerEvent
-from app.repositories.position_index_repository import (
-    PositionIndexRepository,
-    RedisPositionIndexRepository,
-)
-from app.repositories.portfolio_snapshot_repository import (
-    PortfolioSnapshotRepository,
-    RedisPortfolioSnapshotRepository,
-)
 from app.repositories.market_price_repository import (
     MarketPriceRepository,
     RedisMarketPriceRepository,
 )
+from app.repositories.portfolio_snapshot_repository import (
+    PortfolioSnapshotRepository,
+    PostgresPortfolioSnapshotRepository,
+)
+from app.repositories.position_index_repository import (
+    PositionIndexRepository,
+    RedisPositionIndexRepository,
+)
+from app.triggers.schemas import MarketTriggerEvent, TriggerType, UserTriggerEvent
 
 _POSITION_INDEX_REPOSITORY: PositionIndexRepository = RedisPositionIndexRepository()
-_PORTFOLIO_SNAPSHOT_REPOSITORY: PortfolioSnapshotRepository = RedisPortfolioSnapshotRepository()
+_PORTFOLIO_SNAPSHOT_REPOSITORY: PortfolioSnapshotRepository = PostgresPortfolioSnapshotRepository()
 _MARKET_PRICE_REPOSITORY: MarketPriceRepository = RedisMarketPriceRepository()
-
-# TODO: 백엔드 API 또는 DB에서 조회하도록 교체
-_MOCK_USER_CONTEXT_BY_USER_ID: dict[int, dict] = {
-    1: {
-        "investment_style": "balanced",
-        "risk_level": "medium",
-        "strategy_note": "대형주 중심으로 안정적인 수익을 선호",
-    },
-    2: {
-        "investment_style": "aggressive",
-        "risk_level": "high",
-        "strategy_note": "모멘텀 강한 종목에 적극 대응",
-    },
-    3: {
-        "investment_style": "conservative",
-        "risk_level": "low",
-        "strategy_note": "손실 회피 성향이 강함",
-    },
-}
 
 
 def get_position_index_repository() -> PositionIndexRepository:
@@ -60,15 +41,6 @@ def get_holding_user_ids(
     """
     repository = repository or get_position_index_repository()
     return repository.get_user_ids_by_stock(stock_code)
-
-
-def get_user_context(user_id: int) -> dict:
-    """
-    사용자별 투자 성향, 리스크 설정, 자연어 전략 등을 조회한다.
-
-    현재는 mock 데이터 기반이다.
-    """
-    return _MOCK_USER_CONTEXT_BY_USER_ID.get(user_id, {})
 
 
 def get_portfolio_snapshot(
@@ -135,8 +107,6 @@ def match_market_event_to_users(
 
         portfolio_snapshot = {**portfolio_snapshot, "current_price": current_price}
 
-        user_context = get_user_context(user_id)
-
         # TODO: 동일 user_id / stock_code / source_event_id 중복 방지
         # 추후 Redis cooldown 또는 event deduplication 저장소를 붙여서
         # 같은 시장 이벤트가 동일 사용자에게 반복 실행되지 않도록 처리한다.
@@ -150,7 +120,6 @@ def match_market_event_to_users(
             trigger=event.trigger,
             analysis_snapshot=event.analysis_snapshot,
             portfolio_snapshot=portfolio_snapshot,
-            user_context=user_context,
         )
 
         user_trigger_events.append(user_trigger_event)
