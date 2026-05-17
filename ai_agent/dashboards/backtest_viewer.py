@@ -1970,13 +1970,18 @@ def tab_run() -> None:
                 help="회고를 저장할 DB user_id. 동시 실행 시 다른 값을 써야 회고가 섞이지 않음. "
                      "자동으로 빈 번호를 추천합니다.",
             )
-            # key를 procs별로 분리해 form 인스턴스마다 독립. session_state에 사용자
-            # 입력이 보존되어 rerun(예: watchlist 변경) 시에도 reset 안 됨.
-            # value는 처음 widget이 그려질 때만 default로 작용 (session_state 비어 있을 때).
+            # streamlit 동작 주의: value=datetime.now() 처럼 매 rerun마다 변하는
+            # 값을 넘기면 widget이 매번 reset되어 사용자 입력이 안 먹는다. 따라서
+            # 첫 render에서만 session_state에 default를 set하고 그 후엔 key만으로
+            # 동작 (value 인자 사용 X). 사용자 입력은 session_state[key]에 누적.
+            run_name_key = f"bt_run_name_{len(procs)}"
+            if run_name_key not in st.session_state:
+                st.session_state[run_name_key] = (
+                    f"ui_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                )
             run_name = st.text_input(
                 "결과 폴더명",
-                value=f"ui_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-                key=f"bt_run_name_{len(procs)}",
+                key=run_name_key,
                 help="ai_agent/backtest/runs/<이름>/ 에 저장",
             )
 
