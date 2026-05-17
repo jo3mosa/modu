@@ -260,17 +260,18 @@ export default function DashboardPage() {
 
   // holdings 기준 파생 요약값
   //
-  // [배경] 백엔드 summary.availableCash는 KIS `dncl_amt` (D+0 예수금)을 그대로 매핑한다.
-  // 이 값은 종목 매수 후에도 차감되지 않아 사용자가 인식하는 "주문 가능 금액"과 다르다.
-  // → 프론트에서 입금 원금으로 간주하고, 투자 원금을 빼서 실제 주문 가능 금액을 산출한다.
+  // [데이터 출처]
+  // - summary.availableCash = KIS dncl_amt (D+2 주문가능현금) — 이미 매수 차감된 정확한 잔액
+  // - summary.totalBuyAmount, totalPnl = KIS pchs_amt_smtl, evlu_pfls_amt_smtl (조회 시점 스냅샷)
+  // - holdings[].currentPrice는 WebSocket으로 실시간 갱신되므로 평가금액/손익은 holdings 기반 재계산
   //
-  // - principal       : summary.availableCash  (입금 원금 = KIS dncl_amt)
-  // - totalEvalAmount : Σ(보유수량 × 현재가)     (보유 종목 현재가치)
-  // - totalBuyAmount  : Σ(보유수량 × 매수평균가)  (투자 원금, 역산 보정값)
-  // - totalPnl        : Σ(pnl)                 (평가 손익)
+  // [계산 정책]
+  // - totalEvalAmount : Σ(보유수량 × 실시간 현재가)
+  // - totalPnl        : Σ(h.pnl) — currentPrice 변동 시 holdings.pnl 도 같이 갱신됨
+  // - totalBuyAmount  : summary 값 우선, 없으면 holdings 역산
   // - totalPnlPct     : totalPnl / totalBuyAmount × 100
-  // - availableCash   : principal − totalBuyAmount  (실제 주문 가능 금액)
-  // - totalAsset      : availableCash + totalEvalAmount  (= principal + totalPnl 와 등가)
+  // - availableCash   : summary.availableCash 그대로 (KIS dncl_amt) — 재차감 금지
+  // - totalAsset      : availableCash + 실시간 totalEvalAmount
   // 최근 매매 로그: AI 판단 + 수동 주문을 표준 형식으로 통합 후 시간 내림차순 상위 5개
   const recentLogs = useMemo(() => {
     const aiItems = aiDecisions.map((d) => ({
@@ -303,6 +304,8 @@ export default function DashboardPage() {
 
   const derivedSummary = useMemo(() => {
     if (!summary) return null;
+    // 평가/원금/손익: 모두 holdings 기반으로 통일해 일관성 확보.
+    // (KIS 스냅샷과 실시간 holdings 가격이 시점차로 어긋나 totalPnlPct 비율이 어색해지는 것 방지)
     const totalEvalAmount = holdings.reduce(
       (sum, h) => sum + (h.currentPrice ?? 0) * (h.quantity ?? 0),
       0
@@ -314,8 +317,9 @@ export default function DashboardPage() {
     const totalPnl = holdings.reduce((sum, h) => sum + (h.pnl ?? 0), 0);
     const totalPnlPct =
       totalBuyAmount > 0 ? Number(((totalPnl / totalBuyAmount) * 100).toFixed(2)) : 0;
-    const principal = summary.availableCash ?? 0;
-    const availableCash = Math.max(0, principal - totalBuyAmount);
+    // 주문 가능 금액: KIS dncl_amt 그대로 (재차감 X)
+    const availableCash = summary.availableCash ?? 0;
+    // 총 자산: 예수금 + 실시간 평가금액
     const totalAsset = availableCash + totalEvalAmount;
     return {
       ...summary,

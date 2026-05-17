@@ -24,6 +24,56 @@ const MESSAGE_STORAGE_KEY = 'modu.aiChatMessages';
 const POSITION_STORAGE_KEY = 'modu.aiChatButtonPos';
 const MAX_MESSAGES = 80; // 한 봇당 ~20개 판단(20 × 4 = 80) 보관
 
+// 시연용 mock — 백엔드 데이터 0건일 때 자동 주입. 운영에서 끄고 싶으면 false로.
+const ENABLE_DEMO_MOCK = true;
+
+const DEMO_DECISIONS = [
+  {
+    id: 'demo-1',
+    stockCode: '005930',
+    action: 'BUY',
+    confidence: 78,
+    decidedAt: new Date(Date.now() - 1000 * 60 * 18).toISOString(),
+    reason: '최근 5일 가격이 20일 이동평균선 위에서 안정적으로 유지되고 있습니다. 외국인 순매수가 3일 연속 이어지며 수급 모멘텀이 견고합니다. 단기 조정 가능성은 낮으며 분할 매수가 유리해 보입니다.',
+    indicatorsSnapshot: {
+      rsi: 58,
+      macd: '골든크로스 임박',
+      ma20: '상회',
+      news_sentiment: 0.62,
+      news_count: 4,
+    },
+  },
+  {
+    id: 'demo-2',
+    stockCode: '035720',
+    action: 'HOLD',
+    confidence: 64,
+    decidedAt: new Date(Date.now() - 1000 * 60 * 9).toISOString(),
+    reason: 'RSI 71로 과매수 구간 진입 직전입니다. 단기 차익실현 압력이 누적되고 있어 추가 진입은 위험합니다. 일단 관망하며 60일선 지지 여부를 확인하는 것이 안전합니다.',
+    indicatorsSnapshot: {
+      rsi: 71,
+      bollinger: '상단 터치',
+      volume: '평균 대비 +35%',
+      event: '대형 공시 없음',
+    },
+  },
+  {
+    id: 'demo-3',
+    stockCode: '012450',
+    action: 'SELL',
+    confidence: 82,
+    decidedAt: new Date(Date.now() - 1000 * 60 * 2).toISOString(),
+    reason: 'MACD 데드크로스 발생과 함께 거래량이 평균의 2배로 증가했습니다. 최근 부정적 뉴스 2건이 감지되어 단기 하락 가능성이 높습니다. 보유분의 절반 익절을 추천합니다.',
+    indicatorsSnapshot: {
+      rsi: 45,
+      macd: '데드크로스',
+      ma60: '하향 이탈',
+      news_sentiment: -0.41,
+      disclosure: '실적 컨센서스 하회',
+    },
+  },
+];
+
 // indicators_snapshot 에서 기술지표/뉴스 분리 — 키 이름이 케이스별로 달라 generic 매핑
 const TECHNICAL_KEYS = ['rsi', 'macd', 'ma5', 'ma20', 'ma60', 'bollinger', 'bb', 'volume', 'trend'];
 const NEWS_KEYS = ['news', 'sentiment', 'event', 'disclosure'];
@@ -184,22 +234,35 @@ export function AiChatProvider({ children }) {
   }, []);
 
   // 초기 진입 시 최근 AI 판단 5건 로드 (알림 없이)
+  // 응답이 비고 ENABLE_DEMO_MOCK이 켜져 있으면 시연용 mock 주입
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      let decisions = [];
       try {
         const data = await getAiDecisions({ page: 0, size: 5 });
-        if (cancelled) return;
-        const decisions = data?.content ?? [];
-        // 시간 오름차순으로 추가해 채팅 순서가 자연스럽게 흐르도록
-        [...decisions].reverse().forEach((d) => addDecision(d, { notify: false }));
+        decisions = data?.content ?? [];
       } catch (error) {
         if (error?.status !== 404) {
           console.warn('AI 채팅 초기 로드 실패:', error);
         }
       }
+      if (cancelled) return;
+
+      if (decisions.length === 0 && ENABLE_DEMO_MOCK) {
+        // localStorage에 mock이 이미 보관되어 있으면(이전 세션) 재주입 안 함
+        const hasStoredDemo = messages.some((m) => String(m.decisionId).startsWith('demo-'));
+        if (!hasStoredDemo) {
+          DEMO_DECISIONS.forEach((d) => addDecision(d, { notify: false }));
+        }
+      } else {
+        // 시간 오름차순으로 추가해 채팅 순서가 자연스럽게 흐르도록
+        [...decisions].reverse().forEach((d) => addDecision(d, { notify: false }));
+      }
     })();
     return () => { cancelled = true; };
+    // messages 의존성에 넣으면 add 마다 재실행되어 무한루프 — 의도적으로 제외
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addDecision]);
 
   // SSE ORDER_SUBMITTED 수신 시 해당 주문의 AI 판단 조회 (404면 무시 — 수동 주문 등)
