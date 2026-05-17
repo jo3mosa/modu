@@ -13,17 +13,17 @@ const VIEWPORT_PADDING = 12;
  * 판단 단위로 묶어 시간순(오래된 위 → 최신 아래) 표시.
  */
 export default function AiChatPanel({ anchor, onClose }) {
-  const { messages } = useAiChat();
+  const { messages, typingBot } = useAiChat();
   const scrollRef = useRef(null);
 
   // anchor(버튼 좌상단)에서 화면 밖으로 안 나가게 패널 위치 계산
   const panelStyle = useMemo(() => positionPanel(anchor), [anchor]);
 
-  // 새 메시지 도착 시 자동 스크롤 (맨 아래로)
+  // 새 메시지/타이핑 변화 시 자동 스크롤 (맨 아래로)
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length]);
+  }, [messages.length, typingBot]);
 
   // 판단(decisionId) 단위로 그룹 — 한 판단 = 한 회의록
   const groups = useMemo(() => groupByDecision(messages), [messages]);
@@ -64,7 +64,10 @@ export default function AiChatPanel({ anchor, onClose }) {
                       <span aria-hidden="true">{profile.icon}</span>
                     </div>
                     <div className="ai-chat-bubble-wrap">
-                      <div className="ai-chat-bot-name" style={{ color: profile.color }}>{profile.name}</div>
+                      <div className="ai-chat-bot-name" style={{ color: profile.color }}>
+                        {profile.name}
+                        {profile.role && <span className="ai-chat-bot-role"> · {profile.role}</span>}
+                      </div>
                       <div className="ai-chat-bubble">{msg.text}</div>
                     </div>
                   </div>
@@ -72,6 +75,29 @@ export default function AiChatPanel({ anchor, onClose }) {
               })}
             </div>
           ))
+        )}
+
+        {/* 타이핑 인디케이터 — 다음 봇이 입력 중일 때 표시 */}
+        {typingBot && BOT_PROFILES[typingBot] && (
+          <div className="ai-chat-message ai-chat-typing-row">
+            <div
+              className="ai-chat-avatar"
+              style={{ background: `${BOT_PROFILES[typingBot].color}22`, color: BOT_PROFILES[typingBot].color }}
+            >
+              <span aria-hidden="true">{BOT_PROFILES[typingBot].icon}</span>
+            </div>
+            <div className="ai-chat-bubble-wrap">
+              <div className="ai-chat-bot-name" style={{ color: BOT_PROFILES[typingBot].color }}>
+                {BOT_PROFILES[typingBot].name}
+                <span className="ai-chat-bot-role"> · 입력 중</span>
+              </div>
+              <div className="ai-chat-bubble ai-chat-typing">
+                <span className="ai-chat-typing-dot" />
+                <span className="ai-chat-typing-dot" />
+                <span className="ai-chat-typing-dot" />
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

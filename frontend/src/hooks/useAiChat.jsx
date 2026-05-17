@@ -12,13 +12,45 @@ import { useOrderSSE } from './useOrderSSE';
  * - 알림: 새 메시지 도착 시 sonner 토스트로 알림 (어느 페이지든)
  */
 
-// 4봇 페르소나 정의 — UI에서 참조
+// 4봇 페르소나 — 카톡 협업 메타포 (직장 동료 톤)
+// role: 화면에 이름 옆 작게 표시되는 직책
 export const BOT_PROFILES = {
-  analyst: { name: '분석봇', icon: '🔍', color: '#3b82f6' },
-  news:    { name: '뉴스봇', icon: '📰', color: '#84cc16' },
-  reason:  { name: '추론봇', icon: '🤔', color: '#a78bfa' },
-  decide:  { name: '결정봇', icon: '🎯', color: '#ef4444' },
+  analyst: { name: '민혁', role: '차트',   icon: '📊', color: '#3b82f6' },
+  news:    { name: '다은', role: '뉴스',   icon: '📰', color: '#84cc16' },
+  reason:  { name: '준영', role: '전략',   icon: '💭', color: '#a78bfa' },
+  decide:  { name: '지호', role: '결정',   icon: '⚡', color: '#ef4444' },
 };
+
+// indicators_snapshot 키 한국어 라벨 — 채팅으로 자연스럽게 표시
+const TECHNICAL_KEY_LABELS = {
+  rsi: 'RSI', macd: 'MACD', ma5: '5일선', ma20: '20일선', ma60: '60일선',
+  bollinger: '볼린저밴드', bb: '볼린저밴드', volume: '거래량', trend: '추세',
+};
+const NEWS_KEY_LABELS = {
+  news_sentiment: '뉴스 분위기', news_count: '뉴스', sentiment: '감성',
+  event: '이벤트', disclosure: '공시',
+};
+
+// 봇별 말투 — 백엔드 LLM 결과("~합니다") → 카톡 친구체("~이에요")
+function applyPersonaTone(text, bot) {
+  if (!text) return text;
+  let out = text
+    .replace(/입니다\.?/g, '이에요')
+    .replace(/합니다\.?/g, '해요')
+    .replace(/됩니다\.?/g, '돼요')
+    .replace(/보입니다\.?/g, '보여요')
+    .replace(/있습니다\.?/g, '있어요')
+    .replace(/없습니다\.?/g, '없어요')
+    .replace(/추천합니다\.?/g, '추천해요')
+    .replace(/유지되고 있어요/g, '잘 가고 있어요');
+  const prefix = {
+    analyst: '차트 봤는데,',
+    news:    '소식 들어왔어요!',
+    reason:  '음, 종합하면',
+    decide:  '결론!',
+  }[bot] ?? '';
+  return prefix ? `${prefix} ${out}` : out;
+}
 
 const MESSAGE_STORAGE_KEY = 'modu.aiChatMessages';
 const POSITION_STORAGE_KEY = 'modu.aiChatButtonPos';
@@ -34,7 +66,7 @@ const DEMO_DECISIONS = [
     action: 'BUY',
     confidence: 78,
     decidedAt: new Date(Date.now() - 1000 * 60 * 18).toISOString(),
-    reason: '최근 5일 가격이 20일 이동평균선 위에서 안정적으로 유지되고 있습니다. 외국인 순매수가 3일 연속 이어지며 수급 모멘텀이 견고합니다. 단기 조정 가능성은 낮으며 분할 매수가 유리해 보입니다.',
+    reason: '5일선이 20일선 위에서 잘 가고 있네요. 외국인 순매수가 3일 연속 이어지면서 수급 분위기가 좋아요. 분할 매수로 가는 게 안전할 것 같아요.',
     indicatorsSnapshot: {
       rsi: 58,
       macd: '골든크로스 임박',
@@ -49,7 +81,7 @@ const DEMO_DECISIONS = [
     action: 'HOLD',
     confidence: 64,
     decidedAt: new Date(Date.now() - 1000 * 60 * 9).toISOString(),
-    reason: 'RSI 71로 과매수 구간 진입 직전입니다. 단기 차익실현 압력이 누적되고 있어 추가 진입은 위험합니다. 일단 관망하며 60일선 지지 여부를 확인하는 것이 안전합니다.',
+    reason: 'RSI가 71까지 올라와서 과매수 직전이에요. 차익실현 압력이 슬슬 누적되는 중. 일단 60일선 지지 확인하고 들어가는 게 안전해요.',
     indicatorsSnapshot: {
       rsi: 71,
       bollinger: '상단 터치',
@@ -63,7 +95,7 @@ const DEMO_DECISIONS = [
     action: 'SELL',
     confidence: 82,
     decidedAt: new Date(Date.now() - 1000 * 60 * 2).toISOString(),
-    reason: 'MACD 데드크로스 발생과 함께 거래량이 평균의 2배로 증가했습니다. 최근 부정적 뉴스 2건이 감지되어 단기 하락 가능성이 높습니다. 보유분의 절반 익절을 추천합니다.',
+    reason: 'MACD 데드크로스 떴고 거래량도 평균의 2배로 튀었어요. 최근 부정적 뉴스 2건도 같이 잡혔구요. 보유분의 절반 정도는 익절하는 게 좋겠어요.',
     indicatorsSnapshot: {
       rsi: 45,
       macd: '데드크로스',
@@ -78,7 +110,7 @@ const DEMO_DECISIONS = [
 const TECHNICAL_KEYS = ['rsi', 'macd', 'ma5', 'ma20', 'ma60', 'bollinger', 'bb', 'volume', 'trend'];
 const NEWS_KEYS = ['news', 'sentiment', 'event', 'disclosure'];
 
-function pickByKeys(obj, keyHints) {
+function pickByKeys(obj, keyHints, labelMap = {}) {
   if (!obj || typeof obj !== 'object') return null;
   const lower = (s) => String(s).toLowerCase();
   const matched = Object.entries(obj).filter(([k]) =>
@@ -88,8 +120,9 @@ function pickByKeys(obj, keyHints) {
   return matched
     .map(([k, v]) => {
       if (v == null) return null;
-      if (typeof v === 'object') return `${k}: ${JSON.stringify(v)}`;
-      return `${k}: ${v}`;
+      const label = labelMap[lower(k)] ?? k;
+      if (typeof v === 'object') return `${label} ${JSON.stringify(v)}`;
+      return `${label} ${v}`;
     })
     .filter(Boolean)
     .join(' · ');
@@ -110,8 +143,8 @@ function decisionToMessages(decision) {
   const reason = (decision.reason ?? '').trim();
   const indicators = decision.indicatorsSnapshot ?? {};
 
-  const technical = pickByKeys(indicators, TECHNICAL_KEYS);
-  const news = pickByKeys(indicators, NEWS_KEYS);
+  const technical = pickByKeys(indicators, TECHNICAL_KEYS, TECHNICAL_KEY_LABELS);
+  const news = pickByKeys(indicators, NEWS_KEYS, NEWS_KEY_LABELS);
 
   // 문장 분리 — 마침표/물음표/느낌표 기준. 비어있으면 reason 통째로 결정봇이 받음
   const sentences = reason.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean);
@@ -120,8 +153,9 @@ function decisionToMessages(decision) {
   const secondHalf = sentences.slice(half).join(' ');
 
   const actionLabel = action === 'BUY' ? '매수' : action === 'SELL' ? '매도' : action === 'HOLD' ? '관망' : '판단';
-  const confidenceLabel = confidence != null ? `신뢰도 ${confidence}% · ` : '';
+  const confidenceLabel = confidence != null ? `신뢰도 ${confidence}% — ` : '';
   const decideTail = secondHalf || (firstHalf ? '' : reason);
+  const decideText = `${confidenceLabel}${actionLabel}로 갈게요${decideTail ? `. ${applyPersonaTone(decideTail, 'decide').replace(/^결론!\s*/, '')}` : '!'}`;
 
   return [
     technical && {
@@ -129,7 +163,7 @@ function decisionToMessages(decision) {
       decisionId: id,
       stockCode,
       bot: 'analyst',
-      text: technical,
+      text: applyPersonaTone(technical, 'analyst'),
       timestamp: decidedAt,
     },
     news && {
@@ -137,7 +171,7 @@ function decisionToMessages(decision) {
       decisionId: id,
       stockCode,
       bot: 'news',
-      text: news,
+      text: applyPersonaTone(news, 'news'),
       timestamp: decidedAt,
     },
     firstHalf && {
@@ -145,7 +179,7 @@ function decisionToMessages(decision) {
       decisionId: id,
       stockCode,
       bot: 'reason',
-      text: firstHalf,
+      text: applyPersonaTone(firstHalf, 'reason'),
       timestamp: decidedAt,
     },
     {
@@ -153,7 +187,7 @@ function decisionToMessages(decision) {
       decisionId: id,
       stockCode,
       bot: 'decide',
-      text: `${confidenceLabel}${actionLabel} 결정${decideTail ? ` — ${decideTail}` : ''}`,
+      text: decideText,
       timestamp: decidedAt,
     },
   ].filter(Boolean);
@@ -178,11 +212,16 @@ function saveToStorage(key, value) {
   }
 }
 
+// 메시지 사이 타이핑 인디케이터/등장 간격 (ms)
+const TYPING_DURATION = 450;
+const BETWEEN_MESSAGES = 180;
+
 const AiChatContext = createContext({
   messages: [],
   isOpen: false,
   unreadCount: 0,
   buttonPosition: null,
+  typingBot: null,
   openChat: () => {},
   closeChat: () => {},
   toggleChat: () => {},
@@ -196,9 +235,13 @@ export function AiChatProvider({ children }) {
   const [buttonPosition, setButtonPositionState] = useState(() =>
     loadFromStorage(POSITION_STORAGE_KEY, null)
   );
+  // 현재 "입력 중..." 표시 중인 봇 key (analyst | news | reason | decide | null)
+  const [typingBot, setTypingBot] = useState(null);
 
   // 중복 추가 방지용 — 본 판단 id set
   const seenDecisionIdsRef = useRef(new Set(messages.map((m) => m.decisionId)));
+  // 진행 중 staggered 타이머 — 컴포넌트 unmount 시 정리
+  const staggerTimersRef = useRef([]);
 
   const { latestEvent } = useOrderSSE();
 
@@ -207,8 +250,16 @@ export function AiChatProvider({ children }) {
     saveToStorage(MESSAGE_STORAGE_KEY, messages.slice(-MAX_MESSAGES));
   }, [messages]);
 
+  // unmount 시 타이머 정리
+  useEffect(() => () => {
+    staggerTimersRef.current.forEach(clearTimeout);
+    staggerTimersRef.current = [];
+  }, []);
+
   // 판단을 메시지로 변환해 추가 (중복 방지 + 알림)
-  const addDecision = useCallback((decision, { notify = true } = {}) => {
+  // staggered=true: 봇별로 "입력 중..." 보여주며 순차 등장 (실시간 토론 느낌)
+  // staggered=false: 즉시 일괄 추가 (초기 로드용)
+  const addDecision = useCallback((decision, { notify = true, staggered = false } = {}) => {
     if (!decision?.id) return;
     if (seenDecisionIdsRef.current.has(decision.id)) return;
     seenDecisionIdsRef.current.add(decision.id);
@@ -216,7 +267,26 @@ export function AiChatProvider({ children }) {
     const newMessages = decisionToMessages(decision);
     if (newMessages.length === 0) return;
 
-    setMessages((prev) => [...prev, ...newMessages].slice(-MAX_MESSAGES));
+    if (!staggered) {
+      setMessages((prev) => [...prev, ...newMessages].slice(-MAX_MESSAGES));
+    } else {
+      // 순차 등장: typingBot 활성화 → TYPING_DURATION 후 메시지 push → BETWEEN_MESSAGES 후 다음
+      let acc = 0;
+      newMessages.forEach((msg, idx) => {
+        // 1) 타이핑 인디케이터 ON
+        const typingTimer = setTimeout(() => setTypingBot(msg.bot), acc);
+        staggerTimersRef.current.push(typingTimer);
+        acc += TYPING_DURATION;
+        // 2) 메시지 push + 타이핑 OFF
+        const pushTimer = setTimeout(() => {
+          setMessages((prev) => [...prev, msg].slice(-MAX_MESSAGES));
+          // 마지막 메시지면 타이핑 종료
+          if (idx === newMessages.length - 1) setTypingBot(null);
+        }, acc);
+        staggerTimersRef.current.push(pushTimer);
+        acc += BETWEEN_MESSAGES;
+      });
+    }
 
     if (notify) {
       setUnreadCount((c) => c + 1);
@@ -273,7 +343,8 @@ export function AiChatProvider({ children }) {
     (async () => {
       try {
         const detail = await getAiDecisionByOrder(orderId);
-        addDecision(detail, { notify: true });
+        // 실시간 토론 느낌 — 봇별로 타이핑 → 순차 등장
+        addDecision(detail, { notify: true, staggered: true });
       } catch (error) {
         // AI 판단이 연결되지 않은 주문(수동/외부)이면 404 — 조용히 무시
         if (error?.status !== 404 && error?.errorCode !== 'AI_001') {
@@ -304,8 +375,8 @@ export function AiChatProvider({ children }) {
   }, []);
 
   const value = useMemo(
-    () => ({ messages, isOpen, unreadCount, buttonPosition, openChat, closeChat, toggleChat, setButtonPosition }),
-    [messages, isOpen, unreadCount, buttonPosition, openChat, closeChat, toggleChat, setButtonPosition]
+    () => ({ messages, isOpen, unreadCount, buttonPosition, typingBot, openChat, closeChat, toggleChat, setButtonPosition }),
+    [messages, isOpen, unreadCount, buttonPosition, typingBot, openChat, closeChat, toggleChat, setButtonPosition]
   );
 
   return <AiChatContext.Provider value={value}>{children}</AiChatContext.Provider>;
