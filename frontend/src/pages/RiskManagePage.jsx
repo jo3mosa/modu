@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { getProfile, getProfileQuestions, getRules, updateProfile, updateRules } from '../api/strategy';
+import { getProfile, getProfileQuestions, getRules, updateProfile, updateRules, updateAutoTradeStatus } from '../api/strategy';
 import './RiskManagePage.css';
 
 const RISK_LEVEL_LABEL = {
@@ -115,7 +115,32 @@ export default function RiskManagePage() {
     };
   }, [isModalOpen, questions.length]);
 
-  const handleToggleAi = () => setIsActive(!isActive);
+  // 자동매매 ON/OFF — PATCH /strategies/me/status
+  // DashboardPage와 동일 패턴: optimistic update + 실패 시 롤백 + 503은 Kill Switch
+  const [togglingAi, setTogglingAi] = useState(false);
+  const handleToggleAi = async () => {
+    if (togglingAi) return;
+    const previous = isActive;
+    const next = !previous;
+    setIsActive(next);
+    setTogglingAi(true);
+    try {
+      const result = await updateAutoTradeStatus({ isActive: next });
+      setIsActive(result.isActive);
+      toast.success(`자동매매가 ${result.isActive ? '활성화' : '비활성화'}되었습니다`);
+    } catch (error) {
+      setIsActive(previous);
+      if (error.status === 503) {
+        toast.error('자동매매가 강제 중단됨 (Kill Switch)', {
+          description: '안전 한도 초과로 자동매매가 차단된 상태입니다.',
+        });
+      } else {
+        toast.error(error.message || '자동매매 상태 변경에 실패했습니다.');
+      }
+    } finally {
+      setTogglingAi(false);
+    }
+  };
 
   const handleRuleChange = (field, value) => {
     setRules((prev) => ({ ...prev, [field]: value }));
@@ -221,8 +246,9 @@ export default function RiskManagePage() {
 
         <div className="risk-global-controls">
           <div className="control-item">
-            <span className="control-label" style={{ color: isActive ? '#84cc16' : '#888' }}>
-              AI 자동매매 {isActive ? 'ON' : 'OFF'}
+            <span className="control-label">AI 자동매매</span>
+            <span className={`status-badge ${isActive ? 'active' : 'inactive'}`}>
+              {isActive ? 'ON' : 'OFF'}
             </span>
             <div className={`toggle-switch ${isActive ? 'on' : 'off'}`} onClick={handleToggleAi}>
               <div className="toggle-knob"></div>

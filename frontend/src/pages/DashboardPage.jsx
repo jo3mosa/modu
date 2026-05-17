@@ -10,7 +10,8 @@ import InlineError from '../components/InlineError';
 import { getAccountSummary, getPortfolio } from '../api/account';
 import { getAiDecisions } from '../api/aiAgent';
 import { getOrderHistory, getBuyingPower, ORDER_STATUS_DISPLAY } from '../api/order';
-import { getProfile } from '../api/strategy';
+import { getProfile, updateAutoTradeStatus } from '../api/strategy';
+import { toast } from 'sonner';
 import { useOrderSSE } from '../hooks/useOrderSSE';
 import './DashboardPage.css';
 
@@ -359,8 +360,32 @@ export default function DashboardPage() {
     setShowTutorial(false);
   };
 
-  const toggleAiStatus = () => {
-    setAiStatus(prev => ({ ...prev, isActive: !prev.isActive }));
+  // 자동매매 ON/OFF 토글 — PATCH /strategies/me/status
+  // optimistic update 후 실패 시 롤백. 503은 Kill Switch 발동 케이스로 별도 메시지.
+  const [togglingAi, setTogglingAi] = useState(false);
+  const toggleAiStatus = async () => {
+    if (togglingAi) return;
+    const previous = aiStatus.isActive;
+    const next = !previous;
+    setAiStatus({ isActive: next });
+    setTogglingAi(true);
+    try {
+      const result = await updateAutoTradeStatus({ isActive: next });
+      // 백엔드 응답이 진실의 원천 — 실제 반영된 값으로 동기화
+      setAiStatus({ isActive: result.isActive });
+      toast.success(`자동매매가 ${result.isActive ? '활성화' : '비활성화'}되었습니다`);
+    } catch (error) {
+      setAiStatus({ isActive: previous }); // 롤백
+      if (error.status === 503) {
+        toast.error('자동매매가 강제 중단됨 (Kill Switch)', {
+          description: '안전 한도 초과로 자동매매가 차단된 상태입니다.',
+        });
+      } else {
+        toast.error(error.message || '자동매매 상태 변경에 실패했습니다.');
+      }
+    } finally {
+      setTogglingAi(false);
+    }
   };
 
   const formatNumber = (num) => num.toLocaleString();
