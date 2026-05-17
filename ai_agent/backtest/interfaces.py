@@ -123,3 +123,10 @@ class PortfolioFn(Protocol):
     def mark_to_market(self, day: date, close_prices: dict[str, float]) -> dict:
         """EOD 평가 — 일별 자산 곡선·미실현손익 기록. metrics 모듈이 소비."""
         ...
+
+    # 선택 구현 — 보유 포지션의 stop_loss / target_price 도달 평가.
+    # event_loop는 hasattr 체크 후 있을 때만 호출하므로 미구현이어도 동작.
+    # ohlcv_rows = {stock_code: {open, high, low, close, volume}}.
+    # 발생한 Fill 리스트 반환 (event_loop가 JSONL 레코드로 기록).
+    #
+    # def evaluate_open_positions(self, day: date, ohlcv_rows: dict[str, dict]) -> list[Fill]: ...

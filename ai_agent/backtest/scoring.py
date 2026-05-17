@@ -177,7 +177,6 @@ def score_jsonl(
             ret = -ret
         traded += 1
         returns.append(ret)
-        (hits if ret > 0 else losses).__add__(0)  # type: ignore
         if ret > 0:
             hits += 1
         else:
@@ -210,18 +209,19 @@ def score_with_post_mortem(
     price_fetcher: PriceFetcher,
     holding_days: int = 7,
     post_mortem_fn: Callable[..., Any] | None = None,
+    benchmark_fetcher: Any | None = None,
 ) -> None:
     """JSONL 라인별로 raw_return 계산 + post_mortem_agent 호출 → scored JSONL.
 
     post_mortem_fn 미주입 시 app.agents.feedback.post_mortem_agent를 실 LLM 호출.
-    alpha_return = 0.0 (TODO: KOSPI 벤치마크 차감).
+    benchmark_fetcher (KospiBenchmarkFetcher 등) 주입 시 alpha_return 산출.
     """
     pm_fn = post_mortem_fn or _default_post_mortem
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as f_out:
         for raw_rec in _iter_records(input_path):
             rec = _normalize_record(raw_rec)
-            scored = _score_one(rec, price_fetcher, holding_days, pm_fn)
+            scored = _score_one(rec, price_fetcher, holding_days, pm_fn, benchmark_fetcher)
             f_out.write(json.dumps(scored, ensure_ascii=False, default=str) + "\n")
 
 
@@ -236,6 +236,7 @@ def _score_one(
     price_fetcher: PriceFetcher,
     holding_days: int,
     pm_fn: Callable[..., Any],
+    benchmark_fetcher: Any | None = None,
 ) -> dict[str, Any]:
     """단일 결정 레코드에 target/stop 시뮬 + raw_return + post_mortem 부착.
 
@@ -282,12 +283,20 @@ def _score_one(
     if side == "sell":
         raw_return = -raw_return
 
+    # KOSPI 벤치마크 대비 alpha — benchmark_fetcher 주입된 경우만 산출.
+    alpha_return = _compute_alpha_return(
+        raw_return=raw_return,
+        entry_date=trade_date,
+        exit_date=exit_result.exit_date,
+        benchmark_fetcher=benchmark_fetcher,
+    )
+
     reflection_dump = None
     try:
         reflection = pm_fn(
             decision_content=_compose_decision_content(rec),
             raw_return=raw_return,
-            alpha_return=0.0,
+            alpha_return=alpha_return if alpha_return is not None else 0.0,
             holding_days=exit_result.holding_days,
             risk_level=None,
             key_signals=rec.get("rule_ids"),
@@ -305,11 +314,33 @@ def _score_one(
         "exit_date": exit_result.exit_date.isoformat(),
         "exit_reason": exit_result.exit_reason,
         "raw_return": raw_return,
-        "alpha_return": 0.0,
+        "alpha_return": alpha_return,
         "holding_days": exit_result.holding_days,
         "post_mortem": reflection_dump,
         "skip_reason": None,
     }
+
+
+def _compute_alpha_return(
+    *, raw_return: float, entry_date: date, exit_date: date,
+    benchmark_fetcher: Any | None,
+) -> float | None:
+    """전략 수익률 - 같은 기간 KOSPI 수익률. benchmark 없거나 가격 누락 시 None.
+
+    benchmark_fetcher.close_price(_, date) 시그니처를 사용 — KospiBenchmarkFetcher 호환.
+    """
+    if benchmark_fetcher is None:
+        return None
+    try:
+        entry_p = float(benchmark_fetcher.close_price("KOSPI", entry_date))
+        exit_p = float(benchmark_fetcher.close_price("KOSPI", exit_date))
+    except Exception:
+        logger.exception("alpha 계산 실패 — benchmark 가격 조회")
+        return None
+    if entry_p <= 0 or exit_p <= 0:
+        return None
+    bench_return = (exit_p - entry_p) / entry_p
+    return raw_return - bench_return
 
 
 def _compose_decision_content(rec: dict[str, Any]) -> str:

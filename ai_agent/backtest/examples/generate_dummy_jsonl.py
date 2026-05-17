@@ -159,6 +159,21 @@ class DummyPriceFetcher:
         self._cache[key] = price
         return price
 
+    def ohlc(self, stock_code: str, target_date: date) -> dict | None:
+        """결정론적 OHLC — close 주변에 ±2% 폭으로 high/low를 만든다.
+
+        scoring.simulate_target_stop_exit이 일별 high/low를 봐서 target/stop
+        도달을 판정하므로 dummy 경로에서도 ohlc()가 필요.
+        """
+        close = self.close_price(stock_code, target_date)
+        if close <= 0:
+            return None
+        # 같은 시드에서 동일 출력 — date+code 해시로 spread 폭 결정.
+        spread_bps = (_hash_int(stock_code, target_date.isoformat(), "spread") % 400) / 10000.0
+        high = close * (1 + spread_bps)
+        low = close * (1 - spread_bps)
+        return {"open": close, "high": high, "low": low, "close": close}
+
 
 def fake_post_mortem(**kwargs):
     """LLM 미호출 가짜 회고. scoring 후처리 흐름 검증용."""

@@ -92,6 +92,13 @@ python -m ai_agent.backtest.run_ai_backtest \
 ```
 - `--score-after`: 결정 JSONL을 읽어 raw_return + post_mortem 부착 → `scored_*.jsonl` 생성
 - `--pm-mock`: post_mortem도 LLM 미호출 (fake_post_mortem 사용). 회피 시 추가 LLM 비용
+- `--benchmark-csv`: KOSPI 일별 종가 CSV 경로 (기본: `data/kospi_daily.csv`). 있으면 `alpha_return` 산출 (= raw_return − 같은기간 KOSPI 수익률)
+
+### 산출되는 추가 메트릭
+
+- **equity_curve.jsonl**: `SimplePortfolio.mark_to_market`가 매일 쌓은 자산 곡선. dashboard 자산 추이 차트 입력.
+- **summary `stats.equity_metrics`**: total_return / CAGR / Sharpe / Sortino / Calmar / MaxDD. `event_loop.run()` 종료 시 자동 산출.
+- **stop_fills / target_fills**: `SimplePortfolio.evaluate_open_positions`로 보유 기간 중 손절/익절 도달해 자동 청산된 건수. summary `stats`에 포함.
 
 ### 3. ablation 비교 (A vs B vs random)
 ```bash

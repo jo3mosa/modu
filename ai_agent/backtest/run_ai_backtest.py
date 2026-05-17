@@ -122,17 +122,28 @@ def _score_after_run(
     output_root: Path,
     holding_days: int,
     pm_mock: bool,
+    benchmark_csv: Path | None = None,
 ) -> None:
     """DA가 출력한 triggers_*.jsonl을 읽어 scored_*.jsonl을 만든다.
 
     pm_mock=True 면 LLM 호출 없이 fake_post_mortem 사용 (인프라 검증).
     pm_mock=False 면 실 post_mortem_agent (LLM 호출, 추가 비용).
+    benchmark_csv가 있으면 alpha_return(= raw_return - KOSPI 같은기간 수익률) 산출.
     """
     from .scoring import score_with_post_mortem
     pm_fn = None
     if pm_mock:
         from .examples.generate_dummy_jsonl import fake_post_mortem
         pm_fn = fake_post_mortem
+
+    benchmark = None
+    if benchmark_csv and benchmark_csv.exists():
+        from .benchmark import KospiBenchmarkFetcher
+        benchmark = KospiBenchmarkFetcher(benchmark_csv)
+        if not benchmark.is_loaded():
+            benchmark = None
+    elif benchmark_csv:
+        logger.warning("benchmark CSV 없음 — alpha 산출 비활성: %s", benchmark_csv)
 
     price = _OhlcvPriceFetcher(engine)
     files = sorted(output_root.glob("triggers_*.jsonl"))
@@ -142,8 +153,12 @@ def _score_after_run(
 
     for f in files:
         out = f.parent / f.name.replace("triggers_", "scored_")
-        score_with_post_mortem(f, out, price_fetcher=price, holding_days=holding_days, post_mortem_fn=pm_fn)
-    logger.info("score-after: %d 파일 scored 생성", len(files))
+        score_with_post_mortem(
+            f, out, price_fetcher=price, holding_days=holding_days,
+            post_mortem_fn=pm_fn, benchmark_fetcher=benchmark,
+        )
+    logger.info("score-after: %d 파일 scored 생성 (alpha=%s)",
+                len(files), "ON" if benchmark else "OFF")
 
 
 # ============================================================
@@ -222,6 +237,12 @@ def main() -> int:
                         help="--score-after에 fake post_mortem 사용 (LLM 미호출)")
     parser.add_argument("--holding-days", type=int, default=7,
                         help="--score-after에서 T+N일 종가 채점")
+    parser.add_argument("--benchmark-csv", type=Path,
+                        default=Path(__file__).resolve().parent / "data" / "kospi_daily.csv",
+                        help="alpha_return 산출용 KOSPI CSV 경로. "
+                             "파일 없으면 alpha 비활성. "
+                             "기본: ai_agent/backtest/data/kospi_daily.csv "
+                             "(scripts/fetch_kospi.py로 생성)")
     args = parser.parse_args()
 
     try:
@@ -284,6 +305,7 @@ def main() -> int:
             output_root=args.output,
             holding_days=args.holding_days,
             pm_mock=args.pm_mock,
+            benchmark_csv=args.benchmark_csv,
         )
 
     return 0

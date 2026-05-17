@@ -46,6 +46,8 @@ class BacktestStats:
     triggers_with_decision: int = 0
     decision_errors: int = 0
     fills: int = 0
+    stop_fills: int = 0          # evaluate_open_positions로 자동 청산된 건수
+    target_fills: int = 0
     action_counter: Counter = None
     rule_counter: Counter = None
 
@@ -62,6 +64,8 @@ class BacktestStats:
             "triggers_with_decision": self.triggers_with_decision,
             "decision_errors": self.decision_errors,
             "fills": self.fills,
+            "stop_fills": self.stop_fills,
+            "target_fills": self.target_fills,
             "action_distribution": dict(self.action_counter),
             "rule_distribution": dict(self.rule_counter),
         }
@@ -148,6 +152,25 @@ def run(
                     user_context=user_ctx, portfolio_snapshot=snapshot,
                 ))
 
+            # 보유 포지션의 stop_loss / target_price 도달 평가 (선택 구현).
+            # mark_to_market 직전에 실행 — 도달 시 청산이 EOD 자산에 반영되도록.
+            if hasattr(portfolio, "evaluate_open_positions"):
+                try:
+                    auto_fills = portfolio.evaluate_open_positions(day, fetched_stocks)
+                except Exception:
+                    logger.exception("evaluate_open_positions 실패 day=%s", day)
+                    auto_fills = []
+                for af in auto_fills or []:
+                    if af.notes and af.notes.startswith("stop_loss_hit"):
+                        stats.stop_fills += 1
+                    elif af.notes and af.notes.startswith("target_hit"):
+                        stats.target_fills += 1
+                    stats.fills += 1
+                    writer.write(day, _build_auto_fill_record(
+                        run_id=run_id, user_id=user_id, day=day, fill=af,
+                        portfolio_snapshot=portfolio.snapshot(),
+                    ))
+
             # EOD: mark-to-market — close_prices 는 그날 종가.
             close_prices = {sc: row.get("close")
                             for sc, row in fetched_stocks.items()}
@@ -163,6 +186,17 @@ def run(
                         len(triggers), stats.fills, elapsed)
 
     ended_at = datetime.utcnow()
+    # equity_curve 기반 표준 메트릭 — portfolio가 노출하는 경우만 산출.
+    equity_metrics = _compute_equity_metrics_if_available(portfolio)
+    stats_payload = stats.as_dict()
+    if equity_metrics is not None:
+        stats_payload["equity_metrics"] = equity_metrics
+        logger.info("equity 메트릭 — total_return=%.2f%% / CAGR=%.2f%% / "
+                    "Sharpe=%.2f / MaxDD=%.2f%%",
+                    equity_metrics["total_return_pct"] * 100,
+                    equity_metrics["cagr"] * 100,
+                    equity_metrics["sharpe"],
+                    equity_metrics["max_drawdown_pct"] * 100)
     summary_path = write_summary(
         output_root, run_id=run_id,
         started_at=started_at, ended_at=ended_at,
@@ -174,11 +208,45 @@ def run(
             "event_lookback_days": EVENT_LOOKBACK_DAYS,
             "sentiment_lookback_days": SENTIMENT_LOOKBACK_DAYS,
         },
-        stats=stats.as_dict(),
+        stats=stats_payload,
     )
     logger.info("백테스트 완료 — summary %s", summary_path)
     return {"run_id": run_id, "summary_path": str(summary_path),
-            "stats": stats.as_dict()}
+            "stats": stats_payload}
+
+
+def _compute_equity_metrics_if_available(portfolio: PortfolioFn) -> Optional[dict]:
+    """portfolio가 equity_curve 속성을 노출하면 메트릭 산출, 아니면 None."""
+    curve = getattr(portfolio, "equity_curve", None)
+    if not curve:
+        return None
+    try:
+        from .portfolio_metrics import compute_equity_metrics
+        return compute_equity_metrics(curve)
+    except Exception:
+        logger.exception("equity 메트릭 산출 실패")
+        return None
+
+
+def _build_auto_fill_record(
+    *, run_id: str, user_id: str, day, fill: Fill,
+    portfolio_snapshot,
+) -> dict:
+    """stop_loss/target_price 자동 청산 Fill 전용 레코드.
+
+    트리거가 없는 청산이므로 일반 trigger 레코드와 구분되는 record_type 부여.
+    scoring/대시보드가 무시해도 동작이 깨지지 않도록 키 set은 보수적으로.
+    """
+    return {
+        "run_id": run_id,
+        "user_id": user_id,
+        "as_of_date": day,
+        "record_type": "auto_fill",
+        "stock_code": fill.notes.split(":")[-1] if fill.notes and ":" in fill.notes else None,
+        "fill": fill,
+        "portfolio_snapshot": portfolio_snapshot,
+        "recorded_at": datetime.utcnow().isoformat() + "Z",
+    }
 
 
 # ─── 내부 헬퍼 ───────────────────────────────────────────────────────────────
