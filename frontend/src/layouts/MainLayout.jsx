@@ -25,6 +25,7 @@ export default function MainLayout() {
   const menuItems = [
     { path: '/home', label: '대시보드' },
     { path: '/trading', label: '트레이딩 룸' },
+    { path: '/agent-meeting', label: '에이전트 회의실' },
     { path: '/report', label: '리포트' },
     { path: '/risk-manage', label: '리스크 관리' },
     { path: '/mypage', label: '마이페이지' },
@@ -120,6 +121,7 @@ export default function MainLayout() {
             >
               {item.icon}
               <span>{item.label}</span>
+              {item.isNew && <span className="nav-new-badge">NEW</span>}
             </Link>
           ))}
         </nav>

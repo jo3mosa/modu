@@ -106,10 +106,11 @@ function adaptDetail(item) {
  *   hasNext: boolean
  * }>}
  */
-export async function getAiDecisions({ page, size } = {}) {
+export async function getAiDecisions({ page, size, stockCode } = {}) {
   const search = new URLSearchParams();
   if (page != null) search.set('page', String(page));
   if (size != null) search.set('size', String(size));
+  if (stockCode) search.set('stockCode', stockCode);
   const queryString = search.toString();
   const endpoint = queryString ? `/ai-agent/decisions?${queryString}` : '/ai-agent/decisions';
   const data = await apiClient(endpoint);

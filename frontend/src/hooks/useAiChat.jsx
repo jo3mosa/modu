@@ -15,10 +15,10 @@ import { useOrderSSE } from './useOrderSSE';
 // 4봇 페르소나 — 카톡 협업 메타포 (직장 동료 톤)
 // role: 화면에 이름 옆 작게 표시되는 직책
 export const BOT_PROFILES = {
-  analyst: { name: '민혁', role: '차트',   icon: '📊', color: '#3b82f6' },
-  news:    { name: '다은', role: '뉴스',   icon: '📰', color: '#84cc16' },
-  reason:  { name: '준영', role: '전략',   icon: '💭', color: '#a78bfa' },
-  decide:  { name: '지호', role: '결정',   icon: '⚡', color: '#ef4444' },
+  bull:     { name: '강세 리서처', role: '리서치', icon: '강세', color: '#ef4444' },
+  bear:     { name: '약세 리서처', role: '리서치', icon: '약세', color: '#3b82f6' },
+  strategy: { name: '전략 매니저', role: '전략', icon: '전략', color: '#a78bfa' },
+  decide:   { name: '의사결정 매니저', role: '의사결정', icon: '결정', color: '#10b981' },
 };
 
 // indicators_snapshot 키 한국어 라벨 — 채팅으로 자연스럽게 표시
@@ -44,10 +44,10 @@ function applyPersonaTone(text, bot) {
     .replace(/추천합니다\.?/g, '추천해요')
     .replace(/유지되고 있어요/g, '잘 가고 있어요');
   const prefix = {
-    analyst: '차트 봤는데,',
-    news:    '소식 들어왔어요!',
-    reason:  '음, 종합하면',
-    decide:  '결론!',
+    bull:     '긍정적인 시그널이 포착되었습니다.',
+    bear:     '리스크 요인이 관찰됩니다.',
+    strategy: '현 시점 전략 제안 드립니다.',
+    decide:   '최종 결정 내역입니다.',
   }[bot] ?? '';
   return prefix ? `${prefix} ${out}` : out;
 }
@@ -57,9 +57,9 @@ const POSITION_STORAGE_KEY = 'modu.aiChatButtonPos';
 const MAX_MESSAGES = 80; // 한 봇당 ~20개 판단(20 × 4 = 80) 보관
 
 // 시연용 mock — 백엔드 데이터 0건일 때 자동 주입. 운영에서 끄고 싶으면 false로.
-const ENABLE_DEMO_MOCK = true;
+const ENABLE_DEMO_MOCK = false;
 
-const DEMO_DECISIONS = [
+export const DEMO_DECISIONS = [
   {
     id: 'demo-1',
     stockCode: '005930',
@@ -67,6 +67,8 @@ const DEMO_DECISIONS = [
     confidence: 78,
     decidedAt: new Date(Date.now() - 1000 * 60 * 18).toISOString(),
     reason: '5일선이 20일선 위에서 잘 가고 있네요. 외국인 순매수가 3일 연속 이어지면서 수급 분위기가 좋아요. 분할 매수로 가는 게 안전할 것 같아요.',
+    newsSummary: '외국인 순매수 3일 연속 유입 및 반도체 업황 개선 기대감 확산',
+    technicalSummary: '5일선이 20일선 상회하며 단기 상승 추세 진입',
     indicatorsSnapshot: {
       rsi: 58,
       macd: '골든크로스 임박',
@@ -82,6 +84,8 @@ const DEMO_DECISIONS = [
     confidence: 64,
     decidedAt: new Date(Date.now() - 1000 * 60 * 9).toISOString(),
     reason: 'RSI가 71까지 올라와서 과매수 직전이에요. 차익실현 압력이 슬슬 누적되는 중. 일단 60일선 지지 확인하고 들어가는 게 안전해요.',
+    newsSummary: '특징적인 대형 공시나 뉴스 없음',
+    technicalSummary: 'RSI 71 도달 및 볼린저 밴드 상단 터치로 단기 과열 양상',
     indicatorsSnapshot: {
       rsi: 71,
       bollinger: '상단 터치',
@@ -96,10 +100,12 @@ const DEMO_DECISIONS = [
     confidence: 82,
     decidedAt: new Date(Date.now() - 1000 * 60 * 2).toISOString(),
     reason: 'MACD 데드크로스 떴고 거래량도 평균의 2배로 튀었어요. 최근 부정적 뉴스 2건도 같이 잡혔구요. 보유분의 절반 정도는 익절하는 게 좋겠어요.',
+    newsSummary: '수익성 악화 우려 및 증권사 목표가 하향 리포트 발간',
+    technicalSummary: 'MACD 데드크로스 발생 및 거래량 급증하며 하락 추세 전환 가능성',
     indicatorsSnapshot: {
       rsi: 45,
       macd: '데드크로스',
-      ma60: '하향 이탈',
+      volume: '2배 급증',
       news_sentiment: -0.41,
       disclosure: '실적 컨센서스 하회',
     },
@@ -133,7 +139,7 @@ function pickByKeys(obj, keyHints, labelMap = {}) {
  * judgmentReason 텍스트를 문장 단위로 절반씩 추론봇/결정봇에 분배.
  * indicators 가 비면 봇 메시지를 생략(빈 채팅 방지).
  */
-function decisionToMessages(decision) {
+export function decisionToMessages(decision) {
   if (!decision?.id) return [];
   const id = decision.id;
   const stockCode = decision.stockCode ?? '-';
@@ -153,33 +159,31 @@ function decisionToMessages(decision) {
   const secondHalf = sentences.slice(half).join(' ');
 
   const actionLabel = action === 'BUY' ? '매수' : action === 'SELL' ? '매도' : action === 'HOLD' ? '관망' : '판단';
-  const confidenceLabel = confidence != null ? `신뢰도 ${confidence}% — ` : '';
+  const confidenceLabel = confidence != null ? `(신뢰도 ${confidence}%) ` : '';
   const decideTail = secondHalf || (firstHalf ? '' : reason);
-  const decideText = `${confidenceLabel}${actionLabel}로 갈게요${decideTail ? `. ${applyPersonaTone(decideTail, 'decide').replace(/^결론!\s*/, '')}` : '!'}`;
+  const decideText = `${confidenceLabel}${actionLabel} 의견입니다${decideTail ? `. ${applyPersonaTone(decideTail, 'decide').replace(/^최종 결정 내역입니다.\s*/, '')}` : '.'}`;
+
+  const isBullish = action === 'BUY';
+  const technicalBot = isBullish ? 'bull' : 'bear';
+
+  // 뉴스나 기술 지표 데이터를 전략 매니저나 리서처가 나눠서 브리핑하도록 병합
+  const combinedIndicators = [news, technical].filter(Boolean).join(' / ');
 
   return [
-    technical && {
-      id: `${id}-analyst`,
+    combinedIndicators && {
+      id: `${id}-researcher`,
       decisionId: id,
       stockCode,
-      bot: 'analyst',
-      text: applyPersonaTone(technical, 'analyst'),
-      timestamp: decidedAt,
-    },
-    news && {
-      id: `${id}-news`,
-      decisionId: id,
-      stockCode,
-      bot: 'news',
-      text: applyPersonaTone(news, 'news'),
+      bot: technicalBot,
+      text: applyPersonaTone(combinedIndicators, technicalBot),
       timestamp: decidedAt,
     },
     firstHalf && {
-      id: `${id}-reason`,
+      id: `${id}-strategy`,
       decisionId: id,
       stockCode,
-      bot: 'reason',
-      text: applyPersonaTone(firstHalf, 'reason'),
+      bot: 'strategy',
+      text: applyPersonaTone(firstHalf, 'strategy'),
       timestamp: decidedAt,
     },
     {

@@ -4,7 +4,6 @@ import AuthLayout from './layouts/AuthLayout';
 import MainLayout from './layouts/MainLayout';
 import { OrderSSEProvider } from './hooks/useOrderSSE';
 import { AiChatProvider } from './hooks/useAiChat';
-import AiChatButton from './components/AiChatButton';
 import PrivateRoute from './components/PrivateRoute';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
@@ -15,6 +14,7 @@ import TradingPage from './pages/TradingPage';
 import ReportPage from './pages/ReportPage';
 import RiskManagePage from './pages/RiskManagePage';
 import MyPage from './pages/MyPage';
+import AgentMeetingPage from './pages/AgentMeetingPage';
 
 function App() {
   return (
@@ -42,7 +42,6 @@ function App() {
               <OrderSSEProvider>
                 <AiChatProvider>
                   <MainLayout />
-                  <AiChatButton />
                 </AiChatProvider>
               </OrderSSEProvider>
             </PrivateRoute>
@@ -50,6 +49,7 @@ function App() {
         >
           <Route path="/home" element={<DashboardPage />} />
           <Route path="/trading" element={<TradingPage />} />
+          <Route path="/agent-meeting" element={<AgentMeetingPage />} />
           <Route path="/report" element={<ReportPage />} />
           <Route path="/risk-manage" element={<RiskManagePage />} />
           <Route path="/mypage" element={<MyPage />} />
