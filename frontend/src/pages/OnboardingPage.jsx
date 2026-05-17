@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, ArrowLeft } from 'lucide-react';
-import { getProfileQuestions, updateProfile, updateRules } from '../api/strategy';
+import { getProfile, getProfileQuestions, updateProfile, updateRules } from '../api/strategy';
 import { registerKisKey } from '../api/user';
 import './OnboardingPage.css';
 

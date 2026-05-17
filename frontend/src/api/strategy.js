@@ -68,7 +68,8 @@ export async function getProfile() {
  *
  * @param {{
  *   answers: Array<{ questionId: string, optionId: string }>,
- *   freeText?: string
+ *   freeText?: string,
+ *   version: number
  * }} payload
  * @returns {Promise<{
  *   riskLevel: 'STABLE' | 'STABLE_SEEKING' | 'RISK_NEUTRAL' | 'ACTIVE' | 'AGGRESSIVE',

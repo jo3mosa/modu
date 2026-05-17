@@ -1,6 +1,7 @@
 package com.modu.backend.domain.market.controller;
 
 import com.modu.backend.domain.market.dto.CandleListResponse;
+import com.modu.backend.domain.market.dto.NewsResponse;
 import com.modu.backend.domain.market.dto.StockDetailResponse;
 import com.modu.backend.domain.market.dto.StockListResponse;
 import com.modu.backend.domain.market.exception.MarketErrorCode;
@@ -27,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.time.format.DateTimeParseException;
 
 @Tag(name = "Market", description = "종목/시세 API")
@@ -143,6 +145,33 @@ public class MarketController {
         validateDate(endDate);
         CandleListResponse response = marketService.getCandleData(stockCode, period, startDate, endDate);
         return ResponseEntity.ok(ApiResponse.success("차트 캔들 데이터를 성공적으로 조회했습니다.", response));
+    }
+
+    @Operation(
+            summary = "종목별 관련 뉴스 조회",
+            description = """
+                    종목코드로 매칭된 뉴스 기사를 최신순으로 최대 20건 조회합니다.
+
+                    - 데이터 소스: MongoDB `modu_mongo.news_articles` (analysis_server 의 RSS·백필 적재)
+                    - 종목 매칭: `stock_codes` 배열에 해당 종목코드가 포함된 기사
+                    - 정렬: `published_at` 내림차순
+                    - 매칭 기사 없을 때 빈 배열 반환 (404 아님)
+                    - 발행 시각은 KST(+09:00) 가 부착된 ISO-8601 형식으로 응답
+                    """
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "인증 필요"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "존재하지 않는 종목코드",
+                    content = @Content(schema = @Schema(example = "{\"success\":false,\"message\":\"존재하지 않는 종목코드입니다.\",\"errorCode\":\"MKT_001\"}")))
+    })
+    @GetMapping("/stocks/{stockCode}/news")
+    public ResponseEntity<ApiResponse<List<NewsResponse>>> getStockNews(
+            @Parameter(description = "종목코드 (6자리)", example = "005930")
+            @PathVariable String stockCode) {
+
+        List<NewsResponse> response = marketService.getStockNews(stockCode);
+        return ResponseEntity.ok(ApiResponse.success("관련 뉴스를 성공적으로 조회했습니다.", response));
     }
 
     private void validateDate(String date) {
