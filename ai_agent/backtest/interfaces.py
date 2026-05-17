@@ -130,3 +130,12 @@ class PortfolioFn(Protocol):
     # 발생한 Fill 리스트 반환 (event_loop가 JSONL 레코드로 기록).
     #
     # def evaluate_open_positions(self, day: date, ohlcv_rows: dict[str, dict]) -> list[Fill]: ...
+    #
+    # 선택 구현 — pending order 패턴.
+    # execute()를 "예약"으로 동작시키고, 매 사이클 시작에 settle(day)가 호출되어
+    # 어제 예약된 주문을 실제로 적용. cash/holdings/open_positions가 settle 후에만
+    # 갱신되므로 같은 사이클의 evaluate_open_positions / mark_to_market이 "T+1
+    # 진입을 T 데이터로 평가"하는 시점 꼬임에서 자유로워진다.
+    # event_loop는 hasattr 체크 후 있을 때만 호출.
+    #
+    # def settle(self, day: date) -> list[Fill]: ...

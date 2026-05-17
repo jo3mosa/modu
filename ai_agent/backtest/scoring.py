@@ -491,6 +491,10 @@ def _parse_date(value: Any) -> date | None:
 
 
 def _add_business_days(d: date, n: int) -> date:
+    """주말만 제외한 N번째 다음 영업일. **공휴일 미반영** — 폴백용.
+
+    실거래 캘린더가 있으면 `_add_trading_days(d, n, trading_days)`를 쓸 것.
+    """
     cur = d
     remaining = n
     while remaining > 0:
@@ -498,6 +502,48 @@ def _add_business_days(d: date, n: int) -> date:
         if cur.weekday() < 5:
             remaining -= 1
     return cur
+
+
+def _add_trading_days(
+    d: date, n: int, trading_days: list[date] | None = None,
+) -> date:
+    """d 이후 n번째 거래일 반환. trading_days 없으면 weekday 폴백.
+
+    trading_days = `data_sources.fetch_trading_days(engine, start, end)` 결과.
+    daily_ohlcv 기반이라 한국 공휴일·임시휴장 모두 자동 회피.
+    range 밖으로 나가면 마지막 거래일로 clamp.
+    """
+    if trading_days:
+        from bisect import bisect_right
+        # d 직후 첫 trading day의 index + (n-1)
+        idx = bisect_right(trading_days, d) + n - 1
+        if idx < 0:
+            return trading_days[0]
+        if idx >= len(trading_days):
+            return trading_days[-1]
+        return trading_days[idx]
+    return _add_business_days(d, n)
+
+
+def _trading_days_between(
+    start: date, end: date, trading_days: list[date] | None = None,
+) -> int:
+    """start 다음 거래일 ~ end 까지의 거래일 수 (start 제외, end 포함).
+
+    trading_days 주어지면 실거래 캘린더 기반, 아니면 weekday 폴백.
+    """
+    if end <= start:
+        return 0
+    if trading_days:
+        from bisect import bisect_right
+        return bisect_right(trading_days, end) - bisect_right(trading_days, start)
+    # 폴백: weekday only
+    cur, n = start, 0
+    while cur < end:
+        cur = cur + timedelta(days=1)
+        if cur.weekday() < 5:
+            n += 1
+    return n
 
 
 def _quarter_key(d: date) -> str:
