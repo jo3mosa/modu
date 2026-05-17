@@ -6,6 +6,8 @@ import com.modu.backend.domain.ai.entity.AiExecutionStatus;
 import com.modu.backend.domain.ai.entity.AiJudgment;
 import com.modu.backend.domain.ai.exception.AiErrorCode;
 import com.modu.backend.domain.ai.repository.AiJudgmentRepository;
+import com.modu.backend.domain.strategy.entity.AutoTradeStatus;
+import com.modu.backend.domain.strategy.repository.AutoTradeSettingsRepository;
 import com.modu.backend.domain.trading.entity.Order;
 import com.modu.backend.domain.trading.entity.OrderSide;
 import com.modu.backend.domain.trading.entity.OrderSource;
@@ -71,6 +73,8 @@ public class SignalHandlerService {
     private final AiJudgmentRepository aiJudgmentRepository;
     private final TradingRuleRepository tradingRuleRepository;
     private final PositionThresholdRepository positionThresholdRepository;
+    private final AutoTradeSettingsRepository autoTradeSettingsRepository;
+    private final PortfolioCheckService portfolioCheckService;
     private final TradeOrderProducer tradeOrderProducer;
     private final ObjectMapper objectMapper;
 
@@ -125,6 +129,12 @@ public class SignalHandlerService {
     // ───────────────────────────────────────────────────────────────────
 
     private AiExecutionStatus resolveExecutionStatus(AiDecisionMessage m) {
+        // 0. 자동매매 상태 우선 확인 — ACTIVE 아니면 BLOCKED (사용자 OFF / Kill Switch / row 없음 모두 차단)
+        //    AI 가 Redis 보고 사전 필터링하나 race 가드 차원에서 BE 도 한 번 더 확인
+        if (!isAutoTradeActive(m.userId())) {
+            return AiExecutionStatus.BLOCKED;
+        }
+
         String flow = m.flowStatus();
 
         if ("blocked".equalsIgnoreCase(flow) || "failed".equalsIgnoreCase(flow)) {
@@ -158,7 +168,41 @@ public class SignalHandlerService {
             return AiExecutionStatus.APPROVAL_REQUIRED;
         }
 
+        // 사전 잔고/보유 검증 (READY 진입 직전) — 실패 시 BLOCKED
+        if (!hasSufficientResource(m, side, fd)) {
+            return AiExecutionStatus.BLOCKED;
+        }
+
         return AiExecutionStatus.READY;
+    }
+
+    /**
+     * 자동매매 상태 = ACTIVE 인지 확인. AutoTradeSettings row 없으면 false (신규 사용자 보호)
+     */
+    private boolean isAutoTradeActive(Long userId) {
+        return autoTradeSettingsRepository.findById(userId)
+                .map(s -> s.getAutoTradeStatus() == AutoTradeStatus.ACTIVE)
+                .orElse(false);
+    }
+
+    /**
+     * 사전 잔고/보유 검증 — Redis snapshot 또는 KIS fallback
+     *  BUY  : cash_balance >= order_amount
+     *  SELL : holdings 의 stock_code quantity >= (order_amount / target_price)
+     *
+     * 자료 조회 실패 시 PortfolioCheckService 가 true 반환 (KIS placeOrder 단계 최종 검증에 위임).
+     */
+    private boolean hasSufficientResource(AiDecisionMessage m, String side, AiDecisionMessage.FinalDecision fd) {
+        if ("buy".equalsIgnoreCase(side)) {
+            return portfolioCheckService.hasSufficientCash(m.userId(), nullToZero(fd.orderAmount()));
+        }
+        // SELL
+        if (fd.targetPrice() == null || fd.targetPrice() <= 0 || fd.orderAmount() == null) {
+            return true; // 계산 불가 — KIS 단계 위임
+        }
+        long quantity = fd.orderAmount() / Math.round(fd.targetPrice());
+        if (quantity <= 0) return true;
+        return portfolioCheckService.hasSufficientHolding(m.userId(), m.stockCode(), quantity);
     }
 
     private boolean exceedsDailyBuyLimit(Long userId, long orderAmount) {
