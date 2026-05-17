@@ -9,21 +9,23 @@ DA의 run_backtest.py는 mock_decision으로 인프라 검증만. 이 모듈은 
         --mode random --start 2024-01-02 --end 2024-01-05 \\
         --watchlist 005930,000660,035720 --output backtest_out/random
 
-    # 실 LangGraph (mode A — Bull/Bear 토론, LLM 호출됨)
+    # 실 LangGraph (debate_1 — Bull/Bear 1라운드 토론, LLM 호출됨)
     python -m ai_agent.backtest.run_ai_backtest \\
-        --mode A --start 2024-01-02 --end 2024-01-03 \\
-        --watchlist 005930 --output backtest_out/mode_A
+        --mode debate_1 --start 2024-01-02 --end 2024-01-03 \\
+        --watchlist 005930 --output backtest_out/debate_1
 
     # 위 + scoring + post_mortem 후처리 (LLM 추가 호출. --pm-mock으로 회피 가능)
     python -m ai_agent.backtest.run_ai_backtest \\
-        --mode A --start 2024-01-02 --end 2024-01-03 \\
-        --output backtest_out/mode_A --score-after --pm-mock
+        --mode debate_1 --start 2024-01-02 --end 2024-01-03 \\
+        --output backtest_out/debate_1 --score-after --pm-mock
 
 --mode 옵션:
-    random — LLM 미호출. baseline용. cost = 0
-    A       — LangGraph (Bull/Bear → Strategy → Decision). MVP.
-    B       — LangGraph (Strategy → Decision, 단일 에이전트 ablation)
-    mock    — DA의 simple_rule_decision (룰 패턴 매칭, LLM 미호출. 비교용)
+    random   — LLM 미호출. baseline용. cost = 0
+    mock     — DA의 simple_rule_decision (룰 패턴 매칭, LLM 미호출. 비교용)
+    debate_0 — LangGraph (Strategy → Decision 직결, Bull/Bear 토론 없음 ablation)
+    debate_1 — LangGraph (Bull/Bear 1R → Strategy → Decision). MVP.
+    debate_2 — LangGraph (Bull/Bear 2R → Strategy → Decision). 토론 round 가치 측정.
+    daily_scan — [TradingAgents 방식] 전 종목 매일 LangGraph 진입 (Bull/Bear 1R).
 """
 from __future__ import annotations
 

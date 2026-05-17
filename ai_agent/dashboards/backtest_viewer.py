@@ -34,9 +34,10 @@ import streamlit as st
 
 # 모드별 일관 색 (모든 탭에서 동일 색)
 MODE_COLORS = {
-    "rule_trigger": "#2563EB",  # blue — 우리 방식 (지표 룰 트리거)
+    "debate_0": "#EC4899",      # pink — 토론 0R (구 single_agent, ablation)
+    "debate_1": "#2563EB",      # blue — 토론 1R (구 rule_trigger, MVP)
+    "debate_2": "#7C3AED",      # violet — 토론 2R (round 가치 측정 실험용)
     "daily_scan": "#F59E0B",    # amber — TradingAgents 방식 (전 종목 일일 스캔)
-    "single_agent": "#EC4899",  # pink — ablation (Bull/Bear 토론 없음)
     "random": "#94A3B8",        # slate — baseline
     "mock": "#10B981",          # emerald — 룰 stub
     "DA": "#8B5CF6",            # violet — DA framework default
@@ -1506,7 +1507,7 @@ def tab_comparison(df: pd.DataFrame, scored: bool) -> None:
             br = db.loc[eid, "raw_return"]
             a_hits.append(bool(pd.notna(ar) and ar > 0))
             b_hits.append(bool(pd.notna(br) and br > 0))
-        result = mcnemar_paired(a_hits, b_hits)
+        result = mcnemar_paired(a_hits, b_hits, label_a=str(a), label_b=str(b))
         st.markdown("#### McNemar paired test (hit-based)")
         c1, c2, c3 = st.columns(3)
         c1.metric(f"{a}만 hit", result.b)
@@ -1630,7 +1631,7 @@ def _load_mode_choices() -> tuple[list[str], str]:
         help_str = "\n".join(f"• {n} — {s.description}" for n, s in MODE_REGISTRY.items())
         return choices, help_str
     except Exception as e:
-        return ["rule_trigger", "daily_scan", "single_agent", "random", "mock"], f"(modes.py 로드 실패: {e}) 기본 목록 사용"
+        return ["debate_0", "debate_1", "debate_2", "daily_scan", "random", "mock"], f"(modes.py 로드 실패: {e}) 기본 목록 사용"
 
 
 def _spawn_backtest(
@@ -1927,7 +1928,7 @@ def tab_run() -> None:
                 st.error(f"backtest_user_id={backtest_user_id}는 이미 다른 진행 중인 run이 사용 중입니다. "
                           f"DB 회고가 섞이니 다른 값을 쓰세요.")
                 return
-        if mode in ("rule_trigger", "daily_scan", "single_agent") and not (
+        if mode in ("debate_0", "debate_1", "debate_2", "daily_scan") and not (
             os.getenv("GMS_KEY") or os.getenv("ANTHROPIC_API_KEY") or os.getenv("XAI_API_KEY")
         ):
             st.warning("⚠️ LLM 키 필요 — .env에 GMS_KEY 등이 있는지 확인하세요. 그래도 진행합니다.")
@@ -1954,7 +1955,7 @@ def tab_run() -> None:
         st.rerun()
 
     if not procs:
-        st.caption("⏱ rule_trigger/daily_scan은 결정당 LLM 4회 호출 — 2주 × 2종목 = 약 5~15분 소요 예상.")
+        st.caption("⏱ debate_1/debate_2/daily_scan은 결정당 LLM 호출 다수 — 2주 × 2종목 = 약 5~15분 소요 예상. debate_2는 라운드 1대비 약 1.5~2배.")
 
     # 진행 중인 run이 하나라도 있으면 카드의 진행률/로그 갱신을 위해 자동 새로고침.
     if any_alive:
@@ -2018,7 +2019,7 @@ def main() -> None:
 
     if not run_dirs:
         st.sidebar.warning("JSONL 데이터를 찾을 수 없습니다.")
-        path_str = st.sidebar.text_input("디렉터리 경로", value="backtest_out/mode_A_2024")
+        path_str = st.sidebar.text_input("디렉터리 경로", value="backtest_out/debate_1_2024")
         run_dir = Path(path_str)
     else:
         labels = [_run_dir_label(p) for p in run_dirs]

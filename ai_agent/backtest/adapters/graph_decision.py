@@ -12,8 +12,9 @@ DA framework가 한 트리거마다 호출하는 `decision_fn(trigger, user_ctx,
 
 사용 예:
     from ai_agent.backtest.adapters.graph_decision import make_graph_decision_fn
-    decision_fn = make_graph_decision_fn(mode="A")   # Bull/Bear 토론
-    # 또는: make_graph_decision_fn(mode="B")          # 단일 에이전트
+    decision_fn = make_graph_decision_fn(mode="debate_1")   # Bull/Bear 1라운드 토론 (MVP)
+    # 또는: make_graph_decision_fn(mode="debate_0")          # 토론 없음 (ablation)
+    # 또는: make_graph_decision_fn(mode="debate_2")          # Bull/Bear 2라운드 토론
     # DA framework의 run() 에 그대로 넘김.
 """
 from __future__ import annotations
@@ -46,7 +47,7 @@ logger = logging.getLogger(__name__)
 
 
 def make_graph_decision_fn(
-    mode: GraphMode = "A",
+    mode: GraphMode = "debate_1",
     numeric_user_id: int = 1,
     engine: Engine | None = None,
 ):
