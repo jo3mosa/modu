@@ -49,7 +49,7 @@ def get_structured_llm() -> ChatOpenAI:
     Pydantic 파싱이 필요한 JSON 구조 출력에 사용하며,
     일관성 확보를 위해 debate 노드보다 낮은 temperature를 권장한다.
 
-    DECISION_TEMPERATURE 환경변수로 실험 시 조정한다. 기본값 0.2.
+    DECISION_TEMPERATURE 환경변수로 실험 시 조정한다. 기본값 0.1.
     """
-    temperature = float(os.getenv("DECISION_TEMPERATURE", "0.2"))
+    temperature = float(os.getenv("DECISION_TEMPERATURE", "0.1"))
     return _build_llm(temperature)

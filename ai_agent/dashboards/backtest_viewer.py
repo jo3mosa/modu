@@ -34,11 +34,12 @@ import streamlit as st
 
 # 모드별 일관 색 (모든 탭에서 동일 색)
 MODE_COLORS = {
-    "A": "#2563EB",       # blue — Bull/Bear 토론 (MVP)
-    "B": "#F59E0B",       # amber — 단일 에이전트 ablation
-    "random": "#94A3B8",  # slate — baseline
-    "mock": "#10B981",    # emerald — 룰 stub
-    "DA": "#8B5CF6",      # violet — DA framework default
+    "rule_trigger": "#2563EB",  # blue — 우리 방식 (지표 룰 트리거)
+    "daily_scan": "#F59E0B",    # amber — TradingAgents 방식 (전 종목 일일 스캔)
+    "single_agent": "#EC4899",  # pink — ablation (Bull/Bear 토론 없음)
+    "random": "#94A3B8",        # slate — baseline
+    "mock": "#10B981",          # emerald — 룰 stub
+    "DA": "#8B5CF6",            # violet — DA framework default
 }
 
 ACTION_COLORS = {
@@ -1629,7 +1630,7 @@ def _load_mode_choices() -> tuple[list[str], str]:
         help_str = "\n".join(f"• {n} — {s.description}" for n, s in MODE_REGISTRY.items())
         return choices, help_str
     except Exception as e:
-        return ["A", "B", "random", "mock"], f"(modes.py 로드 실패: {e}) 기본 목록 사용"
+        return ["rule_trigger", "daily_scan", "single_agent", "random", "mock"], f"(modes.py 로드 실패: {e}) 기본 목록 사용"
 
 
 def _spawn_backtest(
@@ -1926,9 +1927,10 @@ def tab_run() -> None:
                 st.error(f"backtest_user_id={backtest_user_id}는 이미 다른 진행 중인 run이 사용 중입니다. "
                           f"DB 회고가 섞이니 다른 값을 쓰세요.")
                 return
-        if mode in ("A", "B") and not (os.getenv("GMS_KEY") or os.getenv("ANTHROPIC_API_KEY")
-                                        or os.getenv("XAI_API_KEY")):
-            st.warning("⚠️ mode A/B는 LLM 키 필요 — .env에 GMS_KEY 등이 있는지 확인하세요. 그래도 진행합니다.")
+        if mode in ("rule_trigger", "daily_scan", "single_agent") and not (
+            os.getenv("GMS_KEY") or os.getenv("ANTHROPIC_API_KEY") or os.getenv("XAI_API_KEY")
+        ):
+            st.warning("⚠️ LLM 키 필요 — .env에 GMS_KEY 등이 있는지 확인하세요. 그래도 진행합니다.")
 
         args = {
             "mode": mode, "start": start, "end": end,
@@ -1952,7 +1954,7 @@ def tab_run() -> None:
         st.rerun()
 
     if not procs:
-        st.caption("⏱ mode A는 결정당 LLM 4회 호출 — 2주 × 2종목 = 약 5~15분 소요 예상.")
+        st.caption("⏱ rule_trigger/daily_scan은 결정당 LLM 4회 호출 — 2주 × 2종목 = 약 5~15분 소요 예상.")
 
     # 진행 중인 run이 하나라도 있으면 카드의 진행률/로그 갱신을 위해 자동 새로고침.
     if any_alive:
