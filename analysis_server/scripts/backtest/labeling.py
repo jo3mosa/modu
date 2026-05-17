@@ -219,6 +219,9 @@ def label_event(
         p_start = float(panel.loc[(stock_code, entry_date), "open"])
     except KeyError:
         return out
+    # 0/음수 진입가는 거래정지·데이터 오류 — 라벨링 불가.
+    if p_start <= 0:
+        return out
     out["p_start"] = p_start
 
     for h in horizons:
@@ -228,6 +231,8 @@ def label_event(
         try:
             p_end = float(panel.loc[(stock_code, exit_date), "close"])
         except KeyError:
+            continue
+        if p_end <= 0:
             continue
         out[f"ret_T{h}"] = p_end / p_start - 1.0
         out[f"exit_date_T{h}"] = exit_date
@@ -283,13 +288,18 @@ def label_events_batch(
     )
 
     # 가격 lookup — panel 의 MultiIndex 활용.
+    # 0/음수 가격은 거래정지·데이터 오류 가능성이 높아 None 으로 처리
+    # (None → 해당 horizon 라벨이 NaN 으로 빠지면서 자연스럽게 통계에서 제외).
     def _lookup(stock_code: str, d: date | None, col: str) -> float | None:
         if d is None:
             return None
         try:
-            return float(panel.loc[(stock_code, d), col])
+            v = float(panel.loc[(stock_code, d), col])
         except KeyError:
             return None
+        if col in ("open", "high", "low", "close") and v <= 0:
+            return None
+        return v
 
     df["p_start"] = [
         _lookup(sc, ed, "open")
@@ -302,13 +312,18 @@ def label_events_batch(
         df[exit_col] = df["entry_date"].apply(
             lambda d: _shift_trading_days(d, h, trading_days) if d is not None else None
         )
-        df[ret_col] = [
-            (_lookup(sc, ed, "close") / ps - 1.0)
-            if ps is not None and ed is not None
-               and _lookup(sc, ed, "close") is not None
-            else None
-            for sc, ed, ps in zip(df["stock_code"], df[exit_col], df["p_start"])
-        ]
+        # p_start, p_end 모두 양수일 때만 ret 계산. 그 외엔 None (NaN).
+        rets = []
+        for sc, ed, ps in zip(df["stock_code"], df[exit_col], df["p_start"]):
+            if ps is None or ps <= 0 or ed is None:
+                rets.append(None)
+                continue
+            pe = _lookup(sc, ed, "close")
+            if pe is None or pe <= 0:
+                rets.append(None)
+                continue
+            rets.append(pe / ps - 1.0)
+        df[ret_col] = rets
 
     # 임시 컬럼 정리.
     df = df.drop(columns=["event_ts_kst"])
