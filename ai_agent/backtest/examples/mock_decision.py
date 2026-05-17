@@ -91,9 +91,14 @@ class SimplePortfolio:
       - next-day open 가격으로 시장가 체결
       - 수수료 0.015% (양방향), 매도시 거래세 0.18% 추가 가정
       - 슬리피지·부분체결·갭상하한 미고려 (AI 팀이 정교화)
+
+    initial_holdings:
+      backtest 시작 시 보유 종목 seed. SELL 결정이 정상 체결되려면 필수.
+      예: {"005930": 100, "000660": 50} — 삼성전자 100주 + 하이닉스 50주 보유 상태로 시작.
     """
     user_id: str = "backtest-user"
     initial_cash_krw: float = 10_000_000
+    initial_holdings: dict[str, int] | None = None
     fee_ratio: float = 0.00015
     sell_tax_ratio: float = 0.0018
 
@@ -103,6 +108,8 @@ class SimplePortfolio:
 
     def __post_init__(self):
         self.cash = self.initial_cash_krw
+        if self.initial_holdings:
+            self.holdings = {str(k): int(v) for k, v in self.initial_holdings.items()}
 
     def snapshot(self) -> dict:
         return {

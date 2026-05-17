@@ -23,9 +23,99 @@ logger = logging.getLogger(__name__)
 
 
 class PriceFetcher(Protocol):
-    """결정 후 N일 종가 조회. DA data_sources.fetch_ohlcv_by_date 결과로 구현 가능."""
+    """결정 후 N일 종가 + OHLC 4종 조회.
+
+    close_price: 단일 종가 (기존 단순 raw_return 계산용)
+    ohlc:        OHLC dict (target/stop 시뮬레이션용 — high/low로 도달 판정)
+                 None 반환 시 휴장 또는 데이터 없음 — 해당 일 skip.
+    """
 
     def close_price(self, stock_code: str, target_date: date) -> float: ...
+
+    def ohlc(self, stock_code: str, target_date: date) -> dict[str, float] | None: ...
+
+
+@dataclass
+class ExitResult:
+    """target/stop 시뮬 결과."""
+    exit_date: date
+    exit_price: float
+    exit_reason: str   # "target_hit" / "stop_hit" / "expired" (N일 강제 청산)
+    holding_days: int  # 실제 보유 거래일 수
+
+
+def simulate_target_stop_exit(
+    *,
+    entry_date: date,
+    entry_price: float,
+    target_price: float | None,
+    stop_loss_price: float | None,
+    side: str,                       # "buy" 또는 "sell"
+    max_holding_days: int,
+    price_fetcher: PriceFetcher,
+    stock_code: str,
+) -> ExitResult | None:
+    """매수 후 매일 OHLC 봐서 target/stop 도달 판정.
+
+    BUY:
+      그 날 high >= target → 익절 (target 가격)
+      그 날 low <= stop    → 손절 (stop 가격)
+      같은 날 둘 다 도달 시 보수적으로 stop 우선 (worst case)
+      N일 끝 → 강제 종가 청산
+
+    SELL (보유 청산 가정):
+      그 날 low <= target → 익절 (target 가격 — 가격 하락이 익절)
+      그 날 high >= stop  → 손절 (stop 가격 — 가격 상승이 손절)
+      같은 날 둘 다 → 보수적으로 stop 우선
+
+    target/stop 없으면 max_holding_days 후 종가 청산.
+    OHLC 조회 실패 시 다음 거래일로 진행 (휴장 대비).
+    """
+    cur = entry_date
+    for _ in range(max_holding_days):
+        cur = _add_business_days(cur, 1)
+        ohlc = price_fetcher.ohlc(stock_code, cur)
+        if ohlc is None:
+            continue   # 데이터 없는 날은 skip
+
+        if side == "buy":
+            stop_hit = stop_loss_price is not None and ohlc["low"] <= stop_loss_price
+            target_hit = target_price is not None and ohlc["high"] >= target_price
+            if stop_hit:
+                return ExitResult(cur, float(stop_loss_price), "stop_hit",
+                                  _business_days_between(entry_date, cur))
+            if target_hit:
+                return ExitResult(cur, float(target_price), "target_hit",
+                                  _business_days_between(entry_date, cur))
+        elif side == "sell":
+            stop_hit = stop_loss_price is not None and ohlc["high"] >= stop_loss_price
+            target_hit = target_price is not None and ohlc["low"] <= target_price
+            if stop_hit:
+                return ExitResult(cur, float(stop_loss_price), "stop_hit",
+                                  _business_days_between(entry_date, cur))
+            if target_hit:
+                return ExitResult(cur, float(target_price), "target_hit",
+                                  _business_days_between(entry_date, cur))
+
+    # N일 끝 강제 청산 — 마지막 cur의 종가
+    final_ohlc = price_fetcher.ohlc(stock_code, cur)
+    if final_ohlc is None:
+        # 마지막 날도 휴장이면 직전 영업일로 fallback
+        return None
+    return ExitResult(cur, float(final_ohlc["close"]), "expired",
+                      _business_days_between(entry_date, cur))
+
+
+def _business_days_between(start: date, end: date) -> int:
+    """start ~ end 영업일 개수 (start 제외, end 포함)."""
+    if end <= start:
+        return 0
+    cur, n = start, 0
+    while cur < end:
+        cur = cur + timedelta(days=1)
+        if cur.weekday() < 5:
+            n += 1
+    return n
 
 
 @dataclass
@@ -147,9 +237,14 @@ def _score_one(
     holding_days: int,
     pm_fn: Callable[..., Any],
 ) -> dict[str, Any]:
-    """단일 결정 레코드에 raw_return + 청산가 + post_mortem reflection 부착."""
+    """단일 결정 레코드에 target/stop 시뮬 + raw_return + post_mortem 부착.
+
+    이전: T+N일 종가 단순 비교.
+    현재: 일별 OHLC를 봐서 target/stop 도달 시 그 가격에 청산. 진짜 PnL.
+    """
     action, side = rec.get("action"), rec.get("side")
     base = {**rec, "raw_return": None, "alpha_return": None, "exit_price": None,
+            "exit_date": None, "exit_reason": None,
             "post_mortem": None, "skip_reason": None}
 
     if action == "hold" or side not in ("buy", "sell"):
@@ -161,19 +256,29 @@ def _score_one(
         base["skip_reason"] = "missing entry price or date"
         return base
 
-    exit_date = _add_business_days(trade_date, holding_days)
+    # target/stop 시뮬
     try:
-        exit_price = price_fetcher.close_price(rec["stock_code"], exit_date)
+        exit_result = simulate_target_stop_exit(
+            entry_date=trade_date,
+            entry_price=float(entry),
+            target_price=float(rec["target_price"]) if rec.get("target_price") else None,
+            stop_loss_price=float(rec["stop_loss_price"]) if rec.get("stop_loss_price") else None,
+            side=side,
+            max_holding_days=holding_days,
+            price_fetcher=price_fetcher,
+            stock_code=rec["stock_code"],
+        )
     except Exception:
-        logger.exception("scoring: 종가 조회 실패 %s %s", rec.get("stock_code"), exit_date)
+        logger.exception("scoring: target/stop 시뮬 실패 %s %s",
+                         rec.get("stock_code"), trade_date)
+        base["skip_reason"] = "target/stop simulation failed"
+        return base
+
+    if exit_result is None:
         base["skip_reason"] = "exit price fetch failed"
         return base
 
-    if not exit_price or entry <= 0:
-        base["skip_reason"] = "invalid exit price"
-        return base
-
-    raw_return = (exit_price - entry) / entry
+    raw_return = (exit_result.exit_price - entry) / entry
     if side == "sell":
         raw_return = -raw_return
 
@@ -183,7 +288,7 @@ def _score_one(
             decision_content=_compose_decision_content(rec),
             raw_return=raw_return,
             alpha_return=0.0,
-            holding_days=holding_days,
+            holding_days=exit_result.holding_days,
             risk_level=None,
             key_signals=rec.get("rule_ids"),
         )
@@ -196,10 +301,12 @@ def _score_one(
 
     return {
         **rec,
-        "exit_price": exit_price,
+        "exit_price": exit_result.exit_price,
+        "exit_date": exit_result.exit_date.isoformat(),
+        "exit_reason": exit_result.exit_reason,
         "raw_return": raw_return,
         "alpha_return": 0.0,
-        "holding_days": holding_days,
+        "holding_days": exit_result.holding_days,
         "post_mortem": reflection_dump,
         "skip_reason": None,
     }

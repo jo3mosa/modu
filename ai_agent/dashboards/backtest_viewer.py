@@ -615,7 +615,7 @@ def tab_quality(df: pd.DataFrame, scored: bool) -> None:
 # ============================================================
 
 
-def tab_pnl(df: pd.DataFrame, scored: bool) -> None:
+def tab_pnl(df: pd.DataFrame, scored: bool, equity_df: pd.DataFrame | None = None) -> None:
     st.markdown("### 투자 결과 (PnL)")
     if not scored:
         st.info("📊 scored JSONL이 없어 PnL 분석 불가.")
@@ -624,6 +624,11 @@ def tab_pnl(df: pd.DataFrame, scored: bool) -> None:
     if trades.empty:
         st.warning("거래 결정이 없음.")
         return
+
+    # 진짜 자산 추이 (equity_curve.jsonl) 있으면 우선 — 더 정확
+    if equity_df is not None and not equity_df.empty:
+        _render_equity_section(equity_df)
+        st.divider()
 
     by_mode_summary = (
         trades.groupby("mode")
@@ -704,6 +709,123 @@ def _load_kospi() -> pd.DataFrame:
         return pd.DataFrame()
     df = pd.read_csv(csv)
     df["date"] = pd.to_datetime(df["date"])
+    return df
+
+
+def _render_equity_section(equity_df: pd.DataFrame) -> None:
+    """SimplePortfolio.equity_curve 기반 정통 메트릭 + 차트.
+
+    equity_df 컬럼: date, cash, unrealized, equity, holdings_count
+    """
+    import math
+    df = equity_df.sort_values("date").copy()
+    df["returns"] = df["equity"].pct_change().fillna(0)
+
+    initial = float(df["equity"].iloc[0])
+    final = float(df["equity"].iloc[-1])
+    total_return = final / initial - 1
+
+    days = (df["date"].iloc[-1] - df["date"].iloc[0]).days or 1
+    years = days / 365.25
+    cagr = (1 + total_return) ** (1 / years) - 1 if years > 0 else 0.0
+
+    std = float(df["returns"].std()) or 1e-9
+    sharpe = (float(df["returns"].mean()) / std) * math.sqrt(252)
+
+    downside = df["returns"][df["returns"] < 0]
+    downside_std = float(downside.std()) if len(downside) > 1 else 1e-9
+    sortino = (float(df["returns"].mean()) / downside_std) * math.sqrt(252)
+
+    peak = df["equity"].cummax()
+    drawdown = (df["equity"] - peak) / peak
+    mdd = float(drawdown.min())
+    calmar = cagr / abs(mdd) if abs(mdd) > 1e-9 else 0.0
+
+    st.markdown("#### 📊 정통 backtest 메트릭 (실제 portfolio 자산 추이 기반)")
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    c1.metric("총 수익률", f"{total_return:+.2%}")
+    c2.metric("CAGR", f"{cagr:+.2%}")
+    c3.metric("Sharpe", f"{sharpe:.2f}")
+    c4.metric("Sortino", f"{sortino:.2f}")
+    c5.metric("MDD", f"{mdd:.2%}")
+    c6.metric("Calmar", f"{calmar:.2f}")
+
+    # 자산 추이 + Drawdown subplot
+    from plotly.subplots import make_subplots
+    fig = make_subplots(
+        rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.06,
+        row_heights=[0.7, 0.3],
+        subplot_titles=("자산 추이 (cash + 보유 평가)", "Drawdown"),
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=df["date"], y=df["equity"], mode="lines", name="Equity",
+            line=dict(color="#2563EB", width=2.5),
+            hovertemplate="<b>%{x|%Y-%m-%d}</b><br>자산 %{y:,.0f}원<extra></extra>",
+        ),
+        row=1, col=1,
+    )
+    fig.add_hline(y=initial, line_dash="dash", line_color="rgba(128,128,128,0.5)",
+                  annotation_text=f"시작 {initial:,.0f}원", row=1, col=1)
+
+    # KOSPI 벤치마크 (같은 기간 normalized)
+    kospi = _load_kospi()
+    if not kospi.empty:
+        kp = kospi[(kospi["date"] >= df["date"].min()) & (kospi["date"] <= df["date"].max())].copy()
+        if not kp.empty:
+            base = float(kp["kospi_close"].iloc[0])
+            kp["kospi_equity"] = kp["kospi_close"] / base * initial
+            fig.add_trace(
+                go.Scatter(
+                    x=kp["date"], y=kp["kospi_equity"], mode="lines", name="KOSPI",
+                    line=dict(color="rgba(120,120,120,0.7)", width=1.8, dash="dash"),
+                    hovertemplate="<b>%{x|%Y-%m-%d}</b><br>KOSPI %{y:,.0f}<extra></extra>",
+                ),
+                row=1, col=1,
+            )
+
+    fig.add_trace(
+        go.Scatter(
+            x=df["date"], y=drawdown, mode="lines", fill="tozeroy",
+            name="Drawdown",
+            line=dict(color="#DC2626", width=1.5),
+            fillcolor=_hex_to_rgba("#DC2626", alpha=0.2),
+            showlegend=False,
+            hovertemplate="<b>%{x|%Y-%m-%d}</b><br>DD %{y:.2%}<extra></extra>",
+        ),
+        row=2, col=1,
+    )
+    fig.update_yaxes(tickformat=",.0f", title="자산 (원)", row=1, col=1)
+    fig.update_yaxes(tickformat=".1%", title="Drawdown", row=2, col=1)
+    _apply_chart_style(fig, height=560)
+    fig.update_layout(hovermode="x unified", margin=dict(l=60, r=40, t=60, b=40))
+    st.plotly_chart(fig, use_container_width=True)
+
+
+@st.cache_data(show_spinner=False, ttl=30)
+def _load_equity_curve(run_dir_str: str) -> pd.DataFrame:
+    """run_dir의 equity_curve.jsonl 로드 — 일별 mark-to-market 자산.
+
+    각 라인: {date, cash, unrealized, equity, holdings_count}
+    """
+    path = Path(run_dir_str) / "equity_curve.jsonl"
+    if not path.exists():
+        return pd.DataFrame()
+    rows = []
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame(rows)
+    if "date" in df.columns:
+        df["date"] = pd.to_datetime(df["date"])
     return df
 
 
@@ -1478,12 +1600,14 @@ def main() -> None:
     tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
         ["Overview", "Quality", "PnL", "Calibration", "Reasoning", "거래 차트", "Comparison"]
     )
+    equity_df = _load_equity_curve(str(run_dir))
+
     with tab1:
         tab_overview(df_filtered)
     with tab2:
         tab_quality(df_filtered, scored)
     with tab3:
-        tab_pnl(df_filtered, scored)
+        tab_pnl(df_filtered, scored, equity_df)
     with tab4:
         tab_calibration(df_filtered, scored)
     with tab5:

@@ -82,7 +82,11 @@ def _build_decision_fn(mode: str) -> DecisionFn:
 
 
 class _OhlcvPriceFetcher:
-    """DA data_sources를 활용한 PriceFetcher 어댑터. T+N일 종가 조회."""
+    """DA data_sources를 활용한 PriceFetcher 어댑터.
+
+    close_price: 단일 종가 (기존)
+    ohlc:        4종 OHLC dict (target/stop 시뮬용)
+    """
 
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
@@ -94,6 +98,22 @@ class _OhlcvPriceFetcher:
             return 0.0
         close = row.get("close")
         return float(close) if close is not None else 0.0
+
+    def ohlc(self, stock_code: str, target_date: date) -> dict[str, float] | None:
+        """{open, high, low, close} 또는 데이터 없으면 None."""
+        rows = fetch_ohlcv_by_date(self._engine, target_date)
+        row = rows.get(stock_code)
+        if not row:
+            return None
+        try:
+            return {
+                "open": float(row["open"]),
+                "high": float(row["high"]),
+                "low": float(row["low"]),
+                "close": float(row["close"]),
+            }
+        except (KeyError, TypeError, ValueError):
+            return None
 
 
 def _score_after_run(
@@ -190,6 +210,9 @@ def main() -> int:
                         help="쉼표 구분 종목. 미지정 시 활성 종목 자동")
     parser.add_argument("--initial-cash", type=float, default=10_000_000,
                         help="가상 포트폴리오 초기 현금 (KRW). 기본 1천만원")
+    parser.add_argument("--initial-holdings", type=str, default=None,
+                        help="시작 시 보유 종목 (콤마구분 'CODE:QTY'). "
+                             "예: 005930:100,000660:50. SELL 결정 정상 체결에 필요")
     parser.add_argument("--output", type=Path,
                         default=Path(__file__).resolve().parent / "runs" / "default",
                         help="기본: ai_agent/backtest/runs/default — 모드/날짜로 디렉터리 분리 권장")
@@ -212,10 +235,30 @@ def main() -> int:
         if args.watchlist else None
     )
 
-    logger.info("=== AI backtest 시작 (mode=%s, 초기 자금=%s KRW) ===",
-                args.mode, f"{args.initial_cash:,.0f}")
+    # initial_holdings 파싱: "005930:100,000660:50"
+    initial_holdings: dict[str, int] | None = None
+    if args.initial_holdings:
+        try:
+            initial_holdings = {
+                code.strip(): int(qty.strip())
+                for part in args.initial_holdings.split(",")
+                for code, qty in [part.split(":", 1)]
+                if code.strip() and qty.strip()
+            }
+        except (ValueError, IndexError):
+            print(f"[ERROR] --initial-holdings 형식 오류: {args.initial_holdings}",
+                  file=sys.stderr)
+            return 1
+
+    logger.info("=== AI backtest 시작 (mode=%s, 초기 자금=%s KRW, 초기 보유=%s) ===",
+                args.mode, f"{args.initial_cash:,.0f}",
+                initial_holdings or "없음")
     decision_fn = _build_decision_fn(args.mode)
-    portfolio = SimplePortfolio(user_id=args.user_id, initial_cash_krw=args.initial_cash)
+    portfolio = SimplePortfolio(
+        user_id=args.user_id,
+        initial_cash_krw=args.initial_cash,
+        initial_holdings=initial_holdings,
+    )
 
     result = run(
         env=env,
@@ -230,6 +273,10 @@ def main() -> int:
     )
     print(f"run_id={result['run_id']}  summary={result['summary_path']}")
 
+    # event_loop 종료 후 SimplePortfolio.equity_curve를 JSONL로 export
+    # dashboard PnL 탭이 일별 자산 추이로 활용
+    _export_equity_curve(portfolio, args.output)
+
     if args.score_after:
         engine = make_engine(env)
         _score_after_run(
@@ -240,6 +287,25 @@ def main() -> int:
         )
 
     return 0
+
+
+def _export_equity_curve(portfolio, output_root: Path) -> None:
+    """SimplePortfolio.equity_curve (일별 mark-to-market 결과)를 equity_curve.jsonl로 출력.
+
+    각 라인: {date, cash, unrealized, equity, holdings_count}
+    dashboard의 자산 추이 차트가 이 데이터를 사용.
+    """
+    import json
+    curve = getattr(portfolio, "equity_curve", None) or []
+    if not curve:
+        logger.info("equity_curve 비어있음 — export skip")
+        return
+    output_root.mkdir(parents=True, exist_ok=True)
+    out = output_root / "equity_curve.jsonl"
+    with out.open("w", encoding="utf-8") as f:
+        for snap in curve:
+            f.write(json.dumps(snap, ensure_ascii=False, default=str) + "\n")
+    logger.info("equity_curve export: %d 일치 → %s", len(curve), out)
 
 
 if __name__ == "__main__":
