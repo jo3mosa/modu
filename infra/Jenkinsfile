@@ -20,6 +20,8 @@ pipeline {
         REGISTRY_FE_ID = 'ecr-registry-frontend'
         // Jenkins에 등록된 ECR AI Agent 레지스트리 URI (Credentials ID)
         REGISTRY_AI_ID = 'ecr-registry-ai-agent'
+        // Jenkins에 등록된 ECR Analysis Server 레지스트리 URI (Credentials ID)
+        REGISTRY_ANALYSIS_ID = 'ecr-registry-analysis'
         // Jenkins에 등록된 SSAFY K3s kubeconfig 파일 (Credentials ID)
         K3S_CONFIG_ID  = 'k3s-config.yaml'
         // Jenkins에 등록된 AWS EKS kubeconfig 파일 (Credentials ID)
@@ -93,11 +95,12 @@ pipeline {
                     def forceAll = (diff == 'ALL') || diff.contains('infra/')
                     echo "▶ forceAll: ${forceAll}"
 
-                    env.BUILD_BACKEND  = (forceAll || diff.contains('backend/'))  ? 'true' : 'false'
-                    env.BUILD_FRONTEND = (forceAll || diff.contains('frontend/')) ? 'true' : 'false'
-                    env.BUILD_AI       = (forceAll || diff.contains('ai_agent/')) ? 'true' : 'false'
+                    env.BUILD_BACKEND  = (forceAll || diff.contains('backend/'))         ? 'true' : 'false'
+                    env.BUILD_FRONTEND = (forceAll || diff.contains('frontend/'))        ? 'true' : 'false'
+                    env.BUILD_AI       = (forceAll || diff.contains('ai_agent/'))        ? 'true' : 'false'
+                    env.BUILD_ANALYSIS = (forceAll || diff.contains('analysis_server/')) ? 'true' : 'false'
 
-                    echo "▶ 빌드 대상 — backend:${env.BUILD_BACKEND} | frontend:${env.BUILD_FRONTEND} | ai-agent:${env.BUILD_AI}"
+                    echo "▶ 빌드 대상 — backend:${env.BUILD_BACKEND} | frontend:${env.BUILD_FRONTEND} | ai-agent:${env.BUILD_AI} | analysis:${env.BUILD_ANALYSIS}"
                 }
             }
         }
@@ -108,10 +111,11 @@ pipeline {
                 script {
                     // ECR URI를 Credentials에서 가져옴
                     withCredentials([
-                        string(credentialsId: "${REGISTRY_BE_ID}", variable: 'FULL_URI_BE'),
-                        string(credentialsId: "${REGISTRY_FE_ID}", variable: 'FULL_URI_FE'),
-                        string(credentialsId: "${REGISTRY_AI_ID}", variable: 'FULL_URI_AI'),
-                        string(credentialsId: 'VITE_KAKAO_CLIENT_ID', variable: 'VITE_KAKAO_CLIENT_ID')
+                        string(credentialsId: "${REGISTRY_BE_ID}",       variable: 'FULL_URI_BE'),
+                        string(credentialsId: "${REGISTRY_FE_ID}",       variable: 'FULL_URI_FE'),
+                        string(credentialsId: "${REGISTRY_AI_ID}",       variable: 'FULL_URI_AI'),
+                        string(credentialsId: "${REGISTRY_ANALYSIS_ID}", variable: 'FULL_URI_ANALYSIS'),
+                        string(credentialsId: 'VITE_KAKAO_CLIENT_ID',    variable: 'VITE_KAKAO_CLIENT_ID')
                     ]) {
                         // ECR 호스트(레지스트리 도메인)만 추출 — 마지막 '/' 이전 문자열
                         def beRegistry = FULL_URI_BE.substring(0, FULL_URI_BE.lastIndexOf('/'))
@@ -209,6 +213,31 @@ ${log}
                             } else {
                                 echo "AI Agent 변경 없음 — 빌드 스킵 (현재 배포 이미지 유지)"
                             }
+
+                            // ── 2-4. Analysis Server 이미지 빌드 및 푸시 ─────
+                            if (env.BUILD_ANALYSIS == 'true') {
+                                try {
+                                    env.FAILED_STAGE = "2-4. Analysis Server 빌드 및 푸시"
+                                    sh '''
+                                    {
+                                      docker build -t "$FULL_URI_ANALYSIS:$BUILD_NUMBER" -t "$FULL_URI_ANALYSIS:latest" analysis_server
+                                      docker push "$FULL_URI_ANALYSIS:$BUILD_NUMBER"
+                                      docker push "$FULL_URI_ANALYSIS:latest"
+                                    } 2> analysis_server/analysis_err.log
+                                    '''
+                                } catch (Exception e) {
+                                    def log = sh(
+                                        script: '[ -f analysis_server/analysis_err.log ] && tail -n 15 analysis_server/analysis_err.log || echo "로그 없음"',
+                                        returnStdout: true
+                                    ).trim()
+                                    env.ERROR_DETAILS = """📦 **Docker Build/Push Fail (Analysis Server)**
+${log}
+"""
+                                    error "Analysis Server Build/Push Failed"
+                                }
+                            } else {
+                                echo "Analysis Server 변경 없음 — 빌드 스킵 (현재 배포 이미지 유지)"
+                            }
                         }
                     }
                 }
@@ -253,6 +282,7 @@ ${log}
                 if (env.BUILD_BACKEND  == 'true') builtServices.add('BE')
                 if (env.BUILD_FRONTEND == 'true') builtServices.add('FE')
                 if (env.BUILD_AI       == 'true') builtServices.add('AI')
+                if (env.BUILD_ANALYSIS == 'true') builtServices.add('ANALYSIS')
                 def builtLabel = builtServices ? builtServices.join('/') : '변경 없음'
 
                 def stageFlow = ""
@@ -331,6 +361,8 @@ def deployToCluster(String configId, String clusterName) {
                 string(credentialsId: "${REGISTRY_FE_ID}", variable: 'FULL_URI_FE'),
                 // ECR AI Agent 이미지 URI
                 string(credentialsId: "${REGISTRY_AI_ID}", variable: 'FULL_URI_AI'),
+                // ECR Analysis Server 이미지 URI
+                string(credentialsId: "${REGISTRY_ANALYSIS_ID}", variable: 'FULL_URI_ANALYSIS'),
                 // AWS IAM 자격증명 — $class 참조 방식으로 AmazonWebServicesCredentialsBinding 사용
                 // (표준 Jenkins AWS Credentials Plugin 문법)
                 [$class          : 'AmazonWebServicesCredentialsBinding',
@@ -342,7 +374,8 @@ def deployToCluster(String configId, String clusterName) {
                 withEnv([
                     "BUILD_BACKEND=${env.BUILD_BACKEND}",
                     "BUILD_FRONTEND=${env.BUILD_FRONTEND}",
-                    "BUILD_AI=${env.BUILD_AI}"
+                    "BUILD_AI=${env.BUILD_AI}",
+                    "BUILD_ANALYSIS=${env.BUILD_ANALYSIS}"
                 ]) {
                     sh '''
                     {
@@ -415,14 +448,30 @@ def deployToCluster(String configId, String clusterName) {
                             fi
                         fi
 
-                        echo "▶ 배포 이미지 — BE: $BE_IMAGE | FE: $FE_IMAGE | AI: $AI_IMAGE"
+                        if [ "$BUILD_ANALYSIS" = "true" ]; then
+                            ANALYSIS_IMAGE="$FULL_URI_ANALYSIS:$BUILD_NUMBER"
+                        else
+                            # 5개 워크로드가 같은 이미지를 공유하므로 engine 의 이미지를 기준으로 추적
+                            if kubectl --kubeconfig=$KUBECONFIG get deployment modu-analysis-engine -n modu-apps >/dev/null 2>&1; then
+                                ANALYSIS_IMAGE=$(kubectl --kubeconfig=$KUBECONFIG get deployment modu-analysis-engine \
+                                    -n modu-apps \
+                                    -o jsonpath='{.spec.template.spec.containers[0].image}')
+                                [ -z "$ANALYSIS_IMAGE" ] && { echo "❌ modu-analysis-engine 이미지 값이 비어있습니다."; exit 1; }
+                            else
+                                echo "⚠️ modu-analysis-engine Deployment 없음 — :latest 폴백"
+                                ANALYSIS_IMAGE="$FULL_URI_ANALYSIS:latest"
+                            fi
+                        fi
+
+                        echo "▶ 배포 이미지 — BE: $BE_IMAGE | FE: $FE_IMAGE | AI: $AI_IMAGE | ANALYSIS: $ANALYSIS_IMAGE"
 
                         # ── Step 5. 이미지 태그 치환 및 배포 ─────────────────
                         DEPLOY_DIR=$(mktemp -d)
                         cp $K8S_DIR/*.yaml "$DEPLOY_DIR/"
-                        sed -i "s|BACKEND_IMAGE|${BE_IMAGE}|g"   "$DEPLOY_DIR/backend.yaml"
-                        sed -i "s|FRONTEND_IMAGE|${FE_IMAGE}|g"  "$DEPLOY_DIR/frontend.yaml"
-                        sed -i "s|AIAGENT_IMAGE|${AI_IMAGE}|g"   "$DEPLOY_DIR/ai-agent.yaml"
+                        sed -i "s|BACKEND_IMAGE|${BE_IMAGE}|g"      "$DEPLOY_DIR/backend.yaml"
+                        sed -i "s|FRONTEND_IMAGE|${FE_IMAGE}|g"     "$DEPLOY_DIR/frontend.yaml"
+                        sed -i "s|AIAGENT_IMAGE|${AI_IMAGE}|g"      "$DEPLOY_DIR/ai-agent.yaml"
+                        sed -i "s|ANALYSIS_IMAGE|${ANALYSIS_IMAGE}|g" "$DEPLOY_DIR/analysis-server.yaml"
                         kubectl --kubeconfig=$KUBECONFIG apply -f "$DEPLOY_DIR/"
                         rm -rf "$DEPLOY_DIR"
 
