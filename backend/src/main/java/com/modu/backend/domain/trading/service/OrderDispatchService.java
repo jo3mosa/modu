@@ -87,7 +87,16 @@ public class OrderDispatchService {
         String stockCode = order.getStockCode();
         OrderSource source = order.getSource();
 
-        // 1) KIS 자격증명 준비
+        // 1) 시간/개장일 분류 — credential 조회보다 먼저. REJECT 시간대 주문은 credential 실패로
+        //    handleKisFailure 경로에 잘못 떨어지지 않도록 (Kill Switch 카운트 정책 정확성 보호).
+        MarketHourPhase phase = marketHourPolicy.classify(OffsetDateTime.now());
+        if (phase == MarketHourPhase.REJECT) {
+            log.info("[Dispatch] orderId: {}, source: {}, phase: REJECT - 시간대 거절 즉시 처리", orderId, source);
+            rejectTimeWindow(order, stockCode);
+            return;
+        }
+
+        // 2) KIS 자격증명 준비
         KisCredential credential;
         String appKey;
         String appSecret;
@@ -104,12 +113,10 @@ public class OrderDispatchService {
             return;
         }
 
-        // 2) 시간/개장일 분류
-        MarketHourPhase phase = marketHourPolicy.classify(OffsetDateTime.now());
         log.info("[Dispatch] orderId: {}, source: {}, phase: {}, isRealAccount: {}",
                 orderId, source, phase, credential.isRealAccount());
 
-        // 3) 분기
+        // 3) 분기 — REJECT 는 위에서 이미 처리됨
         switch (phase) {
             case REGULAR -> handlePlaceOrder(order, credential, appKey, appSecret, source);
             case RESERVED_AVAILABLE -> {

@@ -90,7 +90,7 @@ public class KisReservedOrderClient {
         String hashKey = kisHashKeyClient.getHashKey(appKey, appSecret, body);
 
         log.info("[예약주문] KIS 호출 - cano: {}, stockCode: {}, side: {}, ordDvsn: {}, ordQty: {}, ordUnpr: {}",
-                cano, stockCode, side, ordDvsn, quantity, ordUnpr);
+                maskCano(cano), stockCode, side, ordDvsn, quantity, ordUnpr);
 
         try {
             ReservedOrderResponse response = kisRestClient.post()
@@ -114,18 +114,31 @@ public class KisReservedOrderClient {
                 throw KisErrorMapper.toApiException(response != null ? response.msgCd() : null);
             }
 
-            if (response.output() == null || response.output().rsvnOrdSeq() == null) {
+            // RSVN_ORD_SEQ 누락/빈값은 orders.kis_rsvn_seq 에 무효값을 저장시키므로 둘 다 거부
+            String rsvnOrdSeq = response.output() != null ? response.output().rsvnOrdSeq() : null;
+            if (rsvnOrdSeq == null || rsvnOrdSeq.isBlank()) {
                 log.error("KIS 예약주문 성공 응답에 RSVN_ORD_SEQ 없음 - rtCd: {}, msg: {}",
                         response.rtCd(), response.msg1());
                 throw new ApiException(CommonErrorCode.EXTERNAL_API_ERROR);
             }
 
-            return new KisReservedOrderResult(response.output().rsvnOrdSeq());
+            return new KisReservedOrderResult(rsvnOrdSeq);
 
         } catch (RestClientException e) {
-            log.error("KIS 예약주문 API 호출 실패: {}", e.getMessage());
-            throw new ApiException(CommonErrorCode.EXTERNAL_API_ERROR);
+            // 메시지만 남기면 원인 스택을 잃어 장애 추적 곤란 — throwable 전달 + cause 보존
+            log.error("KIS 예약주문 API 호출 실패", e);
+            throw new ApiException(CommonErrorCode.EXTERNAL_API_ERROR, e);
         }
+    }
+
+    /**
+     * 계좌번호 마스킹 — 운영 로그에 원문 노출 금지 (금융정보).
+     * 8자리 계좌 앞 2자리만 유지하고 나머지 마스킹: "12345678" → "12******".
+     * 길이가 2 이하인 비정상 입력은 통째로 마스킹 처리.
+     */
+    static String maskCano(String cano) {
+        if (cano == null || cano.length() <= 2) return "******";
+        return cano.substring(0, 2) + "*".repeat(cano.length() - 2);
     }
 
     // ── KIS API 결과 ────────────────────────────────────────────────────────

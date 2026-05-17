@@ -187,6 +187,7 @@ public class Order {
      * @param submittedAt 접수 시각
      */
     public void markReserved(String kisRsvnSeq, OffsetDateTime submittedAt) {
+        guardNotTerminal(OrderStatus.RESERVED);
         this.status      = OrderStatus.RESERVED;
         this.kisRsvnSeq  = kisRsvnSeq;
         this.submittedAt = submittedAt;
@@ -200,7 +201,21 @@ public class Order {
      * 도달했을 때 사용. ReservedPendingOrderSweeper 가 예약 가능 시간 도래 시 picks up.
      */
     public void markReservedPending() {
+        guardNotTerminal(OrderStatus.RESERVED_PENDING);
         this.status    = OrderStatus.RESERVED_PENDING;
         this.updatedAt = OffsetDateTime.now();
+    }
+
+    /**
+     * 종착 상태 (FILLED / CANCELED / REJECTED) 에서 다른 상태로의 전이 차단 — 상태 머신 불변성 보호.
+     * 호출자 (서비스 레이어) 가 락 + 사전 체크하지만 엔티티 레벨에서도 방어적 검증.
+     */
+    private void guardNotTerminal(OrderStatus target) {
+        if (this.status == OrderStatus.FILLED
+                || this.status == OrderStatus.CANCELED
+                || this.status == OrderStatus.REJECTED) {
+            throw new IllegalStateException(
+                    "종착 상태에서 전이 불가 - currentStatus: " + this.status + ", attempted: " + target);
+        }
     }
 }
