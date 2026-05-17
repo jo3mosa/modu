@@ -33,6 +33,10 @@ spec:
         spec:
           imagePullSecrets:
           - name: regcred
+          # 보안 강화 (Trivy KSV030): 기본 seccomp 프로파일로 syscall 제한
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
           containers:
           - name: pipeline
             image: ANALYSIS_IMAGE
@@ -47,6 +51,12 @@ spec:
               limits:
                 memory: "1Gi"
                 cpu: "1000m"
+            # 보안 강화 (Trivy KSV001, KSV003): 권한 상승 차단 + 모든 capability 제거
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                - ALL
           restartPolicy: OnFailure
 
 ---
@@ -75,6 +85,10 @@ spec:
     spec:
       imagePullSecrets:
       - name: regcred
+      # 보안 강화 (Trivy KSV030): 기본 seccomp 프로파일로 syscall 제한
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: engine
         image: ANALYSIS_IMAGE
@@ -98,6 +112,12 @@ spec:
           initialDelaySeconds: 30
           periodSeconds: 30
           failureThreshold: 3
+        # 보안 강화 (Trivy KSV001, KSV003): 권한 상승 차단 + 모든 capability 제거
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
 
 ---
 
@@ -125,6 +145,10 @@ spec:
     spec:
       imagePullSecrets:
       - name: regcred
+      # 보안 강화 (Trivy KSV030): 기본 seccomp 프로파일로 syscall 제한
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: candle-collector
         image: ANALYSIS_IMAGE
@@ -148,6 +172,12 @@ spec:
           initialDelaySeconds: 60
           periodSeconds: 60
           failureThreshold: 3
+        # 보안 강화 (Trivy KSV001, KSV003): 권한 상승 차단 + 모든 capability 제거
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
 
 ---
 
@@ -174,6 +204,10 @@ spec:
     spec:
       imagePullSecrets:
       - name: regcred
+      # 보안 강화 (Trivy KSV030): 기본 seccomp 프로파일로 syscall 제한
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: disclosure-collector
         image: ANALYSIS_IMAGE
@@ -197,6 +231,12 @@ spec:
           initialDelaySeconds: 60
           periodSeconds: 60
           failureThreshold: 3
+        # 보안 강화 (Trivy KSV001, KSV003): 권한 상승 차단 + 모든 capability 제거
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
 
 ---
 
@@ -223,6 +263,10 @@ spec:
     spec:
       imagePullSecrets:
       - name: regcred
+      # 보안 강화 (Trivy KSV030): 기본 seccomp 프로파일로 syscall 제한
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: news-collector
         image: ANALYSIS_IMAGE
@@ -255,3 +299,9 @@ spec:
             - "import os; os.kill(1, 0)"
           periodSeconds: 60
           failureThreshold: 3
+        # 보안 강화 (Trivy KSV001, KSV003): 권한 상승 차단 + 모든 capability 제거
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
