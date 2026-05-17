@@ -32,7 +32,7 @@ from sqlalchemy.engine import Engine
 
 from . import data_sources, signal_generator
 from .config import BacktestEnv, EVENT_LOOKBACK_DAYS, SENTIMENT_LOOKBACK_DAYS
-from .interfaces import DecisionFn, Fill, PortfolioFn, UserContextFn
+from .interfaces import DecisionFn, Fill, PortfolioFn, SignalFn, UserContextFn
 from .output import JsonlWriter, build_record, open_writer, write_summary
 
 logger = logging.getLogger(__name__)
@@ -89,11 +89,16 @@ def run(
     user_id: str = "backtest-user",
     watchlist_override: Optional[list[str]] = None,
     run_id: Optional[str] = None,
+    signal_fn: Optional[SignalFn] = None,
 ) -> dict:
     """백테스트 1회 실행. 통계 dict 반환.
 
     watchlist_override 가 주어지면 매일 그 종목들만 평가 — 디버깅·소규모 실험용.
     None 이면 매일 daily_ohlcv 의 거래 기록으로 watchlist 자동 산출 (생존편향 회피).
+
+    signal_fn:
+        None 이면 signal_generator.detect_all() 사용 (기본 지표 룰 트리거).
+        주입 시 해당 함수로 트리거 생성을 대체 (llm_trigger 모드 등).
     """
     run_id = run_id or _new_run_id(start, end, user_id)
     started_at = datetime.utcnow()
@@ -130,6 +135,7 @@ def run(
             triggers, fetched_stocks = _run_one_day(
                 engine=engine, mongo=mongo, day=day,
                 watchlist_override=watchlist_override,
+                signal_fn=signal_fn,
             )
             stats.days += 1
             stats.triggers_total += len(triggers)
@@ -283,10 +289,18 @@ def _build_auto_fill_record(
 
 # ─── 내부 헬퍼 ───────────────────────────────────────────────────────────────
 
-def _run_one_day(*, engine: Engine, mongo, day: date,
-                 watchlist_override: Optional[list[str]]
-                 ) -> tuple[list, dict]:
-    """하루치 bulk fetch + 트리거 검출. (triggers, ohlcv_by_stock) 반환."""
+def _run_one_day(
+    *,
+    engine: Engine,
+    mongo,
+    day: date,
+    watchlist_override: Optional[list[str]],
+    signal_fn: Optional[SignalFn] = None,
+) -> tuple[list, dict]:
+    """하루치 bulk fetch + 트리거 검출. (triggers, ohlcv_by_stock) 반환.
+
+    signal_fn 이 주어지면 signal_generator.detect_all() 대신 사용.
+    """
     # None 만 자동 산출 트리거. 빈 리스트는 "명시적으로 0 종목" 의도이므로
     # 그대로 빈 watchlist 로 흘려보내 트리거 0 건으로 마감.
     if watchlist_override is None:
@@ -302,7 +316,8 @@ def _run_one_day(*, engine: Engine, mongo, day: date,
     disclosures = data_sources.fetch_disclosures_window(mongo, day, watchlist)
     news = data_sources.fetch_news_window(mongo, day, watchlist)
 
-    triggers = signal_generator.detect_all(
+    _trigger_fn = signal_fn if signal_fn is not None else signal_generator.detect_all
+    triggers = _trigger_fn(
         as_of=day, watchlist=watchlist,
         ohlcv_by_stock=ohlcv,
         indicators_by_stock=indicators,

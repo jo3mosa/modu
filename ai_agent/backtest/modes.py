@@ -23,19 +23,27 @@ ModeSpec 필드:
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Callable
+from dataclasses import dataclass, field
+from typing import Any, Callable, Optional
 
 from .interfaces import DecisionFn
 
 
 @dataclass(frozen=True)
 class ModeSpec:
-    """단일 mode의 메타데이터 + 의사결정 함수 factory."""
+    """단일 mode의 메타데이터 + 의사결정 함수 factory.
+
+    signal_factory:
+        None 이면 signal_generator.detect_all() 사용 (기본 지표 룰 트리거).
+        설정 시 해당 factory가 반환하는 signal_fn 으로 트리거 생성을 대체.
+        시그니처: (backtest_user_id, engine) → signal_fn
+        signal_fn 시그니처: detect_all() 과 동일.
+    """
     factory: Callable[[int, Any], DecisionFn]
     description: str
     uses_llm: bool
     uses_db: bool
+    signal_factory: Optional[Callable[[int, Any], Any]] = field(default=None)
 
 
 def _build_random_fn(backtest_user_id: int, engine: Any) -> DecisionFn:
@@ -48,6 +56,17 @@ def _build_mock_fn(backtest_user_id: int, engine: Any) -> DecisionFn:
     """DA simple_rule_decision — rule_id 패턴 매칭만. LLM/DB 없음."""
     from .examples.mock_decision import simple_rule_decision
     return simple_rule_decision
+
+
+def _build_llm_signal_factory() -> Callable[[int, Any], Any]:
+    """LLM 기반 트리거 생성 signal_fn factory.
+
+    decision_fn 은 기존 LangGraph 모드 A 를 그대로 사용 — 트리거 생성 단계만 교체.
+    """
+    def factory(backtest_user_id: int, engine: Any) -> Any:
+        from .adapters.llm_trigger_decision import make_llm_signal_fn
+        return make_llm_signal_fn()
+    return factory
 
 
 def _build_graph_factory(mode_name: str) -> Callable[[int, Any], DecisionFn]:
@@ -90,6 +109,13 @@ MODE_REGISTRY: dict[str, ModeSpec] = {
         description="LangGraph — Strategy → Decision 직결 (토론 ablation)",
         uses_llm=True,
         uses_db=True,
+    ),
+    "llm_trigger": ModeSpec(
+        factory=_build_graph_factory("A"),
+        description="LLM 분석 트리거 — 지표 룰 대신 LLM이 트리거 선별 후 LangGraph(A) 결정",
+        uses_llm=True,
+        uses_db=True,
+        signal_factory=_build_llm_signal_factory(),
     ),
 }
 

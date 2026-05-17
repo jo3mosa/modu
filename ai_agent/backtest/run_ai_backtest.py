@@ -370,6 +370,13 @@ def main() -> int:
         backtest_user_id=args.backtest_user_id,
         engine=engine,
     )
+
+    # signal_factory 가 등록된 모드면 signal_fn 빌드 (llm_trigger 등).
+    signal_fn = None
+    if mode_spec.signal_factory is not None:
+        signal_fn = mode_spec.signal_factory(args.backtest_user_id, engine)
+        logger.info("signal_fn 교체: %s", mode_spec.signal_factory)
+
     portfolio = SimplePortfolio(
         user_id=args.user_id,
         initial_cash_krw=args.initial_cash,
@@ -386,6 +393,7 @@ def main() -> int:
         portfolio=portfolio,
         user_id=args.user_id,
         watchlist_override=watchlist,
+        signal_fn=signal_fn,
     )
     print(f"run_id={result['run_id']}  summary={result['summary_path']}")
 
