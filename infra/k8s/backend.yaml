@@ -68,7 +68,8 @@ spec:
   selector:
     app: backend # 위의 Deployment 라벨과 일치하여 트래픽을 전달합니다.
   ports:
-  - protocol: TCP
+  - name: http     # ServiceMonitor (infra/k8s/backend-servicemonitor.yaml) 가 이 이름으로 참조
+    protocol: TCP
     port: 80       # 서비스가 클러스터 내부에서 노출할 포트
     targetPort: 8080 # 실제 컨테이너 내부로 전달할 포트
   # [보안/설계] 백엔드는 외부 노출 없이 클러스터 내부(프론트엔드 -> 백엔드) 통신만 허용하는 ClusterIP 타입을 사용합니다.

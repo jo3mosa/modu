@@ -1,0 +1,30 @@
+# Prometheus 가 backend-service 의 /actuator/prometheus 엔드포인트를
+# 30초마다 scrape 하도록 등록.
+#
+# 동작 흐름:
+#   kube-prom Prometheus  ──(release=kube-prom 라벨로 ServiceMonitor 자동 발견)──>
+#   backend-service:80/actuator/prometheus  ─>  backend Pod:8080/actuator/prometheus
+#
+# 메트릭 예시: jvm_memory_used_bytes, http_server_requests_seconds_count,
+#             hikaricp_connections_active, jvm_threads_live_threads
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: backend-monitor
+  namespace: modu-apps
+  labels:
+    # kube-prometheus-stack 의 Prometheus 가 release=kube-prom 라벨을 가진
+    # ServiceMonitor 만 자동 발견. 이 라벨이 없으면 메트릭 수집 안 됨.
+    release: kube-prom
+spec:
+  selector:
+    matchLabels:
+      app: backend            # backend-service 의 selector 와 동일
+  namespaceSelector:
+    matchNames:
+    - modu-apps
+  endpoints:
+  - port: http                # backend-service 의 포트 이름
+    path: /actuator/prometheus
+    interval: 30s
+    scrapeTimeout: 10s
