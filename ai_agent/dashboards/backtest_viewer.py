@@ -53,6 +53,17 @@ ACTION_COLORS = {
 
 # 종목코드 → 종목명 매핑 (KOSPI/KOSDAQ 주요 30개 fallback).
 # ai_agent/backtest/data/stock_master.csv가 있으면 그게 우선.
+# Form default — 새 세션에서 종목별 초기 보유 수량 (session_state 비어 있을 때 사용).
+# 사용자가 form에서 입력해 submit하면 session_state에 저장되어 다음 form에서 그 값이 우선.
+_DEFAULT_INITIAL_HOLDINGS: dict[str, int] = {
+    "005930": 100,  # 삼성전자
+    "035420": 30,   # NAVER
+    "051910": 20,   # LG화학
+    "005380": 30,   # 현대차
+    "068270": 10,   # 셀트리온
+}
+
+
 _FALLBACK_STOCK_NAMES: dict[str, str] = {
     "005930": "삼성전자", "000660": "SK하이닉스", "035420": "NAVER",
     "035720": "카카오", "051910": "LG화학", "068270": "셀트리온",
@@ -1628,7 +1639,12 @@ def _load_mode_choices() -> tuple[list[str], str]:
             sys.path.insert(0, str(repo_root))
         from ai_agent.backtest.modes import MODE_REGISTRY
         choices = list(MODE_REGISTRY.keys())
-        help_str = "\n".join(f"• {n} — {s.description}" for n, s in MODE_REGISTRY.items())
+        # streamlit tooltip은 markdown 렌더. 한 줄 줄바꿈은 합쳐지므로
+        # 항목 사이를 빈 줄로 분리해서 가독성 확보.
+        help_lines = ["**모드 선택지**", ""]
+        for n, s in MODE_REGISTRY.items():
+            help_lines.append(f"- **`{n}`** — {s.description}")
+        help_str = "\n".join(help_lines)
         return choices, help_str
     except Exception as e:
         return ["debate_0", "debate_1", "debate_2", "daily_scan", "random", "mock"], f"(modes.py 로드 실패: {e}) 기본 목록 사용"
@@ -1859,33 +1875,59 @@ def tab_run() -> None:
     # 등록된 mode 동적 조회 — modes.py MODE_REGISTRY가 단일 source
     mode_choices, mode_help = _load_mode_choices()
 
+    # 종목 입력은 form 밖에 두어 변경 즉시 rerun → form 안 "종목별 보유 수량"
+    # number_input이 종목 목록에 맞춰 동적으로 다시 그려진다. (form 안은 submit
+    # 전까지 widget 값이 commit되지 않아 동적 표 구성이 불가.)
+    watchlist = st.text_input(
+        "종목 (쉼표 구분)",
+        value=st.session_state.get(
+            "bt_watchlist", "005930,035420,051910,005380,068270"
+        ),
+        key="bt_watchlist",
+        help="비우면 활성 종목 자동. 변경하면 아래 ‘초기 보유 수량’ 표가 갱신됩니다.",
+    )
+    parsed_stocks = [s.strip() for s in watchlist.split(",") if s.strip()]
+
     with st.form(f"backtest_form_{len(procs)}", clear_on_submit=False):
         c1, c2, c3 = st.columns(3)
         with c1:
             mode = st.selectbox("모드", mode_choices, help=mode_help)
-            start = st.date_input("시작일", value=date(2024, 1, 2))
-            end = st.date_input("종료일", value=date(2024, 1, 15))
+            start = st.date_input("시작일", value=date(2025, 1, 1))
+            end = st.date_input("종료일", value=date(2025, 6, 30))
         with c2:
-            watchlist = st.text_input(
-                "종목 (쉼표 구분)", value="005930,000660",
-                help="비우면 활성 종목 자동",
-            )
             initial_cash = st.number_input(
                 "초기 현금 (KRW)", min_value=0, value=10_000_000, step=1_000_000,
             )
-            initial_holdings = st.text_input(
-                "초기 보유 (CODE:QTY,...)", value="005930:100,000660:50",
-                help="SELL 결정이 정상 체결되려면 필요. 비워두면 매수만 가능.",
-            )
+            st.caption("초기 보유 수량 (주) — SELL 정상 체결에 필요. 0이면 매수만 가능.")
+            holdings_qtys: dict[str, int] = {}
+            if parsed_stocks:
+                for code in parsed_stocks:
+                    qty = st.number_input(
+                        label_stock(code),
+                        min_value=0,
+                        value=int(st.session_state.get(
+                            f"bt_hold_default_{code}",
+                            _DEFAULT_INITIAL_HOLDINGS.get(code, 0),
+                        )),
+                        step=10,
+                        key=f"bt_hold_{code}_{len(procs)}",
+                    )
+                    holdings_qtys[code] = int(qty)
+            else:
+                st.info("종목 미지정 — 활성 종목 자동, 초기 보유 0")
         with c3:
             backtest_user_id = st.number_input(
                 "backtest_user_id (DB 격리)", min_value=1, value=candidate_uid,
                 help="회고를 저장할 DB user_id. 동시 실행 시 다른 값을 써야 회고가 섞이지 않음. "
                      "자동으로 빈 번호를 추천합니다.",
             )
+            # key를 procs별로 분리해 form 인스턴스마다 독립. session_state에 사용자
+            # 입력이 보존되어 rerun(예: watchlist 변경) 시에도 reset 안 됨.
+            # value는 처음 widget이 그려질 때만 default로 작용 (session_state 비어 있을 때).
             run_name = st.text_input(
                 "결과 폴더명",
                 value=f"ui_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                key=f"bt_run_name_{len(procs)}",
                 help="ai_agent/backtest/runs/<이름>/ 에 저장",
             )
 
@@ -1932,6 +1974,14 @@ def tab_run() -> None:
             os.getenv("GMS_KEY") or os.getenv("ANTHROPIC_API_KEY") or os.getenv("XAI_API_KEY")
         ):
             st.warning("⚠️ LLM 키 필요 — .env에 GMS_KEY 등이 있는지 확인하세요. 그래도 진행합니다.")
+
+        # 종목별 수량 → CODE:QTY 문자열 합성 (0인 종목은 생략)
+        initial_holdings = ",".join(
+            f"{code}:{qty}" for code, qty in holdings_qtys.items() if qty > 0
+        )
+        # 다음 form 인스턴스에서 default 복원 가능하도록 종목별 수량 기억
+        for code, qty in holdings_qtys.items():
+            st.session_state[f"bt_hold_default_{code}"] = qty
 
         args = {
             "mode": mode, "start": start, "end": end,
