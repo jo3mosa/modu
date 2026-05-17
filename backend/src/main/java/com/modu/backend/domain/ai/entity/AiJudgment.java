@@ -26,6 +26,7 @@ import java.util.Objects;
  *  - 기본 필드: V20260429... init 마이그레이션
  *  - 확장 필드 (key_signals 외 9개): V20260509205300 마이그레이션
  *  - decision_id / source_event_id / execution_status: V20260515103200 마이그레이션 (S14P31B106-263)
+ *  - approval_expires_at: V20260515174500 마이그레이션 (S14P31B106-292)
  */
 @Entity
 @Table(name = "ai_judgments")
@@ -113,6 +114,13 @@ public class AiJudgment {
     @Enumerated(EnumType.STRING)
     @Column(name = "execution_status", length = 20)
     private AiExecutionStatus executionStatus;
+
+    // ─────────────────────────────────────────────────────────────────────
+    // V20260515174500 (S14P31B106-292) 추가 컬럼
+    // ─────────────────────────────────────────────────────────────────────
+
+    @Column(name = "approval_expires_at")
+    private OffsetDateTime approvalExpiresAt;
 
     @Builder
     public AiJudgment(
