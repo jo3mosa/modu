@@ -1779,6 +1779,46 @@ def _tail_log(log_path: str, n_lines: int = 80) -> str:
     return "".join(lines[-n_lines:]) or "(빈 로그)"
 
 
+def _format_elapsed_since(
+    started_at_iso: str,
+    *,
+    alive: bool = True,
+    log_path: str | None = None,
+) -> str:
+    """ISO timestamp 기준 경과 시간을 'X시간 Y분 Z초' 형식으로 반환.
+
+    alive=True: 지금 시각까지의 경과. 카드가 매 2초 rerun되므로 자동 갱신.
+    alive=False: log_path mtime을 종료 시각으로 사용한 총 소요. log_path가 없거나
+        읽기 실패하면 지금 시각으로 fallback.
+    """
+    try:
+        started = datetime.fromisoformat(started_at_iso)
+    except (ValueError, TypeError):
+        return "?"
+
+    if alive:
+        end = datetime.now()
+    else:
+        end = datetime.now()
+        if log_path:
+            try:
+                end = datetime.fromtimestamp(Path(log_path).stat().st_mtime)
+            except Exception:
+                pass
+
+    total_sec = int((end - started).total_seconds())
+    if total_sec < 0:
+        return "?"
+    if total_sec < 60:
+        return f"{total_sec}초"
+    if total_sec < 3600:
+        m, s = divmod(total_sec, 60)
+        return f"{m}분 {s}초"
+    h, rem = divmod(total_sec, 3600)
+    m, _ = divmod(rem, 60)
+    return f"{h}시간 {m}분"
+
+
 def _render_running_card(proc: dict[str, Any], idx: int) -> None:
     """진행 중/완료된 단일 backtest를 카드로 표시.
 
@@ -1800,7 +1840,16 @@ def _render_running_card(proc: dict[str, Any], idx: int) -> None:
                 f"**{status}** · `mode={mode}` · "
                 f"기간 `{start_str} ~ {end_str}` · PID `{proc['pid']}`"
             )
-            st.caption(f"📁 `{proc['output_dir']}` · 시작 {proc['started_at']}")
+            elapsed = _format_elapsed_since(
+                proc["started_at"],
+                alive=alive,
+                log_path=proc.get("log_path"),
+            )
+            elapsed_label = "⏱ 경과" if alive else "⏱ 총 소요"
+            st.caption(
+                f"📁 `{proc['output_dir']}` · 시작 {proc['started_at']} · "
+                f"{elapsed_label} **{elapsed}**"
+            )
         with head_c2:
             if alive:
                 if st.button("⛔ 종료", key=f"kill_{idx}_{proc['pid']}"):

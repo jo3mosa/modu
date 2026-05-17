@@ -45,6 +45,7 @@ from .data_sources import fetch_ohlcv_by_date, make_engine
 from .event_loop import run
 from .examples.mock_decision import SimplePortfolio, flat_user_context
 from .interfaces import DecisionFn
+from .keep_awake import enable_keep_awake_at_exit, keep_awake
 from .modes import MODE_REGISTRY, available_modes, get_mode_spec
 
 logger = logging.getLogger(__name__)
@@ -324,6 +325,13 @@ def main() -> int:
                         help="run 시작 전 --backtest-user-id의 ai_judgments / "
                              "post_mortem_reports DELETE. 이전 회차 회고가 섞이지 않도록.")
     args = parser.parse_args()
+
+    # OS sleep 방지 — backtest 실행 중 Windows가 절전 모드로 빠지면 백그라운드
+    # 프로세스도 일시정지된다. 프로세스 종료(atexit)까지 자동 유지.
+    # Mac/Linux는 no-op.
+    enable_keep_awake_at_exit(
+        reason=f"backtest mode={args.mode} {args.start}~{args.end}"
+    )
 
     try:
         env = config.load_env()
