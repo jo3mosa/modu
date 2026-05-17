@@ -181,6 +181,7 @@ class SignalHandlerServiceTest {
         verify(aiJudgmentRepository).saveAndFlush(captor.capture());
         assertThat(captor.getValue().getExecutionStatus()).isEqualTo(AiExecutionStatus.BLOCKED);
         verify(orderRepository, never()).saveAndFlush(any());
+        verify(tradeOrderProducer, never()).publishOrderSubmitted(any());
     }
 
     @Test
@@ -194,6 +195,8 @@ class SignalHandlerServiceTest {
         ArgumentCaptor<AiJudgment> captor = ArgumentCaptor.forClass(AiJudgment.class);
         verify(aiJudgmentRepository).saveAndFlush(captor.capture());
         assertThat(captor.getValue().getExecutionStatus()).isEqualTo(AiExecutionStatus.BLOCKED);
+        verify(orderRepository, never()).saveAndFlush(any());
+        verify(tradeOrderProducer, never()).publishOrderSubmitted(any());
     }
 
     @Test
@@ -209,6 +212,8 @@ class SignalHandlerServiceTest {
         ArgumentCaptor<AiJudgment> captor = ArgumentCaptor.forClass(AiJudgment.class);
         verify(aiJudgmentRepository).saveAndFlush(captor.capture());
         assertThat(captor.getValue().getExecutionStatus()).isEqualTo(AiExecutionStatus.BLOCKED);
+        verify(orderRepository, never()).saveAndFlush(any());
+        verify(tradeOrderProducer, never()).publishOrderSubmitted(any());
     }
 
     @Test
@@ -223,6 +228,7 @@ class SignalHandlerServiceTest {
         verify(aiJudgmentRepository).saveAndFlush(captor.capture());
         assertThat(captor.getValue().getExecutionStatus()).isEqualTo(AiExecutionStatus.BLOCKED);
         verify(orderRepository, never()).saveAndFlush(any());
+        verify(tradeOrderProducer, never()).publishOrderSubmitted(any());
     }
 
     @Test
@@ -237,6 +243,7 @@ class SignalHandlerServiceTest {
         verify(aiJudgmentRepository).saveAndFlush(captor.capture());
         assertThat(captor.getValue().getExecutionStatus()).isEqualTo(AiExecutionStatus.BLOCKED);
         verify(orderRepository, never()).saveAndFlush(any());
+        verify(tradeOrderProducer, never()).publishOrderSubmitted(any());
     }
 
     // ───────────────────────────────────────────────────────────────────

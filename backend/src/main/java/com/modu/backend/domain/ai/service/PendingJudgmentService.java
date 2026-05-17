@@ -59,11 +59,14 @@ public class PendingJudgmentService {
 
     @Transactional(readOnly = true)
     public List<PendingDecisionResponse> listPending(Long userId) {
+        OffsetDateTime now = OffsetDateTime.now();
+        // approvalExpiresAt == null 은 비정상 상태로 간주해 목록 제외 — APPROVAL_REQUIRED 진입 시
+        // SignalHandlerService 가 항상 NOW + 5분 세팅하므로 null 은 데이터 이상.
         return aiJudgmentRepository
                 .findByUserIdAndExecutionStatusOrderByJudgedAtDesc(userId, AiExecutionStatus.APPROVAL_REQUIRED)
                 .stream()
-                .filter(j -> j.getApprovalExpiresAt() == null
-                        || j.getApprovalExpiresAt().isAfter(OffsetDateTime.now()))
+                .filter(j -> j.getApprovalExpiresAt() != null
+                        && j.getApprovalExpiresAt().isAfter(now))
                 .map(PendingDecisionResponse::from)
                 .toList();
     }
@@ -187,8 +190,9 @@ public class PendingJudgmentService {
         if (judgment.getExecutionStatus() != AiExecutionStatus.APPROVAL_REQUIRED) {
             throw new ApiException(AiErrorCode.DECISION_NOT_PENDING);
         }
-        if (judgment.getApprovalExpiresAt() != null
-                && !judgment.getApprovalExpiresAt().isAfter(OffsetDateTime.now())) {
+        // approvalExpiresAt == null 은 비정상 상태 — 만료된 것과 동일하게 거절 (DECISION_EXPIRED)
+        if (judgment.getApprovalExpiresAt() == null
+                || !judgment.getApprovalExpiresAt().isAfter(OffsetDateTime.now())) {
             throw new ApiException(AiErrorCode.DECISION_EXPIRED);
         }
         return judgment;

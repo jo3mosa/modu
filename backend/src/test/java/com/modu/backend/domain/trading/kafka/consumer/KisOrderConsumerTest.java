@@ -171,10 +171,30 @@ class KisOrderConsumerTest {
 
         assertThat(order.getKisOrderNo()).isEqualTo("KISODNO2");
         verify(ack).acknowledge();
+        // MANUAL source → Kill Switch 호출 X
+        verify(killSwitchService, never()).recordSuccess(any(), any());
     }
 
     @Test
-    @DisplayName("KIS template 가 KIS_TOKEN_INVALIDATED 최종 실패 → REJECTED + ORDER_FAILED")
+    @DisplayName("자동매매(source=AI_DECISION) 성공: KillSwitchService.recordSuccess 호출")
+    void 자동매매_성공_killswitch_recordSuccess_호출() {
+        TradeOrderMessage msg = autoTradeMessage("uuid-auto-ok");
+        Order order = pendingOrder(200L, "uuid-auto-ok");
+        when(orderRepository.findByUserIdAndIdempotencyKey(1L, "uuid-auto-ok"))
+                .thenReturn(Optional.of(order));
+        when(kisCredentialRepository.findByUserId(1L)).thenReturn(Optional.of(credential));
+        when(kisApiCallTemplate.callWithTokenRetry(eq(1L), any(), any(), any()))
+                .thenReturn(new KisOrderClient.KisOrderResult("KISODNO3", "KISORG3"));
+
+        consumer.onMessage(msg, ack);
+
+        verify(killSwitchService).recordSuccess(eq(1L), eq("005930"));
+        verify(killSwitchService, never()).recordReject(any(), any(), any());
+        verify(ack).acknowledge();
+    }
+
+    @Test
+    @DisplayName("KIS template 가 KIS_TOKEN_INVALIDATED 최종 실패 → REJECTED + ORDER_FAILED SSE + KillSwitch 카운트 X (KIS 거부 아님)")
     void 토큰_재발급_실패_REJECTED() {
         TradeOrderMessage msg = sampleMessage("uuid-1", 1L);
         Order order = pendingOrder(100L, "uuid-1");
@@ -189,11 +209,17 @@ class KisOrderConsumerTest {
         assertThat(order.getStatus()).isEqualTo(OrderStatus.REJECTED);
         assertThat(order.getRejectReason())
                 .isEqualTo(UserErrorCode.KIS_TOKEN_INVALIDATED.getDefaultMessage());
+        // ORDER_FAILED SSE 발송
+        ArgumentCaptor<OrderSseEvent> eventCaptor = ArgumentCaptor.forClass(OrderSseEvent.class);
+        verify(sseEmitterManager).send(eq(1L), eventCaptor.capture());
+        assertThat(eventCaptor.getValue().type()).isEqualTo(OrderSseEventType.ORDER_FAILED);
+        // 토큰 실패는 KIS 거부 응답이 아닌 인증 인프라 장애 → Kill Switch 카운트 제외
+        verify(killSwitchService, never()).recordReject(any(), any(), any());
         verify(ack).acknowledge();
     }
 
     @Test
-    @DisplayName("KIS 비-토큰 에러(예: INSUFFICIENT_BALANCE) — REJECTED + ORDER_FAILED")
+    @DisplayName("KIS 비-토큰 에러(INSUFFICIENT_BALANCE) — REJECTED + ORDER_FAILED SSE (MANUAL source: KillSwitch X)")
     void 비_external_error_즉시_REJECTED() {
         TradeOrderMessage msg = sampleMessage("uuid-1", 1L);
         Order order = pendingOrder(100L, "uuid-1");
@@ -208,6 +234,47 @@ class KisOrderConsumerTest {
         assertThat(order.getStatus()).isEqualTo(OrderStatus.REJECTED);
         assertThat(order.getRejectReason())
                 .isEqualTo(OrderErrorCode.INSUFFICIENT_BALANCE.getDefaultMessage());
+        // ORDER_FAILED SSE 발송
+        ArgumentCaptor<OrderSseEvent> eventCaptor = ArgumentCaptor.forClass(OrderSseEvent.class);
+        verify(sseEmitterManager).send(eq(1L), eventCaptor.capture());
+        assertThat(eventCaptor.getValue().type()).isEqualTo(OrderSseEventType.ORDER_FAILED);
+        // MANUAL source 라 Kill Switch 무관
+        verify(killSwitchService, never()).recordReject(any(), any(), any());
+        verify(ack).acknowledge();
+    }
+
+    @Test
+    @DisplayName("자동매매(source=AI_DECISION) + KIS 거부(INSUFFICIENT_BALANCE) → KillSwitchService.recordReject 호출")
+    void 자동매매_KIS_거부_killswitch_recordReject_호출() {
+        TradeOrderMessage msg = autoTradeMessage("uuid-auto-fail");
+        Order order = pendingOrder(300L, "uuid-auto-fail");
+        when(orderRepository.findByUserIdAndIdempotencyKey(1L, "uuid-auto-fail"))
+                .thenReturn(Optional.of(order));
+        when(kisCredentialRepository.findByUserId(1L)).thenReturn(Optional.of(credential));
+        when(kisApiCallTemplate.callWithTokenRetry(eq(1L), any(), any(), any()))
+                .thenThrow(new ApiException(OrderErrorCode.INSUFFICIENT_BALANCE));
+
+        consumer.onMessage(msg, ack);
+
+        verify(killSwitchService).recordReject(eq(1L), eq("005930"), any());
+        verify(killSwitchService, never()).recordSuccess(any(), any());
+        verify(ack).acknowledge();
+    }
+
+    @Test
+    @DisplayName("자동매매(source=AI_DECISION) + KIS_TOKEN_INVALIDATED → KillSwitch.recordReject 호출 X (인증 인프라 장애)")
+    void 자동매매_토큰_실패_killswitch_recordReject_제외() {
+        TradeOrderMessage msg = autoTradeMessage("uuid-auto-token");
+        Order order = pendingOrder(400L, "uuid-auto-token");
+        when(orderRepository.findByUserIdAndIdempotencyKey(1L, "uuid-auto-token"))
+                .thenReturn(Optional.of(order));
+        when(kisCredentialRepository.findByUserId(1L)).thenReturn(Optional.of(credential));
+        when(kisApiCallTemplate.callWithTokenRetry(eq(1L), any(), any(), any()))
+                .thenThrow(new ApiException(UserErrorCode.KIS_TOKEN_INVALIDATED));
+
+        consumer.onMessage(msg, ack);
+
+        verify(killSwitchService, never()).recordReject(any(), any(), any());
         verify(ack).acknowledge();
     }
 
@@ -247,5 +314,14 @@ class KisOrderConsumerTest {
                 .build();
         ReflectionTestUtils.setField(order, "id", id);
         return order;
+    }
+
+    /** 자동매매 source (AI_DECISION) 메시지 — Kill Switch 카운트 대상 */
+    private TradeOrderMessage autoTradeMessage(String orderId) {
+        return TradeOrderMessage.of(
+                orderId, null, 1L, "005930",
+                OrderSide.BUY, OrderType.LIMIT,
+                10L, 70000L, OrderSource.AI_DECISION, null, OffsetDateTime.now()
+        );
     }
 }

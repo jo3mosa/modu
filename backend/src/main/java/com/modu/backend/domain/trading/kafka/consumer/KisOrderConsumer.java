@@ -161,7 +161,7 @@ public class KisOrderConsumer {
     }
 
     /**
-     * 실패 공통 처리 — Order.reject + SSE ORDER_FAILED + Kill Switch 카운트(자동매매만)
+     * 실패 공통 처리 — Order.reject + SSE ORDER_FAILED + Kill Switch 카운트(자동매매 + KIS 거부 응답만)
      */
     private void handleFailure(Order order, Long userId, String orderId, String stockCode,
                                String source, ApiException e) {
@@ -171,7 +171,7 @@ public class KisOrderConsumer {
                 userId, orderId, e.getErrorCode().getCode(), reason);
         sseEmitterManager.send(userId,
                 OrderSseEvent.failed(String.valueOf(order.getId()), stockCode, reason));
-        if (isAutoTradeSource(source)) {
+        if (isAutoTradeSource(source) && isKisRejectError(e)) {
             killSwitchService.recordReject(userId, stockCode, reason);
         }
     }
@@ -190,5 +190,22 @@ public class KisOrderConsumer {
         } catch (IllegalArgumentException e) {
             return false;
         }
+    }
+
+    /**
+     * KIS 거부 응답인지 판별 — KIS placeOrder 호출 결과로 받은 거부만 Kill Switch 카운트 대상.
+     *
+     * 다음은 카운트 제외:
+     *  - UserErrorCode.KIS_NOT_CONNECTED: 호출 전 단계 (사용자 미연동)
+     *  - UserErrorCode.KIS_CREDENTIAL_DECRYPT_FAILED: 호출 전 단계 (BE 인프라/암호화 키)
+     *  - UserErrorCode.KIS_TOKEN_INVALIDATED: 토큰 재발급 실패 (KIS 인증 인프라 일시 장애)
+     *
+     * 실제 KIS placeOrder 가 응답으로 거부한 케이스 (OrderErrorCode.* 또는 CommonErrorCode.EXTERNAL_API_ERROR)
+     * 만 카운트 → 인프라/설정 장애로 인한 Kill Switch 오발동 회피.
+     */
+    private boolean isKisRejectError(ApiException e) {
+        var errorCode = e.getErrorCode();
+        return errorCode instanceof com.modu.backend.domain.trading.exception.OrderErrorCode
+                || errorCode == com.modu.backend.global.error.CommonErrorCode.EXTERNAL_API_ERROR;
     }
 }
