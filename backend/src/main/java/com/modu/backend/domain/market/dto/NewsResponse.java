@@ -2,6 +2,7 @@ package com.modu.backend.domain.market.dto;
 
 import com.modu.backend.domain.market.entity.NewsArticle;
 import io.swagger.v3.oas.annotations.media.Schema;
+import org.springframework.web.util.HtmlUtils;
 
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -26,13 +27,17 @@ public record NewsResponse(
     /**
      * MongoDB 의 published_at 은 타임존 없는 ISO 문자열(KST 기준)로 적재된다.
      * 응답 시 +09:00 을 명시적으로 부착해 클라이언트 타임존 해석 오차를 막는다.
+     *
+     * title 은 RSS 수집(news_collector.py) 경로 데이터가 &quot; / &amp; 등의 HTML
+     * entity 를 그대로 담고 있을 수 있어 응답 시점에 디코딩한다.
      */
     public static NewsResponse from(NewsArticle doc) {
         OffsetDateTime published = doc.getPublishedAt() == null
                 ? null
                 : LocalDateTime.parse(doc.getPublishedAt()).atOffset(KST);
+        String title = doc.getTitle() == null ? null : HtmlUtils.htmlUnescape(doc.getTitle());
         return new NewsResponse(
-                doc.getTitle(),
+                title,
                 doc.getSourceName(),
                 published,
                 doc.getUrl()
