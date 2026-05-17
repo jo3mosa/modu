@@ -14,7 +14,12 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import subprocess
+import sys
+import time
 from collections import Counter
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -1510,6 +1515,246 @@ def tab_comparison(df: pd.DataFrame, scored: bool) -> None:
 
 
 # ============================================================
+# Run launcher — backtest subprocess + 로그 tail
+# ============================================================
+
+
+def _repo_root() -> Path:
+    """dashboards/backtest_viewer.py → repo root (ai_agent의 부모)."""
+    return Path(__file__).resolve().parents[2]
+
+
+def _runs_root() -> Path:
+    return Path(__file__).resolve().parent.parent / "backtest" / "runs"
+
+
+def _build_run_command(args: dict[str, Any], output_dir: Path) -> list[str]:
+    """form 값 → run_ai_backtest CLI 인자 리스트.
+
+    sys.executable로 동일 venv의 python 사용. cwd는 repo root.
+    """
+    cmd = [
+        sys.executable, "-m", "ai_agent.backtest.run_ai_backtest",
+        "--mode", args["mode"],
+        "--start", args["start"].isoformat(),
+        "--end", args["end"].isoformat(),
+        "--user-id", str(args["user_id"]),
+        "--output", str(output_dir),
+        "--initial-cash", str(int(args["initial_cash"])),
+        "--holding-days", str(int(args["holding_days"])),
+        "--backtest-user-id", str(int(args["backtest_user_id"])),
+    ]
+    if args.get("watchlist"):
+        cmd += ["--watchlist", args["watchlist"]]
+    if args.get("initial_holdings"):
+        cmd += ["--initial-holdings", args["initial_holdings"]]
+    if args.get("score_after"):
+        cmd.append("--score-after")
+    if args.get("pm_mock"):
+        cmd.append("--pm-mock")
+    if args.get("reset_memory"):
+        cmd.append("--reset-memory")
+    return cmd
+
+
+def _spawn_backtest(cmd: list[str], output_dir: Path) -> dict[str, Any]:
+    """run_ai_backtest를 별도 프로세스로 spawn. stdout/stderr → run.log.
+
+    Returns run state dict — st.session_state에 저장.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    log_path = output_dir / "run.log"
+    log_fp = log_path.open("w", encoding="utf-8", buffering=1)
+    log_fp.write(f"$ {' '.join(cmd)}\n\n")
+    log_fp.flush()
+
+    # Windows에서도 동작. shell=False로 인자 안전 전달. cwd=repo root로 ai_agent 패키지 import.
+    proc = subprocess.Popen(
+        cmd,
+        cwd=str(_repo_root()),
+        stdout=log_fp,
+        stderr=subprocess.STDOUT,
+        env={**os.environ, "PYTHONUNBUFFERED": "1"},
+    )
+    return {
+        "pid": proc.pid,
+        "log_path": str(log_path),
+        "output_dir": str(output_dir),
+        "cmd": cmd,
+        "started_at": datetime.now().isoformat(timespec="seconds"),
+    }
+
+
+def _proc_is_alive(pid: int) -> bool:
+    """psutil 없이 OS 호환 alive 체크. Windows/Unix 모두 동작."""
+    if pid <= 0:
+        return False
+    try:
+        if os.name == "nt":
+            import ctypes
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            STILL_ACTIVE = 259
+            kernel32 = ctypes.windll.kernel32
+            h = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+            if not h:
+                return False
+            exit_code = ctypes.c_ulong()
+            kernel32.GetExitCodeProcess(h, ctypes.byref(exit_code))
+            kernel32.CloseHandle(h)
+            return exit_code.value == STILL_ACTIVE
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def _tail_log(log_path: str, n_lines: int = 80) -> str:
+    p = Path(log_path)
+    if not p.exists():
+        return "(아직 로그 없음)"
+    try:
+        with p.open("r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+        return "".join(lines[-n_lines:]) or "(빈 로그)"
+    except Exception as e:
+        return f"(로그 읽기 실패: {e})"
+
+
+def tab_run() -> None:
+    """backtest를 subprocess로 띄우고 진행 로그를 실시간 표시."""
+    st.subheader("🚀 백테스트 실행")
+
+    running = st.session_state.get("running_proc")
+
+    if running and _proc_is_alive(running["pid"]):
+        st.info(f"진행 중 — PID {running['pid']} · 시작 {running['started_at']}")
+        st.code(" ".join(running["cmd"]), language="bash")
+
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.markdown("**실시간 로그 (마지막 80줄)**")
+        with col2:
+            if st.button("⛔ 강제 종료", help="subprocess kill"):
+                try:
+                    if os.name == "nt":
+                        subprocess.call(["taskkill", "/F", "/PID", str(running["pid"])])
+                    else:
+                        os.kill(running["pid"], 9)
+                    st.warning("종료 신호 전송")
+                except Exception as e:
+                    st.error(f"종료 실패: {e}")
+                time.sleep(1)
+                st.rerun()
+
+        st.code(_tail_log(running["log_path"]), language="text")
+
+        # 진행 중에만 자동 새로고침 (2초). 새로고침 시 polling 계속.
+        time.sleep(2)
+        st.rerun()
+        return
+
+    if running and not _proc_is_alive(running["pid"]):
+        # 직전 run 완료 — 결과 표시 + 사이드바 자동 선택 안내
+        st.success(f"✅ 완료 — 결과: `{running['output_dir']}`")
+        st.caption(f"PID {running['pid']} · 시작 {running['started_at']}")
+        with st.expander("실행 로그 (전체)", expanded=False):
+            st.code(_tail_log(running["log_path"], n_lines=500), language="text")
+        col1, col2 = st.columns(2)
+        if col1.button("새 실행 준비"):
+            st.session_state.pop("running_proc", None)
+            st.rerun()
+        col2.caption("👈 사이드바 'Backtest run 선택'에서 결과 디렉터리를 골라 분석 탭으로 이동하세요.")
+        return
+
+    # form
+    st.caption("옵션을 선택하고 '백테스트 시작'을 누르면 별도 프로세스로 실행됩니다. "
+               "이 탭을 떠나거나 페이지를 새로고침해도 백그라운드에서 계속 돌아갑니다.")
+
+    with st.form("backtest_form"):
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            mode = st.selectbox(
+                "모드", ["A", "B", "random", "mock"],
+                help="A=Bull/Bear 토론 (MVP, LLM 4회/결정), B=단일 에이전트 ablation, "
+                     "random/mock=LLM 없는 baseline",
+            )
+            start = st.date_input("시작일", value=date(2024, 1, 2))
+            end = st.date_input("종료일", value=date(2024, 1, 15))
+        with c2:
+            watchlist = st.text_input(
+                "종목 (쉼표 구분)", value="005930,000660",
+                help="비우면 활성 종목 자동",
+            )
+            initial_cash = st.number_input(
+                "초기 현금 (KRW)", min_value=0, value=10_000_000, step=1_000_000,
+            )
+            initial_holdings = st.text_input(
+                "초기 보유 (CODE:QTY,...)", value="005930:100,000660:50",
+                help="SELL 결정이 정상 체결되려면 필요. 비워두면 매수만 가능.",
+            )
+        with c3:
+            holding_days = st.number_input("최대 보유일 (T+N)", min_value=1, max_value=60, value=7)
+            backtest_user_id = st.number_input(
+                "backtest_user_id", min_value=1, value=99999,
+                help="DB 격리용. 운영 user_id(보통 4자리 이하)와 분리하세요.",
+            )
+            user_id = st.text_input("DA user_id (string)", value="backtest-user")
+
+        c4, c5, c6, c7 = st.columns(4)
+        with c4:
+            score_after = st.checkbox("score-after", value=True,
+                                       help="scored_*.jsonl 생성 (PnL/회고/Calibration 탭 활성)")
+        with c5:
+            pm_mock = st.checkbox("pm-mock", value=False,
+                                   help="회고를 fake로 생성 (LLM 비용 절감, 진짜 reflection loop 안 닫힘)")
+        with c6:
+            reset_memory = st.checkbox("reset-memory", value=True,
+                                        help="run 시작 전 backtest_user_id의 ai_judgments / "
+                                             "post_mortem_reports DELETE. 회차 격리.")
+        with c7:
+            run_name = st.text_input(
+                "결과 폴더명",
+                value=f"ui_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                help="ai_agent/backtest/runs/<이름>/ 에 저장",
+            )
+
+        submitted = st.form_submit_button("🚀 백테스트 시작", type="primary",
+                                          use_container_width=True)
+
+    if not submitted:
+        st.caption("⏱ mode A는 결정당 LLM 4회 호출 — 2주 × 2종목 = 약 5~15분 소요 예상.")
+        return
+
+    # 입력 검증
+    if start >= end:
+        st.error("시작일은 종료일보다 이전이어야 합니다.")
+        return
+    if mode in ("A", "B") and not (os.getenv("GMS_KEY") or os.getenv("ANTHROPIC_API_KEY")
+                                    or os.getenv("XAI_API_KEY")):
+        st.warning("⚠️ mode A/B는 LLM 키 필요 — .env에 GMS_KEY 등이 있는지 확인하세요. 그래도 진행합니다.")
+
+    output_dir = _runs_root() / run_name
+    args = {
+        "mode": mode, "start": start, "end": end,
+        "user_id": user_id, "watchlist": watchlist, "initial_cash": initial_cash,
+        "initial_holdings": initial_holdings, "holding_days": holding_days,
+        "backtest_user_id": backtest_user_id,
+        "score_after": score_after, "pm_mock": pm_mock, "reset_memory": reset_memory,
+    }
+    cmd = _build_run_command(args, output_dir)
+    try:
+        state = _spawn_backtest(cmd, output_dir)
+    except Exception as e:
+        st.error(f"spawn 실패: {e}")
+        return
+
+    st.session_state["running_proc"] = state
+    st.success(f"🚀 시작 — PID {state['pid']}")
+    time.sleep(1)
+    st.rerun()
+
+
+# ============================================================
 # Main
 # ============================================================
 
@@ -1578,7 +1823,9 @@ def main() -> None:
 
     df = load_run_dir(str(run_dir))
     if df.empty:
-        st.warning(f"디렉터리가 비어있거나 읽을 수 없음: {run_dir}")
+        st.warning(f"디렉터리가 비어있거나 읽을 수 없음: {run_dir}. "
+                   f"'🚀 실행' 탭에서 새 백테스트를 돌리세요.")
+        tab_run()
         st.stop()
 
     scored = detect_scored(df)
@@ -1597,11 +1844,13 @@ def main() -> None:
 
     df_filtered = sidebar_filters(df)
 
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
-        ["Overview", "Quality", "PnL", "Calibration", "Reasoning", "거래 차트", "Comparison"]
+    tab_r, tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
+        ["🚀 실행", "Overview", "Quality", "PnL", "Calibration", "Reasoning", "거래 차트", "Comparison"]
     )
     equity_df = _load_equity_curve(str(run_dir))
 
+    with tab_r:
+        tab_run()
     with tab1:
         tab_overview(df_filtered)
     with tab2:
