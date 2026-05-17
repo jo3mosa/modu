@@ -58,14 +58,11 @@ def _build_mock_fn(backtest_user_id: int, engine: Any) -> DecisionFn:
     return simple_rule_decision
 
 
-def _build_llm_signal_factory() -> Callable[[int, Any], Any]:
-    """LLM 기반 트리거 생성 signal_fn factory.
-
-    decision_fn 은 기존 LangGraph 모드 A 를 그대로 사용 — 트리거 생성 단계만 교체.
-    """
+def _build_always_trigger_factory() -> Callable[[int, Any], Any]:
+    """TradingAgents 방식 — 전 종목 매일 무조건 LangGraph 진입."""
     def factory(backtest_user_id: int, engine: Any) -> Any:
-        from .adapters.llm_trigger_decision import make_llm_signal_fn
-        return make_llm_signal_fn()
+        from .adapters.always_trigger import make_always_trigger_signal_fn
+        return make_always_trigger_signal_fn()
     return factory
 
 
@@ -98,24 +95,24 @@ MODE_REGISTRY: dict[str, ModeSpec] = {
         uses_llm=False,
         uses_db=False,
     ),
-    "A": ModeSpec(
+    "rule_trigger": ModeSpec(
         factory=_build_graph_factory("A"),
-        description="LangGraph — Bull/Bear 토론 → Strategy → Decision (MVP)",
+        description="[우리 방식] 지표 룰 트리거 → LangGraph Bull/Bear 토론 → 결정",
         uses_llm=True,
         uses_db=True,
     ),
-    "B": ModeSpec(
+    "daily_scan": ModeSpec(
+        factory=_build_graph_factory("A"),
+        description="[TradingAgents 방식] 전 종목 매일 LangGraph 진입, HOLD=사실상 패스",
+        uses_llm=True,
+        uses_db=True,
+        signal_factory=_build_always_trigger_factory(),
+    ),
+    "single_agent": ModeSpec(
         factory=_build_graph_factory("B"),
-        description="LangGraph — Strategy → Decision 직결 (토론 ablation)",
+        description="[ablation] Strategy → Decision 직결 (Bull/Bear 토론 없음)",
         uses_llm=True,
         uses_db=True,
-    ),
-    "llm_trigger": ModeSpec(
-        factory=_build_graph_factory("A"),
-        description="LLM 분석 트리거 — 지표 룰 대신 LLM이 트리거 선별 후 LangGraph(A) 결정",
-        uses_llm=True,
-        uses_db=True,
-        signal_factory=_build_llm_signal_factory(),
     ),
 }
 
