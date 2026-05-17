@@ -261,14 +261,29 @@ class SimplePortfolio:
                     entry_date=order["fill_date"],
                 )
             else:  # sell
-                self.cash += float(order["total_cash"])
                 held = self.holdings.get(code, 0)
-                remaining = held - qty
+                actual_qty = min(qty, held)
+                if actual_qty <= 0:
+                    # evaluate_open_positions가 같은 사이클에 이미 자동 청산한 경우.
+                    # pending sell을 그대로 적용하면 없는 주식에 현금이 생기는 phantom cash 발생.
+                    logger.warning(
+                        "settle: sell skip — 보유 없음 stock=%s "
+                        "(evaluate_open_positions 자동 청산 가능성)", code,
+                    )
+                    continue
+                # 실제 체결 수량 기준으로 현금 재산정 (partial 포함)
+                gross = float(order["price"]) * actual_qty
+                fee = gross * self.fee_ratio
+                tax = gross * self.sell_tax_ratio
+                self.cash += gross - fee - tax
+                remaining = held - actual_qty
                 if remaining <= 0:
                     self.holdings.pop(code, None)
                     self.open_positions.pop(code, None)
                 else:
                     self.holdings[code] = remaining
+                qty = actual_qty  # Fill에 실제 체결 수량 반영
+                order = {**order, "fee": fee, "tax": tax}
             applied.append(Fill(
                 fill_date=order["fill_date"], fill_price=float(order["price"]),
                 filled_amount=qty, fee=float(order["fee"]), tax=float(order["tax"]),
