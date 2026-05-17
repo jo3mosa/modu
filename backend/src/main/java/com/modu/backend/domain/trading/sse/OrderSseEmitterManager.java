@@ -69,20 +69,37 @@ public class OrderSseEmitterManager {
     }
 
     /**
-     * 사용자에게 이벤트 전송
+     * 사용자에게 주문 이벤트 전송 (event name = "order")
      * 연결 없으면 조용히 무시 (사용자가 화면을 안 띄운 상태일 수 있음).
      * 전송 실패 시 emitter 완료 처리 + Map 제거.
      */
     public void send(Long userId, OrderSseEvent event) {
+        sendInternal(userId, EVENT_NAME, event, event.type().name());
+    }
+
+    /**
+     * 사용자에게 임의 이벤트 전송 — 주문 외 도메인(예: AI 에이전트 메시지)에서 동일 SSE 연결을 재사용.
+     *
+     * 프론트는 EventSource.addEventListener(eventName, ...) 로 종류별 구독.
+     * 기존 "order" 이벤트와 충돌하지 않도록 호출 측이 eventName 을 고유하게 지정해야 한다.
+     *
+     * @param eventName SSE event name (예: "agent-message")
+     * @param payload   JSON 직렬화 가능한 페이로드 (record 권장)
+     */
+    public void send(Long userId, String eventName, Object payload) {
+        sendInternal(userId, eventName, payload, eventName);
+    }
+
+    private void sendInternal(Long userId, String eventName, Object payload, String logTag) {
         SseEmitter emitter = emitters.get(userId);
         if (emitter == null) {
-            log.info("SSE 연결 없음 - userId: {}, type: {}", userId, event.type());
+            log.info("SSE 연결 없음 - userId: {}, event: {}", userId, logTag);
             return;
         }
         try {
-            emitter.send(SseEmitter.event().name(EVENT_NAME).data(event));
+            emitter.send(SseEmitter.event().name(eventName).data(payload));
         } catch (IOException e) {
-            log.warn("SSE 전송 실패, 연결 제거 - userId: {}, type: {}", userId, event.type(), e);
+            log.warn("SSE 전송 실패, 연결 제거 - userId: {}, event: {}", userId, logTag, e);
             emitter.completeWithError(e);
             emitters.remove(userId, emitter);
         }

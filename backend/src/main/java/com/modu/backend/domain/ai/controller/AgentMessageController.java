@@ -1,0 +1,67 @@
+package com.modu.backend.domain.ai.controller;
+
+import com.modu.backend.domain.ai.dto.AgentMessagePageResponse;
+import com.modu.backend.domain.ai.service.AgentMessageService;
+import com.modu.backend.global.dto.ApiResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.time.OffsetDateTime;
+
+/**
+ * AI 에이전트 회의 메시지 조회 API
+ *
+ * 실시간 메시지는 동일 사용자의 SSE 연결(/api/v1/orders/connect) 에 흐르는
+ * "agent-message" 이벤트로 수신. 본 REST 는 채널 진입 시 과거 대화 로드 전용.
+ */
+@Tag(name = "AI Agent Messages", description = "AI 에이전트 회의 메시지 조회 API")
+@RestController
+@RequestMapping("/api/v1/ai-agent/messages")
+@RequiredArgsConstructor
+public class AgentMessageController {
+
+    private final AgentMessageService agentMessageService;
+
+    @Operation(
+            summary = "에이전트 메시지 목록 조회 (커서 페이지네이션)",
+            description = """
+                    종목 채널에 속한 AI 에이전트 발화 메시지를 created_at 내림차순으로 반환합니다.
+
+                    [페이지네이션]
+                    - before 미전달: 최신 메시지부터 size 개.
+                    - before 전달: 그 시각보다 이전의 메시지 size 개. 응답의 nextCursor 를 다음 요청 before 로 전달.
+                    - nextCursor 가 null 이면 더 과거 데이터 없음.
+
+                    [size]
+                    - 기본 50, 최대 100.
+                    """
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "stockCode 누락"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "인증 필요")
+    })
+    @GetMapping
+    public ResponseEntity<ApiResponse<AgentMessagePageResponse>> getMessages(
+            @AuthenticationPrincipal Long userId,
+            @Parameter(description = "조회할 종목 코드", example = "005930", required = true)
+            @RequestParam String stockCode,
+            @Parameter(description = "이 시각 이전 메시지를 조회. 미전달 시 최신부터.", example = "2026-05-18T10:00:00+09:00")
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime before,
+            @Parameter(description = "한 번에 조회할 메시지 수 (1~100, 기본 50)", example = "50")
+            @RequestParam(required = false) Integer size
+    ) {
+        AgentMessagePageResponse response = agentMessageService.getMessages(userId, stockCode, before, size);
+        return ResponseEntity.ok(ApiResponse.success("에이전트 메시지를 조회했습니다.", response));
+    }
+}

@@ -24,6 +24,7 @@ public class KafkaTopicConfig {
             topic(KafkaTopic.MARKET_SIGNAL_DETECTED),
             topic(KafkaTopic.AI_TRIGGER_REQUESTED),
             topic(KafkaTopic.AI_DECISION_GENERATED),
+            topic(KafkaTopic.AI_AGENT_MESSAGE),
             topic(KafkaTopic.TRADE_ORDER_SUBMITTED),
             topic(KafkaTopic.TRADE_ORDER_EXECUTED)
         );
