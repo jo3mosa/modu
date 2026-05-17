@@ -8,6 +8,7 @@ from app.config.llm import get_structured_llm
 from app.observability.langsmith_helpers import add_run_metadata
 from app.state.investment_state import InvestmentAgentState
 from app.state.schemas import ResearchVerdict, StrategyDraft
+from app.utils.agent_message import publish_agent_message
 from app.utils.json_utils import to_json
 from app.utils.prompt_loader import load_prompt
 
@@ -90,6 +91,9 @@ def strategy_manager(state: InvestmentAgentState) -> dict[str, Any]:
         "recommended_side": verdict.recommended_side,
         "confidence": verdict.confidence,
     })
+
+    round_count = debate_state.get("round_count", 0)
+    publish_agent_message(state, "STRATEGY", round_count * 2, verdict.rationale, stock_code=verdict.asset or None)
 
     return {
         "research_verdict": verdict,
