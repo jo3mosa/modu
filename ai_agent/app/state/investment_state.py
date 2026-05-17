@@ -67,12 +67,13 @@ class InvestmentAgentState(BaseModel):
     # 4. Reasoning Layer output
     # ==============================
 
-    # Bull/Bear 토론 누적 상태 (TradingAgents 레포의 investment_debate_state와 동일 구조).
-    # - history: 전체 토론 누적 텍스트 (Bull/Bear 모두)
-    # - bull_history: Bull 발언만 누적
-    # - bear_history: Bear 발언만 누적
-    # - current_response: 직전 발언 (다음 화자가 반박 대상으로 사용)
-    # - count: 라운드 카운트 (1라운드 고정 환경에서도 향후 확장을 위해 보존)
+    # Bull/Bear 토론 누적 상태.
+    # - bull_history: list[str] — Bull 발언을 라운드 순서대로 누적
+    # - bear_history: list[str] — Bear 발언을 라운드 순서대로 누적
+    # - debate_rounds: list[dict] — 완성된 라운드 {"round": N, "bull": "...", "bear": "..."}
+    # - latest_bull_argument: str | None — 직전 Bull 발언 (Bear가 반박 대상으로 사용)
+    # - latest_bear_argument: str | None — 직전 Bear 발언 (Bull이 반박 대상으로 사용)
+    # - round_count: int — 완성된 라운드 수 (Bear 발언 완료 시점에 증가)
     investment_debate_state: dict[str, Any] = Field(default_factory=dict)
 
     # Strategy Manager(Research Manager)가 토론을 종합해 내린 판결

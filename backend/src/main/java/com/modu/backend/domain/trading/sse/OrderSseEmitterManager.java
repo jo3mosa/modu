@@ -54,6 +54,17 @@ public class OrderSseEmitterManager {
         } else {
             log.info("SSE 연결 등록 - userId: {}", userId);
         }
+
+        // 즉시 'connected' 이벤트 전송 — 응답 stream 시작을 트리거.
+        // 첫 데이터가 없으면 nginx-ingress 가 응답을 빈 채로 인식해 keepalive timeout(60s) 에 끊김 → 499.
+        try {
+            emitter.send(SseEmitter.event().name("connected").data("ok"));
+        } catch (IOException e) {
+            log.warn("SSE 초기 connected 이벤트 전송 실패 - userId: {}", userId, e);
+            emitter.completeWithError(e);
+            emitters.remove(userId, emitter);
+        }
+
         return emitter;
     }
 

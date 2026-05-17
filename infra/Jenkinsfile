@@ -20,6 +20,8 @@ pipeline {
         REGISTRY_FE_ID = 'ecr-registry-frontend'
         // Jenkins에 등록된 ECR AI Agent 레지스트리 URI (Credentials ID)
         REGISTRY_AI_ID = 'ecr-registry-ai-agent'
+        // Jenkins에 등록된 ECR Analysis Server 레지스트리 URI (Credentials ID)
+        REGISTRY_ANALYSIS_ID = 'ecr-registry-analysis'
         // Jenkins에 등록된 SSAFY K3s kubeconfig 파일 (Credentials ID)
         K3S_CONFIG_ID  = 'k3s-config.yaml'
         // Jenkins에 등록된 AWS EKS kubeconfig 파일 (Credentials ID)
@@ -33,11 +35,10 @@ pipeline {
         // 실패 원인 상세 내용을 저장 (Mattermost 알림에서 상세 원인 표시용)
         ERROR_DETAILS  = ""
 
-        // ── 선택적 빌드 플래그 (Stage 1에서 결정) ─────────────
-        // 각 서비스 빌드 여부 (git diff 결과에 따라 설정)
-        BUILD_BACKEND  = 'false'
-        BUILD_FRONTEND = 'false'
-        BUILD_AI       = 'false'
+        // ── 선택적 빌드 플래그 ─────────────────────────────────
+        // BUILD_BACKEND / BUILD_FRONTEND / BUILD_AI 는 Stage 1 의 script 블록에서
+        // env.BUILD_* 로 동적 설정. environment {} 블록에서 초기화하면 immutable 이
+        // 되어 script 의 재할당이 무시되므로 의도적으로 여기서 제거.
 
     }
 
@@ -54,20 +55,52 @@ pipeline {
                 script {
                     env.FAILED_STAGE = "1. 변경 서비스 감지"
 
-                    // HEAD~1이 없는 경우(첫 커밋, shallow clone 등) 전체 빌드로 폴백
+                    // 머지 commit(--no-ff) 의 HEAD~1..HEAD 가 빈 결과로 떨어지던 문제 해결:
+                    //   - merge commit 이면 두 parent 사이 diff (PR 전체 변경 포착)
+                    //   - 일반 commit / squash merge 면 HEAD~1 vs HEAD
+                    //   - shallow clone 자동 unshallow (옛 commit 들 fetch)
+                    //   - HEAD~1 없는 경우(첫 커밋 등) 전체 빌드로 폴백
                     def diff = sh(
-                        script: "git diff --name-only HEAD~1 HEAD 2>/dev/null || echo 'ALL'",
+                        script: '''
+                            set +e
+
+                            # shallow clone 이면 unshallow (옛 commit / 두 번째 parent fetch 보장)
+                            if [ -f .git/shallow ]; then
+                                echo "▶ shallow clone 감지 — unshallow 시도" >&2
+                                git fetch --unshallow 2>/dev/null || git fetch --depth=100 2>/dev/null
+                            fi
+
+                            # HEAD 의 parent 갯수로 merge commit 판별 (2개 이상이면 merge)
+                            PARENTS=$(git cat-file -p HEAD | grep -c '^parent ')
+
+                            if [ "$PARENTS" -gt 1 ]; then
+                                echo "▶ merge commit (parents=$PARENTS) — HEAD^1 vs HEAD^2 diff" >&2
+                                git diff --name-only HEAD^1 HEAD^2
+                            elif git rev-parse HEAD~1 >/dev/null 2>&1; then
+                                echo "▶ 일반 commit — HEAD~1 vs HEAD diff" >&2
+                                git diff --name-only HEAD~1 HEAD
+                            else
+                                echo "▶ HEAD~1 없음 — ALL 폴백" >&2
+                                echo "ALL"
+                            fi
+                        ''',
                         returnStdout: true
                     ).trim()
 
+                    echo "▶ 감지된 변경 파일:\n${diff}"
+                    echo "▶ diff 길이: ${diff.length()}, 빈 문자열?: ${diff.isEmpty()}"
+                    echo "▶ contains 검증 — infra/: ${diff.contains('infra/')} | backend/: ${diff.contains('backend/')} | frontend/: ${diff.contains('frontend/')} | ai_agent/: ${diff.contains('ai_agent/')}"
+
                     // infra/ 변경 시 yaml·Jenkinsfile도 배포에 영향을 주므로 전체 재빌드
                     def forceAll = (diff == 'ALL') || diff.contains('infra/')
+                    echo "▶ forceAll: ${forceAll}"
 
-                    env.BUILD_BACKEND  = (forceAll || diff.contains('backend/'))  ? 'true' : 'false'
-                    env.BUILD_FRONTEND = (forceAll || diff.contains('frontend/')) ? 'true' : 'false'
-                    env.BUILD_AI       = (forceAll || diff.contains('ai_agent/')) ? 'true' : 'false'
+                    env.BUILD_BACKEND  = (forceAll || diff.contains('backend/'))         ? 'true' : 'false'
+                    env.BUILD_FRONTEND = (forceAll || diff.contains('frontend/'))        ? 'true' : 'false'
+                    env.BUILD_AI       = (forceAll || diff.contains('ai_agent/'))        ? 'true' : 'false'
+                    env.BUILD_ANALYSIS = (forceAll || diff.contains('analysis_server/')) ? 'true' : 'false'
 
-                    echo "▶ 빌드 대상 — backend:${env.BUILD_BACKEND} | frontend:${env.BUILD_FRONTEND} | ai-agent:${env.BUILD_AI}"
+                    echo "▶ 빌드 대상 — backend:${env.BUILD_BACKEND} | frontend:${env.BUILD_FRONTEND} | ai-agent:${env.BUILD_AI} | analysis:${env.BUILD_ANALYSIS}"
                 }
             }
         }
@@ -78,10 +111,11 @@ pipeline {
                 script {
                     // ECR URI를 Credentials에서 가져옴
                     withCredentials([
-                        string(credentialsId: "${REGISTRY_BE_ID}", variable: 'FULL_URI_BE'),
-                        string(credentialsId: "${REGISTRY_FE_ID}", variable: 'FULL_URI_FE'),
-                        string(credentialsId: "${REGISTRY_AI_ID}", variable: 'FULL_URI_AI'),
-                        string(credentialsId: 'VITE_KAKAO_CLIENT_ID', variable: 'VITE_KAKAO_CLIENT_ID')
+                        string(credentialsId: "${REGISTRY_BE_ID}",       variable: 'FULL_URI_BE'),
+                        string(credentialsId: "${REGISTRY_FE_ID}",       variable: 'FULL_URI_FE'),
+                        string(credentialsId: "${REGISTRY_AI_ID}",       variable: 'FULL_URI_AI'),
+                        string(credentialsId: "${REGISTRY_ANALYSIS_ID}", variable: 'FULL_URI_ANALYSIS'),
+                        string(credentialsId: 'VITE_KAKAO_CLIENT_ID',    variable: 'VITE_KAKAO_CLIENT_ID')
                     ]) {
                         // ECR 호스트(레지스트리 도메인)만 추출 — 마지막 '/' 이전 문자열
                         def beRegistry = FULL_URI_BE.substring(0, FULL_URI_BE.lastIndexOf('/'))
@@ -179,6 +213,31 @@ ${log}
                             } else {
                                 echo "AI Agent 변경 없음 — 빌드 스킵 (현재 배포 이미지 유지)"
                             }
+
+                            // ── 2-4. Analysis Server 이미지 빌드 및 푸시 ─────
+                            if (env.BUILD_ANALYSIS == 'true') {
+                                try {
+                                    env.FAILED_STAGE = "2-4. Analysis Server 빌드 및 푸시"
+                                    sh '''
+                                    {
+                                      docker build -t "$FULL_URI_ANALYSIS:$BUILD_NUMBER" -t "$FULL_URI_ANALYSIS:latest" analysis_server
+                                      docker push "$FULL_URI_ANALYSIS:$BUILD_NUMBER"
+                                      docker push "$FULL_URI_ANALYSIS:latest"
+                                    } 2> analysis_server/analysis_err.log
+                                    '''
+                                } catch (Exception e) {
+                                    def log = sh(
+                                        script: '[ -f analysis_server/analysis_err.log ] && tail -n 15 analysis_server/analysis_err.log || echo "로그 없음"',
+                                        returnStdout: true
+                                    ).trim()
+                                    env.ERROR_DETAILS = """📦 **Docker Build/Push Fail (Analysis Server)**
+${log}
+"""
+                                    error "Analysis Server Build/Push Failed"
+                                }
+                            } else {
+                                echo "Analysis Server 변경 없음 — 빌드 스킵 (현재 배포 이미지 유지)"
+                            }
                         }
                     }
                 }
@@ -223,6 +282,7 @@ ${log}
                 if (env.BUILD_BACKEND  == 'true') builtServices.add('BE')
                 if (env.BUILD_FRONTEND == 'true') builtServices.add('FE')
                 if (env.BUILD_AI       == 'true') builtServices.add('AI')
+                if (env.BUILD_ANALYSIS == 'true') builtServices.add('ANALYSIS')
                 def builtLabel = builtServices ? builtServices.join('/') : '변경 없음'
 
                 def stageFlow = ""
@@ -301,6 +361,8 @@ def deployToCluster(String configId, String clusterName) {
                 string(credentialsId: "${REGISTRY_FE_ID}", variable: 'FULL_URI_FE'),
                 // ECR AI Agent 이미지 URI
                 string(credentialsId: "${REGISTRY_AI_ID}", variable: 'FULL_URI_AI'),
+                // ECR Analysis Server 이미지 URI
+                string(credentialsId: "${REGISTRY_ANALYSIS_ID}", variable: 'FULL_URI_ANALYSIS'),
                 // AWS IAM 자격증명 — $class 참조 방식으로 AmazonWebServicesCredentialsBinding 사용
                 // (표준 Jenkins AWS Credentials Plugin 문법)
                 [$class          : 'AmazonWebServicesCredentialsBinding',
@@ -312,7 +374,8 @@ def deployToCluster(String configId, String clusterName) {
                 withEnv([
                     "BUILD_BACKEND=${env.BUILD_BACKEND}",
                     "BUILD_FRONTEND=${env.BUILD_FRONTEND}",
-                    "BUILD_AI=${env.BUILD_AI}"
+                    "BUILD_AI=${env.BUILD_AI}",
+                    "BUILD_ANALYSIS=${env.BUILD_ANALYSIS}"
                 ]) {
                     sh '''
                     {
@@ -385,14 +448,30 @@ def deployToCluster(String configId, String clusterName) {
                             fi
                         fi
 
-                        echo "▶ 배포 이미지 — BE: $BE_IMAGE | FE: $FE_IMAGE | AI: $AI_IMAGE"
+                        if [ "$BUILD_ANALYSIS" = "true" ]; then
+                            ANALYSIS_IMAGE="$FULL_URI_ANALYSIS:$BUILD_NUMBER"
+                        else
+                            # 5개 워크로드가 같은 이미지를 공유하므로 engine 의 이미지를 기준으로 추적
+                            if kubectl --kubeconfig=$KUBECONFIG get deployment modu-analysis-engine -n modu-apps >/dev/null 2>&1; then
+                                ANALYSIS_IMAGE=$(kubectl --kubeconfig=$KUBECONFIG get deployment modu-analysis-engine \
+                                    -n modu-apps \
+                                    -o jsonpath='{.spec.template.spec.containers[0].image}')
+                                [ -z "$ANALYSIS_IMAGE" ] && { echo "❌ modu-analysis-engine 이미지 값이 비어있습니다."; exit 1; }
+                            else
+                                echo "⚠️ modu-analysis-engine Deployment 없음 — :latest 폴백"
+                                ANALYSIS_IMAGE="$FULL_URI_ANALYSIS:latest"
+                            fi
+                        fi
+
+                        echo "▶ 배포 이미지 — BE: $BE_IMAGE | FE: $FE_IMAGE | AI: $AI_IMAGE | ANALYSIS: $ANALYSIS_IMAGE"
 
                         # ── Step 5. 이미지 태그 치환 및 배포 ─────────────────
                         DEPLOY_DIR=$(mktemp -d)
                         cp $K8S_DIR/*.yaml "$DEPLOY_DIR/"
-                        sed -i "s|BACKEND_IMAGE|${BE_IMAGE}|g"   "$DEPLOY_DIR/backend.yaml"
-                        sed -i "s|FRONTEND_IMAGE|${FE_IMAGE}|g"  "$DEPLOY_DIR/frontend.yaml"
-                        sed -i "s|AIAGENT_IMAGE|${AI_IMAGE}|g"   "$DEPLOY_DIR/ai-agent.yaml"
+                        sed -i "s|BACKEND_IMAGE|${BE_IMAGE}|g"      "$DEPLOY_DIR/backend.yaml"
+                        sed -i "s|FRONTEND_IMAGE|${FE_IMAGE}|g"     "$DEPLOY_DIR/frontend.yaml"
+                        sed -i "s|AIAGENT_IMAGE|${AI_IMAGE}|g"      "$DEPLOY_DIR/ai-agent.yaml"
+                        sed -i "s|ANALYSIS_IMAGE|${ANALYSIS_IMAGE}|g" "$DEPLOY_DIR/analysis-server.yaml"
                         kubectl --kubeconfig=$KUBECONFIG apply -f "$DEPLOY_DIR/"
                         rm -rf "$DEPLOY_DIR"
 
