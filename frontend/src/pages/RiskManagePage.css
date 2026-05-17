@@ -61,6 +61,25 @@
 .control-label {
   font-weight: 700;
   font-size: 1.05rem;
+  color: #ddd;
+}
+
+/* DashboardPage AI 자동매매 토글과 동일 스타일 — 통일감 */
+.status-badge {
+  font-size: 1rem;
+  font-weight: 700;
+  padding: 0.4rem 0.8rem;
+  border-radius: 8px;
+}
+
+.status-badge.active {
+  background: rgba(132, 204, 22, 0.15);
+  color: #84cc16;
+}
+
+.status-badge.inactive {
+  background: rgba(255, 255, 255, 0.1);
+  color: #888;
 }
 
 /* 토글 스위치 */

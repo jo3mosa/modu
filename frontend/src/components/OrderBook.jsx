@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { toast } from 'sonner';
 import { placeOrder, getPendingOrders, updateOrder, getBuyingPower } from '../api/order';
 import { useOrderSSE } from '../hooks/useOrderSSE';
 import './OrderBook.css';
@@ -123,7 +124,9 @@ export default function OrderBook({ stockCode }) {
         if (prevId === String(latestEvent.orderId)) {
           if (submitTimeoutRef.current) clearTimeout(submitTimeoutRef.current);
           setSubmittingOrder(false);
-          alert(`주문 접수 완료 (접수번호: ${latestEvent.kisOrderNo || latestEvent.orderId})`);
+          toast.success('주문이 접수되었습니다', {
+            description: `접수번호: ${latestEvent.kisOrderNo || latestEvent.orderId}`,
+          });
           fetchPending();
           return null;
         }
@@ -136,7 +139,9 @@ export default function OrderBook({ stockCode }) {
         if (prevId === String(latestEvent.orderId)) {
           if (submitTimeoutRef.current) clearTimeout(submitTimeoutRef.current);
           setSubmittingOrder(false);
-          alert(`주문 실패: ${latestEvent.message || '잔고 부족 등의 사유로 거절되었습니다.'}`);
+          toast.error('주문 실패', {
+            description: latestEvent.message || '잔고 부족 등의 사유로 거절되었습니다.',
+          });
           return null;
         }
         return prevId;
@@ -183,16 +188,51 @@ export default function OrderBook({ stockCode }) {
   const handleOrder = async () => {
     if (submittingOrder) return;
     if (!stockCode) {
-      alert('종목이 선택되지 않았습니다.');
+      toast.error('종목이 선택되지 않았습니다.');
       return;
     }
     if (orderMethod === 'LIMIT' && (!Number.isFinite(Number(price)) || Number(price) <= 0)) {
-      alert('단가를 입력해 주세요.');
+      toast.error('단가를 입력해 주세요.');
       return;
     }
     if (!Number.isFinite(Number(quantity)) || Number(quantity) < 1) {
-      alert('수량은 1 이상이어야 합니다.');
+      toast.error('수량은 1 이상이어야 합니다.');
       return;
+    }
+
+    // 사전 차단: 백엔드/KIS 거절 전 클라이언트에서 즉시 막아 사용자 피드백 명확화
+    // (buyingPower는 1초 debounce로 갱신되므로 직전에 side/stockCode 빠르게 전환한 경우 stale 가능 — 그땐 백엔드 검증으로 fallback)
+    if (buyingPower) {
+      const qty = Number(quantity);
+      if (orderType === 'BUY') {
+        if (orderMethod === 'LIMIT') {
+          const px = Number(price);
+          if (px > 0 && buyingPower.maxBuyAmount != null) {
+            const total = px * qty;
+            if (total > buyingPower.maxBuyAmount) {
+              toast.error('주문 가능 금액을 초과합니다', {
+                description: `주문 금액: ${total.toLocaleString()}원 / 가능 금액: ${buyingPower.maxBuyAmount.toLocaleString()}원`,
+              });
+              return;
+            }
+          }
+        } else {
+          // MARKET: 단가 미정이라 수량으로만 검증
+          if (buyingPower.maxBuyQuantity != null && qty > buyingPower.maxBuyQuantity) {
+            toast.error('주문 가능 수량을 초과합니다', {
+              description: `주문 수량: ${qty.toLocaleString()}주 / 가능 수량: ${buyingPower.maxBuyQuantity.toLocaleString()}주`,
+            });
+            return;
+          }
+        }
+      } else if (orderType === 'SELL') {
+        if (buyingPower.maxSellQuantity != null && qty > buyingPower.maxSellQuantity) {
+          toast.error('보유 수량을 초과합니다', {
+            description: `주문 수량: ${qty.toLocaleString()}주 / 보유 수량: ${buyingPower.maxSellQuantity.toLocaleString()}주`,
+          });
+          return;
+        }
+      }
     }
 
     setSubmittingOrder(true);
@@ -212,7 +252,9 @@ export default function OrderBook({ stockCode }) {
       // 하위 호환성 분기 로직
       // 백엔드 응답에 kisOrderNo가 있거나 status가 PENDING이 아니면 기존(동기) 모드
       if (result.kisOrderNo || result.status !== 'PENDING') {
-        alert(`주문이 접수되었습니다. (주문번호: ${result.orderId}, 상태: ${result.status})`);
+        toast.success('주문이 접수되었습니다', {
+          description: `주문번호: ${result.orderId}`,
+        });
         fetchPending();
         fetchBuyingPower();
         setSubmittingOrder(false); // 즉시 해제
@@ -225,7 +267,9 @@ export default function OrderBook({ stockCode }) {
           setPendingSubmitOrderId((prevId) => {
             if (prevId === String(result.orderId)) {
               setSubmittingOrder(false);
-              alert('주문 결과 확인이 지연되고 있습니다. 미체결 내역을 확인해주세요.');
+              toast.warning('주문 결과 확인 지연', {
+                description: '미체결 내역을 확인해주세요.',
+              });
               fetchPending(); // 늦게라도 처리됐을 수 있으니 1회 갱신
               return null;
             }
@@ -235,7 +279,7 @@ export default function OrderBook({ stockCode }) {
       }
     } catch (error) {
       console.error('주문 실패:', error);
-      alert(error.message || '주문에 실패했습니다.');
+      toast.error(error.message || '주문에 실패했습니다.');
       setSubmittingOrder(false); // 에러 시 즉시 해제
     }
   };
@@ -244,7 +288,7 @@ export default function OrderBook({ stockCode }) {
   // DB에 orderId가 있는 주문만 취소 가능 (KIS 외부 주문은 orderId가 null)
   const handleCancelOrder = async (order) => {
     if (!order?.orderId) {
-      alert('시스템에 기록된 주문만 취소할 수 있습니다.');
+      toast.error('시스템에 기록된 주문만 취소할 수 있습니다.');
       return;
     }
     if (canceling[order.orderId]) return;
@@ -253,12 +297,12 @@ export default function OrderBook({ stockCode }) {
     setCanceling((prev) => ({ ...prev, [order.orderId]: true }));
     try {
       await updateOrder(order.orderId, { action: 'CANCEL' });
-      alert('주문이 취소되었습니다.');
+      toast.success('주문이 취소되었습니다.');
       fetchPending();
       fetchBuyingPower();
     } catch (error) {
       console.error('주문 취소 실패:', error);
-      alert(error.message || '주문 취소에 실패했습니다.');
+      toast.error(error.message || '주문 취소에 실패했습니다.');
     } finally {
       setCanceling((prev) => {
         const next = { ...prev };
@@ -289,7 +333,7 @@ export default function OrderBook({ stockCode }) {
     const parsedPrice = Number(newPrice);
     const parsedQty = Number(newQuantity);
     if (parsedPrice < 1 || parsedQty < 1) {
-      alert('단가와 수량은 1 이상이어야 합니다.');
+      toast.error('단가와 수량은 1 이상이어야 합니다.');
       return;
     }
 
@@ -300,13 +344,13 @@ export default function OrderBook({ stockCode }) {
         newPrice: parsedPrice,
         newQuantity: parsedQty,
       });
-      alert('주문이 정정되었습니다.');
+      toast.success('주문이 정정되었습니다.');
       setModifyingOrder(null);
       fetchPending();
       fetchBuyingPower();
     } catch (error) {
       console.error('주문 정정 실패:', error);
-      alert(error.message || '주문 정정에 실패했습니다.');
+      toast.error(error.message || '주문 정정에 실패했습니다.');
     } finally {
       setModifying((prev) => {
         const next = { ...prev };
