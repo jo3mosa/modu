@@ -6,6 +6,9 @@ import com.modu.backend.domain.ai.entity.AiExecutionStatus;
 import com.modu.backend.domain.ai.entity.AiJudgment;
 import com.modu.backend.domain.ai.exception.AiErrorCode;
 import com.modu.backend.domain.ai.repository.AiJudgmentRepository;
+import com.modu.backend.domain.strategy.entity.AutoTradeSettings;
+import com.modu.backend.domain.strategy.entity.AutoTradeStatus;
+import com.modu.backend.domain.strategy.repository.AutoTradeSettingsRepository;
 import com.modu.backend.domain.trading.entity.Order;
 import com.modu.backend.domain.trading.entity.OrderSide;
 import com.modu.backend.domain.trading.entity.OrderSource;
@@ -53,6 +56,8 @@ class SignalHandlerServiceTest {
     @Mock AiJudgmentRepository aiJudgmentRepository;
     @Mock TradingRuleRepository tradingRuleRepository;
     @Mock PositionThresholdRepository positionThresholdRepository;
+    @Mock AutoTradeSettingsRepository autoTradeSettingsRepository;
+    @Mock PortfolioCheckService portfolioCheckService;
     @Mock TradeOrderProducer tradeOrderProducer;
 
     @Spy ObjectMapper objectMapper = new ObjectMapper();
@@ -78,6 +83,15 @@ class SignalHandlerServiceTest {
             ReflectionTestUtils.setField(saved, "id", 7L);
             return saved;
         });
+        // 기본 — 자동매매 ACTIVE
+        AutoTradeSettings activeSettings = AutoTradeSettings.builder()
+                .userId(USER_ID)
+                .autoTradeStatus(AutoTradeStatus.ACTIVE)
+                .build();
+        when(autoTradeSettingsRepository.findById(USER_ID)).thenReturn(Optional.of(activeSettings));
+        // 기본 — 잔고/보유 충분
+        when(portfolioCheckService.hasSufficientCash(any(), anyLong())).thenReturn(true);
+        when(portfolioCheckService.hasSufficientHolding(any(), anyString(), anyLong())).thenReturn(true);
     }
 
     // ───────────────────────────────────────────────────────────────────
@@ -147,6 +161,89 @@ class SignalHandlerServiceTest {
 
         verify(orderRepository).saveAndFlush(any(Order.class));
         verify(tradeOrderProducer).publishOrderSubmitted(any());
+    }
+
+    // ───────────────────────────────────────────────────────────────────
+    // AutoTradeStatus / 사전 잔고 검증 (S14P31B106-292)
+    // ───────────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("AutoTradeStatus=INACTIVE: BLOCKED 로 INSERT, Order/Kafka 없음")
+    void inactiveBlocks() {
+        AutoTradeSettings inactive = AutoTradeSettings.builder()
+                .userId(USER_ID).autoTradeStatus(AutoTradeStatus.INACTIVE).build();
+        when(autoTradeSettingsRepository.findById(USER_ID)).thenReturn(Optional.of(inactive));
+        AiDecisionMessage msg = buildMessage("completed", "trade", "buy", 700_000L, 70_000.0, 65_000.0, "low");
+
+        service.handle(msg);
+
+        ArgumentCaptor<AiJudgment> captor = ArgumentCaptor.forClass(AiJudgment.class);
+        verify(aiJudgmentRepository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().getExecutionStatus()).isEqualTo(AiExecutionStatus.BLOCKED);
+        verify(orderRepository, never()).saveAndFlush(any());
+        verify(tradeOrderProducer, never()).publishOrderSubmitted(any());
+    }
+
+    @Test
+    @DisplayName("AutoTradeSettings row 없음 (신규 사용자): BLOCKED")
+    void autoTradeSettingsAbsentBlocks() {
+        when(autoTradeSettingsRepository.findById(USER_ID)).thenReturn(Optional.empty());
+        AiDecisionMessage msg = buildMessage("completed", "trade", "buy", 700_000L, 70_000.0, 65_000.0, "low");
+
+        service.handle(msg);
+
+        ArgumentCaptor<AiJudgment> captor = ArgumentCaptor.forClass(AiJudgment.class);
+        verify(aiJudgmentRepository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().getExecutionStatus()).isEqualTo(AiExecutionStatus.BLOCKED);
+        verify(orderRepository, never()).saveAndFlush(any());
+        verify(tradeOrderProducer, never()).publishOrderSubmitted(any());
+    }
+
+    @Test
+    @DisplayName("AutoTradeStatus=KILL_SWITCHED: BLOCKED")
+    void killSwitchedBlocks() {
+        AutoTradeSettings ks = AutoTradeSettings.builder()
+                .userId(USER_ID).autoTradeStatus(AutoTradeStatus.KILL_SWITCHED).build();
+        when(autoTradeSettingsRepository.findById(USER_ID)).thenReturn(Optional.of(ks));
+        AiDecisionMessage msg = buildMessage("completed", "trade", "buy", 700_000L, 70_000.0, 65_000.0, "low");
+
+        service.handle(msg);
+
+        ArgumentCaptor<AiJudgment> captor = ArgumentCaptor.forClass(AiJudgment.class);
+        verify(aiJudgmentRepository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().getExecutionStatus()).isEqualTo(AiExecutionStatus.BLOCKED);
+        verify(orderRepository, never()).saveAndFlush(any());
+        verify(tradeOrderProducer, never()).publishOrderSubmitted(any());
+    }
+
+    @Test
+    @DisplayName("BUY 잔고 부족: BLOCKED")
+    void buyInsufficientCashBlocks() {
+        when(portfolioCheckService.hasSufficientCash(USER_ID, 700_000L)).thenReturn(false);
+        AiDecisionMessage msg = buildMessage("completed", "trade", "buy", 700_000L, 70_000.0, 65_000.0, "low");
+
+        service.handle(msg);
+
+        ArgumentCaptor<AiJudgment> captor = ArgumentCaptor.forClass(AiJudgment.class);
+        verify(aiJudgmentRepository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().getExecutionStatus()).isEqualTo(AiExecutionStatus.BLOCKED);
+        verify(orderRepository, never()).saveAndFlush(any());
+        verify(tradeOrderProducer, never()).publishOrderSubmitted(any());
+    }
+
+    @Test
+    @DisplayName("SELL 보유 부족: BLOCKED")
+    void sellInsufficientHoldingBlocks() {
+        when(portfolioCheckService.hasSufficientHolding(eq(USER_ID), eq(STOCK), anyLong())).thenReturn(false);
+        AiDecisionMessage msg = buildMessage("completed", "trade", "sell", 700_000L, 70_000.0, 65_000.0, "low");
+
+        service.handle(msg);
+
+        ArgumentCaptor<AiJudgment> captor = ArgumentCaptor.forClass(AiJudgment.class);
+        verify(aiJudgmentRepository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().getExecutionStatus()).isEqualTo(AiExecutionStatus.BLOCKED);
+        verify(orderRepository, never()).saveAndFlush(any());
+        verify(tradeOrderProducer, never()).publishOrderSubmitted(any());
     }
 
     // ───────────────────────────────────────────────────────────────────

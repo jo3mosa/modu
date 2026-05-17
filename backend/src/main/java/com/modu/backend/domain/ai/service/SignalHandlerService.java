@@ -6,6 +6,8 @@ import com.modu.backend.domain.ai.entity.AiExecutionStatus;
 import com.modu.backend.domain.ai.entity.AiJudgment;
 import com.modu.backend.domain.ai.exception.AiErrorCode;
 import com.modu.backend.domain.ai.repository.AiJudgmentRepository;
+import com.modu.backend.domain.strategy.entity.AutoTradeStatus;
+import com.modu.backend.domain.strategy.repository.AutoTradeSettingsRepository;
 import com.modu.backend.domain.trading.entity.Order;
 import com.modu.backend.domain.trading.entity.OrderSide;
 import com.modu.backend.domain.trading.entity.OrderSource;
@@ -71,6 +73,8 @@ public class SignalHandlerService {
     private final AiJudgmentRepository aiJudgmentRepository;
     private final TradingRuleRepository tradingRuleRepository;
     private final PositionThresholdRepository positionThresholdRepository;
+    private final AutoTradeSettingsRepository autoTradeSettingsRepository;
+    private final PortfolioCheckService portfolioCheckService;
     private final TradeOrderProducer tradeOrderProducer;
     private final ObjectMapper objectMapper;
 
@@ -125,6 +129,12 @@ public class SignalHandlerService {
     // ───────────────────────────────────────────────────────────────────
 
     private AiExecutionStatus resolveExecutionStatus(AiDecisionMessage m) {
+        // 0. 자동매매 상태 우선 확인 — ACTIVE 아니면 BLOCKED (사용자 OFF / Kill Switch / row 없음 모두 차단)
+        //    AI 가 Redis 보고 사전 필터링하나 race 가드 차원에서 BE 도 한 번 더 확인
+        if (!isAutoTradeActive(m.userId())) {
+            return AiExecutionStatus.BLOCKED;
+        }
+
         String flow = m.flowStatus();
 
         if ("blocked".equalsIgnoreCase(flow) || "failed".equalsIgnoreCase(flow)) {
@@ -158,7 +168,52 @@ public class SignalHandlerService {
             return AiExecutionStatus.APPROVAL_REQUIRED;
         }
 
+        // 사전 잔고/보유 검증 (READY 진입 직전) — 실패 시 BLOCKED
+        if (!hasSufficientResource(m, side, fd)) {
+            return AiExecutionStatus.BLOCKED;
+        }
+
         return AiExecutionStatus.READY;
+    }
+
+    /**
+     * 자동매매 상태 = ACTIVE 인지 확인. AutoTradeSettings row 없으면 false (신규 사용자 보호)
+     */
+    private boolean isAutoTradeActive(Long userId) {
+        return autoTradeSettingsRepository.findById(userId)
+                .map(s -> s.getAutoTradeStatus() == AutoTradeStatus.ACTIVE)
+                .orElse(false);
+    }
+
+    /**
+     * 사전 잔고/보유 검증 — Redis snapshot 또는 KIS fallback
+     *  BUY  : cash_balance >= order_amount
+     *  SELL : holdings 의 stock_code quantity >= (order_amount / target_price)
+     *
+     * 자료 조회 실패 시 PortfolioCheckService 가 true 반환 (KIS placeOrder 단계 최종 검증에 위임).
+     *
+     * [publishOrder 검증과 일치]
+     * publishOrder 가 INVALID_ORDER_PARAMS 로 거절하는 케이스 (orderAmount/targetPrice/quantity ≤ 0)는
+     * 여기서도 false 로 끊어 BLOCKED 분기시킴 — 그렇지 않으면 READY 진입 후 publishOrder 가 ApiException
+     * 던져 tx 롤백 + 메시지 재시도 무한 루프 가능.
+     */
+    private boolean hasSufficientResource(AiDecisionMessage m, String side, AiDecisionMessage.FinalDecision fd) {
+        Long orderAmount = fd.orderAmount();
+        if (orderAmount == null || orderAmount <= 0) {
+            return false;
+        }
+        if ("buy".equalsIgnoreCase(side)) {
+            return portfolioCheckService.hasSufficientCash(m.userId(), orderAmount);
+        }
+        // SELL — publishOrder 의 quantity 계산식과 동일 (orderAmount / round(targetPrice))
+        if (fd.targetPrice() == null || fd.targetPrice() <= 0) {
+            return false;
+        }
+        long limitPrice = Math.round(fd.targetPrice());
+        if (limitPrice <= 0) return false;
+        long quantity = orderAmount / limitPrice;
+        if (quantity <= 0) return false;
+        return portfolioCheckService.hasSufficientHolding(m.userId(), m.stockCode(), quantity);
     }
 
     private boolean exceedsDailyBuyLimit(Long userId, long orderAmount) {
@@ -313,6 +368,11 @@ public class SignalHandlerService {
                 .sourceEventId(m.sourceEventId())
                 .executionStatus(status)
                 .build();
+
+        // APPROVAL_REQUIRED 진입 시 5분 만료 시각 세팅 (S14P31B106-292)
+        if (status == AiExecutionStatus.APPROVAL_REQUIRED) {
+            judgment.setApprovalExpiresAt(OffsetDateTime.now().plusMinutes(5));
+        }
 
         aiJudgmentRepository.saveAndFlush(judgment);
         return judgment;
