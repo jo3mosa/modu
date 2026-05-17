@@ -1,8 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Search, Bell } from 'lucide-react';
+import { toast } from 'sonner';
 import { getStocks } from '../api/market';
 import { useOrderSSE } from '../hooks/useOrderSSE';
+import { useNotifications, NOTIFICATION_TYPE_META } from '../hooks/useNotifications';
+import { usePendingDecisions } from '../hooks/usePendingDecisions';
+import PendingDecisionsModal from '../components/PendingDecisionsModal';
 import './MainLayout.css';
 
 export default function MainLayout() {
@@ -15,15 +19,22 @@ export default function MainLayout() {
   const searchRef = useRef(null);
   const debounceRef = useRef(null);
 
-  // 알림 상태
+  // 알림 팝업 / 승인 모달 토글
   const [isAlarmOpen, setIsAlarmOpen] = useState(false);
-  const [notifications, setNotifications] = useState([]);
+  const [isPendingModalOpen, setIsPendingModalOpen] = useState(false);
   const alarmRef = useRef(null);
-  const unreadCount = notifications.filter(n => !n.isRead).length;
+
+  // 전역 알림 + 승인 대기 — Provider에서 제공
+  const { notifications, unreadCount, addNotification, markAllAsRead } = useNotifications();
+  const { pending } = usePendingDecisions();
+  const pendingCount = pending.length;
+  // Bell 뱃지 — 안 읽은 알림 + 승인 대기 합산 (사용자 인지 영역 통합)
+  const bellBadgeCount = unreadCount + pendingCount;
 
   const menuItems = [
     { path: '/home', label: '대시보드' },
     { path: '/trading', label: '트레이딩 룸' },
+    { path: '/agent-meeting', label: '에이전트 회의실' },
     { path: '/report', label: '리포트' },
     { path: '/risk-manage', label: '리스크 관리' },
     { path: '/mypage', label: '마이페이지' },
@@ -31,21 +42,22 @@ export default function MainLayout() {
 
   const { latestEvent } = useOrderSSE();
 
-  // 전역 체결 알림 수신 (ORDER_EXECUTED)
+  // 전역 체결 알림 수신 (ORDER_EXECUTED) — 토스트 + 알림 목록(EXECUTED 타입) 추가
   useEffect(() => {
     if (!latestEvent) return;
     if (latestEvent.type === 'ORDER_EXECUTED') {
-      const newNoti = {
-        id: Date.now(),
-        message: `[체결] ${latestEvent.stockCode || '주문'} 체결 완료! (주문번호: ${latestEvent.kisOrderNo})`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        isRead: false
-      };
-      setNotifications(prev => [newNoti, ...prev]);
-      // 추후 전역 Toast UI 적용
-      alert(`[체결 알림] ${latestEvent.stockCode || '주문'} 체결 완료! (주문번호: ${latestEvent.kisOrderNo})`);
+      const stock = latestEvent.stockCode || '주문';
+      const orderNo = latestEvent.kisOrderNo ?? '-';
+      addNotification({
+        type: 'EXECUTED',
+        message: `${stock} 체결 완료`,
+        description: `주문번호: ${orderNo}`,
+      });
+      toast.success(`${stock} 체결 완료`, {
+        description: `주문번호: ${orderNo}`,
+      });
     }
-  }, [latestEvent]);
+  }, [latestEvent, addNotification]);
 
   // 검색어 변경 시 API 호출
   useEffect(() => {
@@ -90,14 +102,29 @@ export default function MainLayout() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isAlarmOpen]);
 
-  const handleReadAll = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+  const handleReadAll = () => markAllAsRead();
+
+  const handleOpenPendingModal = () => {
+    setIsPendingModalOpen(true);
+    setIsAlarmOpen(false); // 모달 열면 팝업은 자동 닫기
   };
 
   const handleSelect = (stock) => {
     setQuery('');
     setShowDropdown(false);
     navigate(`/trading?stock=${stock.stockCode}&name=${encodeURIComponent(stock.stockName)}`);
+  };
+
+  // 알림 timestamp(ISO) → 상대 시간/시각 표시
+  const formatNotiTime = (iso) => {
+    const t = new Date(iso).getTime();
+    if (!Number.isFinite(t)) return '';
+    const diffSec = Math.floor((Date.now() - t) / 1000);
+    if (diffSec < 60) return '방금 전';
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)}분 전`;
+    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}시간 전`;
+    const d = new Date(iso);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   };
 
   return (
@@ -118,6 +145,7 @@ export default function MainLayout() {
             >
               {item.icon}
               <span>{item.label}</span>
+              {item.isNew && <span className="nav-new-badge">NEW</span>}
             </Link>
           ))}
         </nav>
@@ -158,7 +186,9 @@ export default function MainLayout() {
               onClick={() => setIsAlarmOpen(prev => !prev)}
             >
               <Bell size={20} />
-              {unreadCount > 0 && <span className="alarm-badge">{unreadCount}</span>}
+              {bellBadgeCount > 0 && (
+                <span className="alarm-badge">{bellBadgeCount > 99 ? '99+' : bellBadgeCount}</span>
+              )}
             </button>
 
             {isAlarmOpen && (
@@ -169,16 +199,45 @@ export default function MainLayout() {
                     <button className="alarm-read-all" onClick={handleReadAll}>모두 읽음</button>
                   )}
                 </div>
+
+                {/* AI 승인 대기가 있을 때만 상단 강조 영역 */}
+                {pendingCount > 0 && (
+                  <button
+                    type="button"
+                    className="alarm-pending-banner"
+                    onClick={handleOpenPendingModal}
+                  >
+                    <span className="alarm-pending-banner-icon">🚨</span>
+                    <span className="alarm-pending-banner-text">
+                      AI 승인 대기 <strong>{pendingCount}건</strong>
+                    </span>
+                    <span className="alarm-pending-banner-cta">확인 →</span>
+                  </button>
+                )}
+
                 <div className="alarm-popup-list">
                   {notifications.length === 0 ? (
                     <div className="alarm-empty">알림이 없습니다.</div>
                   ) : (
-                    notifications.map(n => (
-                      <div key={n.id} className={`alarm-item${n.isRead ? '' : ' unread'}`}>
-                        <div className="alarm-item-content">{n.message}</div>
-                        <div className="alarm-item-time">{n.timestamp}</div>
-                      </div>
-                    ))
+                    notifications.map(n => {
+                      const meta = NOTIFICATION_TYPE_META[n.type] ?? { label: '', icon: '🔔', color: '#888' };
+                      return (
+                        <div key={n.id} className={`alarm-item${n.isRead ? '' : ' unread'}`}>
+                          <div className="alarm-item-content">
+                            <span className="alarm-item-icon" style={{ color: meta.color }} aria-hidden="true">
+                              {meta.icon}
+                            </span>
+                            <div className="alarm-item-text">
+                              <div className="alarm-item-message">{n.message}</div>
+                              {n.description && (
+                                <div className="alarm-item-description">{n.description}</div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="alarm-item-time">{formatNotiTime(n.timestamp)}</div>
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -191,7 +250,10 @@ export default function MainLayout() {
         </div>
       </main>
 
-      {/* 3. AI 채팅 -> 나중에 */}
+      {/* AI 판단 승인 대기 모달 — Bell 팝업의 "확인" 버튼으로 토글 */}
+      {isPendingModalOpen && (
+        <PendingDecisionsModal onClose={() => setIsPendingModalOpen(false)} />
+      )}
     </div>
   );
 }

@@ -110,3 +110,47 @@
 .news-item:hover .news-link-icon {
   color: #84cc16;
 }
+
+/* 페이지네이션 — 뉴스 리스트 하단 */
+.news-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  padding: 0.7rem 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.news-page-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #ccc;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.news-page-btn:hover:not(:disabled) {
+  background: rgba(132, 204, 22, 0.12);
+  color: #84cc16;
+  border-color: rgba(132, 204, 22, 0.3);
+}
+
+.news-page-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.news-page-indicator {
+  font-size: 0.85rem;
+  color: #aaa;
+  font-variant-numeric: tabular-nums;
+  min-width: 50px;
+  text-align: center;
+}

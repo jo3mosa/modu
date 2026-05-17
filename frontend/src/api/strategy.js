@@ -142,3 +142,22 @@ export async function updateRules(payload) {
   });
   return response.data;
 }
+
+/**
+ * 자동매매 ON/OFF 전환
+ * PATCH /api/v1/strategies/me/status
+ *
+ * - isActive=true:  ACTIVE 전환 (KILL_SWITCHED 상태도 함께 해제)
+ * - isActive=false: INACTIVE 전환
+ * - 503 (errorCode: STRATEGY_*): KILL_SWITCHED 상태이거나 실패 — 호출부에서 사용자 알림
+ *
+ * @param {{ isActive: boolean }} payload
+ * @returns {Promise<{ isActive: boolean, updatedAt: string }>}
+ */
+export async function updateAutoTradeStatus(payload) {
+  const response = await apiClient('/strategies/me/status', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+  return response.data;
+}

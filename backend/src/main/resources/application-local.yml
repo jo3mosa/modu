@@ -32,7 +32,9 @@ spring:
       # 컬렉션 규모(수만 건) 기준 빌드 1초 미만, 이후 noop
       auto-index-creation: true
 
-# 로컬 디버깅 시 Position Monitor 폴링 SQL 노이즈 제거용 (기본 true 라 prod 영향 없음)
+# 로컬 디버깅 시 폴링 SQL 노이즈 제거용 (기본 true 라 prod 영향 없음)
 modu:
   position-monitor:
+    enabled: false
+  pending-judgment-expiry:
     enabled: false

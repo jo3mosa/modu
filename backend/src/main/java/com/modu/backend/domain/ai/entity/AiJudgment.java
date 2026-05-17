@@ -26,6 +26,7 @@ import java.util.Objects;
  *  - 기본 필드: V20260429... init 마이그레이션
  *  - 확장 필드 (key_signals 외 9개): V20260509205300 마이그레이션
  *  - decision_id / source_event_id / execution_status: V20260515103200 마이그레이션 (S14P31B106-263)
+ *  - approval_expires_at: V20260515174500 마이그레이션 (S14P31B106-292)
  */
 @Entity
 @Table(name = "ai_judgments")
@@ -114,6 +115,13 @@ public class AiJudgment {
     @Column(name = "execution_status", length = 20)
     private AiExecutionStatus executionStatus;
 
+    // ─────────────────────────────────────────────────────────────────────
+    // V20260515174500 (S14P31B106-292) 추가 컬럼
+    // ─────────────────────────────────────────────────────────────────────
+
+    @Column(name = "approval_expires_at")
+    private OffsetDateTime approvalExpiresAt;
+
     @Builder
     public AiJudgment(
             Long userId,
@@ -169,5 +177,38 @@ public class AiJudgment {
      */
     public void linkOrder(Long orderId) {
         this.orderId = orderId;
+    }
+
+    /**
+     * APPROVAL_REQUIRED 진입 시 만료 시각 설정 (S14P31B106-292)
+     */
+    public void setApprovalExpiresAt(OffsetDateTime expiresAt) {
+        this.approvalExpiresAt = expiresAt;
+    }
+
+    /**
+     * 사용자 승인 처리 — READY 로 전환 + order_id 연결 + 만료 시각 제거 (S14P31B106-292)
+     */
+    public void markApproved(Long orderId) {
+        this.executionStatus = AiExecutionStatus.READY;
+        this.orderId = orderId;
+        this.approvalExpiresAt = null;
+    }
+
+    /**
+     * 사용자 거부 처리 — REJECTED 로 전환 + 만료 시각 제거 (S14P31B106-292)
+     */
+    public void markRejected() {
+        this.executionStatus = AiExecutionStatus.REJECTED;
+        this.approvalExpiresAt = null;
+    }
+
+    /**
+     * 만료 처리 — EXPIRED 로 전환 + 만료 시각 제거 (S14P31B106-292)
+     * 스케줄러 (단계 9) 가 호출
+     */
+    public void markExpired() {
+        this.executionStatus = AiExecutionStatus.EXPIRED;
+        this.approvalExpiresAt = null;
     }
 }
