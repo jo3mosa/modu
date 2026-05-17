@@ -29,7 +29,9 @@ spring:
     mongodb:
       uri: mongodb://${MONGO_USERNAME:admin}:${MONGO_PASSWORD:localpassword}@${MONGO_HOST:localhost}:${MONGO_PORT:27017}/${MONGO_DB:modu_news}?authSource=admin
 
-# 로컬 디버깅 시 Position Monitor 폴링 SQL 노이즈 제거용 (기본 true 라 prod 영향 없음)
+# 로컬 디버깅 시 폴링 SQL 노이즈 제거용 (기본 true 라 prod 영향 없음)
 modu:
   position-monitor:
+    enabled: false
+  pending-judgment-expiry:
     enabled: false

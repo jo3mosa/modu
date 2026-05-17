@@ -1,8 +1,10 @@
 package com.modu.backend.domain.trading.kafka.consumer;
 
+import com.modu.backend.domain.strategy.service.KillSwitchService;
 import com.modu.backend.domain.trading.client.KisOrderClient;
 import com.modu.backend.domain.trading.entity.Order;
 import com.modu.backend.domain.trading.entity.OrderSide;
+import com.modu.backend.domain.trading.entity.OrderSource;
 import com.modu.backend.domain.trading.entity.OrderType;
 import com.modu.backend.domain.trading.repository.OrderRepository;
 import com.modu.backend.domain.trading.sse.OrderSseEmitterManager;
@@ -63,6 +65,7 @@ public class KisOrderConsumer {
     private final KisOrderClient kisOrderClient;
     private final AesGcmEncryptor encryptor;
     private final OrderSseEmitterManager sseEmitterManager;
+    private final KillSwitchService killSwitchService;
 
     @Transactional
     @KafkaListener(
@@ -112,11 +115,11 @@ public class KisOrderConsumer {
         } catch (IllegalStateException e) {
             // AesGcmEncryptor 가 복호화 실패 시 IllegalStateException 을 던짐 — ApiException 으로 변환해
             // handleFailure 경로로 보내 주문 상태/SSE 가 누락되지 않도록 처리.
-            handleFailure(order, userId, orderId, stockCode,
+            handleFailure(order, userId, orderId, stockCode, message.source(),
                     new ApiException(UserErrorCode.KIS_CREDENTIAL_DECRYPT_FAILED, e));
             return;
         } catch (ApiException e) {
-            handleFailure(order, userId, orderId, stockCode, e);
+            handleFailure(order, userId, orderId, stockCode, message.source(), e);
             return;
         }
 
@@ -126,16 +129,19 @@ public class KisOrderConsumer {
             result = kisApiCallTemplate.callWithTokenRetry(userId, appKey, appSecret,
                     token -> callKisPlaceOrder(message, credential, token, appKey, appSecret));
         } catch (ApiException e) {
-            handleFailure(order, userId, orderId, stockCode, e);
+            handleFailure(order, userId, orderId, stockCode, message.source(), e);
             return;
         }
 
-        // 5) 성공 처리 — order 갱신 + SSE ORDER_SUBMITTED
+        // 5) 성공 처리 — order 갱신 + SSE ORDER_SUBMITTED + Kill Switch 카운트 리셋(자동매매만)
         order.updateKisInfo(result.kisOrderNo(), result.kisOrgNo(), OffsetDateTime.now());
         log.info("[Consumer] KIS 주문 접수 완료 - userId: {}, orderId: {}, kisOrderNo: {}",
                 userId, orderId, result.kisOrderNo());
         sseEmitterManager.send(userId,
                 OrderSseEvent.submitted(String.valueOf(order.getId()), stockCode, result.kisOrderNo()));
+        if (isAutoTradeSource(message.source())) {
+            killSwitchService.recordSuccess(userId, stockCode);
+        }
     }
 
     /**
@@ -155,14 +161,51 @@ public class KisOrderConsumer {
     }
 
     /**
-     * 실패 공통 처리 — Order.reject + SSE ORDER_FAILED
+     * 실패 공통 처리 — Order.reject + SSE ORDER_FAILED + Kill Switch 카운트(자동매매 + KIS 거부 응답만)
      */
-    private void handleFailure(Order order, Long userId, String orderId, String stockCode, ApiException e) {
+    private void handleFailure(Order order, Long userId, String orderId, String stockCode,
+                               String source, ApiException e) {
         String reason = e.getErrorCode().getDefaultMessage();
         order.reject(reason);
         log.warn("[Consumer] 주문 REJECTED - userId: {}, orderId: {}, code: {}, reason: {}",
                 userId, orderId, e.getErrorCode().getCode(), reason);
         sseEmitterManager.send(userId,
                 OrderSseEvent.failed(String.valueOf(order.getId()), stockCode, reason));
+        if (isAutoTradeSource(source) && isKisRejectError(e)) {
+            killSwitchService.recordReject(userId, stockCode, reason);
+        }
+    }
+
+    /**
+     * 자동매매 주문 여부 — AI_DECISION / STOP_LOSS / TAKE_PROFIT 만 Kill Switch 카운트 대상
+     * 수동(MANUAL) 주문 거부는 사용자 의도 영역이라 Kill Switch 무관
+     */
+    private boolean isAutoTradeSource(String source) {
+        if (source == null) return false;
+        try {
+            OrderSource os = OrderSource.valueOf(source);
+            return os == OrderSource.AI_DECISION
+                    || os == OrderSource.STOP_LOSS
+                    || os == OrderSource.TAKE_PROFIT;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    /**
+     * KIS 거부 응답인지 판별 — KIS placeOrder 호출 결과로 받은 거부만 Kill Switch 카운트 대상.
+     *
+     * 다음은 카운트 제외:
+     *  - UserErrorCode.KIS_NOT_CONNECTED: 호출 전 단계 (사용자 미연동)
+     *  - UserErrorCode.KIS_CREDENTIAL_DECRYPT_FAILED: 호출 전 단계 (BE 인프라/암호화 키)
+     *  - UserErrorCode.KIS_TOKEN_INVALIDATED: 토큰 재발급 실패 (KIS 인증 인프라 일시 장애)
+     *
+     * 실제 KIS placeOrder 가 응답으로 거부한 케이스 (OrderErrorCode.* 또는 CommonErrorCode.EXTERNAL_API_ERROR)
+     * 만 카운트 → 인프라/설정 장애로 인한 Kill Switch 오발동 회피.
+     */
+    private boolean isKisRejectError(ApiException e) {
+        var errorCode = e.getErrorCode();
+        return errorCode instanceof com.modu.backend.domain.trading.exception.OrderErrorCode
+                || errorCode == com.modu.backend.global.error.CommonErrorCode.EXTERNAL_API_ERROR;
     }
 }

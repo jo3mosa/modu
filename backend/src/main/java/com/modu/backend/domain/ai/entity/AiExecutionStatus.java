@@ -7,9 +7,10 @@ package com.modu.backend.domain.ai.entity;
  *
  * READY              — BUY/SELL 결정 + 실행 가능, 주문 실행 대기
  * APPROVAL_REQUIRED  — BUY/SELL 결정 + 사용자 리스크 설정과 충돌 → 사용자 승인 대기
- *                      (판정 로직은 S14P31B106-292 에서 확정 — 현 PR 에선 enum/컬럼만 정의)
  * HOLD_ONLY          — AI 판단이 HOLD, 주문 없이 ai_judgments 기록만
- * BLOCKED            — BUY/SELL 결정 + 실행 불가 (잔고/한도/시장 마감 등)
+ * BLOCKED            — BUY/SELL 결정 + 실행 불가 (잔고/한도/Kill Switch/자동매매 OFF 등)
+ * REJECTED           — 사용자가 명시적으로 승인 거부 (S14P31B106-292)
+ * EXPIRED            — 5분 만료 후 스케줄러가 자동 전환 (S14P31B106-292)
  *
  * DB CHECK 제약 (CHK_AI_JUDGMENTS_EXECUTION_STATUS) 의 허용 값 집합과 동기화.
  */
@@ -17,5 +18,7 @@ public enum AiExecutionStatus {
     READY,
     APPROVAL_REQUIRED,
     HOLD_ONLY,
-    BLOCKED
+    BLOCKED,
+    REJECTED,
+    EXPIRED
 }
