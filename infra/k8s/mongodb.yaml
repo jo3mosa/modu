@@ -59,8 +59,10 @@ spec:
           mountPath: /data/db
         resources:
           # WiredTiger 캐시 = (메모리 - 1Gi) × 50% — 뉴스 데이터 증가 대비 여유 확보.
+          # memory request: 실측 ~712Mi (이전 512Mi 의 139% 초과 사용 중) → 1Gi 로 증액.
+          # 스케줄러 over-pack 위험 + cgroup memory pressure 해소.
           requests:
-            memory: "512Mi"
+            memory: "1Gi"
             cpu: "250m"
           limits:
             memory: "2Gi"

@@ -75,6 +75,9 @@ metadata:
     app: analysis-engine
 spec:
   replicas: 1
+  # 단일 replica — 자원 부족 시 RollingUpdate deadlock 방지를 위해 Recreate.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: analysis-engine
@@ -97,9 +100,11 @@ spec:
         - secretRef:
             name: modu-secret
         resources:
+          # APScheduler 1분 cron — idle 시간 길어 매우 적은 CPU.
+          # 실측: CPU 4m (2%) → 50m / Memory 84Mi (16%) → 256Mi.
           requests:
-            memory: "512Mi"
-            cpu: "200m"
+            memory: "256Mi"
+            cpu: "50m"
           limits:
             memory: "1Gi"
             cpu: "500m"
@@ -135,6 +140,9 @@ metadata:
     app: analysis-candle-collector
 spec:
   replicas: 1
+  # 단일 replica — 자원 부족 시 RollingUpdate deadlock 방지를 위해 Recreate.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: analysis-candle-collector
@@ -157,12 +165,16 @@ spec:
         - secretRef:
             name: modu-secret
         resources:
+          # ⚠️ CPU 실측 446m / 200m req = 223% — limit 500m 까지 도달해 throttling 발생 중.
+          # KIS API 호출 + 1분봉 적재 무한 루프로 지속적 CPU 사용.
+          # CPU: request 500m / limit 1000m 으로 증액 — burst 여유 + 정확한 스케줄링.
+          # Memory: 실측 92Mi (18%) → 256Mi 로 축소.
           requests:
-            memory: "512Mi"
-            cpu: "200m"
+            memory: "256Mi"
+            cpu: "500m"
           limits:
             memory: "1Gi"
-            cpu: "500m"
+            cpu: "1000m"
         livenessProbe:
           exec:
             command:
@@ -194,6 +206,9 @@ metadata:
     app: analysis-disclosure-collector
 spec:
   replicas: 1
+  # 단일 replica — 자원 부족 시 RollingUpdate deadlock 방지를 위해 Recreate.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: analysis-disclosure-collector
@@ -216,9 +231,11 @@ spec:
         - secretRef:
             name: modu-secret
         resources:
+          # 3분 주기 DART API 호출 — idle 시간 거의 전부.
+          # 실측: CPU 1m (1%) → 25m / Memory 46Mi (18%) → 128Mi.
           requests:
-            memory: "256Mi"
-            cpu: "100m"
+            memory: "128Mi"
+            cpu: "25m"
           limits:
             memory: "512Mi"
             cpu: "300m"
@@ -253,6 +270,9 @@ metadata:
     app: analysis-news-collector
 spec:
   replicas: 1
+  # 단일 replica — 자원 부족 시 RollingUpdate deadlock 방지를 위해 Recreate.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: analysis-news-collector
@@ -275,9 +295,11 @@ spec:
         - secretRef:
             name: modu-secret
         resources:
+          # FinBERT 모델 메모리 부담 큼 (~1Gi 상시) — memory request 유지.
+          # CPU: 10분 주기 → 대부분 idle (실측 <1m). burst 시 1000m limit 활용.
           requests:
             memory: "1Gi"
-            cpu: "200m"
+            cpu: "50m"
           limits:
             memory: "2Gi"
             cpu: "1000m"

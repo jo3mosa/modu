@@ -35,9 +35,11 @@ spec:
         resources:
           # Spring Boot JVM(~300Mi) + Kafka 컨슈머/프로듀서 + JPA + SSE 연결 유지
           # 거래시간 burst 대응 위해 limits 여유 확보.
+          # CPU request: 실측 ~21m 기반 — burst 와 GC 대비 150m 로 보수적 설정.
+          # 단일 노드 K3s 자원 확보 (이전 300m 시 노드 CPU requests 98% 도달).
           requests:
             memory: "768Mi"
-            cpu: "300m"
+            cpu: "150m"
           limits:
             memory: "1536Mi"
             cpu: "1500m"
