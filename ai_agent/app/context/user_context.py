@@ -156,8 +156,25 @@ def _fetch_auto_trade_settings(user_id: int, engine: Engine) -> dict[str, Any]:
 
 
 def create_engine_from_env(database_url: str | None = None) -> Engine:
-    """DATABASE_URL 환경변수(또는 인자)로 SQLAlchemy Engine을 생성한다."""
-    url = database_url or os.getenv("DATABASE_URL")
+    """DB 연결 정보로 SQLAlchemy Engine을 생성한다.
+
+    우선순위: 인자 > DATABASE_URL 환경변수 > DB_HOST/PORT/NAME/USERNAME/PASSWORD 개별 변수.
+    """
+    url = database_url or os.getenv("DATABASE_URL") or _compose_database_url()
     if not url:
-        raise ValueError("DATABASE_URL is not set.")
-    return create_engine(url)
+        raise ValueError(
+            "DB 연결 정보가 없습니다. DATABASE_URL 또는 DB_HOST/PORT/NAME/USERNAME/PASSWORD를 설정하세요."
+        )
+    return create_engine(url, pool_pre_ping=True)
+
+
+def _compose_database_url() -> str | None:
+    """DB_HOST/PORT/NAME/USERNAME/PASSWORD 개별 변수로 DATABASE_URL을 합성한다."""
+    host = os.getenv("DB_HOST")
+    if not host:
+        return None
+    port = os.getenv("DB_PORT", "5432")
+    name = os.getenv("DB_NAME", "modu_db")
+    user = os.getenv("DB_USERNAME", "postgres")
+    password = os.getenv("DB_PASSWORD", "")
+    return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{name}"

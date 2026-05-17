@@ -69,8 +69,9 @@ class UserTriggerEvent(BaseModel):
     """
     Reasoning Layer 실행 직전에 사용되는 사용자별 실행 이벤트.
 
-    Market Event 또는 Position Event가 사용자 정보(portfolio_snapshot, user_context)와
+    Market Event 또는 Position Event가 사용자 정보(portfolio_snapshot)와
     결합된 최종 입력. LangGraph는 이 이벤트를 InvestmentAgentState로 변환해 실행한다.
+    user_context는 LangGraph 내 context_loader 노드가 DB에서 직접 로드한다.
     """
 
     event_id: str = Field(default_factory=lambda: f"user_trigger_{uuid4()}")
@@ -85,7 +86,6 @@ class UserTriggerEvent(BaseModel):
     analysis_snapshot: dict[str, Any] = Field(default_factory=dict)
 
     portfolio_snapshot: dict[str, Any] = Field(default_factory=dict)
-    user_context: dict[str, Any] = Field(default_factory=dict)
 
     # backtest 시뮬레이션 기준 시각. None이면 실시간(NOW). retrieval/memory_log가 이 값을 사용.
     as_of: datetime | None = Field(default=None, description="backtest 시뮬레이션 시각 (실시간은 None)")
