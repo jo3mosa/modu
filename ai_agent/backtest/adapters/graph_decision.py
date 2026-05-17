@@ -71,7 +71,6 @@ def make_graph_decision_fn(
             event = _to_user_trigger_event(
                 trigger=trigger,
                 portfolio_snapshot=portfolio_snapshot,
-                user_context=user_context,
                 user_id=numeric_user_id,
             )
             final_state = run_pipeline(event, mode=mode)
@@ -81,6 +80,7 @@ def make_graph_decision_fn(
                     memory_store=memory_store,
                     event=event,
                     final_state=final_state,
+                    user_context=user_context,
                 )
                 if ai_judgment_id is not None:
                     new_extras = dict(da_decision.extras or {})
@@ -112,13 +112,16 @@ def _persist_decision(
     memory_store: DBMemoryStore,
     event: UserTriggerEvent,
     final_state: Any,
+    user_context: dict,
 ) -> int | None:
     """final_state를 DecisionLog로 변환해 ai_judgments에 INSERT.
 
+    user_context는 UserTriggerEvent schema에 없으므로 별도 인자로 받는다
+    (schema 주석: "context_loader가 DB에서 로드"). risk_grade 매핑에만 사용.
     실패 시 logger.exception 후 None — 회고 매핑 못해도 backtest 본 흐름은 진행.
     """
     try:
-        log = _build_decision_log(event, final_state)
+        log = _build_decision_log(event, final_state, user_context)
         if log is None:
             return None
         return memory_store.store_decision(log, judged_at=event.as_of)
@@ -127,7 +130,11 @@ def _persist_decision(
         return None
 
 
-def _build_decision_log(event: UserTriggerEvent, final_state: Any) -> DecisionLog | None:
+def _build_decision_log(
+    event: UserTriggerEvent,
+    final_state: Any,
+    user_context: dict,
+) -> DecisionLog | None:
     """final_state + event → DecisionLog (TypedDict).
 
     FinalDecision 없으면 None 반환 → INSERT skip.
@@ -164,7 +171,7 @@ def _build_decision_log(event: UserTriggerEvent, final_state: Any) -> DecisionLo
         "user_id": int(event.user_id),
         "stock_code": event.stock_code,
         "sector": None,   # analysis_snapshot에 sector 없음 — 추후 stock_master JOIN 추가 여지
-        "risk_grade": (event.user_context or {}).get("risk_profile"),
+        "risk_grade": (user_context or {}).get("risk_profile"),
         "decision": decision_enum,
         "order_amount": order_amount,
         "target_price": _to_int_or_none(fd_dump.get("target_price")),
@@ -202,10 +209,12 @@ def _to_user_trigger_event(
     *,
     trigger: Trigger,
     portfolio_snapshot: Any,
-    user_context: dict,
     user_id: int,
 ) -> UserTriggerEvent:
     """DA Trigger를 우리 UserTriggerEvent로 변환.
+
+    user_context는 schema에 없다 — context_loader가 그래프 실행 중 DB에서
+    로드한다. backtest용 user_context는 _persist_decision에 별도 전달.
 
     - as_of_date는 영업일 EOD 기준. 시뮬레이션 시각은 9:00 KST로 통일.
     - analysis_snapshot은 4종 signal payload(technical/fundamental/event/sentiment) 묶음.
@@ -243,7 +252,6 @@ def _to_user_trigger_event(
         ),
         analysis_snapshot=analysis_snapshot,
         portfolio_snapshot=portfolio_dict,
-        user_context=dict(user_context or {}),
     )
 
 
