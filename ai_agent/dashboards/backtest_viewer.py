@@ -1532,17 +1532,20 @@ def _build_run_command(args: dict[str, Any], output_dir: Path) -> list[str]:
     """form 값 → run_ai_backtest CLI 인자 리스트.
 
     sys.executable로 동일 venv의 python 사용. cwd는 repo root.
+    DA framework의 user_id(str)는 backtest_user_id에서 자동 합성.
     """
+    bt_uid = int(args["backtest_user_id"])
+    da_user_id = f"bt_{bt_uid}"
     cmd = [
         sys.executable, "-m", "ai_agent.backtest.run_ai_backtest",
         "--mode", args["mode"],
         "--start", args["start"].isoformat(),
         "--end", args["end"].isoformat(),
-        "--user-id", str(args["user_id"]),
+        "--user-id", da_user_id,
         "--output", str(output_dir),
         "--initial-cash", str(int(args["initial_cash"])),
         "--holding-days", str(int(args["holding_days"])),
-        "--backtest-user-id", str(int(args["backtest_user_id"])),
+        "--backtest-user-id", str(bt_uid),
     ]
     if args.get("watchlist"):
         cmd += ["--watchlist", args["watchlist"]]
@@ -1557,8 +1560,66 @@ def _build_run_command(args: dict[str, Any], output_dir: Path) -> list[str]:
     return cmd
 
 
-def _spawn_backtest(cmd: list[str], output_dir: Path) -> dict[str, Any]:
+def _count_business_days(start: date, end: date) -> int:
+    """start ~ end 영업일 수 (월~금)."""
+    if end < start:
+        return 0
+    cur, n = start, 0
+    while cur <= end:
+        if cur.weekday() < 5:
+            n += 1
+        cur += pd.Timedelta(days=1).to_pytimedelta()
+    return n
+
+
+def _detect_progress(output_dir: str, start_str: str, end_str: str) -> dict[str, Any]:
+    """진행 중인 backtest의 현재 시뮬레이션 날짜와 진행률 추정.
+
+    근거: event_loop가 매 영업일마다 triggers_YYYY-MM-DD.jsonl을 생성/갱신.
+    파일명 자체의 날짜를 max로 잡음 (mtime은 동시 생성 시 부정확).
+
+    Returns:
+        {current_date, total_days, processed_days, progress_pct} — 파일 없으면 모두 None/0
+    """
+    p = Path(output_dir)
+    trigger_files = list(p.glob("triggers_*.jsonl"))
+    if not trigger_files:
+        return {"current_date": None, "total_days": 0, "processed_days": 0, "progress_pct": 0}
+
+    dates: list[date] = []
+    for f in trigger_files:
+        try:
+            dates.append(date.fromisoformat(f.stem.replace("triggers_", "")))
+        except ValueError:
+            continue
+    current_date = max(dates).isoformat() if dates else None
+
+    try:
+        start_d = date.fromisoformat(start_str)
+        end_d = date.fromisoformat(end_str)
+        total = _count_business_days(start_d, end_d)
+    except Exception:
+        total = 0
+    processed = len(dates) or len(trigger_files)
+    pct = int(round(processed / total * 100)) if total else 0
+    return {
+        "current_date": current_date,
+        "total_days": total,
+        "processed_days": processed,
+        "progress_pct": min(pct, 100),
+    }
+
+
+_RUN_STATE_FILE = "_run_state.json"
+
+
+def _spawn_backtest(
+    cmd: list[str], output_dir: Path, args: dict[str, Any],
+) -> dict[str, Any]:
     """run_ai_backtest를 별도 프로세스로 spawn. stdout/stderr → run.log.
+
+    output_dir/_run_state.json에 state 영속화 — dashboard 재시작/새로고침
+    후에도 진행 중인 backtest를 복구 표시. args는 카드의 진행률/기간 표시에 사용.
 
     Returns run state dict — st.session_state에 저장.
     """
@@ -1569,20 +1630,66 @@ def _spawn_backtest(cmd: list[str], output_dir: Path) -> dict[str, Any]:
     log_fp.flush()
 
     # Windows에서도 동작. shell=False로 인자 안전 전달. cwd=repo root로 ai_agent 패키지 import.
+    # PYTHONIOENCODING + PYTHONUTF8=1: 자식 프로세스가 stdout을 UTF-8로 출력하게 강제.
+    # 안 하면 Korean Windows에서 cp949로 출력되어 UTF-8 log 파일이 mojibake.
     proc = subprocess.Popen(
         cmd,
         cwd=str(_repo_root()),
         stdout=log_fp,
         stderr=subprocess.STDOUT,
-        env={**os.environ, "PYTHONUNBUFFERED": "1"},
+        env={
+            **os.environ,
+            "PYTHONUNBUFFERED": "1",
+            "PYTHONIOENCODING": "utf-8",
+            "PYTHONUTF8": "1",
+        },
     )
-    return {
+    state = {
         "pid": proc.pid,
         "log_path": str(log_path),
         "output_dir": str(output_dir),
         "cmd": cmd,
         "started_at": datetime.now().isoformat(timespec="seconds"),
+        "args": args,
     }
+    try:
+        (output_dir / _RUN_STATE_FILE).write_text(
+            json.dumps(state, ensure_ascii=False, indent=2, default=str),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass   # state 파일 실패해도 backtest는 계속 — 새로고침 복구만 안 됨
+    return state
+
+
+def _discover_alive_runs() -> list[dict[str, Any]]:
+    """ai_agent/backtest/runs/*/_run_state.json 스캔 → 살아있는 PID만 반환.
+
+    streamlit 브라우저 새로고침 / 재시작 후에도 진행 중인 backtest를 복구.
+    완료된(죽은) PID는 dashboard 카드에 자동으로 안 뜸 (사이드바 결과 선택으로 분석 가능).
+    """
+    runs_root = _runs_root()
+    if not runs_root.exists():
+        return []
+    found: list[dict[str, Any]] = []
+    for state_file in runs_root.glob(f"*/{_RUN_STATE_FILE}"):
+        try:
+            state = json.loads(state_file.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if not isinstance(state, dict) or "pid" not in state:
+            continue
+        if _proc_is_alive(int(state["pid"])):
+            found.append(state)
+    return found
+
+
+def _delete_run_state_file(output_dir: str) -> None:
+    """카드 dismiss 시 _run_state.json 삭제 — 새로고침에도 안 다시 등재되게."""
+    try:
+        (Path(output_dir) / _RUN_STATE_FILE).unlink(missing_ok=True)
+    except Exception:
+        pass
 
 
 def _proc_is_alive(pid: int) -> bool:
@@ -1609,68 +1716,126 @@ def _proc_is_alive(pid: int) -> bool:
 
 
 def _tail_log(log_path: str, n_lines: int = 80) -> str:
+    """로그 파일 마지막 N줄. Windows cp949로 쓰인 구버전 로그도 자동 복구.
+
+    binary로 읽고 utf-8 시도 → 실패 시 cp949 시도. 둘 다 안 되면 errors='replace'.
+    """
     p = Path(log_path)
     if not p.exists():
         return "(아직 로그 없음)"
     try:
-        with p.open("r", encoding="utf-8", errors="replace") as f:
-            lines = f.readlines()
-        return "".join(lines[-n_lines:]) or "(빈 로그)"
+        raw = p.read_bytes()
     except Exception as e:
         return f"(로그 읽기 실패: {e})"
 
+    text = None
+    for enc in ("utf-8", "cp949"):
+        try:
+            text = raw.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    if text is None:
+        text = raw.decode("utf-8", errors="replace")
+
+    lines = text.splitlines(keepends=True)
+    return "".join(lines[-n_lines:]) or "(빈 로그)"
+
+
+def _render_running_card(proc: dict[str, Any], idx: int) -> None:
+    """진행 중/완료된 단일 backtest를 카드로 표시.
+
+    triggers_*.jsonl mtime으로 현재 시뮬레이션 날짜 추정. 진행률 %도 같이.
+    """
+    alive = _proc_is_alive(proc["pid"])
+    args = proc.get("args", {})
+    start_str = args.get("start", "")
+    end_str = args.get("end", "")
+    progress = _detect_progress(proc["output_dir"], start_str, end_str)
+    mode = args.get("mode", "?")
+    label_color = MODE_COLORS.get(mode, "#94A3B8")
+
+    with st.container(border=True):
+        head_c1, head_c2 = st.columns([5, 1])
+        with head_c1:
+            status = "🟢 진행 중" if alive else "✅ 완료"
+            st.markdown(
+                f"**{status}** · `mode={mode}` · "
+                f"기간 `{start_str} ~ {end_str}` · PID `{proc['pid']}`"
+            )
+            st.caption(f"📁 `{proc['output_dir']}` · 시작 {proc['started_at']}")
+        with head_c2:
+            if alive:
+                if st.button("⛔ 종료", key=f"kill_{idx}_{proc['pid']}"):
+                    try:
+                        if os.name == "nt":
+                            subprocess.call(["taskkill", "/F", "/PID", str(proc["pid"])])
+                        else:
+                            os.kill(proc["pid"], 9)
+                        st.warning("종료 신호 전송")
+                    except Exception as e:
+                        st.error(f"종료 실패: {e}")
+                    time.sleep(1)
+                    st.rerun()
+            else:
+                if st.button("🗑 카드 닫기", key=f"dismiss_{idx}_{proc['pid']}"):
+                    procs = st.session_state.get("running_procs", [])
+                    st.session_state["running_procs"] = [
+                        p for p in procs if p["pid"] != proc["pid"]
+                    ]
+                    _delete_run_state_file(proc["output_dir"])
+                    st.rerun()
+
+        # 진행 표시줄
+        if progress["current_date"]:
+            st.progress(
+                progress["progress_pct"] / 100.0,
+                text=f"현재 시뮬레이션 날짜: **{progress['current_date']}** · "
+                     f"처리 {progress['processed_days']}/{progress['total_days']} 영업일 "
+                     f"({progress['progress_pct']}%)",
+            )
+        elif alive:
+            st.caption("⏳ 초기화 중 — DB 연결 / .env 로드 / 워치리스트 결정...")
+
+        with st.expander("실시간 로그", expanded=alive):
+            st.code(_tail_log(proc["log_path"], n_lines=60), language="text")
+
 
 def tab_run() -> None:
-    """backtest를 subprocess로 띄우고 진행 로그를 실시간 표시."""
+    """backtest를 subprocess로 띄우고 진행 로그/날짜를 실시간 표시. 병렬 실행 지원."""
     st.subheader("🚀 백테스트 실행")
 
-    running = st.session_state.get("running_proc")
+    # 디스크에서 살아있는 run 복구 — 새로고침/재시작 시 카드 유지
+    procs: list[dict[str, Any]] = st.session_state.get("running_procs", [])
+    known_pids = {p["pid"] for p in procs}
+    for disk_state in _discover_alive_runs():
+        if disk_state["pid"] not in known_pids:
+            procs.append(disk_state)
+            known_pids.add(disk_state["pid"])
+    st.session_state["running_procs"] = procs
 
-    if running and _proc_is_alive(running["pid"]):
-        st.info(f"진행 중 — PID {running['pid']} · 시작 {running['started_at']}")
-        st.code(" ".join(running["cmd"]), language="bash")
+    any_alive = any(_proc_is_alive(p["pid"]) for p in procs)
 
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.markdown("**실시간 로그 (마지막 80줄)**")
-        with col2:
-            if st.button("⛔ 강제 종료", help="subprocess kill"):
-                try:
-                    if os.name == "nt":
-                        subprocess.call(["taskkill", "/F", "/PID", str(running["pid"])])
-                    else:
-                        os.kill(running["pid"], 9)
-                    st.warning("종료 신호 전송")
-                except Exception as e:
-                    st.error(f"종료 실패: {e}")
-                time.sleep(1)
-                st.rerun()
-
-        st.code(_tail_log(running["log_path"]), language="text")
-
-        # 진행 중에만 자동 새로고침 (2초). 새로고침 시 polling 계속.
-        time.sleep(2)
-        st.rerun()
-        return
-
-    if running and not _proc_is_alive(running["pid"]):
-        # 직전 run 완료 — 결과 표시 + 사이드바 자동 선택 안내
-        st.success(f"✅ 완료 — 결과: `{running['output_dir']}`")
-        st.caption(f"PID {running['pid']} · 시작 {running['started_at']}")
-        with st.expander("실행 로그 (전체)", expanded=False):
-            st.code(_tail_log(running["log_path"], n_lines=500), language="text")
-        col1, col2 = st.columns(2)
-        if col1.button("새 실행 준비"):
-            st.session_state.pop("running_proc", None)
-            st.rerun()
-        col2.caption("👈 사이드바 'Backtest run 선택'에서 결과 디렉터리를 골라 분석 탭으로 이동하세요.")
-        return
+    # 진행/완료 카드 모음
+    if procs:
+        st.markdown(f"#### 실행 현황 ({len(procs)}개)")
+        for i, proc in enumerate(procs):
+            _render_running_card(proc, i)
+        st.divider()
 
     # form
-    st.caption("옵션을 선택하고 '백테스트 시작'을 누르면 별도 프로세스로 실행됩니다. "
-               "이 탭을 떠나거나 페이지를 새로고침해도 백그라운드에서 계속 돌아갑니다.")
+    st.markdown("#### 새 백테스트")
+    st.caption("별도 프로세스로 실행됩니다 — 이 탭/페이지를 떠나도 백그라운드에서 계속 진행. "
+               "여러 개를 동시에 띄울 수 있습니다.")
 
-    with st.form("backtest_form"):
+    # 자동 발급 backtest_user_id — 동시 실행 시 회고 격리 보장
+    # 99001부터 +1씩 발급, 충돌 회피
+    used_uids = {p["args"]["backtest_user_id"] for p in procs if "args" in p}
+    candidate_uid = 99001
+    while candidate_uid in used_uids:
+        candidate_uid += 1
+
+    with st.form(f"backtest_form_{len(procs)}", clear_on_submit=False):
         c1, c2, c3 = st.columns(3)
         with c1:
             mode = st.selectbox(
@@ -1693,14 +1858,18 @@ def tab_run() -> None:
                 help="SELL 결정이 정상 체결되려면 필요. 비워두면 매수만 가능.",
             )
         with c3:
-            holding_days = st.number_input("최대 보유일 (T+N)", min_value=1, max_value=60, value=7)
             backtest_user_id = st.number_input(
-                "backtest_user_id", min_value=1, value=99999,
-                help="DB 격리용. 운영 user_id(보통 4자리 이하)와 분리하세요.",
+                "backtest_user_id (DB 격리)", min_value=1, value=candidate_uid,
+                help="회고를 저장할 DB user_id. 동시 실행 시 다른 값을 써야 회고가 섞이지 않음. "
+                     "자동으로 빈 번호를 추천합니다.",
             )
-            user_id = st.text_input("DA user_id (string)", value="backtest-user")
+            run_name = st.text_input(
+                "결과 폴더명",
+                value=f"ui_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                help="ai_agent/backtest/runs/<이름>/ 에 저장",
+            )
 
-        c4, c5, c6, c7 = st.columns(4)
+        c4, c5, c6 = st.columns(3)
         with c4:
             score_after = st.checkbox("score-after", value=True,
                                        help="scored_*.jsonl 생성 (PnL/회고/Calibration 탭 활성)")
@@ -1711,47 +1880,66 @@ def tab_run() -> None:
             reset_memory = st.checkbox("reset-memory", value=True,
                                         help="run 시작 전 backtest_user_id의 ai_judgments / "
                                              "post_mortem_reports DELETE. 회차 격리.")
-        with c7:
-            run_name = st.text_input(
-                "결과 폴더명",
-                value=f"ui_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-                help="ai_agent/backtest/runs/<이름>/ 에 저장",
+
+        with st.expander("고급 옵션", expanded=False):
+            holding_days = st.number_input(
+                "최대 보유일 (T+N)", min_value=1, max_value=60, value=7,
+                help="--score-after 단계에서만 사용. target/stop 둘 다 닿지 않은 거래를 "
+                     "N영업일 후 강제 청산해서 raw_return 계산. 7일이면 대부분 충분.",
             )
 
         submitted = st.form_submit_button("🚀 백테스트 시작", type="primary",
                                           use_container_width=True)
 
-    if not submitted:
+    if submitted:
+        # 입력 검증
+        if start >= end:
+            st.error("시작일은 종료일보다 이전이어야 합니다.")
+            return
+        output_dir = _runs_root() / run_name
+        if any(p["output_dir"] == str(output_dir) and _proc_is_alive(p["pid"]) for p in procs):
+            st.error(f"이미 같은 폴더로 진행 중인 backtest가 있습니다: {output_dir}")
+            return
+        if int(backtest_user_id) in used_uids:
+            running_same = [p for p in procs
+                            if p["args"]["backtest_user_id"] == int(backtest_user_id)
+                            and _proc_is_alive(p["pid"])]
+            if running_same:
+                st.error(f"backtest_user_id={backtest_user_id}는 이미 다른 진행 중인 run이 사용 중입니다. "
+                          f"DB 회고가 섞이니 다른 값을 쓰세요.")
+                return
+        if mode in ("A", "B") and not (os.getenv("GMS_KEY") or os.getenv("ANTHROPIC_API_KEY")
+                                        or os.getenv("XAI_API_KEY")):
+            st.warning("⚠️ mode A/B는 LLM 키 필요 — .env에 GMS_KEY 등이 있는지 확인하세요. 그래도 진행합니다.")
+
+        args = {
+            "mode": mode, "start": start, "end": end,
+            "watchlist": watchlist, "initial_cash": initial_cash,
+            "initial_holdings": initial_holdings, "holding_days": holding_days,
+            "backtest_user_id": int(backtest_user_id),
+            "score_after": score_after, "pm_mock": pm_mock, "reset_memory": reset_memory,
+        }
+        cmd = _build_run_command(args, output_dir)
+        # 디스크 영속화에 isoformat 문자열로 저장 (json 호환)
+        args_for_state = {**args, "start": start.isoformat(), "end": end.isoformat()}
+        try:
+            state = _spawn_backtest(cmd, output_dir, args_for_state)
+        except Exception as e:
+            st.error(f"spawn 실패: {e}")
+            return
+        procs.append(state)
+        st.session_state["running_procs"] = procs
+        st.success(f"🚀 시작 — PID {state['pid']} · backtest_user_id={args['backtest_user_id']}")
+        time.sleep(1)
+        st.rerun()
+
+    if not procs:
         st.caption("⏱ mode A는 결정당 LLM 4회 호출 — 2주 × 2종목 = 약 5~15분 소요 예상.")
-        return
 
-    # 입력 검증
-    if start >= end:
-        st.error("시작일은 종료일보다 이전이어야 합니다.")
-        return
-    if mode in ("A", "B") and not (os.getenv("GMS_KEY") or os.getenv("ANTHROPIC_API_KEY")
-                                    or os.getenv("XAI_API_KEY")):
-        st.warning("⚠️ mode A/B는 LLM 키 필요 — .env에 GMS_KEY 등이 있는지 확인하세요. 그래도 진행합니다.")
-
-    output_dir = _runs_root() / run_name
-    args = {
-        "mode": mode, "start": start, "end": end,
-        "user_id": user_id, "watchlist": watchlist, "initial_cash": initial_cash,
-        "initial_holdings": initial_holdings, "holding_days": holding_days,
-        "backtest_user_id": backtest_user_id,
-        "score_after": score_after, "pm_mock": pm_mock, "reset_memory": reset_memory,
-    }
-    cmd = _build_run_command(args, output_dir)
-    try:
-        state = _spawn_backtest(cmd, output_dir)
-    except Exception as e:
-        st.error(f"spawn 실패: {e}")
-        return
-
-    st.session_state["running_proc"] = state
-    st.success(f"🚀 시작 — PID {state['pid']}")
-    time.sleep(1)
-    st.rerun()
+    # 진행 중인 run이 하나라도 있으면 카드의 진행률/로그 갱신을 위해 자동 새로고침.
+    if any_alive:
+        time.sleep(2)
+        st.rerun()
 
 
 # ============================================================
