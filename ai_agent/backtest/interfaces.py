@@ -73,6 +73,24 @@ class Fill:
 
 # ─── AI 팀이 구현할 프로토콜 ─────────────────────────────────────────────────
 
+class SignalFn(Protocol):
+    """트리거 생성 함수 — signal_generator.detect_all() 와 동일 시그니처.
+
+    llm_trigger 모드처럼 룰 기반 트리거를 LLM 기반으로 교체할 때 주입.
+    None 이면 event_loop 가 signal_generator.detect_all() 을 기본으로 사용.
+    """
+    def __call__(
+        self,
+        as_of: date,
+        watchlist: list[str],
+        ohlcv_by_stock: dict,
+        indicators_by_stock: dict,
+        fundamentals_by_stock: dict,
+        disclosures_by_stock: dict,
+        news_by_stock: dict,
+    ) -> list[Trigger]: ...
+
+
 class DecisionFn(Protocol):
     """트리거 → 의사결정. event_loop 가 매 트리거마다 호출.
 
@@ -130,3 +148,12 @@ class PortfolioFn(Protocol):
     # 발생한 Fill 리스트 반환 (event_loop가 JSONL 레코드로 기록).
     #
     # def evaluate_open_positions(self, day: date, ohlcv_rows: dict[str, dict]) -> list[Fill]: ...
+    #
+    # 선택 구현 — pending order 패턴.
+    # execute()를 "예약"으로 동작시키고, 매 사이클 시작에 settle(day)가 호출되어
+    # 어제 예약된 주문을 실제로 적용. cash/holdings/open_positions가 settle 후에만
+    # 갱신되므로 같은 사이클의 evaluate_open_positions / mark_to_market이 "T+1
+    # 진입을 T 데이터로 평가"하는 시점 꼬임에서 자유로워진다.
+    # event_loop는 hasattr 체크 후 있을 때만 호출.
+    #
+    # def settle(self, day: date) -> list[Fill]: ...

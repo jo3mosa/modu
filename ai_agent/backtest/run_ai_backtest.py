@@ -197,6 +197,23 @@ def _score_after_run(
         logger.warning("score-after: triggers_*.jsonl 파일 없음 — %s", output_root)
         return
 
+    # 한국 공휴일 자동 회피용 거래일 캘린더 — daily_ohlcv에 데이터가 있는 날만.
+    # 마지막 거래의 holding_days 만큼 여유 두고 fetch (휴장 누적 대비 ×3 buffer).
+    from .data_sources import fetch_trading_days
+    from datetime import timedelta as _td
+    file_dates = sorted(
+        date.fromisoformat(f.stem.replace("triggers_", "")) for f in files
+    )
+    cal_start = file_dates[0]
+    cal_end = file_dates[-1] + _td(days=max(30, holding_days * 3))
+    try:
+        trading_days = fetch_trading_days(engine, cal_start, cal_end)
+        logger.info("scoring 거래일 캘린더: %d일 (%s ~ %s) — 한국 공휴일 자동 회피",
+                    len(trading_days), cal_start, cal_end)
+    except Exception:
+        logger.exception("trading_days fetch 실패 — weekday 폴백 (공휴일 미반영)")
+        trading_days = None
+
     persist_engine = engine if persist_post_mortem else None
     for f in files:
         out = f.parent / f.name.replace("triggers_", "scored_")
@@ -204,10 +221,12 @@ def _score_after_run(
             f, out, price_fetcher=price, holding_days=holding_days,
             post_mortem_fn=pm_fn, benchmark_fetcher=benchmark,
             persist_engine=persist_engine,
+            trading_days=trading_days,
         )
-    logger.info("score-after: %d 파일 scored 생성 (alpha=%s, persist=%s)",
+    logger.info("score-after: %d 파일 scored 생성 (alpha=%s, persist=%s, holiday-aware=%s)",
                 len(files), "ON" if benchmark else "OFF",
-                "ON" if persist_engine else "OFF")
+                "ON" if persist_engine else "OFF",
+                "ON" if trading_days else "OFF")
 
 
 # ============================================================
@@ -351,6 +370,13 @@ def main() -> int:
         backtest_user_id=args.backtest_user_id,
         engine=engine,
     )
+
+    # signal_factory 가 등록된 모드면 signal_fn 빌드 (llm_trigger 등).
+    signal_fn = None
+    if mode_spec.signal_factory is not None:
+        signal_fn = mode_spec.signal_factory(args.backtest_user_id, engine)
+        logger.info("signal_fn 교체: %s", mode_spec.signal_factory)
+
     portfolio = SimplePortfolio(
         user_id=args.user_id,
         initial_cash_krw=args.initial_cash,
@@ -367,6 +393,7 @@ def main() -> int:
         portfolio=portfolio,
         user_id=args.user_id,
         watchlist_override=watchlist,
+        signal_fn=signal_fn,
     )
     print(f"run_id={result['run_id']}  summary={result['summary_path']}")
 

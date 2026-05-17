@@ -106,10 +106,11 @@ function adaptDetail(item) {
  *   hasNext: boolean
  * }>}
  */
-export async function getAiDecisions({ page, size } = {}) {
+export async function getAiDecisions({ page, size, stockCode } = {}) {
   const search = new URLSearchParams();
   if (page != null) search.set('page', String(page));
   if (size != null) search.set('size', String(size));
+  if (stockCode) search.set('stockCode', stockCode);
   const queryString = search.toString();
   const endpoint = queryString ? `/ai-agent/decisions?${queryString}` : '/ai-agent/decisions';
   const data = await apiClient(endpoint);
@@ -146,4 +147,55 @@ export async function getAiDecisions({ page, size } = {}) {
 export async function getAiDecisionByOrder(orderId) {
   const data = await apiClient(`/ai-agent/decisions/orders/${orderId}`);
   return adaptDetail(data.data ?? {});
+}
+
+/**
+ * 사용자 승인 대기(APPROVAL_REQUIRED) AI 판단 목록 조회.
+ * GET /api/v1/ai-agent/decisions/pending
+ *
+ * 응답 항목 (PendingDecisionResponse — 백엔드 raw 그대로):
+ * - id (Long), stockCode, decision (BUY/SELL/HOLD)
+ * - orderAmount, targetPrice, stopLossPrice
+ * - reasonSummary, riskLevel ('high' 등), confidenceScore
+ * - judgedAt (ISO), approvalExpiresAt (ISO — 보통 judgedAt + 5분)
+ */
+export async function getPendingDecisions() {
+  const data = await apiClient('/ai-agent/decisions/pending');
+  // 백엔드 응답 형식이 배열 직접인지 { content: [] }인지 미확정 — 둘 다 대응
+  const raw = data.data;
+  if (Array.isArray(raw)) return raw;
+  return raw?.content ?? raw?.items ?? [];
+}
+
+/**
+ * AI 판단 승인 — READY 전환 후 주문 발행
+ * POST /api/v1/ai-agent/decisions/{judgmentId}/approve
+ *
+ * 에러:
+ * - 403 DECISION_FORBIDDEN: 본인 판단 아님
+ * - 409 DECISION_NOT_PENDING: 이미 처리된 판단
+ * - 410 DECISION_EXPIRED: 5분 만료됨
+ *
+ * @returns {Promise<{ judgmentId: number, executionStatus: 'READY', orderId: number }>}
+ */
+export async function approveDecision(judgmentId) {
+  const data = await apiClient(`/ai-agent/decisions/${judgmentId}/approve`, {
+    method: 'POST',
+  });
+  return data.data;
+}
+
+/**
+ * AI 판단 거부 — REJECTED 전환, 주문 발행 없음
+ * POST /api/v1/ai-agent/decisions/{judgmentId}/reject
+ *
+ * 에러는 approve와 동일 (403/409/410)
+ *
+ * @returns {Promise<{ judgmentId: number, executionStatus: 'REJECTED', orderId: null }>}
+ */
+export async function rejectDecision(judgmentId) {
+  const data = await apiClient(`/ai-agent/decisions/${judgmentId}/reject`, {
+    method: 'POST',
+  });
+  return data.data;
 }

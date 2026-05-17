@@ -4,10 +4,13 @@ import com.modu.backend.domain.market.client.KisCandleClient;
 import com.modu.backend.domain.market.client.KisPriceClient;
 import com.modu.backend.domain.market.dto.CandleListResponse;
 import com.modu.backend.domain.market.dto.CandleResponse;
+import com.modu.backend.domain.market.dto.NewsResponse;
 import com.modu.backend.domain.market.dto.StockDetailResponse;
 import com.modu.backend.domain.market.dto.StockListResponse;
+import com.modu.backend.domain.market.entity.NewsArticle;
 import com.modu.backend.domain.market.entity.StockMaster;
 import com.modu.backend.domain.market.exception.MarketErrorCode;
+import com.modu.backend.domain.market.repository.NewsArticleRepository;
 import com.modu.backend.domain.market.repository.StockMasterRepository;
 import com.modu.backend.global.error.ApiException;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,6 +38,7 @@ import static org.mockito.Mockito.when;
 class MarketServiceTest {
 
     @Mock StockMasterRepository stockMasterRepository;
+    @Mock NewsArticleRepository newsArticleRepository;
     @Mock KisPlatformTokenService kisPlatformTokenService;
     @Mock KisPriceClient kisPriceClient;
     @Mock KisCandleClient kisCandleClient;
@@ -298,5 +302,65 @@ class MarketServiceTest {
 
         // then
         verify(kisCandleClient).getCandles("platform-token", "005930", "D", "20250101", "20250426");
+    }
+
+    // ── 종목별 뉴스 조회 ────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("종목 뉴스 조회 성공 - source_name 한글 매핑 + KST +09:00 부착")
+    void 종목_뉴스_조회_성공() {
+        // given
+        when(stockMasterRepository.findByStockCode("005930")).thenReturn(Optional.of(samsung));
+
+        NewsArticle article = NewsArticle.builder()
+                .id("hankyung_2026051789231")
+                .title("삼성전자 1분기 영업이익 6.6조원 발표")
+                .sourceName("한국경제")
+                .publishedAt("2026-05-17T14:32:18")   // KST, 타임존 없음
+                .url("https://www.hankyung.com/article/2026051789231")
+                .stockCodes(List.of("005930"))
+                .build();
+        when(newsArticleRepository.findTop20ByStockCodesContainingOrderByPublishedAtDesc("005930"))
+                .thenReturn(List.of(article));
+
+        // when
+        List<NewsResponse> result = marketService.getStockNews("005930");
+
+        // then
+        assertThat(result).hasSize(1);
+        NewsResponse news = result.get(0);
+        assertThat(news.title()).isEqualTo("삼성전자 1분기 영업이익 6.6조원 발표");
+        assertThat(news.source()).isEqualTo("한국경제");
+        assertThat(news.url()).isEqualTo("https://www.hankyung.com/article/2026051789231");
+        // KST +09:00 부착 확인
+        assertThat(news.publishedAt().toString()).isEqualTo("2026-05-17T14:32:18+09:00");
+    }
+
+    @Test
+    @DisplayName("매칭 기사 없을 때 빈 리스트 반환 (404 아님)")
+    void 매칭_기사_없으면_빈_리스트() {
+        // given
+        when(stockMasterRepository.findByStockCode("005930")).thenReturn(Optional.of(samsung));
+        when(newsArticleRepository.findTop20ByStockCodesContainingOrderByPublishedAtDesc("005930"))
+                .thenReturn(List.of());
+
+        // when
+        List<NewsResponse> result = marketService.getStockNews("005930");
+
+        // then
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    @DisplayName("미등록 종목코드로 뉴스 조회 시 STOCK_NOT_FOUND 예외")
+    void 미등록_종목_뉴스_조회_시_예외() {
+        // given
+        when(stockMasterRepository.findByStockCode("999999")).thenReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> marketService.getStockNews("999999"))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode())
+                        .isEqualTo(MarketErrorCode.STOCK_NOT_FOUND));
     }
 }
