@@ -14,6 +14,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -57,7 +58,7 @@ class AgentMessageServiceTest {
 
         when(repository.existsByUserIdAndJudgmentIdAndAgentAndSeq(USER_ID, 100L, AgentType.BULL, 0))
                 .thenReturn(false);
-        when(repository.save(any(AgentMessage.class))).thenReturn(saved);
+        when(repository.saveAndFlush(any(AgentMessage.class))).thenReturn(saved);
 
         // when
         AgentMessage result = service.save(cmd);
@@ -82,7 +83,25 @@ class AgentMessageServiceTest {
 
         // then
         assertThat(result).isNull();
-        verify(repository, never()).save(any());
+        verify(repository, never()).saveAndFlush(any());
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    @DisplayName("동시성 race — exists 통과했지만 saveAndFlush 시 unique 충돌 → null skip, 이벤트 발행 안 함")
+    void save_uniqueViolationRaceSkips() {
+        // given
+        AgentMessageService.SaveCommand cmd = command(100L, AgentType.BULL, 0, "강세 시그널");
+        when(repository.existsByUserIdAndJudgmentIdAndAgentAndSeq(USER_ID, 100L, AgentType.BULL, 0))
+                .thenReturn(false);
+        when(repository.saveAndFlush(any(AgentMessage.class)))
+                .thenThrow(new DataIntegrityViolationException("unique violation"));
+
+        // when
+        AgentMessage result = service.save(cmd);
+
+        // then
+        assertThat(result).isNull();
         verify(eventPublisher, never()).publishEvent(any());
     }
 
@@ -92,14 +111,14 @@ class AgentMessageServiceTest {
         // given
         AgentMessageService.SaveCommand cmd = command(null, AgentType.STRATEGY, 0, "자유 발화");
         AgentMessage saved = message(1L, null, AgentType.STRATEGY, 0, "자유 발화");
-        when(repository.save(any(AgentMessage.class))).thenReturn(saved);
+        when(repository.saveAndFlush(any(AgentMessage.class))).thenReturn(saved);
 
         // when
         service.save(cmd);
 
         // then
         verify(repository, never()).existsByUserIdAndJudgmentIdAndAgentAndSeq(any(), any(), any(), eq(0));
-        verify(repository).save(any(AgentMessage.class));
+        verify(repository).saveAndFlush(any(AgentMessage.class));
     }
 
     @Test
@@ -118,7 +137,7 @@ class AgentMessageServiceTest {
     // ─────────────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("before 미전달 시 findRecent 호출, size+1 페이지로 hasMore 판정")
+    @DisplayName("before/beforeId 미전달 시 findRecent 호출, size+1 페이지로 hasMore 판정, 복합 커서 반환")
     void getMessages_firstPage_hasMore() {
         // given — size=3 요청 → repository 는 4개 반환 (hasMore true)
         int size = 3;
@@ -130,46 +149,64 @@ class AgentMessageServiceTest {
                 .thenReturn(rows);
 
         // when
-        AgentMessagePageResponse response = service.getMessages(USER_ID, STOCK, null, size);
+        AgentMessagePageResponse response = service.getMessages(USER_ID, STOCK, null, null, size);
 
         // then
         assertThat(response.content()).hasSize(size);
         assertThat(response.hasMore()).isTrue();
-        // nextCursor 는 trimmed 마지막(3번째) 항목 createdAt
+        // 복합 커서 — trimmed 마지막(3번째) 항목의 (createdAt, id)
         assertThat(response.nextCursor()).isEqualTo(rows.get(2).getCreatedAt());
+        assertThat(response.nextCursorId()).isEqualTo(rows.get(2).getId());
     }
 
     @Test
-    @DisplayName("결과가 size 이하면 hasMore=false, nextCursor=null")
+    @DisplayName("결과가 size 이하면 hasMore=false, nextCursor/nextCursorId 둘 다 null")
     void getMessages_lastPage() {
         int size = 5;
         List<AgentMessage> rows = List.of(message(1L, 100L, AgentType.BULL, 0, "only"));
         when(repository.findRecent(eq(USER_ID), eq(STOCK), eq(PageRequest.of(0, size + 1))))
                 .thenReturn(rows);
 
-        AgentMessagePageResponse response = service.getMessages(USER_ID, STOCK, null, size);
+        AgentMessagePageResponse response = service.getMessages(USER_ID, STOCK, null, null, size);
 
         assertThat(response.content()).hasSize(1);
         assertThat(response.hasMore()).isFalse();
         assertThat(response.nextCursor()).isNull();
+        assertThat(response.nextCursorId()).isNull();
     }
 
     @Test
-    @DisplayName("before 전달 시 findBefore 호출")
-    void getMessages_withCursor() {
+    @DisplayName("before + beforeId 둘 다 전달 시 findBefore 호출 (tie-break 포함)")
+    void getMessages_withCompositeCursor() {
         OffsetDateTime cursor = OffsetDateTime.parse("2026-05-18T10:00:00+09:00");
-        when(repository.findBefore(eq(USER_ID), eq(STOCK), eq(cursor), any()))
+        Long cursorId = 42L;
+        when(repository.findBefore(eq(USER_ID), eq(STOCK), eq(cursor), eq(cursorId), any()))
                 .thenReturn(List.of());
 
-        service.getMessages(USER_ID, STOCK, cursor, 10);
+        service.getMessages(USER_ID, STOCK, cursor, cursorId, 10);
 
-        verify(repository).findBefore(eq(USER_ID), eq(STOCK), eq(cursor), eq(PageRequest.of(0, 11)));
+        verify(repository).findBefore(eq(USER_ID), eq(STOCK), eq(cursor), eq(cursorId),
+                eq(PageRequest.of(0, 11)));
+    }
+
+    @Test
+    @DisplayName("before 와 beforeId 중 하나만 전달하면 ValidationException")
+    void getMessages_partialCursorRejected() {
+        OffsetDateTime cursor = OffsetDateTime.parse("2026-05-18T10:00:00+09:00");
+
+        assertThatThrownBy(() -> service.getMessages(USER_ID, STOCK, cursor, null, 10))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("before");
+
+        assertThatThrownBy(() -> service.getMessages(USER_ID, STOCK, null, 1L, 10))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("before");
     }
 
     @Test
     @DisplayName("stockCode 누락 시 ValidationException")
     void getMessages_stockCodeRequired() {
-        assertThatThrownBy(() -> service.getMessages(USER_ID, " ", null, 10))
+        assertThatThrownBy(() -> service.getMessages(USER_ID, " ", null, null, 10))
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("stockCode");
     }
@@ -180,11 +217,11 @@ class AgentMessageServiceTest {
         when(repository.findRecent(eq(USER_ID), eq(STOCK), any())).thenReturn(List.of());
 
         // null → 기본 50 → size+1 = 51
-        service.getMessages(USER_ID, STOCK, null, null);
+        service.getMessages(USER_ID, STOCK, null, null, null);
         verify(repository).findRecent(eq(USER_ID), eq(STOCK), eq(PageRequest.of(0, 51)));
 
         // 999 → 100 으로 clamp → size+1 = 101
-        service.getMessages(USER_ID, STOCK, null, 999);
+        service.getMessages(USER_ID, STOCK, null, null, 999);
         verify(repository).findRecent(eq(USER_ID), eq(STOCK), eq(PageRequest.of(0, 101)));
     }
 

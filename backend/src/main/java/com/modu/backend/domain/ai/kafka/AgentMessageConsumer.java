@@ -89,7 +89,8 @@ public class AgentMessageConsumer {
         try {
             return AgentType.valueOf(agent.trim().toUpperCase());
         } catch (IllegalArgumentException e) {
-            throw new ValidationException("알 수 없는 agent 값: " + agent);
+            // cause 보존 — 디버깅 시 enum 변환 실패 원인 추적
+            throw new ValidationException("알 수 없는 agent 값: " + agent, e);
         }
     }
 }

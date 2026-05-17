@@ -93,7 +93,9 @@ public class OrderSseEmitterManager {
     private void sendInternal(Long userId, String eventName, Object payload, String logTag) {
         SseEmitter emitter = emitters.get(userId);
         if (emitter == null) {
-            log.info("SSE 연결 없음 - userId: {}, event: {}", userId, logTag);
+            // 빈도 높은 이벤트(agent-message 등) 에서 화면 미접속 사용자가 다수면 INFO 로그 폭증.
+            // 연결 없음은 정상 흐름(사용자가 화면을 안 띄움) 이라 DEBUG 로 낮춤.
+            log.debug("SSE 연결 없음 - userId: {}, event: {}", userId, logTag);
             return;
         }
         try {

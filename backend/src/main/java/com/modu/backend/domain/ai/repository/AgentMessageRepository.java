@@ -40,20 +40,29 @@ public interface AgentMessageRepository extends JpaRepository<AgentMessage, Long
     );
 
     /**
-     * 위로 스크롤 — before 이전 메시지 N개 (created_at DESC).
-     * id 보조 정렬로 동일 createdAt tie-breaking.
+     * 위로 스크롤 — 복합 커서 (createdAt, id) 보다 이전 메시지 N개.
+     *
+     * [왜 복합 커서인가]
+     * createdAt 만으로 비교하면 같은 timestamp 를 가진 메시지가 페이지 경계에서
+     * 일부 누락되거나 다음 페이지에 다시 등장할 수 있다. id 를 tie-breaker 로 묶어
+     * 정렬 키와 일치하는 keyset 조건을 만들어야 안전.
+     *
+     * 조건: (createdAt < :before) OR (createdAt = :before AND id < :beforeId)
+     * 정렬: createdAt DESC, id DESC (인덱스와 동일 방향)
      */
     @Query("""
             SELECT m FROM AgentMessage m
             WHERE m.userId = :userId
               AND m.stockCode = :stockCode
-              AND m.createdAt < :before
+              AND (m.createdAt < :before
+                   OR (m.createdAt = :before AND m.id < :beforeId))
             ORDER BY m.createdAt DESC, m.id DESC
             """)
     List<AgentMessage> findBefore(
             @Param("userId") Long userId,
             @Param("stockCode") String stockCode,
             @Param("before") OffsetDateTime before,
+            @Param("beforeId") Long beforeId,
             Pageable pageable
     );
 

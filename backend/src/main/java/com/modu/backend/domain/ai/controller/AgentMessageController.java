@@ -33,22 +33,25 @@ public class AgentMessageController {
     private final AgentMessageService agentMessageService;
 
     @Operation(
-            summary = "에이전트 메시지 목록 조회 (커서 페이지네이션)",
+            summary = "에이전트 메시지 목록 조회 (복합 커서 페이지네이션)",
             description = """
-                    종목 채널에 속한 AI 에이전트 발화 메시지를 created_at 내림차순으로 반환합니다.
+                    종목 채널에 속한 AI 에이전트 발화 메시지를 (created_at, id) 내림차순으로 반환합니다.
 
-                    [페이지네이션]
-                    - before 미전달: 최신 메시지부터 size 개.
-                    - before 전달: 그 시각보다 이전의 메시지 size 개. 응답의 nextCursor 를 다음 요청 before 로 전달.
-                    - nextCursor 가 null 이면 더 과거 데이터 없음.
+                    [복합 커서]
+                    - 첫 페이지: before, beforeId 둘 다 미전달.
+                    - 다음 페이지: 응답의 nextCursor, nextCursorId 를 그대로 before, beforeId 로 전달.
+                    - 둘은 항상 함께 전달해야 합니다 (하나만 전달 시 400).
+                    - 응답의 nextCursor 가 null 이면 더 과거 데이터 없음.
 
-                    [size]
-                    - 기본 50, 최대 100.
+                    [왜 복합 커서인가]
+                    동일 created_at 을 가진 메시지가 페이지 경계에서 누락/중복되지 않도록 id 를 tie-breaker 로 묶습니다.
+
+                    [size] 기본 50, 최대 100.
                     """
     )
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "stockCode 누락"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "stockCode 누락 / before·beforeId 불일치"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "인증 필요")
     })
     @GetMapping
@@ -56,12 +59,14 @@ public class AgentMessageController {
             @AuthenticationPrincipal Long userId,
             @Parameter(description = "조회할 종목 코드", example = "005930", required = true)
             @RequestParam String stockCode,
-            @Parameter(description = "이 시각 이전 메시지를 조회. 미전달 시 최신부터.", example = "2026-05-18T10:00:00+09:00")
+            @Parameter(description = "이 시각 이전 메시지를 조회. beforeId 와 함께 전달.", example = "2026-05-18T10:00:00+09:00")
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime before,
+            @Parameter(description = "복합 커서의 tie-breaker id. before 와 함께 전달.", example = "1234")
+            @RequestParam(required = false) Long beforeId,
             @Parameter(description = "한 번에 조회할 메시지 수 (1~100, 기본 50)", example = "50")
             @RequestParam(required = false) Integer size
     ) {
-        AgentMessagePageResponse response = agentMessageService.getMessages(userId, stockCode, before, size);
+        AgentMessagePageResponse response = agentMessageService.getMessages(userId, stockCode, before, beforeId, size);
         return ResponseEntity.ok(ApiResponse.success("에이전트 메시지를 조회했습니다.", response));
     }
 }
