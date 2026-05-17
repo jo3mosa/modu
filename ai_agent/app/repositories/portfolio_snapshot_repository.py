@@ -89,30 +89,34 @@ class PostgresPortfolioSnapshotRepository:
     """
 
     def get(self, user_id: int) -> dict:
-        with _get_db_engine().connect() as conn:
-            cash_row = conn.execute(
-                text("""
-                    SELECT available_cash
-                    FROM daily_portfolio_snapshots
-                    WHERE user_id = :user_id
-                    ORDER BY snapshot_date DESC
-                    LIMIT 1
-                """),
-                {"user_id": user_id},
-            ).fetchone()
+        try:
+            with _get_db_engine().connect() as conn:
+                cash_row = conn.execute(
+                    text("""
+                        SELECT available_cash
+                        FROM daily_portfolio_snapshots
+                        WHERE user_id = :user_id
+                        ORDER BY snapshot_date DESC
+                        LIMIT 1
+                    """),
+                    {"user_id": user_id},
+                ).fetchone()
 
-            position_rows = conn.execute(
-                text("""
-                    SELECT pt.stock_code,
-                           sm.stock_name,
-                           pt.quantity,
-                           pt.avg_entry_price
-                    FROM position_thresholds pt
-                    JOIN stock_master sm ON pt.stock_code = sm.stock_code
-                    WHERE pt.user_id = :user_id AND pt.is_active = TRUE
-                """),
-                {"user_id": user_id},
-            ).fetchall()
+                position_rows = conn.execute(
+                    text("""
+                        SELECT pt.stock_code,
+                               sm.stock_name,
+                               pt.quantity,
+                               pt.avg_entry_price
+                        FROM position_thresholds pt
+                        JOIN stock_master sm ON pt.stock_code = sm.stock_code
+                        WHERE pt.user_id = :user_id AND pt.is_active = TRUE
+                    """),
+                    {"user_id": user_id},
+                ).fetchall()
+        except Exception:
+            logger.exception("DB 포트폴리오 스냅샷 조회 실패: user_id=%s", user_id)
+            raise
 
         positions = [
             {
