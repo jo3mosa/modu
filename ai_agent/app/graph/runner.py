@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.config.kafka import KafkaTopic, get_kafka_producer
 from app.context.memory_context import extract_key_signals
-from app.graph.builder import build_investment_graph
+from app.graph.builder import GraphMode, build_investment_graph
 from app.triggers.schemas import UserTriggerEvent
 from app.triggers.state_factory import build_state_from_user_trigger
 
@@ -11,20 +11,22 @@ logger = logging.getLogger(__name__)
 
 _KST = timezone(timedelta(hours=9))
 
-_graph = None
+_graph_cache: dict[GraphMode, object] = {}
 
 
-def _get_graph():
-    global _graph
-    if _graph is None:
-        _graph = build_investment_graph()
-    return _graph
+def _get_graph(mode: GraphMode = "A"):
+    if mode not in _graph_cache:
+        _graph_cache[mode] = build_investment_graph(mode=mode)
+    return _graph_cache[mode]
 
 
-def run_pipeline(event: UserTriggerEvent) -> dict:
-    """UserTriggerEvent를 받아 LangGraph 파이프라인을 실행하고 최종 state를 반환한다."""
+def run_pipeline(event: UserTriggerEvent, mode: GraphMode = "A") -> dict:
+    """UserTriggerEvent를 받아 LangGraph 파이프라인을 실행하고 최종 state를 반환한다.
+
+    mode: 'A'(Bull/Bear 토론, 기본/실시간) / 'B'(단일 에이전트, ablation 비교군)
+    """
     state = build_state_from_user_trigger(event)
-    return _get_graph().invoke(state)
+    return _get_graph(mode).invoke(state)
 
 
 def _build_decision_payload(event: UserTriggerEvent, result: dict) -> dict:

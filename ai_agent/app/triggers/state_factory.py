@@ -18,6 +18,7 @@ def build_state_from_user_trigger(
 
     return InvestmentAgentState(
         user_id=event.user_id,
+        as_of=event.as_of,
         analysis_snapshot=event.analysis_snapshot,
         candidate_assets=candidate_assets,
         portfolio_snapshot=event.portfolio_snapshot,

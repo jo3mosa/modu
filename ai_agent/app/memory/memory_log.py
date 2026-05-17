@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import text
@@ -13,8 +14,11 @@ class MemoryLog:
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
 
-    def store_decision(self, log: DecisionLog) -> int:
-        """새 AI 판단을 ai_judgments에 INSERT하고 생성된 id를 반환한다."""
+    def store_decision(self, log: DecisionLog, judged_at: datetime | None = None) -> int:
+        """새 AI 판단을 ai_judgments에 INSERT하고 생성된 id를 반환한다.
+
+        judged_at: 저장 시각 오버라이드. None이면 NOW(). backtest는 시뮬레이션 시점 주입.
+        """
         query = text("""
             INSERT INTO ai_judgments (
                 user_id,
@@ -51,7 +55,7 @@ class MemoryLog:
                 :winning_side,
                 :expected_scenario,
                 CAST(:indicators_snapshot AS jsonb),
-                NOW()
+                COALESCE(:judged_at, NOW())
             )
             RETURNING id
         """)
@@ -73,6 +77,7 @@ class MemoryLog:
             "winning_side": log.get("winning_side"),
             "expected_scenario": log.get("expected_scenario"),
             "indicators_snapshot": json.dumps(log["indicators_snapshot"]),
+            "judged_at": judged_at,
         }
 
         with self.engine.begin() as conn:

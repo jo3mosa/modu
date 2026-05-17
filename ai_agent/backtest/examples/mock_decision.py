@@ -85,30 +85,51 @@ def flat_user_context(day: date, user_id: str) -> dict:
 
 @dataclass
 class SimplePortfolio:
-    """v1 placeholder — cash + holdings dict.
+    """v1 placeholder — cash + holdings dict + per-stock open position 메타.
 
     체결 모델:
       - next-day open 가격으로 시장가 체결
-      - 수수료 0.015% (양방향), 매도시 거래세 0.18% 추가 가정
-      - 슬리피지·부분체결·갭상하한 미고려 (AI 팀이 정교화)
+      - 수수료 0.015% (양방향), 매도시 거래세 0.20% (KRX 표준)
+      - 보유 기간 동안 매일 intraday high/low로 stop_loss/target_price 평가 →
+        도달 시 자동 청산 (evaluate_open_positions)
+      - 슬리피지·부분체결·갭상하한 미고려
+
+    open_positions:
+      {stock_code: {entry_price, stop_loss_price, target_price, entry_date}}
+      단일 포지션 모델 (한 종목 = 한 포지션). 추가 매수 시 entry_price는
+      거래량 가중 평균, stop/target은 최신 Decision 값으로 덮어쓴다 (가장
+      최근 에이전트 판단을 신뢰).
+
+    initial_holdings:
+      backtest 시작 시 보유 종목 seed. SELL 결정이 정상 체결되려면 필수.
+      예: {"005930": 100, "000660": 50}.
     """
     user_id: str = "backtest-user"
     initial_cash_krw: float = 10_000_000
+    initial_holdings: dict[str, int] | None = None
     fee_ratio: float = 0.00015
-    sell_tax_ratio: float = 0.0018
+    sell_tax_ratio: float = 0.0020   # KRX 표준 매도세 (증권거래세+농특세)
 
     cash: float = field(init=False)
     holdings: dict[str, int] = field(default_factory=dict)
+    open_positions: dict[str, dict] = field(default_factory=dict)
     equity_curve: list[dict] = field(default_factory=list)
 
     def __post_init__(self):
         self.cash = self.initial_cash_krw
+        if self.initial_holdings:
+            self.holdings = {str(k): int(v) for k, v in self.initial_holdings.items()}
 
     def snapshot(self) -> dict:
         return {
             "user_id": self.user_id,
             "cash": self.cash,
             "holdings": dict(self.holdings),
+            "open_positions": {
+                code: {**pos, "entry_date": pos.get("entry_date").isoformat()
+                       if isinstance(pos.get("entry_date"), date) else pos.get("entry_date")}
+                for code, pos in self.open_positions.items()
+            },
         }
 
     def execute(self, trigger: Trigger, decision: Decision,
@@ -139,8 +160,15 @@ class SimplePortfolio:
                 fee = gross * self.fee_ratio
                 total = gross + fee
             self.cash -= total
-            self.holdings[trigger.stock_code] = (
-                self.holdings.get(trigger.stock_code, 0) + amount
+            prev_qty = self.holdings.get(trigger.stock_code, 0)
+            new_qty = prev_qty + amount
+            self.holdings[trigger.stock_code] = new_qty
+            self._record_open_position(
+                stock_code=trigger.stock_code,
+                add_qty=amount, add_price=next_open,
+                stop_loss=decision.stop_loss_price,
+                target=decision.target_price,
+                entry_date=next_date or trigger.as_of_date,
             )
             return Fill(fill_date=next_date, fill_price=next_open,
                         filled_amount=amount, fee=fee, tax=0.0,
@@ -159,11 +187,97 @@ class SimplePortfolio:
             self.holdings[trigger.stock_code] = held - amount
             if self.holdings[trigger.stock_code] == 0:
                 del self.holdings[trigger.stock_code]
+                self.open_positions.pop(trigger.stock_code, None)
             return Fill(fill_date=next_date, fill_price=next_open,
                         filled_amount=amount, fee=fee, tax=tax,
                         notes="next_day_open_sell")
 
         return None
+
+    def _record_open_position(
+        self, *, stock_code: str, add_qty: int, add_price: float,
+        stop_loss: Optional[float], target: Optional[float],
+        entry_date: date,
+    ) -> None:
+        """매수 체결 후 open_positions 메타 갱신.
+
+        - 신규 진입: 그대로 저장
+        - 추가 매수: entry_price는 거래량 가중 평균.
+          stop_loss / target_price는 None이 아니면 덮어쓴다 (최신 판단 우선).
+        """
+        existing = self.open_positions.get(stock_code)
+        if existing is None:
+            self.open_positions[stock_code] = {
+                "entry_price": float(add_price),
+                "entry_qty": int(add_qty),
+                "stop_loss_price": float(stop_loss) if stop_loss else None,
+                "target_price": float(target) if target else None,
+                "entry_date": entry_date,
+            }
+            return
+        prev_qty = max(1, int(existing.get("entry_qty") or 0))
+        prev_price = float(existing.get("entry_price") or 0.0)
+        new_qty = prev_qty + int(add_qty)
+        weighted = (prev_price * prev_qty + float(add_price) * int(add_qty)) / new_qty
+        existing["entry_price"] = weighted
+        existing["entry_qty"] = new_qty
+        if stop_loss is not None:
+            existing["stop_loss_price"] = float(stop_loss)
+        if target is not None:
+            existing["target_price"] = float(target)
+
+    def evaluate_open_positions(
+        self, day: date, ohlcv_rows: dict[str, dict]
+    ) -> list[Fill]:
+        """보유 포지션의 stop_loss / target_price 도달 여부를 매일 평가.
+
+        intraday high/low를 사용:
+          - stop_loss_price 설정 + day_low <= stop_loss → stop_loss에 청산
+          - target_price 설정    + day_high >= target  → target에 청산
+          - 둘 다 도달 시 stop 우선 (보수적 가정 — 장중 순서 알 수 없음)
+
+        체결 시 전 보유 수량 청산 (단순화). fee/tax는 일반 매도와 동일.
+
+        Returns:
+            발생한 Fill 리스트. event_loop가 JSONL 레코드로 기록한다.
+        """
+        if not self.open_positions:
+            return []
+        fills: list[Fill] = []
+        for stock_code in list(self.open_positions.keys()):
+            pos = self.open_positions[stock_code]
+            qty = self.holdings.get(stock_code, 0)
+            if qty <= 0:
+                self.open_positions.pop(stock_code, None)
+                continue
+            row = ohlcv_rows.get(stock_code) or {}
+            high = _to_float(row.get("high"))
+            low = _to_float(row.get("low"))
+            if high is None or low is None:
+                continue
+            stop = pos.get("stop_loss_price")
+            target = pos.get("target_price")
+
+            exit_price: Optional[float] = None
+            note: Optional[str] = None
+            if stop is not None and low <= stop:
+                exit_price, note = float(stop), "stop_loss_hit"
+            elif target is not None and high >= target:
+                exit_price, note = float(target), "target_hit"
+            if exit_price is None:
+                continue
+
+            gross = exit_price * qty
+            fee = gross * self.fee_ratio
+            tax = gross * self.sell_tax_ratio
+            self.cash += gross - fee - tax
+            del self.holdings[stock_code]
+            self.open_positions.pop(stock_code, None)
+            fills.append(Fill(
+                fill_date=day, fill_price=exit_price, filled_amount=qty,
+                fee=fee, tax=tax, notes=f"{note}:{stock_code}",
+            ))
+        return fills
 
     def mark_to_market(self, day: date, close_prices: dict[str, float]) -> dict:
         unreal = sum(qty * close_prices.get(sc, 0)
@@ -174,6 +288,15 @@ class SimplePortfolio:
                 "holdings_count": len(self.holdings)}
         self.equity_curve.append(snap)
         return snap
+
+
+def _to_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 # ─── 편의: 의사결정/사용자/포트폴리오 기본 묶음 ────────────────────────────
