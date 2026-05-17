@@ -49,14 +49,18 @@ app:
       partitions: 3
       replicas: 3
 # Actuator: K8s 헬스체크(/health, /readiness) 및 메트릭 수집용
+# /actuator/prometheus 는 Prometheus ServiceMonitor (infra/k8s/backend-servicemonitor.yaml) 가 30s 간격으로 scrape
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health,info,metrics,prometheus
   endpoint:
     health:
       show-details: when-authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}
 
 # 한국투자증권 실전투자 API
 kis:
