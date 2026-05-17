@@ -358,6 +358,11 @@ public class SignalHandlerService {
                 .executionStatus(status)
                 .build();
 
+        // APPROVAL_REQUIRED 진입 시 5분 만료 시각 세팅 (S14P31B106-292)
+        if (status == AiExecutionStatus.APPROVAL_REQUIRED) {
+            judgment.setApprovalExpiresAt(OffsetDateTime.now().plusMinutes(5));
+        }
+
         aiJudgmentRepository.saveAndFlush(judgment);
         return judgment;
     }

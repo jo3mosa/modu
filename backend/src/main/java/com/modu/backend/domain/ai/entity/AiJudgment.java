@@ -170,4 +170,37 @@ public class AiJudgment {
     public void linkOrder(Long orderId) {
         this.orderId = orderId;
     }
+
+    /**
+     * APPROVAL_REQUIRED 진입 시 만료 시각 설정 (S14P31B106-292)
+     */
+    public void setApprovalExpiresAt(OffsetDateTime expiresAt) {
+        this.approvalExpiresAt = expiresAt;
+    }
+
+    /**
+     * 사용자 승인 처리 — READY 로 전환 + order_id 연결 + 만료 시각 제거 (S14P31B106-292)
+     */
+    public void markApproved(Long orderId) {
+        this.executionStatus = AiExecutionStatus.READY;
+        this.orderId = orderId;
+        this.approvalExpiresAt = null;
+    }
+
+    /**
+     * 사용자 거부 처리 — REJECTED 로 전환 + 만료 시각 제거 (S14P31B106-292)
+     */
+    public void markRejected() {
+        this.executionStatus = AiExecutionStatus.REJECTED;
+        this.approvalExpiresAt = null;
+    }
+
+    /**
+     * 만료 처리 — EXPIRED 로 전환 + 만료 시각 제거 (S14P31B106-292)
+     * 스케줄러 (단계 9) 가 호출
+     */
+    public void markExpired() {
+        this.executionStatus = AiExecutionStatus.EXPIRED;
+        this.approvalExpiresAt = null;
+    }
 }
