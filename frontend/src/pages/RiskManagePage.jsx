@@ -20,7 +20,10 @@ const RISK_LEVEL_COLOR = {
 };
 
 export default function RiskManagePage() {
-  const [isActive, setIsActive] = useState(true);
+  const [isActive, setIsActive] = useState(() => {
+    const saved = localStorage.getItem('modu.autoTradeActive');
+    return saved !== 'false';
+  });
 
   // 현재 투자 성향 
   const [profile, setProfile] = useState({
@@ -126,8 +129,10 @@ export default function RiskManagePage() {
     setTogglingAi(true);
     try {
       const result = await updateAutoTradeStatus({ isActive: next });
-      setIsActive(result.isActive);
-      toast.success(`자동매매가 ${result.isActive ? '활성화' : '비활성화'}되었습니다`);
+      const finalActive = result.isActive;
+      setIsActive(finalActive);
+      localStorage.setItem('modu.autoTradeActive', finalActive ? 'true' : 'false');
+      toast.success(`자동매매가 ${finalActive ? '활성화' : '비활성화'}되었습니다`);
     } catch (error) {
       setIsActive(previous);
       if (error.status === 503) {

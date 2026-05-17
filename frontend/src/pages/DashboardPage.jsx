@@ -13,6 +13,7 @@ import { getOrderHistory, getBuyingPower, ORDER_STATUS_DISPLAY } from '../api/or
 import { getProfile, updateAutoTradeStatus } from '../api/strategy';
 import { toast } from 'sonner';
 import { useOrderSSE } from '../hooks/useOrderSSE';
+import { useNotifications } from '../hooks/useNotifications';
 import './DashboardPage.css';
 
 if (typeof Highcharts === 'object') {
@@ -80,7 +81,10 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState(null);
   const [holdings, setHoldings] = useState([]);
   const [isKisConnected, setIsKisConnected] = useState(true);
-  const [aiStatus, setAiStatus] = useState(MOCK_AI_STATUS);
+  const [aiStatus, setAiStatus] = useState(() => {
+    const saved = localStorage.getItem('modu.autoTradeActive');
+    return { isActive: saved !== 'false' };
+  });
   const [profileRiskLevel, setProfileRiskLevel] = useState(null);
   const [aiDecisions, setAiDecisions] = useState([]);
   const [orderHistory, setOrderHistory] = useState([]);
@@ -361,8 +365,9 @@ export default function DashboardPage() {
   };
 
   // 자동매매 ON/OFF 토글 — PATCH /strategies/me/status
-  // optimistic update 후 실패 시 롤백. 503은 Kill Switch 발동 케이스로 별도 메시지.
+  // optimistic update 후 실패 시 롤백. 503은 Kill Switch 발동 케이스로 별도 메시지 + 알림 목록 추가.
   const [togglingAi, setTogglingAi] = useState(false);
+  const { addNotification } = useNotifications();
   const toggleAiStatus = async () => {
     if (togglingAi) return;
     const previous = aiStatus.isActive;
@@ -371,14 +376,21 @@ export default function DashboardPage() {
     setTogglingAi(true);
     try {
       const result = await updateAutoTradeStatus({ isActive: next });
-      // 백엔드 응답이 진실의 원천 — 실제 반영된 값으로 동기화
-      setAiStatus({ isActive: result.isActive });
-      toast.success(`자동매매가 ${result.isActive ? '활성화' : '비활성화'}되었습니다`);
+      // 백엔드 응답이 진실의 원천 — 실제 반영된 값으로 동기화 및 localStorage 저장
+      const finalActive = result.isActive;
+      setAiStatus({ isActive: finalActive });
+      localStorage.setItem('modu.autoTradeActive', finalActive ? 'true' : 'false');
+      toast.success(`자동매매가 ${finalActive ? '활성화' : '비활성화'}되었습니다`);
     } catch (error) {
       setAiStatus({ isActive: previous }); // 롤백
       if (error.status === 503) {
         toast.error('자동매매가 강제 중단됨 (Kill Switch)', {
           description: '안전 한도 초과로 자동매매가 차단된 상태입니다.',
+        });
+        addNotification({
+          type: 'KILL_SWITCH',
+          message: '자동매매 강제 중단됨',
+          description: '안전 한도 초과 — Kill Switch가 발동되었습니다.',
         });
       } else {
         toast.error(error.message || '자동매매 상태 변경에 실패했습니다.');

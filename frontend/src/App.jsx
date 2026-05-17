@@ -4,6 +4,8 @@ import AuthLayout from './layouts/AuthLayout';
 import MainLayout from './layouts/MainLayout';
 import { OrderSSEProvider } from './hooks/useOrderSSE';
 import { AiChatProvider } from './hooks/useAiChat';
+import { NotificationsProvider } from './hooks/useNotifications';
+import { PendingDecisionsProvider } from './hooks/usePendingDecisions';
 import PrivateRoute from './components/PrivateRoute';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
@@ -39,11 +41,17 @@ function App() {
         <Route
           element={
             <PrivateRoute>
-              <OrderSSEProvider>
-                <AiChatProvider>
-                  <MainLayout />
-                </AiChatProvider>
-              </OrderSSEProvider>
+              {/* 알림 → SSE → AiChat → PendingDecisions 순서 중첩.
+                  PendingDecisions가 useNotifications 사용하므로 안쪽에 둠. */}
+              <NotificationsProvider>
+                <OrderSSEProvider>
+                  <AiChatProvider>
+                    <PendingDecisionsProvider>
+                      <MainLayout />
+                    </PendingDecisionsProvider>
+                  </AiChatProvider>
+                </OrderSSEProvider>
+              </NotificationsProvider>
             </PrivateRoute>
           }
         >
