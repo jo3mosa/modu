@@ -1,0 +1,50 @@
+{"mode": "recall", "_id": "015_0005177823", "verdict": "no_mention", "ts": "2026-05-17T17:18:50.143331+00:00"}
+{"mode": "recall", "_id": "015_0004807319", "verdict": "missed", "ts": "2026-05-17T17:20:27.320472+00:00", "fn_reason": "indirect"}
+{"mode": "recall", "_id": "015_0005176482", "verdict": "missed", "ts": "2026-05-17T17:21:20.417998+00:00", "fn_reason": "indirect"}
+{"mode": "recall", "_id": "015_0005024550", "verdict": "missed", "ts": "2026-05-17T17:21:31.346554+00:00", "fn_reason": "indirect"}
+{"mode": "recall", "_id": "015_0004952103", "verdict": "no_mention", "ts": "2026-05-17T17:22:56.889344+00:00"}
+{"mode": "recall", "_id": "015_0005090941", "verdict": "no_mention", "ts": "2026-05-17T17:23:14.770893+00:00"}
+{"mode": "recall", "_id": "015_0005132174", "verdict": "no_mention", "ts": "2026-05-17T17:23:17.680351+00:00"}
+{"mode": "recall", "_id": "015_0004809302", "verdict": "no_mention", "ts": "2026-05-17T17:23:21.123310+00:00"}
+{"mode": "recall", "_id": "015_0005057241", "verdict": "no_mention", "ts": "2026-05-17T17:23:27.570277+00:00"}
+{"mode": "recall", "_id": "015_0004932552", "verdict": "no_mention", "ts": "2026-05-17T17:23:31.684474+00:00"}
+{"mode": "recall", "_id": "015_0004820692", "verdict": "no_mention", "ts": "2026-05-17T17:23:41.680006+00:00"}
+{"mode": "recall", "_id": "015_0004992698", "verdict": "no_mention", "ts": "2026-05-17T17:23:47.114704+00:00"}
+{"mode": "recall", "_id": "015_0004992430", "verdict": "no_mention", "ts": "2026-05-17T17:23:54.468841+00:00"}
+{"mode": "recall", "_id": "015_0005201788", "verdict": "missed", "ts": "2026-05-17T17:24:05.487235+00:00", "fn_reason": "indirect"}
+{"mode": "recall", "_id": "015_0004910460", "verdict": "missed", "ts": "2026-05-17T17:24:20.843928+00:00", "fn_reason": "indirect"}
+{"mode": "recall", "_id": "015_0005202765", "verdict": "no_mention", "ts": "2026-05-17T17:24:29.757664+00:00"}
+{"mode": "recall", "_id": "015_0004811678", "verdict": "no_mention", "ts": "2026-05-17T17:24:31.470376+00:00"}
+{"mode": "recall", "_id": "015_0005124807", "verdict": "no_mention", "ts": "2026-05-17T17:24:44.760958+00:00"}
+{"mode": "recall", "_id": "015_0005175286", "verdict": "no_mention", "ts": "2026-05-17T17:24:48.029048+00:00"}
+{"mode": "recall", "_id": "015_0005208098", "verdict": "no_mention", "ts": "2026-05-17T17:24:59.729857+00:00"}
+{"mode": "recall", "_id": "015_0004945551", "verdict": "missed", "ts": "2026-05-17T17:25:06.011569+00:00", "fn_reason": "indirect"}
+{"mode": "recall", "_id": "015_0004906428", "verdict": "missed", "ts": "2026-05-17T17:25:25.106302+00:00", "fn_reason": "indirect"}
+{"mode": "recall", "_id": "015_0005131473", "verdict": "missed", "ts": "2026-05-17T17:25:36.361640+00:00", "fn_reason": "indirect"}
+{"mode": "recall", "_id": "015_0005077271", "verdict": "missed", "ts": "2026-05-17T17:25:47.412755+00:00", "fn_reason": "indirect"}
+{"mode": "recall", "_id": "015_0004910224", "verdict": "no_mention", "ts": "2026-05-17T17:25:53.698443+00:00"}
+{"mode": "recall", "_id": "015_0004974403", "verdict": "missed", "ts": "2026-05-17T17:25:57.088625+00:00", "fn_reason": "indirect"}
+{"mode": "recall", "_id": "015_0005226381", "verdict": "no_mention", "ts": "2026-05-17T17:26:05.875364+00:00"}
+{"mode": "recall", "_id": "015_0004980322", "verdict": "no_mention", "ts": "2026-05-17T17:26:11.781552+00:00"}
+{"mode": "recall", "_id": "015_0004919137", "verdict": "no_mention", "ts": "2026-05-17T17:26:13.011921+00:00"}
+{"mode": "recall", "_id": "015_0005080029", "verdict": "missed", "ts": "2026-05-17T17:26:16.866505+00:00", "fn_reason": "indirect"}
+{"mode": "recall", "_id": "015_0005137935", "verdict": "no_mention", "ts": "2026-05-17T17:26:25.619960+00:00"}
+{"mode": "recall", "_id": "015_0005041020", "verdict": "missed", "ts": "2026-05-17T17:26:32.228342+00:00", "fn_reason": "indirect"}
+{"mode": "recall", "_id": "015_0005118188", "verdict": "no_mention", "ts": "2026-05-17T17:26:38.272764+00:00"}
+{"mode": "recall", "_id": "015_0004944922", "verdict": "no_mention", "ts": "2026-05-17T17:26:40.172151+00:00"}
+{"mode": "recall", "_id": "015_0005069699", "verdict": "no_mention", "ts": "2026-05-17T17:26:41.514359+00:00"}
+{"mode": "recall", "_id": "015_0005056962", "verdict": "no_mention", "ts": "2026-05-17T17:26:47.021352+00:00"}
+{"mode": "recall", "_id": "015_0005089519", "verdict": "no_mention", "ts": "2026-05-17T17:26:49.166049+00:00"}
+{"mode": "recall", "_id": "015_0005106062", "verdict": "missed", "ts": "2026-05-17T17:26:52.272001+00:00", "fn_reason": "indirect"}
+{"mode": "recall", "_id": "015_0004836597", "verdict": "no_mention", "ts": "2026-05-17T17:27:00.532778+00:00"}
+{"mode": "recall", "_id": "015_0005080555", "verdict": "no_mention", "ts": "2026-05-17T17:27:02.357481+00:00"}
+{"mode": "recall", "_id": "015_0005047351", "verdict": "no_mention", "ts": "2026-05-17T17:27:04.131327+00:00"}
+{"mode": "recall", "_id": "015_0004852603", "verdict": "no_mention", "ts": "2026-05-17T17:27:05.481689+00:00"}
+{"mode": "recall", "_id": "015_0004950820", "verdict": "no_mention", "ts": "2026-05-17T17:27:06.842265+00:00"}
+{"mode": "recall", "_id": "015_0004946892", "verdict": "no_mention", "ts": "2026-05-17T17:27:10.179711+00:00"}
+{"mode": "recall", "_id": "015_0005189152", "verdict": "missed", "ts": "2026-05-17T17:27:13.992549+00:00", "fn_reason": "indirect"}
+{"mode": "recall", "_id": "015_0004795485", "verdict": "no_mention", "ts": "2026-05-17T17:27:24.136955+00:00"}
+{"mode": "recall", "_id": "015_0005086225", "verdict": "no_mention", "ts": "2026-05-17T17:27:25.577316+00:00"}
+{"mode": "recall", "_id": "015_0005080992", "verdict": "missed", "ts": "2026-05-17T17:27:28.579301+00:00", "fn_reason": "indirect"}
+{"mode": "recall", "_id": "015_0004845242", "verdict": "missed", "ts": "2026-05-17T17:27:34.534517+00:00", "fn_reason": "indirect"}
+{"mode": "recall", "_id": "015_0004811429", "verdict": "no_mention", "ts": "2026-05-17T17:27:40.151884+00:00"}

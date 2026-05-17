@@ -143,13 +143,57 @@ def _is_word_boundary(text, start, end):
     return left_ok and right_ok
 
 
+# 짧은 한글 종목명(≤3자) 의 일반어 충돌(homonym) 방지용 컨텍스트 키워드.
+# 매칭 위치 주위 _CONTEXT_WINDOW 자 안에 아래 중 하나가 등장할 때만 매칭 인정.
+# 예: "대원, 상장 후 첫 거래" → 통과 ; "해병대원이 부상" → 거부.
+# Recall 평가에서 alias_missing/notation_variant/group_ambiguous 가 0건이라
+# 짧은 종목명 매칭의 진짜 가치는 "코드 의존 없는 식별" 뿐 — 컨텍스트 게이트로
+# false positive 차단해도 누락 위험은 낮다는 게 사전 데이터로 확인됨.
+_FINANCE_CONTEXT = (
+    # 시장·주가
+    "주식", "주가", "코스피", "코스닥", "kospi", "kosdaq", "상장", "공모", "ipo",
+    "상한가", "하한가", "거래량", "거래대금", "시가총액",
+    # 회사 식별
+    "(주)", "주식회사", "그룹", "지주", "대표이사", "ceo", "회장", "사장",
+    # 재무·공시
+    "공시", "실적", "매출", "영업이익", "당기순이익", "분기", "사업보고서",
+    "흑자", "적자", "배당", "유상증자", "무상증자", "ir",
+    # 매수·매도·수급
+    "매수", "매도", "순매수", "순매도", "외국인", "기관", "수급", "지분",
+    # 등락
+    "상승", "하락", "급등", "급락", "강세", "약세", "신고가", "신저가",
+    # 거래·M&A
+    "인수", "합병", "m&a", "주주", "주식시장", "증시", "투자자", "코스피200",
+)
+_CONTEXT_WINDOW = 15
+
+
+def _has_finance_context(text_lower, pos, end):
+    """매칭 구간 좌우 _CONTEXT_WINDOW 자에 금융 컨텍스트 어휘 1개라도 있으면 True."""
+    left = text_lower[max(0, pos - _CONTEXT_WINDOW):pos]
+    right = text_lower[end:end + _CONTEXT_WINDOW]
+    snippet = left + right
+    return any(kw in snippet for kw in _FINANCE_CONTEXT)
+
+
+def _needs_context_gate(term):
+    """길이 ≤ 3 한글 종목명만 컨텍스트 게이트 대상.
+
+    길이 ≥ 4 한글명은 일반어 충돌 확률이 급격히 낮아져 게이트 불요.
+    영문 종목명은 word-boundary 검사로 이미 보호.
+    """
+    if len(term) > 3:
+        return False
+    return all("가" <= c <= "힣" for c in term)
+
+
 # (name_dict id, alias_dict id) 키로 sorted term 리스트 캐싱.
 # 사전이 바뀌지 않는 한 매 article 마다 list 빌드 + sort + ascii 분류를 재사용.
 _combined_terms_cache = (None, None, None)
 
 
 def _get_combined_terms(name_to_code, alias_to_code):
-    """[(term_lower, code, method, ascii_only), ...] 를 길이 desc 정렬해 반환."""
+    """[(term_lower, code, method, ascii_only, needs_ctx), ...] 를 길이 desc 정렬해 반환."""
     global _combined_terms_cache
     cache_key = (id(name_to_code), id(alias_to_code))
     if _combined_terms_cache[0] == cache_key[0] and _combined_terms_cache[1] == cache_key[1]:
@@ -157,9 +201,11 @@ def _get_combined_terms(name_to_code, alias_to_code):
 
     combined = []
     for name, code in name_to_code.items():
-        combined.append((name, code, "name", bool(_ASCII_ONLY.match(name))))
+        combined.append((name, code, "name",
+                         bool(_ASCII_ONLY.match(name)), _needs_context_gate(name)))
     for alias, code in alias_to_code.items():
-        combined.append((alias, code, "alias", bool(_ASCII_ONLY.match(alias))))
+        combined.append((alias, code, "alias",
+                         bool(_ASCII_ONLY.match(alias)), _needs_context_gate(alias)))
     combined.sort(key=lambda x: -len(x[0]))
     _combined_terms_cache = (cache_key[0], cache_key[1], combined)
     return combined
@@ -193,7 +239,7 @@ def match_text(text, by_code, name_to_code, alias_to_code):
     text_lower = text.lower()
     covered = bytearray(len(text_lower))   # 0=free, 1=이미 잡힌 구간
 
-    for term, code, method, ascii_only in _get_combined_terms(name_to_code, alias_to_code):
+    for term, code, method, ascii_only, needs_ctx in _get_combined_terms(name_to_code, alias_to_code):
         tlen = len(term)
         if tlen == 0:
             continue
@@ -209,6 +255,10 @@ def match_text(text, by_code, name_to_code, alias_to_code):
                 continue
             # ASCII-only term 은 원본 기준 word-boundary 검사
             if ascii_only and not _is_word_boundary(text_lower, pos, end):
+                start = pos + 1
+                continue
+            # 짧은 한글 종목명: 금융 컨텍스트 어휘 동반 시에만 인정 (homonym 가드)
+            if needs_ctx and not _has_finance_context(text_lower, pos, end):
                 start = pos + 1
                 continue
 
