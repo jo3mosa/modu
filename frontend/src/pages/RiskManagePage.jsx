@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { getProfile, getProfileQuestions, getRules, updateProfile, updateRules } from '../api/strategy';
+import { toast } from 'sonner';
+import { getProfile, getProfileQuestions, getRules, updateProfile, updateRules, updateAutoTradeStatus } from '../api/strategy';
 import './RiskManagePage.css';
 
 const RISK_LEVEL_LABEL = {
@@ -19,7 +20,10 @@ const RISK_LEVEL_COLOR = {
 };
 
 export default function RiskManagePage() {
-  const [isActive, setIsActive] = useState(true);
+  const [isActive, setIsActive] = useState(() => {
+    const saved = localStorage.getItem('modu.autoTradeActive');
+    return saved !== 'false';
+  });
 
   // 현재 투자 성향 
   const [profile, setProfile] = useState({
@@ -114,7 +118,34 @@ export default function RiskManagePage() {
     };
   }, [isModalOpen, questions.length]);
 
-  const handleToggleAi = () => setIsActive(!isActive);
+  // 자동매매 ON/OFF — PATCH /strategies/me/status
+  // DashboardPage와 동일 패턴: optimistic update + 실패 시 롤백 + 503은 Kill Switch
+  const [togglingAi, setTogglingAi] = useState(false);
+  const handleToggleAi = async () => {
+    if (togglingAi) return;
+    const previous = isActive;
+    const next = !previous;
+    setIsActive(next);
+    setTogglingAi(true);
+    try {
+      const result = await updateAutoTradeStatus({ isActive: next });
+      const finalActive = result.isActive;
+      setIsActive(finalActive);
+      localStorage.setItem('modu.autoTradeActive', finalActive ? 'true' : 'false');
+      toast.success(`자동매매가 ${finalActive ? '활성화' : '비활성화'}되었습니다`);
+    } catch (error) {
+      setIsActive(previous);
+      if (error.status === 503) {
+        toast.error('자동매매가 강제 중단됨 (Kill Switch)', {
+          description: '안전 한도 초과로 자동매매가 차단된 상태입니다.',
+        });
+      } else {
+        toast.error(error.message || '자동매매 상태 변경에 실패했습니다.');
+      }
+    } finally {
+      setTogglingAi(false);
+    }
+  };
 
   const handleRuleChange = (field, value) => {
     setRules((prev) => ({ ...prev, [field]: value }));
@@ -155,7 +186,7 @@ export default function RiskManagePage() {
       setIsModalOpen(false);
     } catch (error) {
       console.error('투자 성향 저장 실패:', error);
-      alert(error.message || '투자 성향 저장 중 오류가 발생했습니다.');
+      toast.error(error.message || '투자 성향 저장 중 오류가 발생했습니다.');
     } finally {
       setSubmittingProfile(false);
     }
@@ -176,7 +207,7 @@ export default function RiskManagePage() {
       !Number.isFinite(maxDailyOrderCount) || maxDailyOrderCount < 1 ||
       !Number.isFinite(maxDailyLossAmount) || maxDailyLossAmount < 1
     ) {
-      alert('모든 룰셋 값은 1 이상의 숫자여야 합니다.');
+      toast.error('모든 룰셋 값은 1 이상의 숫자여야 합니다.');
       return;
     }
 
@@ -197,10 +228,10 @@ export default function RiskManagePage() {
         maxLossLimit: result?.maxDailyLossAmount ?? maxDailyLossAmount,
       });
       setRuleVersion(result?.version ?? ruleVersion + 1);
-      alert('변경사항이 성공적으로 저장되었습니다.');
+      toast.success('변경사항이 성공적으로 저장되었습니다');
     } catch (error) {
       console.error('룰셋 저장 실패:', error);
-      alert(error.message || '룰셋 저장 중 오류가 발생했습니다.');
+      toast.error(error.message || '룰셋 저장 중 오류가 발생했습니다.');
     } finally {
       setSavingRules(false);
     }
@@ -220,8 +251,9 @@ export default function RiskManagePage() {
 
         <div className="risk-global-controls">
           <div className="control-item">
-            <span className="control-label" style={{ color: isActive ? '#84cc16' : '#888' }}>
-              AI 자동매매 {isActive ? 'ON' : 'OFF'}
+            <span className="control-label">AI 자동매매</span>
+            <span className={`status-badge ${isActive ? 'active' : 'inactive'}`}>
+              {isActive ? 'ON' : 'OFF'}
             </span>
             <div className={`toggle-switch ${isActive ? 'on' : 'off'}`} onClick={handleToggleAi}>
               <div className="toggle-knob"></div>

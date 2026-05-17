@@ -59,6 +59,16 @@
   color: #84cc16;
 }
 
+.nav-new-badge {
+  background-color: #84cc16;
+  color: #1a1a1a;
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 12px;
+  margin-left: auto;
+}
+
 .main-content {
   flex: 1;
   margin-left: 250px;
@@ -70,16 +80,19 @@
 }
 
 .global-header {
+  position: relative;
   margin-bottom: 2rem;
   flex-shrink: 0;
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
+  min-height: 44px; /* 알림 버튼 높이 — absolute 자식이 수직 중앙 정렬되게 base 확보 */
 }
 
 .global-search-wrapper {
   position: relative;
-  width: 50%;
+  width: 40%;
+  max-width: 560px;
 }
 
 .global-notification-btn {
@@ -105,7 +118,10 @@
    알림 팝업
    ============================ */
 .alarm-controls {
-  position: relative;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
   align-items: center;
 }
@@ -133,7 +149,7 @@
   right: 0;
   width: 320px;
   max-height: 400px;
-  background: #1a1a2e;
+  background: #242424;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 12px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
@@ -204,22 +220,95 @@
 }
 
 .alarm-item-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.alarm-item-icon {
+  flex-shrink: 0;
+  font-size: 1.05rem;
+  line-height: 1.4;
+}
+
+.alarm-item-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.alarm-item-message {
   color: #ddd;
   font-size: 0.9rem;
+  line-height: 1.4;
+  font-weight: 600;
+}
+
+.alarm-item-description {
+  color: #888;
+  font-size: 0.8rem;
   line-height: 1.4;
 }
 
 .alarm-item-time {
   color: #666;
+  font-size: 0.75rem;
+  flex-shrink: 0;
+  align-self: flex-start;
+}
+
+/* AI 승인 대기 상단 강조 배너 — Bell 팝업 내부 */
+.alarm-pending-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.8rem 1.2rem;
+  background: rgba(239, 68, 68, 0.08);
+  border: none;
+  border-bottom: 1px solid rgba(239, 68, 68, 0.18);
+  color: #fca5a5;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.88rem;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.alarm-pending-banner:hover {
+  background: rgba(239, 68, 68, 0.14);
+}
+
+.alarm-pending-banner-icon {
+  font-size: 1.05rem;
+}
+
+.alarm-pending-banner-text {
+  flex: 1;
+}
+
+.alarm-pending-banner-text strong {
+  color: #fff;
+  font-weight: 800;
+}
+
+.alarm-pending-banner-cta {
   font-size: 0.8rem;
+  font-weight: 700;
+  color: #fca5a5;
+  opacity: 0.85;
 }
 
 .global-search-bar {
   display: flex;
   align-items: center;
   background: rgba(255, 255, 255, 0.05);
-  border-radius: 12px;
-  padding: 0.8rem 1.5rem;
+  border-radius: 10px;
+  padding: 0.6rem 1.2rem;
   border: 1px solid rgba(255, 255, 255, 0.1);
   transition: all 0.2s;
 }
@@ -234,10 +323,10 @@
   background: transparent;
   border: none;
   color: #fff;
-  font-size: 1.1rem;
+  font-size: 0.95rem;
   outline: none;
   font-family: inherit;
-  margin-left: 1rem;
+  margin-left: 0.75rem;
 }
 
 /* 검색 드롭다운 */

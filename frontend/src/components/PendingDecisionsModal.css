@@ -1,0 +1,278 @@
+.pending-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  z-index: 9500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  animation: pending-fade-in 0.18s ease-out;
+}
+
+@keyframes pending-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.pending-modal {
+  background: #242424;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  width: 100%;
+  max-width: 580px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: #eee;
+}
+
+.pending-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.1rem 1.4rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(239, 68, 68, 0.06);
+}
+
+.pending-modal-title-group {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.pending-modal-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0;
+  color: #fff;
+}
+
+.pending-modal-count {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fca5a5;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+}
+
+.pending-modal-close {
+  background: transparent;
+  border: none;
+  color: #aaa;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.pending-modal-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.pending-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.pending-modal-empty {
+  padding: 3rem 1rem;
+  text-align: center;
+  color: #777;
+  font-size: 0.95rem;
+}
+
+/* ============ 카드 ============ */
+
+.pending-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  transition: border-color 0.15s, opacity 0.15s;
+}
+
+.pending-card.is-expired {
+  opacity: 0.55;
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.pending-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.pending-card-top {
+  flex-wrap: wrap;
+}
+
+.pending-card-stock {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.pending-card-stock-code {
+  font-weight: 700;
+  font-size: 1rem;
+  color: #fff;
+}
+
+.pending-card-side {
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+}
+
+.pending-card-side.side-buy {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fca5a5;
+}
+
+.pending-card-side.side-sell {
+  background: rgba(59, 130, 246, 0.18);
+  color: #93c5fd;
+}
+
+.pending-card-side.side-hold {
+  background: rgba(255, 255, 255, 0.08);
+  color: #aaa;
+}
+
+.pending-card-risk {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.15rem 0.45rem;
+  border-radius: 6px;
+}
+
+.pending-card-risk.risk-high {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
+}
+
+.pending-card-risk.risk-medium {
+  background: rgba(234, 179, 8, 0.15);
+  color: #fde047;
+}
+
+.pending-card-risk.risk-low {
+  background: rgba(132, 204, 22, 0.15);
+  color: #84cc16;
+}
+
+.pending-card-countdown {
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #ddd;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.pending-card-countdown.is-urgent {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+  animation: pending-pulse 1s ease-in-out infinite;
+}
+
+@keyframes pending-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+
+.pending-card-reason {
+  margin: 0;
+  font-size: 0.88rem;
+  color: #ccc;
+  line-height: 1.55;
+}
+
+.pending-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem 1.2rem;
+  font-size: 0.82rem;
+  color: #aaa;
+}
+
+.pending-card-meta em {
+  color: #777;
+  font-style: normal;
+  margin-right: 0.3rem;
+}
+
+.pending-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.2rem;
+}
+
+.pending-card-btn {
+  padding: 0.5rem 1.1rem;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+}
+
+.pending-card-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.pending-card-btn-reject {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #ccc;
+}
+
+.pending-card-btn-reject:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.pending-card-btn-approve {
+  background: rgba(132, 204, 22, 0.2);
+  border-color: rgba(132, 204, 22, 0.45);
+  color: #84cc16;
+}
+
+.pending-card-btn-approve:hover:not(:disabled) {
+  background: rgba(132, 204, 22, 0.3);
+}
+
+/* 스크롤바 */
+.pending-modal-body::-webkit-scrollbar {
+  width: 6px;
+}
+.pending-modal-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+}
+.pending-modal-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
