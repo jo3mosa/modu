@@ -9,7 +9,7 @@ import Skeleton from '../components/Skeleton';
 import InlineError from '../components/InlineError';
 import { getAccountSummary, getPortfolio } from '../api/account';
 import { getAiDecisions } from '../api/aiAgent';
-import { getOrderHistory, ORDER_STATUS_DISPLAY } from '../api/order';
+import { getOrderHistory, getBuyingPower, ORDER_STATUS_DISPLAY } from '../api/order';
 import { getProfile } from '../api/strategy';
 import { useOrderSSE } from '../hooks/useOrderSSE';
 import './DashboardPage.css';
@@ -83,6 +83,9 @@ export default function DashboardPage() {
   const [profileRiskLevel, setProfileRiskLevel] = useState(null);
   const [aiDecisions, setAiDecisions] = useState([]);
   const [orderHistory, setOrderHistory] = useState([]);
+  // 한투 앱 "주문가능원화"와 일치하는 max_buy_amt를 받기 위해 별도 호출
+  // (summary.availableCash는 KIS dncl_amt로 미체결 매도 결제 대기분이 빠져있어 사용자 기대값과 어긋남)
+  const [buyingPower, setBuyingPower] = useState(null);
 
   // 영역별 로딩/에러 상태 — 한 영역 실패가 다른 영역 로드를 막지 않도록 분리
   const [summaryState, setSummaryState] = useState({ loading: true, error: null });
@@ -147,6 +150,22 @@ export default function DashboardPage() {
     }
   }, []);
 
+  // 주문 가능 금액 — getBuyingPower 응답의 maxBuyAmount(KIS nrcvb_buy_amt)가 한투 "주문가능원화"와 일치.
+  // summary.availableCash(KIS dncl_amt)는 매도 결제 대기 자금이 빠져있어 부정확하므로 보조용으로만 사용.
+  // 종목 코드 없이 BUY로 호출하면 계좌 단위 최대 매수 가능 금액을 받음.
+  const fetchBuyingPower = useCallback(async () => {
+    try {
+      const data = await getBuyingPower({ side: 'BUY' });
+      setBuyingPower(data ?? null);
+    } catch (error) {
+      // 404/실패는 조용히 무시 — derivedSummary가 summary.availableCash로 fallback
+      if (error?.status !== 404) {
+        console.warn('주문가능 조회 실패:', error);
+      }
+      setBuyingPower(null);
+    }
+  }, []);
+
   // 투자 성향은 미설정(404/INVEST_001)이 정상 흐름이라 별도 에러 state 안 둠
   const fetchProfile = useCallback(async () => {
     try {
@@ -170,7 +189,8 @@ export default function DashboardPage() {
     fetchAi();
     fetchOrders();
     fetchProfile();
-  }, [fetchSummary, fetchPortfolio, fetchAi, fetchOrders, fetchProfile]);
+    fetchBuyingPower();
+  }, [fetchSummary, fetchPortfolio, fetchAi, fetchOrders, fetchProfile, fetchBuyingPower]);
 
   // SSE ORDER_EXECUTED 수신 시 자산/포트폴리오/매매 로그를 즉시 재조회.
   // (자동매매 손절·익절 또는 수동 주문 체결 직후 60초 폴링을 기다리지 않고 화면을 갱신)
@@ -181,7 +201,8 @@ export default function DashboardPage() {
     fetchPortfolio({ silent: true });
     fetchAi({ silent: true });
     fetchOrders({ silent: true });
-  }, [fetchSummary, fetchPortfolio, fetchAi, fetchOrders]);
+    fetchBuyingPower();
+  }, [fetchSummary, fetchPortfolio, fetchAi, fetchOrders, fetchBuyingPower]);
 
   const { latestEvent } = useOrderSSE();
   useEffect(() => {
@@ -317,8 +338,9 @@ export default function DashboardPage() {
     const totalPnl = holdings.reduce((sum, h) => sum + (h.pnl ?? 0), 0);
     const totalPnlPct =
       totalBuyAmount > 0 ? Number(((totalPnl / totalBuyAmount) * 100).toFixed(2)) : 0;
-    // 주문 가능 금액: KIS dncl_amt 그대로 (재차감 X)
-    const availableCash = summary.availableCash ?? 0;
+    // 주문 가능 금액 우선순위: buyingPower.maxBuyAmount(KIS nrcvb_buy_amt, 한투 "주문가능원화") > summary.availableCash(KIS dncl_amt) > 0
+    // 전자는 매도 결제 대기 자금까지 포함된 실사용 가능 금액. 후자는 D+0 현금만이라 작게 나옴.
+    const availableCash = buyingPower?.maxBuyAmount ?? summary.availableCash ?? 0;
     // 총 자산: 예수금 + 실시간 평가금액
     const totalAsset = availableCash + totalEvalAmount;
     return {
@@ -330,7 +352,7 @@ export default function DashboardPage() {
       totalPnlPct,
       totalAsset,
     };
-  }, [summary, holdings]);
+  }, [summary, holdings, buyingPower]);
 
   const handleCloseTutorial = () => {
     localStorage.setItem('hasSeenDashboardTutorial', 'true');
