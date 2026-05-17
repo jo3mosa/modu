@@ -54,6 +54,7 @@ def simulate_target_stop_exit(
     max_holding_days: int,
     price_fetcher: PriceFetcher,
     stock_code: str,
+    trading_days: list[date] | None = None,
 ) -> ExitResult | None:
     """매수 후 매일 OHLC 봐서 target/stop 도달 판정.
 
@@ -70,32 +71,40 @@ def simulate_target_stop_exit(
 
     target/stop 없으면 max_holding_days 후 종가 청산.
     OHLC 조회 실패 시 다음 거래일로 진행 (휴장 대비).
+
+    trading_days: data_sources.fetch_trading_days() 결과 (오름차순).
+      주어지면 한국 공휴일 자동 회피. 없으면 weekday 기준 폴백 (공휴일도
+      "영업일"로 카운트되어 exit_date가 실제보다 앞당겨질 수 있음).
     """
     cur = entry_date
+    last_advanced = entry_date
     for _ in range(max_holding_days):
-        cur = _add_business_days(cur, 1)
+        cur = _add_trading_days(cur, 1, trading_days)
+        if cur <= last_advanced:
+            break  # trading_days 범위 끝 (clamp 발생) → 더 진행 불가
+        last_advanced = cur
         ohlc = price_fetcher.ohlc(stock_code, cur)
         if ohlc is None:
-            continue   # 데이터 없는 날은 skip
+            continue   # 그날만 데이터 없음 — 다음 거래일로
 
         if side == "buy":
             stop_hit = stop_loss_price is not None and ohlc["low"] <= stop_loss_price
             target_hit = target_price is not None and ohlc["high"] >= target_price
             if stop_hit:
                 return ExitResult(cur, float(stop_loss_price), "stop_hit",
-                                  _business_days_between(entry_date, cur))
+                                  _trading_days_between(entry_date, cur, trading_days))
             if target_hit:
                 return ExitResult(cur, float(target_price), "target_hit",
-                                  _business_days_between(entry_date, cur))
+                                  _trading_days_between(entry_date, cur, trading_days))
         elif side == "sell":
             stop_hit = stop_loss_price is not None and ohlc["high"] >= stop_loss_price
             target_hit = target_price is not None and ohlc["low"] <= target_price
             if stop_hit:
                 return ExitResult(cur, float(stop_loss_price), "stop_hit",
-                                  _business_days_between(entry_date, cur))
+                                  _trading_days_between(entry_date, cur, trading_days))
             if target_hit:
                 return ExitResult(cur, float(target_price), "target_hit",
-                                  _business_days_between(entry_date, cur))
+                                  _trading_days_between(entry_date, cur, trading_days))
 
     # N일 끝 강제 청산 — 마지막 cur의 종가
     final_ohlc = price_fetcher.ohlc(stock_code, cur)
@@ -103,11 +112,14 @@ def simulate_target_stop_exit(
         # 마지막 날도 휴장이면 직전 영업일로 fallback
         return None
     return ExitResult(cur, float(final_ohlc["close"]), "expired",
-                      _business_days_between(entry_date, cur))
+                      _trading_days_between(entry_date, cur, trading_days))
 
 
 def _business_days_between(start: date, end: date) -> int:
-    """start ~ end 영업일 개수 (start 제외, end 포함)."""
+    """start ~ end 영업일 개수 (start 제외, end 포함). 공휴일 미반영 — 폴백용.
+
+    실거래 캘린더 있으면 `_trading_days_between(start, end, trading_days)` 사용.
+    """
     if end <= start:
         return 0
     cur, n = start, 0
@@ -140,8 +152,12 @@ def score_jsonl(
     input_path: Path,
     price_fetcher: PriceFetcher,
     holding_days: int = 7,
+    trading_days: list[date] | None = None,
 ) -> ScoreResult:
-    """결정 기록 JSONL을 채점. BUY/SELL 방향 hit + 분기별 분해."""
+    """결정 기록 JSONL을 채점. BUY/SELL 방향 hit + 분기별 분해.
+
+    trading_days: 한국 공휴일 회피용 거래일 캘린더. 없으면 weekday 폴백.
+    """
     total = traded = hits = losses = holds = skipped = 0
     returns: list[float] = []
     by_quarter: dict[str, list[float]] = defaultdict(list)
@@ -160,7 +176,7 @@ def score_jsonl(
             skipped += 1
             continue
 
-        exit_date = _add_business_days(trade_date, holding_days)
+        exit_date = _add_trading_days(trade_date, holding_days, trading_days)
         try:
             exit_price = price_fetcher.close_price(rec["stock_code"], exit_date)
         except Exception:
@@ -211,6 +227,7 @@ def score_with_post_mortem(
     post_mortem_fn: Callable[..., Any] | None = None,
     benchmark_fetcher: Any | None = None,
     persist_engine: Any | None = None,
+    trading_days: list[date] | None = None,
 ) -> None:
     """JSONL 라인별로 raw_return 계산 + post_mortem_agent 호출 → scored JSONL.
 
@@ -219,6 +236,8 @@ def score_with_post_mortem(
     persist_engine (SQLAlchemy Engine) 주입 시 reflection을 post_mortem_reports에
         INSERT — 다음 backtest day의 retrieval에 노출됨. ai_judgment_id가
         record에 있어야 동작 (graph_decision adapter가 부착).
+    trading_days: 한국 공휴일 회피용 거래일 캘린더. 없으면 weekday 폴백
+        (holding_days가 공휴일도 카운트해 exit_date 앞당겨짐).
     """
     pm_fn = post_mortem_fn or _default_post_mortem
     persist_store = None
@@ -231,7 +250,8 @@ def score_with_post_mortem(
     with output_path.open("w", encoding="utf-8") as f_out:
         for raw_rec in _iter_records(input_path):
             rec = _normalize_record(raw_rec)
-            scored = _score_one(rec, price_fetcher, holding_days, pm_fn, benchmark_fetcher)
+            scored = _score_one(rec, price_fetcher, holding_days, pm_fn,
+                                benchmark_fetcher, trading_days)
             if persist_store is not None and scored.get("post_mortem"):
                 ok = _persist_reflection(persist_store, scored)
                 if ok is True:
@@ -287,6 +307,7 @@ def _score_one(
     holding_days: int,
     pm_fn: Callable[..., Any],
     benchmark_fetcher: Any | None = None,
+    trading_days: list[date] | None = None,
 ) -> dict[str, Any]:
     """단일 결정 레코드에 target/stop 시뮬 + raw_return + post_mortem 부착.
 
@@ -318,6 +339,7 @@ def _score_one(
             max_holding_days=holding_days,
             price_fetcher=price_fetcher,
             stock_code=rec["stock_code"],
+            trading_days=trading_days,
         )
     except Exception:
         logger.exception("scoring: target/stop 시뮬 실패 %s %s",
