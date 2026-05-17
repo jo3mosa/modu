@@ -191,17 +191,28 @@ public class SignalHandlerService {
      *  SELL : holdings 의 stock_code quantity >= (order_amount / target_price)
      *
      * 자료 조회 실패 시 PortfolioCheckService 가 true 반환 (KIS placeOrder 단계 최종 검증에 위임).
+     *
+     * [publishOrder 검증과 일치]
+     * publishOrder 가 INVALID_ORDER_PARAMS 로 거절하는 케이스 (orderAmount/targetPrice/quantity ≤ 0)는
+     * 여기서도 false 로 끊어 BLOCKED 분기시킴 — 그렇지 않으면 READY 진입 후 publishOrder 가 ApiException
+     * 던져 tx 롤백 + 메시지 재시도 무한 루프 가능.
      */
     private boolean hasSufficientResource(AiDecisionMessage m, String side, AiDecisionMessage.FinalDecision fd) {
+        Long orderAmount = fd.orderAmount();
+        if (orderAmount == null || orderAmount <= 0) {
+            return false;
+        }
         if ("buy".equalsIgnoreCase(side)) {
-            return portfolioCheckService.hasSufficientCash(m.userId(), nullToZero(fd.orderAmount()));
+            return portfolioCheckService.hasSufficientCash(m.userId(), orderAmount);
         }
-        // SELL
-        if (fd.targetPrice() == null || fd.targetPrice() <= 0 || fd.orderAmount() == null) {
-            return true; // 계산 불가 — KIS 단계 위임
+        // SELL — publishOrder 의 quantity 계산식과 동일 (orderAmount / round(targetPrice))
+        if (fd.targetPrice() == null || fd.targetPrice() <= 0) {
+            return false;
         }
-        long quantity = fd.orderAmount() / Math.round(fd.targetPrice());
-        if (quantity <= 0) return true;
+        long limitPrice = Math.round(fd.targetPrice());
+        if (limitPrice <= 0) return false;
+        long quantity = orderAmount / limitPrice;
+        if (quantity <= 0) return false;
         return portfolioCheckService.hasSufficientHolding(m.userId(), m.stockCode(), quantity);
     }
 

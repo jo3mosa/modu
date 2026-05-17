@@ -71,11 +71,13 @@ public class AutoTradeSettings {
     }
 
     /**
-     * 사용자 OFF 요청 — ACTIVE → INACTIVE
-     * Kill Switch 발동 상태에선 호출 금지 (서비스 레이어 가드)
+     * 사용자 OFF 요청 — ACTIVE / KILL_SWITCHED → INACTIVE
+     * KILL_SWITCHED 상태에서 호출 시 kill switch 메타데이터도 함께 클리어 (사용자 명시 OFF 정책)
      */
     public void inactivate() {
         this.autoTradeStatus = AutoTradeStatus.INACTIVE;
+        this.killSwitchReason = null;
+        this.killSwitchTriggeredAt = null;
         this.updatedAt = OffsetDateTime.now();
     }
 

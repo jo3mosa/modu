@@ -14,12 +14,14 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.script.RedisScript;
 
-import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -47,18 +49,18 @@ class KillSwitchServiceTest {
     }
 
     @Test
-    @DisplayName("recordReject 1~4회: 카운트만 증가, Kill Switch 미발동")
+    @DisplayName("recordReject 1~4회: 카운트만 증가 (Lua INCR+EXPIRE 단일 호출), Kill Switch 미발동")
     void recordRejectBelowThreshold() {
         AutoTradeSettings settings = AutoTradeSettings.builder()
                 .userId(USER_ID).autoTradeStatus(AutoTradeStatus.ACTIVE).build();
-        when(valueOps.increment(COUNT_KEY)).thenReturn(3L);
+        when(redisTemplate.<Long>execute(any(RedisScript.class), eq(List.of(COUNT_KEY)), anyString()))
+                .thenReturn(3L);
         when(autoTradeSettingsRepository.findById(USER_ID)).thenReturn(Optional.of(settings));
 
         service.recordReject(USER_ID, STOCK, "테스트 거부");
 
         assertThat(settings.getAutoTradeStatus()).isEqualTo(AutoTradeStatus.ACTIVE);
-        verify(valueOps).increment(COUNT_KEY);
-        verify(redisTemplate).expire(eq(COUNT_KEY), any(Duration.class));
+        verify(redisTemplate).execute(any(RedisScript.class), anyList(), anyString());
     }
 
     @Test
@@ -66,7 +68,8 @@ class KillSwitchServiceTest {
     void recordRejectTriggersKillSwitch() {
         AutoTradeSettings settings = AutoTradeSettings.builder()
                 .userId(USER_ID).autoTradeStatus(AutoTradeStatus.ACTIVE).build();
-        when(valueOps.increment(COUNT_KEY)).thenReturn(5L);
+        when(redisTemplate.<Long>execute(any(RedisScript.class), eq(List.of(COUNT_KEY)), anyString()))
+                .thenReturn(5L);
         when(autoTradeSettingsRepository.findById(USER_ID)).thenReturn(Optional.of(settings));
 
         service.recordReject(USER_ID, STOCK, "한국투자증권 API 토큰 발급에 실패했습니다.");
@@ -84,7 +87,8 @@ class KillSwitchServiceTest {
         AutoTradeSettings settings = AutoTradeSettings.builder()
                 .userId(USER_ID).autoTradeStatus(AutoTradeStatus.KILL_SWITCHED).build();
         settings.triggerKillSwitch("previous");
-        when(valueOps.increment(COUNT_KEY)).thenReturn(5L);
+        when(redisTemplate.<Long>execute(any(RedisScript.class), eq(List.of(COUNT_KEY)), anyString()))
+                .thenReturn(5L);
         when(autoTradeSettingsRepository.findById(USER_ID)).thenReturn(Optional.of(settings));
 
         service.recordReject(USER_ID, STOCK, "또 다른 거부");
@@ -96,7 +100,8 @@ class KillSwitchServiceTest {
     @Test
     @DisplayName("recordReject 5회 도달 + AutoTradeSettings row 없음: 무시 (DB/Redis 변경 X)")
     void recordRejectNoSettingsRow() {
-        when(valueOps.increment(COUNT_KEY)).thenReturn(5L);
+        when(redisTemplate.<Long>execute(any(RedisScript.class), eq(List.of(COUNT_KEY)), anyString()))
+                .thenReturn(5L);
         when(autoTradeSettingsRepository.findById(USER_ID)).thenReturn(Optional.empty());
 
         service.recordReject(USER_ID, STOCK, "test");
@@ -118,6 +123,6 @@ class KillSwitchServiceTest {
         service.recordReject(null, STOCK, "test");
         service.recordReject(USER_ID, null, "test");
 
-        verify(valueOps, never()).increment(anyString());
+        verify(redisTemplate, never()).execute(any(RedisScript.class), anyList(), anyString());
     }
 }

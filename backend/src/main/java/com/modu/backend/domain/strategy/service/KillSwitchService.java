@@ -6,12 +6,15 @@ import com.modu.backend.domain.strategy.repository.AutoTradeSettingsRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Duration;
+import java.util.Collections;
 
 /**
  * Kill Switch 자동 발동 서비스 (S14P31B106-292)
@@ -45,6 +48,18 @@ public class KillSwitchService {
     private static final Duration COUNT_TTL = Duration.ofHours(1);
     private static final long TRIGGER_THRESHOLD = 5L;
 
+    /**
+     * INCR + EXPIRE 원자화 Lua 스크립트 — 두 명령이 분리되면 process death 시 TTL 없는 카운터가
+     * 영구 잔재해 sliding window 가 깨질 수 있음.
+     *
+     * KEYS[1] = counter key, ARGV[1] = TTL seconds
+     * 반환: 새 카운터 값
+     */
+    private static final RedisScript<Long> INCR_WITH_TTL_SCRIPT = new DefaultRedisScript<>(
+            "local v = redis.call('INCR', KEYS[1]); redis.call('EXPIRE', KEYS[1], ARGV[1]); return v;",
+            Long.class
+    );
+
     private final AutoTradeSettingsRepository autoTradeSettingsRepository;
     private final StringRedisTemplate redisTemplate;
 
@@ -58,8 +73,12 @@ public class KillSwitchService {
         String countKey = COUNT_KEY_PREFIX + userId + ":" + stockCode;
         Long count;
         try {
-            count = redisTemplate.opsForValue().increment(countKey);
-            redisTemplate.expire(countKey, COUNT_TTL);   // sliding window
+            // INCR + EXPIRE 원자화 — 두 명령 분리 시 process death 로 TTL 없는 카운터 잔재 위험
+            count = redisTemplate.execute(
+                    INCR_WITH_TTL_SCRIPT,
+                    Collections.singletonList(countKey),
+                    String.valueOf(COUNT_TTL.toSeconds())
+            );
         } catch (Exception e) {
             log.error("KIS 거부 카운트 INCR 실패 - userId: {}, stockCode: {}", userId, stockCode, e);
             return;

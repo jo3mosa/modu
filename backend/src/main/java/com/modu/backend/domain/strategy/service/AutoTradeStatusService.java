@@ -14,6 +14,7 @@ import com.modu.backend.domain.user.repository.KisCredentialRepository;
 import com.modu.backend.global.error.ApiException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -68,12 +69,7 @@ public class AutoTradeStatusService {
         }
 
         AutoTradeSettings settings = autoTradeSettingsRepository.findById(userId)
-                .orElseGet(() -> autoTradeSettingsRepository.save(
-                        AutoTradeSettings.builder()
-                                .userId(userId)
-                                .autoTradeStatus(AutoTradeStatus.INACTIVE)
-                                .build()
-                ));
+                .orElseGet(() -> createInitialSettings(userId));
 
         if (isActive) {
             settings.activate();
@@ -88,6 +84,27 @@ public class AutoTradeStatusService {
                 userId, isActive, settings.getAutoTradeStatus());
 
         return AutoTradeStatusResponse.from(settings);
+    }
+
+    /**
+     * 신규 사용자 초기 row INSERT — 동시 첫 요청 TOCTOU 가드
+     *
+     * findById + save 사이에 race 가 발생해 두 요청 모두 save 시도 시 PK 충돌(DataIntegrityViolationException)
+     * 발생. catch 후 재조회로 회수.
+     */
+    private AutoTradeSettings createInitialSettings(Long userId) {
+        try {
+            return autoTradeSettingsRepository.save(
+                    AutoTradeSettings.builder()
+                            .userId(userId)
+                            .autoTradeStatus(AutoTradeStatus.INACTIVE)
+                            .build()
+            );
+        } catch (DataIntegrityViolationException e) {
+            log.info("AutoTradeSettings 동시 INSERT 충돌 — 기존 row 재조회 - userId: {}", userId);
+            return autoTradeSettingsRepository.findById(userId)
+                    .orElseThrow(() -> e);
+        }
     }
 
     // ───────────────────────────────────────────────────────────────────

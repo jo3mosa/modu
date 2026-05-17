@@ -31,4 +31,12 @@ public interface AiJudgmentRepository extends JpaRepository<AiJudgment, Long> {
     java.util.List<AiJudgment> findByExecutionStatusAndApprovalExpiresAtBefore(
             com.modu.backend.domain.ai.entity.AiExecutionStatus executionStatus,
             java.time.OffsetDateTime threshold);
+
+    /**
+     * 승인/거부 처리용 pessimistic row lock (S14P31B106-292)
+     * 동일 judgmentId 동시 승인 race 차단 — 중복 Order/Kafka 발행 방지
+     */
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("SELECT j FROM AiJudgment j WHERE j.id = :id")
+    java.util.Optional<AiJudgment> findByIdForUpdate(@org.springframework.data.repository.query.Param("id") Long id);
 }

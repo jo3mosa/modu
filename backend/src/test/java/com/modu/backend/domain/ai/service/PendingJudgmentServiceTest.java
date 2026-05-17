@@ -69,7 +69,7 @@ class PendingJudgmentServiceTest {
     @DisplayName("approve: Order INSERT + Kafka 발행(afterCommit 폴백) + judgment.markApproved")
     void approveCreatesOrderAndMarks() {
         AiJudgment judgment = buildPending(20L, OffsetDateTime.now().plusMinutes(3));
-        when(aiJudgmentRepository.findById(20L)).thenReturn(Optional.of(judgment));
+        when(aiJudgmentRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(judgment));
         when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(inv -> {
             Order saved = inv.getArgument(0);
             ReflectionTestUtils.setField(saved, "id", 555L);
@@ -99,7 +99,7 @@ class PendingJudgmentServiceTest {
     @DisplayName("approve: 본인 아닌 경우 DECISION_FORBIDDEN")
     void approveByOtherUserForbidden() {
         AiJudgment judgment = buildPending(30L, OffsetDateTime.now().plusMinutes(3));
-        when(aiJudgmentRepository.findById(30L)).thenReturn(Optional.of(judgment));
+        when(aiJudgmentRepository.findByIdForUpdate(30L)).thenReturn(Optional.of(judgment));
 
         assertThatThrownBy(() -> service.approve(999L, 30L))
                 .isInstanceOf(ApiException.class)
@@ -113,7 +113,7 @@ class PendingJudgmentServiceTest {
     void approveAlreadyProcessed() {
         AiJudgment judgment = buildPending(40L, OffsetDateTime.now().plusMinutes(3));
         judgment.markApproved(100L);
-        when(aiJudgmentRepository.findById(40L)).thenReturn(Optional.of(judgment));
+        when(aiJudgmentRepository.findByIdForUpdate(40L)).thenReturn(Optional.of(judgment));
 
         assertThatThrownBy(() -> service.approve(USER_ID, 40L))
                 .isInstanceOf(ApiException.class)
@@ -125,7 +125,7 @@ class PendingJudgmentServiceTest {
     @DisplayName("approve: 만료된 row 는 DECISION_EXPIRED")
     void approveExpired() {
         AiJudgment judgment = buildPending(50L, OffsetDateTime.now().minusMinutes(1));
-        when(aiJudgmentRepository.findById(50L)).thenReturn(Optional.of(judgment));
+        when(aiJudgmentRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(judgment));
 
         assertThatThrownBy(() -> service.approve(USER_ID, 50L))
                 .isInstanceOf(ApiException.class)
@@ -136,7 +136,7 @@ class PendingJudgmentServiceTest {
     @Test
     @DisplayName("approve: 존재하지 않는 judgmentId 는 JUDGMENT_NOT_FOUND")
     void approveNotFound() {
-        when(aiJudgmentRepository.findById(60L)).thenReturn(Optional.empty());
+        when(aiJudgmentRepository.findByIdForUpdate(60L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.approve(USER_ID, 60L))
                 .isInstanceOf(ApiException.class)
@@ -148,7 +148,7 @@ class PendingJudgmentServiceTest {
     @DisplayName("reject: judgment.markRejected — Order/Kafka 없음")
     void rejectMarks() {
         AiJudgment judgment = buildPending(70L, OffsetDateTime.now().plusMinutes(3));
-        when(aiJudgmentRepository.findById(70L)).thenReturn(Optional.of(judgment));
+        when(aiJudgmentRepository.findByIdForUpdate(70L)).thenReturn(Optional.of(judgment));
 
         DecisionApprovalResponse response = service.reject(USER_ID, 70L);
 

@@ -74,7 +74,11 @@ public class PendingJudgmentService {
 
     @Transactional
     public DecisionApprovalResponse approve(Long userId, Long judgmentId) {
-        AiJudgment judgment = loadAndValidate(userId, judgmentId);
+        // pessimistic write lock — 동일 judgmentId 동시 승인 race 차단
+        AiJudgment judgment = loadForUpdateAndValidate(userId, judgmentId);
+
+        // decision 명시 검증 — 데이터 이상값(HOLD 등) 이 SELL 로 강제 매핑되는 것 방지
+        OrderSide side = resolveSide(judgment.getDecision());
 
         // 주문 파라미터 검증
         Long orderAmount = judgment.getOrderAmount();
@@ -87,9 +91,6 @@ public class PendingJudgmentService {
             throw new ApiException(AiErrorCode.INVALID_ORDER_PARAMS);
         }
 
-        OrderSide side = "BUY".equalsIgnoreCase(judgment.getDecision())
-                ? OrderSide.BUY
-                : OrderSide.SELL;
         String idempotencyKey = UUID.randomUUID().toString();
 
         Order order = Order.builder()
@@ -136,7 +137,8 @@ public class PendingJudgmentService {
 
     @Transactional
     public DecisionApprovalResponse reject(Long userId, Long judgmentId) {
-        AiJudgment judgment = loadAndValidate(userId, judgmentId);
+        // pessimistic write lock — 승인/거부 동시 처리 race 차단
+        AiJudgment judgment = loadForUpdateAndValidate(userId, judgmentId);
         judgment.markRejected();
         log.info("AI 판단 거부 - userId: {}, judgmentId: {}", userId, judgmentId);
         return DecisionApprovalResponse.from(judgment);
@@ -170,8 +172,13 @@ public class PendingJudgmentService {
     // 공통 검증
     // ───────────────────────────────────────────────────────────────────
 
-    private AiJudgment loadAndValidate(Long userId, Long judgmentId) {
-        AiJudgment judgment = aiJudgmentRepository.findById(judgmentId)
+    /**
+     * pessimistic row lock 으로 조회 + 검증
+     * 동일 judgmentId 에 대한 동시 승인/거부 race 차단 — 두 번째 요청은 락 대기 후
+     * 첫 요청이 완료된 row 상태(READY/REJECTED) 를 보고 DECISION_NOT_PENDING 으로 거절됨.
+     */
+    private AiJudgment loadForUpdateAndValidate(Long userId, Long judgmentId) {
+        AiJudgment judgment = aiJudgmentRepository.findByIdForUpdate(judgmentId)
                 .orElseThrow(() -> new ApiException(AiErrorCode.JUDGMENT_NOT_FOUND));
 
         if (!judgment.getUserId().equals(userId)) {
@@ -185,6 +192,16 @@ public class PendingJudgmentService {
             throw new ApiException(AiErrorCode.DECISION_EXPIRED);
         }
         return judgment;
+    }
+
+    /**
+     * decision 명시 검증 — BUY/SELL 만 허용. HOLD 등 이상값은 INVALID_ORDER_PARAMS 로 거절.
+     * APPROVAL_REQUIRED row 는 의미상 BUY/SELL 만이나 데이터 이상값에 대한 fail-fast 방어.
+     */
+    private OrderSide resolveSide(String decision) {
+        if ("BUY".equalsIgnoreCase(decision)) return OrderSide.BUY;
+        if ("SELL".equalsIgnoreCase(decision)) return OrderSide.SELL;
+        throw new ApiException(AiErrorCode.INVALID_ORDER_PARAMS);
     }
 
     // ───────────────────────────────────────────────────────────────────
