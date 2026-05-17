@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -18,6 +19,10 @@ class InvestmentAgentState(BaseModel):
 
     # 그래프 실행 주체 사용자 ID
     user_id: int | None = None
+
+    # 시뮬레이션 기준 시각. None이면 실시간(NOW). backtest는 시뮬레이션 날짜를 주입.
+    # retrieval / memory_log 저장 시각이 이 값을 기준으로 동작한다.
+    as_of: datetime | None = None
 
     # ==============================
     # 1. Analysis Layer output
