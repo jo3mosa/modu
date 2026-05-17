@@ -73,6 +73,24 @@ class Fill:
 
 # ─── AI 팀이 구현할 프로토콜 ─────────────────────────────────────────────────
 
+class SignalFn(Protocol):
+    """트리거 생성 함수 — signal_generator.detect_all() 와 동일 시그니처.
+
+    llm_trigger 모드처럼 룰 기반 트리거를 LLM 기반으로 교체할 때 주입.
+    None 이면 event_loop 가 signal_generator.detect_all() 을 기본으로 사용.
+    """
+    def __call__(
+        self,
+        as_of: date,
+        watchlist: list[str],
+        ohlcv_by_stock: dict,
+        indicators_by_stock: dict,
+        fundamentals_by_stock: dict,
+        disclosures_by_stock: dict,
+        news_by_stock: dict,
+    ) -> list[Trigger]: ...
+
+
 class DecisionFn(Protocol):
     """트리거 → 의사결정. event_loop 가 매 트리거마다 호출.
 
