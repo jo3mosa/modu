@@ -31,15 +31,9 @@ spec:
           labels:
             app: analysis-pipeline
         spec:
-          imagePullSecrets:
-          - name: regcred
-          # 보안 강화 (Trivy KSV030): 기본 seccomp 프로파일로 syscall 제한
-          securityContext:
-            seccompProfile:
-              type: RuntimeDefault
           containers:
           - name: pipeline
-            image: ANALYSIS_IMAGE
+            image: modu-analysis:local
             command: ["python", "scripts/backfill/master_data_loader.py"]
             envFrom:
             - secretRef:
@@ -51,12 +45,6 @@ spec:
               limits:
                 memory: "1Gi"
                 cpu: "1000m"
-            # 보안 강화 (Trivy KSV001, KSV003): 권한 상승 차단 + 모든 capability 제거
-            securityContext:
-              allowPrivilegeEscalation: false
-              capabilities:
-                drop:
-                - ALL
           restartPolicy: OnFailure
 
 ---
@@ -83,15 +71,9 @@ spec:
       labels:
         app: analysis-engine
     spec:
-      imagePullSecrets:
-      - name: regcred
-      # 보안 강화 (Trivy KSV030): 기본 seccomp 프로파일로 syscall 제한
-      securityContext:
-        seccompProfile:
-          type: RuntimeDefault
       containers:
       - name: engine
-        image: ANALYSIS_IMAGE
+        image: modu-analysis:local
         command: ["python", "-m", "main"]
         envFrom:
         - secretRef:
@@ -112,12 +94,6 @@ spec:
           initialDelaySeconds: 30
           periodSeconds: 30
           failureThreshold: 3
-        # 보안 강화 (Trivy KSV001, KSV003): 권한 상승 차단 + 모든 capability 제거
-        securityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop:
-            - ALL
 
 ---
 
@@ -143,15 +119,9 @@ spec:
       labels:
         app: analysis-candle-collector
     spec:
-      imagePullSecrets:
-      - name: regcred
-      # 보안 강화 (Trivy KSV030): 기본 seccomp 프로파일로 syscall 제한
-      securityContext:
-        seccompProfile:
-          type: RuntimeDefault
       containers:
       - name: candle-collector
-        image: ANALYSIS_IMAGE
+        image: modu-analysis:local
         command: ["python", "-m", "collectors.candle_collector", "--loop"]
         envFrom:
         - secretRef:
@@ -172,12 +142,6 @@ spec:
           initialDelaySeconds: 60
           periodSeconds: 60
           failureThreshold: 3
-        # 보안 강화 (Trivy KSV001, KSV003): 권한 상승 차단 + 모든 capability 제거
-        securityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop:
-            - ALL
 
 ---
 
@@ -202,15 +166,9 @@ spec:
       labels:
         app: analysis-disclosure-collector
     spec:
-      imagePullSecrets:
-      - name: regcred
-      # 보안 강화 (Trivy KSV030): 기본 seccomp 프로파일로 syscall 제한
-      securityContext:
-        seccompProfile:
-          type: RuntimeDefault
       containers:
       - name: disclosure-collector
-        image: ANALYSIS_IMAGE
+        image: modu-analysis:local
         command: ["python", "-m", "collectors.disclosure_collector", "--loop"]
         envFrom:
         - secretRef:
@@ -231,12 +189,6 @@ spec:
           initialDelaySeconds: 60
           periodSeconds: 60
           failureThreshold: 3
-        # 보안 강화 (Trivy KSV001, KSV003): 권한 상승 차단 + 모든 capability 제거
-        securityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop:
-            - ALL
 
 ---
 
@@ -261,15 +213,9 @@ spec:
       labels:
         app: analysis-news-collector
     spec:
-      imagePullSecrets:
-      - name: regcred
-      # 보안 강화 (Trivy KSV030): 기본 seccomp 프로파일로 syscall 제한
-      securityContext:
-        seccompProfile:
-          type: RuntimeDefault
       containers:
       - name: news-collector
-        image: ANALYSIS_IMAGE
+        image: modu-analysis:local
         command: ["python", "-m", "collectors.news_collector", "--loop"]
         envFrom:
         - secretRef:
@@ -299,9 +245,3 @@ spec:
             - "import os; os.kill(1, 0)"
           periodSeconds: 60
           failureThreshold: 3
-        # 보안 강화 (Trivy KSV001, KSV003): 권한 상승 차단 + 모든 capability 제거
-        securityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop:
-            - ALL
