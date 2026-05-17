@@ -4,11 +4,13 @@ import com.modu.backend.domain.market.client.KisCandleClient;
 import com.modu.backend.domain.market.client.KisPriceClient;
 import com.modu.backend.domain.market.dto.CandleListResponse;
 import com.modu.backend.domain.market.dto.CandleResponse;
+import com.modu.backend.domain.market.dto.NewsResponse;
 import com.modu.backend.domain.market.dto.StockDetailResponse;
 import com.modu.backend.domain.market.dto.StockListResponse;
 import com.modu.backend.domain.market.dto.StockSummaryResponse;
 import com.modu.backend.domain.market.entity.StockMaster;
 import com.modu.backend.domain.market.exception.MarketErrorCode;
+import com.modu.backend.domain.market.repository.NewsArticleRepository;
 import com.modu.backend.domain.market.repository.StockMasterRepository;
 import com.modu.backend.global.error.ApiException;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +35,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class MarketService {
 
     private final StockMasterRepository stockMasterRepository;
+    private final NewsArticleRepository newsArticleRepository;
     private final KisPlatformTokenService kisPlatformTokenService;
     private final KisPriceClient kisPriceClient;
     private final KisCandleClient kisCandleClient;
@@ -94,6 +97,26 @@ public class MarketService {
                 accessToken, stockCode, period, startDate, endDate);
 
         return new CandleListResponse(stockCode, period, candles);
+    }
+
+    /**
+     * 종목별 관련 뉴스 조회
+     *
+     * 1. stock_master에서 종목코드 유효성 확인 (없으면 STOCK_NOT_FOUND)
+     * 2. MongoDB news_articles 에서 stock_codes 매칭 + published_at desc 최대 20건 조회
+     * 3. 응답 DTO로 변환 (source_name → source, published_at 에 KST +09:00 부착)
+     *
+     * 매칭 기사가 없으면 빈 리스트 반환 (404 아님).
+     */
+    public List<NewsResponse> getStockNews(String stockCode) {
+        stockMasterRepository.findByStockCode(stockCode)
+                .orElseThrow(() -> new ApiException(MarketErrorCode.STOCK_NOT_FOUND));
+
+        return newsArticleRepository
+                .findTop20ByStockCodesContainingOrderByPublishedAtDesc(stockCode)
+                .stream()
+                .map(NewsResponse::from)
+                .toList();
     }
 
     private boolean isKeywordBlank(String keyword) {

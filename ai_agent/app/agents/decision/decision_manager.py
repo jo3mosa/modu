@@ -4,10 +4,11 @@ from typing import Any
 from langchain_core.exceptions import OutputParserException
 from langchain_core.output_parsers import PydanticOutputParser
 
-from app.config.llm import get_strategy_llm
+from app.config.llm import get_structured_llm
 from app.observability.langsmith_helpers import add_run_metadata, count_tokens
 from app.state.investment_state import InvestmentAgentState
 from app.state.schemas import ExpectedScenario, FinalDecision
+from app.utils.agent_message import publish_agent_message
 from app.utils.json_utils import to_json
 from app.utils.object_utils import get_value
 from app.utils.prompt_loader import load_prompt
@@ -15,6 +16,16 @@ from app.utils.prompt_loader import load_prompt
 _PROMPT_PATH = Path(__file__).resolve().parents[2] / "config" / "prompts" / "decision_manager.txt"
 
 _parser = PydanticOutputParser(pydantic_object=FinalDecision)
+
+
+def _format_debate_history(debate_rounds: list[dict]) -> str:
+    if not debate_rounds:
+        return "(토론 기록 없음)"
+    parts = [
+        f"[Round {r['round']}]\nBull: {r['bull']}\nBear: {r['bear']}"
+        for r in debate_rounds
+    ]
+    return "\n\n".join(parts)
 
 
 def decision_manager(state: InvestmentAgentState) -> dict[str, Any]:
@@ -50,13 +61,13 @@ def decision_manager(state: InvestmentAgentState) -> dict[str, Any]:
             history_context_tokens=history_context_tokens,
         )
 
-    chain = load_prompt(str(_PROMPT_PATH)) | get_strategy_llm() | _parser
+    chain = load_prompt(str(_PROMPT_PATH)) | get_structured_llm() | _parser
 
     debate_state = state.investment_debate_state or {}
 
     inputs = {
         "research_verdict": to_json(verdict),
-        "debate_history": debate_state.get("history") or "(토론 history 없음)",
+        "debate_history": _format_debate_history(debate_state.get("debate_rounds", [])),
         "candidate_assets": to_json(state.candidate_assets),
         "analysis_snapshot": to_json(state.analysis_snapshot),
         "portfolio_snapshot": to_json(state.portfolio_snapshot),
@@ -120,6 +131,9 @@ def decision_manager(state: InvestmentAgentState) -> dict[str, Any]:
         "risk_level": final_decision.risk_level,
         "history_context_tokens": history_context_tokens,
     })
+
+    round_count = debate_state.get("round_count", 0)
+    publish_agent_message(state, "DECIDE", round_count * 2 + 1, final_decision.user_message or final_decision.reason_summary, stock_code=final_decision.asset or None)
 
     return {
         "final_decision": final_decision,

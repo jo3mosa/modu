@@ -32,7 +32,7 @@ from sqlalchemy.engine import Engine
 
 from . import data_sources, signal_generator
 from .config import BacktestEnv, EVENT_LOOKBACK_DAYS, SENTIMENT_LOOKBACK_DAYS
-from .interfaces import DecisionFn, Fill, PortfolioFn, UserContextFn
+from .interfaces import DecisionFn, Fill, PortfolioFn, SignalFn, UserContextFn
 from .output import JsonlWriter, build_record, open_writer, write_summary
 
 logger = logging.getLogger(__name__)
@@ -46,6 +46,11 @@ class BacktestStats:
     triggers_with_decision: int = 0
     decision_errors: int = 0
     fills: int = 0
+    stop_fills: int = 0          # evaluate_open_positions로 자동 청산된 건수
+    target_fills: int = 0
+    settled_fills: int = 0       # 다음 사이클 settle()로 실제 적용된 pending 건수
+    settled_buys: int = 0
+    settled_sells: int = 0
     action_counter: Counter = None
     rule_counter: Counter = None
 
@@ -62,6 +67,11 @@ class BacktestStats:
             "triggers_with_decision": self.triggers_with_decision,
             "decision_errors": self.decision_errors,
             "fills": self.fills,
+            "stop_fills": self.stop_fills,
+            "target_fills": self.target_fills,
+            "settled_fills": self.settled_fills,
+            "settled_buys": self.settled_buys,
+            "settled_sells": self.settled_sells,
             "action_distribution": dict(self.action_counter),
             "rule_distribution": dict(self.rule_counter),
         }
@@ -79,11 +89,16 @@ def run(
     user_id: str = "backtest-user",
     watchlist_override: Optional[list[str]] = None,
     run_id: Optional[str] = None,
+    signal_fn: Optional[SignalFn] = None,
 ) -> dict:
     """백테스트 1회 실행. 통계 dict 반환.
 
     watchlist_override 가 주어지면 매일 그 종목들만 평가 — 디버깅·소규모 실험용.
     None 이면 매일 daily_ohlcv 의 거래 기록으로 watchlist 자동 산출 (생존편향 회피).
+
+    signal_fn:
+        None 이면 signal_generator.detect_all() 사용 (기본 지표 룰 트리거).
+        주입 시 해당 함수로 트리거 생성을 대체 (llm_trigger 모드 등).
     """
     run_id = run_id or _new_run_id(start, end, user_id)
     started_at = datetime.utcnow()
@@ -99,9 +114,28 @@ def run(
 
         for i, day in enumerate(trading_days, 1):
             day_started = time.monotonic()
+
+            # 이전 사이클 execute()가 적재한 pending_orders를 오늘 실제 적용.
+            # cash/holdings/open_positions는 이 시점에 갱신 → 이후 단계의
+            # decision_fn snapshot / evaluate_open_positions / mark_to_market은
+            # 모두 settle 직후 상태를 본다 (T+1 진입을 T 데이터로 평가하던
+            # 시점 꼬임 해결의 핵심).
+            if hasattr(portfolio, "settle"):
+                try:
+                    settled = portfolio.settle(day)
+                    for sf in settled or []:
+                        stats.settled_fills += 1
+                        if sf.notes and "buy" in sf.notes:
+                            stats.settled_buys += 1
+                        elif sf.notes and "sell" in sf.notes:
+                            stats.settled_sells += 1
+                except Exception:
+                    logger.exception("portfolio.settle 실패 day=%s", day)
+
             triggers, fetched_stocks = _run_one_day(
                 engine=engine, mongo=mongo, day=day,
                 watchlist_override=watchlist_override,
+                signal_fn=signal_fn,
             )
             stats.days += 1
             stats.triggers_total += len(triggers)
@@ -148,6 +182,25 @@ def run(
                     user_context=user_ctx, portfolio_snapshot=snapshot,
                 ))
 
+            # 보유 포지션의 stop_loss / target_price 도달 평가 (선택 구현).
+            # mark_to_market 직전에 실행 — 도달 시 청산이 EOD 자산에 반영되도록.
+            if hasattr(portfolio, "evaluate_open_positions"):
+                try:
+                    auto_fills = portfolio.evaluate_open_positions(day, fetched_stocks)
+                except Exception:
+                    logger.exception("evaluate_open_positions 실패 day=%s", day)
+                    auto_fills = []
+                for af in auto_fills or []:
+                    if af.notes and af.notes.startswith("stop_loss_hit"):
+                        stats.stop_fills += 1
+                    elif af.notes and af.notes.startswith("target_hit"):
+                        stats.target_fills += 1
+                    stats.fills += 1
+                    writer.write(day, _build_auto_fill_record(
+                        run_id=run_id, user_id=user_id, day=day, fill=af,
+                        portfolio_snapshot=portfolio.snapshot(),
+                    ))
+
             # EOD: mark-to-market — close_prices 는 그날 종가.
             close_prices = {sc: row.get("close")
                             for sc, row in fetched_stocks.items()}
@@ -163,6 +216,25 @@ def run(
                         len(triggers), stats.fills, elapsed)
 
     ended_at = datetime.utcnow()
+    # 마지막 일자에 남은 pending — 다음 영업일이 백테스트 범위 밖이라 settle 불가.
+    # record(JSONL)에는 이미 예약 Fill이 발행되어 있어 결정/scoring 흐름은 정상.
+    # 단, 그 결정은 실제 자산 곡선에 반영되지 못함 → 경고로 가시화.
+    unsettled = len(getattr(portfolio, "pending_orders", []) or [])
+    if unsettled:
+        logger.warning("백테스트 종료 시 미체결 pending %d건 — 마지막 일자 결정은 "
+                       "다음 영업일 settle 기회가 없어 자산 곡선 미반영", unsettled)
+    # equity_curve 기반 표준 메트릭 — portfolio가 노출하는 경우만 산출.
+    equity_metrics = _compute_equity_metrics_if_available(portfolio)
+    stats_payload = stats.as_dict()
+    stats_payload["unsettled_pending_at_end"] = unsettled
+    if equity_metrics is not None:
+        stats_payload["equity_metrics"] = equity_metrics
+        logger.info("equity 메트릭 — total_return=%.2f%% / CAGR=%.2f%% / "
+                    "Sharpe=%.2f / MaxDD=%.2f%%",
+                    equity_metrics["total_return_pct"] * 100,
+                    equity_metrics["cagr"] * 100,
+                    equity_metrics["sharpe"],
+                    equity_metrics["max_drawdown_pct"] * 100)
     summary_path = write_summary(
         output_root, run_id=run_id,
         started_at=started_at, ended_at=ended_at,
@@ -174,19 +246,61 @@ def run(
             "event_lookback_days": EVENT_LOOKBACK_DAYS,
             "sentiment_lookback_days": SENTIMENT_LOOKBACK_DAYS,
         },
-        stats=stats.as_dict(),
+        stats=stats_payload,
     )
     logger.info("백테스트 완료 — summary %s", summary_path)
     return {"run_id": run_id, "summary_path": str(summary_path),
-            "stats": stats.as_dict()}
+            "stats": stats_payload}
+
+
+def _compute_equity_metrics_if_available(portfolio: PortfolioFn) -> Optional[dict]:
+    """portfolio가 equity_curve 속성을 노출하면 메트릭 산출, 아니면 None."""
+    curve = getattr(portfolio, "equity_curve", None)
+    if not curve:
+        return None
+    try:
+        from .portfolio_metrics import compute_equity_metrics
+        return compute_equity_metrics(curve)
+    except Exception:
+        logger.exception("equity 메트릭 산출 실패")
+        return None
+
+
+def _build_auto_fill_record(
+    *, run_id: str, user_id: str, day, fill: Fill,
+    portfolio_snapshot,
+) -> dict:
+    """stop_loss/target_price 자동 청산 Fill 전용 레코드.
+
+    트리거가 없는 청산이므로 일반 trigger 레코드와 구분되는 record_type 부여.
+    scoring/대시보드가 무시해도 동작이 깨지지 않도록 키 set은 보수적으로.
+    """
+    return {
+        "run_id": run_id,
+        "user_id": user_id,
+        "as_of_date": day,
+        "record_type": "auto_fill",
+        "stock_code": fill.notes.split(":")[-1] if fill.notes and ":" in fill.notes else None,
+        "fill": fill,
+        "portfolio_snapshot": portfolio_snapshot,
+        "recorded_at": datetime.utcnow().isoformat() + "Z",
+    }
 
 
 # ─── 내부 헬퍼 ───────────────────────────────────────────────────────────────
 
-def _run_one_day(*, engine: Engine, mongo, day: date,
-                 watchlist_override: Optional[list[str]]
-                 ) -> tuple[list, dict]:
-    """하루치 bulk fetch + 트리거 검출. (triggers, ohlcv_by_stock) 반환."""
+def _run_one_day(
+    *,
+    engine: Engine,
+    mongo,
+    day: date,
+    watchlist_override: Optional[list[str]],
+    signal_fn: Optional[SignalFn] = None,
+) -> tuple[list, dict]:
+    """하루치 bulk fetch + 트리거 검출. (triggers, ohlcv_by_stock) 반환.
+
+    signal_fn 이 주어지면 signal_generator.detect_all() 대신 사용.
+    """
     # None 만 자동 산출 트리거. 빈 리스트는 "명시적으로 0 종목" 의도이므로
     # 그대로 빈 watchlist 로 흘려보내 트리거 0 건으로 마감.
     if watchlist_override is None:
@@ -202,7 +316,8 @@ def _run_one_day(*, engine: Engine, mongo, day: date,
     disclosures = data_sources.fetch_disclosures_window(mongo, day, watchlist)
     news = data_sources.fetch_news_window(mongo, day, watchlist)
 
-    triggers = signal_generator.detect_all(
+    _trigger_fn = signal_fn if signal_fn is not None else signal_generator.detect_all
+    triggers = _trigger_fn(
         as_of=day, watchlist=watchlist,
         ohlcv_by_stock=ohlcv,
         indicators_by_stock=indicators,

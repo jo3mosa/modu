@@ -12,10 +12,20 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
     # WebSocket: HTTP/1.1 필수 (Upgrade 헤더 지원).
-    # nginx-ingress 는 proxy-http-version: 1.1 만으로도 대부분 환경에서 WebSocket Upgrade 자동 처리.
-    # 만약 자동 처리 안 되어 WebSocket 핸드셰이크 실패하면 configuration-snippet 으로 명시 전달 필요하지만,
-    # 그 경우 ingress-nginx ConfigMap 에 `allow-snippet-annotations: "true"` 설정도 함께 필요.
     nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    # WebSocket Upgrade/Connection 헤더 명시 전달 (nginx-ingress → backend).
+    # SSAFY K3s 환경에서는 nginx-ingress 가 proxy-http-version: 1.1 만으로
+    # WebSocket Upgrade 헤더를 자동 전달하지 못함. snippet 으로 명시 전달 필요.
+    #
+    # 추가 필수: SSAFY 호스트 nginx(/etc/nginx/sites-enabled/default)에도
+    # 동일한 WebSocket 지원 설정 필요 — 외부 호스트 nginx 가 Upgrade 헤더 strip
+    # 하던 것을 발견해 별도로 수정함. K8s 매니페스트만으로 해결 불가능했음.
+    #
+    # 일반 HTTP 요청에 Upgrade/Connection 헤더 추가는 backend 가 무시하므로 부작용 없음.
+    # (장기적으로 $connection_upgrade map 변수 사용이 표준이나, 현재 동작 검증된 구성 유지)
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "Upgrade";
 spec:
   ingressClassName: nginx
   rules:

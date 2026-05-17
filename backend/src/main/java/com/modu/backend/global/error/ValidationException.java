@@ -11,4 +11,9 @@ public class ValidationException extends RuntimeException {
         super(message);
         this.errorCode = CommonErrorCode.VALIDATION_ERROR;
     }
+
+    public ValidationException(String message, Throwable cause) {
+        super(message, cause);
+        this.errorCode = CommonErrorCode.VALIDATION_ERROR;
+    }
 }

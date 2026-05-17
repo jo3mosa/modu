@@ -1,0 +1,6 @@
+# Dashboard 전용 의존성 (production 미사용).
+# 설치: pip install -r requirements-dashboard.txt
+# 실행: streamlit run dashboards/backtest_viewer.py
+streamlit==1.39.0
+pandas==2.2.3
+plotly==5.24.1

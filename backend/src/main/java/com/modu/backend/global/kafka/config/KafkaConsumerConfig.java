@@ -1,5 +1,6 @@
 package com.modu.backend.global.kafka.config;
 
+import com.modu.backend.global.kafka.dto.AgentMessageKafkaMessage;
 import com.modu.backend.global.kafka.dto.AiDecisionMessage;
 import com.modu.backend.global.kafka.dto.TradeOrderExecutedMessage;
 import com.modu.backend.global.kafka.dto.TradeOrderMessage;
@@ -33,11 +34,13 @@ import java.util.Map;
  *  - KIS_ORDER         : 1 — KIS API 호출 직렬화 필수 (rate limit 대응)
  *  - PORTFOLIO_UPDATE  : 3 — DB·Redis 갱신 병렬 처리
  *  - AI_DECISION       : 3 — AI 판단 메시지 병렬 처리
+ *  - AGENT_MESSAGE     : 3 — 단순 INSERT + SSE 푸시, 병렬 가능
  *
  * [maxPollRecords]
  *  - KIS_ORDER         : 10 — KIS 호출 latency 고려 작게
  *  - PORTFOLIO_UPDATE  : 50 — 빠른 DB 처리 가능
  *  - AI_DECISION       : 10 — 판단 처리 latency 고려
+ *  - AGENT_MESSAGE     : 50 — 가벼운 작업이라 한 번에 다량 처리 가능
  */
 @Configuration
 @EnableKafka
@@ -65,6 +68,15 @@ public class KafkaConsumerConfig {
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, AiDecisionMessage> aiDecisionListenerContainerFactory() {
         return buildFactory(AiDecisionMessage.class, 3, 10);
+    }
+
+    /**
+     * AI 에이전트 발화 메시지 Listener Factory
+     * 단순 INSERT + SSE 푸시라 동시성 3, 배치 50 으로 처리량 우선.
+     */
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<String, AgentMessageKafkaMessage> agentMessageListenerContainerFactory() {
+        return buildFactory(AgentMessageKafkaMessage.class, 3, 50);
     }
 
     /**

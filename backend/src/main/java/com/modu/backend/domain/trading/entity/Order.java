@@ -176,4 +176,46 @@ public class Order {
         this.rejectReason = reason;
         this.updatedAt    = OffsetDateTime.now();
     }
+
+    /**
+     * KIS 예약주문 접수 성공 처리 (S14P31B106-336)
+     *
+     * placeReservedOrder 응답의 RSVN_ORD_SEQ 를 kis_rsvn_seq 에 저장.
+     * KIS 일반 주문 (placeOrder) 가 발급하는 kis_order_no / kis_org_no 는 없음.
+     *
+     * @param kisRsvnSeq  KIS 예약주문 순번
+     * @param submittedAt 접수 시각
+     */
+    public void markReserved(String kisRsvnSeq, OffsetDateTime submittedAt) {
+        guardNotTerminal(OrderStatus.RESERVED);
+        this.status      = OrderStatus.RESERVED;
+        this.kisRsvnSeq  = kisRsvnSeq;
+        this.submittedAt = submittedAt;
+        this.updatedAt   = OffsetDateTime.now();
+    }
+
+    /**
+     * 예약주문 발행 대기 상태로 전환 (S14P31B106-336)
+     *
+     * 자동매매 결정이 예약 가능 시간 직전 (E gap 15:30~15:40) 또는 공휴일 정규장 시간대에
+     * 도달했을 때 사용. ReservedPendingOrderSweeper 가 예약 가능 시간 도래 시 picks up.
+     */
+    public void markReservedPending() {
+        guardNotTerminal(OrderStatus.RESERVED_PENDING);
+        this.status    = OrderStatus.RESERVED_PENDING;
+        this.updatedAt = OffsetDateTime.now();
+    }
+
+    /**
+     * 종착 상태 (FILLED / CANCELED / REJECTED) 에서 다른 상태로의 전이 차단 — 상태 머신 불변성 보호.
+     * 호출자 (서비스 레이어) 가 락 + 사전 체크하지만 엔티티 레벨에서도 방어적 검증.
+     */
+    private void guardNotTerminal(OrderStatus target) {
+        if (this.status == OrderStatus.FILLED
+                || this.status == OrderStatus.CANCELED
+                || this.status == OrderStatus.REJECTED) {
+            throw new IllegalStateException(
+                    "종착 상태에서 전이 불가 - currentStatus: " + this.status + ", attempted: " + target);
+        }
+    }
 }
