@@ -143,6 +143,30 @@ public class PendingJudgmentService {
     }
 
     // ───────────────────────────────────────────────────────────────────
+    // 만료 처리 (S14P31B106-292)
+    // ───────────────────────────────────────────────────────────────────
+
+    /**
+     * 만료 후보 일괄 EXPIRED 전환 — 스케줄러가 1분 간격 호출.
+     *
+     * 한 트랜잭션 안에서 List 처리 — 일관성 보장.
+     * 단일 인스턴스 가정. 다중 인스턴스 시 동일 row 를 여러 노드가 UPDATE 할 수 있으나 markExpired 가
+     * idempotent (enum 변경) 이라 큰 위험 X. 추후 분산 락 도입은 별도 이슈.
+     *
+     * @return 만료 처리한 row 개수
+     */
+    @Transactional
+    public int expirePending() {
+        OffsetDateTime threshold = OffsetDateTime.now();
+        List<AiJudgment> expired = aiJudgmentRepository
+                .findByExecutionStatusAndApprovalExpiresAtBefore(AiExecutionStatus.APPROVAL_REQUIRED, threshold);
+        if (expired.isEmpty()) return 0;
+        expired.forEach(AiJudgment::markExpired);
+        log.info("AI 판단 승인 만료 처리 - count: {}, threshold: {}", expired.size(), threshold);
+        return expired.size();
+    }
+
+    // ───────────────────────────────────────────────────────────────────
     // 공통 검증
     // ───────────────────────────────────────────────────────────────────
 
