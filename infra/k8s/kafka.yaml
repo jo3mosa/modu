@@ -125,9 +125,11 @@ spec:
         resources:
           # Kafka JVM heap(~1Gi) + OS file cache(성능 핵심).
           # 운영 안정성 위해 limit 을 JVM heap 2배로 — JVM 1Gi + page cache 1Gi.
+          # CPU request: 실측 30m/브로커 기반 — 단일 노드 K3s 자원 확보 위해 150m 로 조정.
+          # burst (토픽 생성/리밸런싱) 시점엔 limit 1500m 까지 활용.
           requests:
             memory: "1Gi"
-            cpu: "400m"
+            cpu: "150m"
           limits:
             memory: "2Gi"
             cpu: "1500m"
