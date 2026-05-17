@@ -8,6 +8,7 @@ from app.config.llm import get_structured_llm
 from app.observability.langsmith_helpers import add_run_metadata, count_tokens
 from app.state.investment_state import InvestmentAgentState
 from app.state.schemas import ExpectedScenario, FinalDecision
+from app.utils.agent_message import publish_agent_message
 from app.utils.json_utils import to_json
 from app.utils.object_utils import get_value
 from app.utils.prompt_loader import load_prompt
@@ -130,6 +131,9 @@ def decision_manager(state: InvestmentAgentState) -> dict[str, Any]:
         "risk_level": final_decision.risk_level,
         "history_context_tokens": history_context_tokens,
     })
+
+    round_count = debate_state.get("round_count", 0)
+    publish_agent_message(state, "DECIDE", round_count * 2 + 1, final_decision.user_message or final_decision.reason_summary)
 
     return {
         "final_decision": final_decision,

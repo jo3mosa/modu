@@ -4,6 +4,7 @@ from typing import Any
 from app.config.llm import get_debate_llm
 from app.observability.langsmith_helpers import add_run_metadata
 from app.state.investment_state import InvestmentAgentState
+from app.utils.agent_message import publish_agent_message
 from app.utils.json_utils import to_json
 from app.utils.prompt_loader import load_prompt
 
@@ -53,6 +54,7 @@ def bull_researcher(state: InvestmentAgentState) -> dict[str, Any]:
     try:
         response = chain.invoke(inputs)
         argument = f"Bull Analyst: {response.content.strip()}"
+        publish_agent_message(state, "BULL", round_count * 2, response.content.strip())
     except Exception as exc:
         argument = (
             f"Bull Analyst: (LLM 호출 실패로 매수 우호 주장을 생성하지 못함: {exc}). "
