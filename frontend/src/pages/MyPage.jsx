@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
+import { toast } from 'sonner';
 import { getMyInfo, registerKisKey, updateKisKey, deleteKisKey } from '../api/user';
 import { logout } from '../api/auth';
 import './MyPage.css';
@@ -67,11 +68,11 @@ export default function MyPage() {
         if (apiKeys.accountNo) payload.accountNo = apiKeys.accountNo;
 
         if (Object.keys(payload).length === 0) {
-          alert('변경할 항목을 입력해 주세요.');
+          toast.error('변경할 항목을 입력해 주세요.');
           return;
         }
         await updateKisKey(payload);
-        alert('한국투자증권 API 키가 수정되었습니다!');
+        toast.success('한국투자증권 API 키가 수정되었습니다');
         setIsConnected(true); // 수정 성공 시 연결됨 상태 유지
       } else {
         await registerKisKey({
@@ -80,12 +81,12 @@ export default function MyPage() {
           accountNo: apiKeys.accountNo,
           isRealAccount: true // 실전투자 고정
         });
-        alert('한국투자증권 API 키가 등록되었습니다!');
+        toast.success('한국투자증권 API 키가 등록되었습니다');
         setIsConnected(true);
       }
     } catch (e) {
       console.error('API 연동 실패', e);
-      alert(e.message || 'API 연동에 실패했습니다. 키 값을 확인해주세요.');
+      toast.error(e.message || 'API 연동에 실패했습니다. 키 값을 확인해주세요.');
     } finally {
       setSavingKeys(false);
     }
@@ -105,12 +106,12 @@ export default function MyPage() {
     if (!window.confirm('정말 연동을 해제하시겠습니까? 자동매매가 중단됩니다.')) return;
     try {
       await deleteKisKey();
-      alert('한국투자증권 연동이 해제되었습니다.');
+      toast.success('한국투자증권 연동이 해제되었습니다');
       setIsConnected(false);
       setApiKeys({ appKey: '', appSecret: '', accountNo: '' });
     } catch (e) {
       console.error('연동 해제 실패', e);
-      alert(e.message || '연동 해제에 실패했습니다.');
+      toast.error(e.message || '연동 해제에 실패했습니다.');
     }
   };
 

@@ -48,6 +48,9 @@ class BacktestStats:
     fills: int = 0
     stop_fills: int = 0          # evaluate_open_positions로 자동 청산된 건수
     target_fills: int = 0
+    settled_fills: int = 0       # 다음 사이클 settle()로 실제 적용된 pending 건수
+    settled_buys: int = 0
+    settled_sells: int = 0
     action_counter: Counter = None
     rule_counter: Counter = None
 
@@ -66,6 +69,9 @@ class BacktestStats:
             "fills": self.fills,
             "stop_fills": self.stop_fills,
             "target_fills": self.target_fills,
+            "settled_fills": self.settled_fills,
+            "settled_buys": self.settled_buys,
+            "settled_sells": self.settled_sells,
             "action_distribution": dict(self.action_counter),
             "rule_distribution": dict(self.rule_counter),
         }
@@ -108,6 +114,24 @@ def run(
 
         for i, day in enumerate(trading_days, 1):
             day_started = time.monotonic()
+
+            # 이전 사이클 execute()가 적재한 pending_orders를 오늘 실제 적용.
+            # cash/holdings/open_positions는 이 시점에 갱신 → 이후 단계의
+            # decision_fn snapshot / evaluate_open_positions / mark_to_market은
+            # 모두 settle 직후 상태를 본다 (T+1 진입을 T 데이터로 평가하던
+            # 시점 꼬임 해결의 핵심).
+            if hasattr(portfolio, "settle"):
+                try:
+                    settled = portfolio.settle(day)
+                    for sf in settled or []:
+                        stats.settled_fills += 1
+                        if sf.notes and "buy" in sf.notes:
+                            stats.settled_buys += 1
+                        elif sf.notes and "sell" in sf.notes:
+                            stats.settled_sells += 1
+                except Exception:
+                    logger.exception("portfolio.settle 실패 day=%s", day)
+
             triggers, fetched_stocks = _run_one_day(
                 engine=engine, mongo=mongo, day=day,
                 watchlist_override=watchlist_override,
@@ -192,9 +216,17 @@ def run(
                         len(triggers), stats.fills, elapsed)
 
     ended_at = datetime.utcnow()
+    # 마지막 일자에 남은 pending — 다음 영업일이 백테스트 범위 밖이라 settle 불가.
+    # record(JSONL)에는 이미 예약 Fill이 발행되어 있어 결정/scoring 흐름은 정상.
+    # 단, 그 결정은 실제 자산 곡선에 반영되지 못함 → 경고로 가시화.
+    unsettled = len(getattr(portfolio, "pending_orders", []) or [])
+    if unsettled:
+        logger.warning("백테스트 종료 시 미체결 pending %d건 — 마지막 일자 결정은 "
+                       "다음 영업일 settle 기회가 없어 자산 곡선 미반영", unsettled)
     # equity_curve 기반 표준 메트릭 — portfolio가 노출하는 경우만 산출.
     equity_metrics = _compute_equity_metrics_if_available(portfolio)
     stats_payload = stats.as_dict()
+    stats_payload["unsettled_pending_at_end"] = unsettled
     if equity_metrics is not None:
         stats_payload["equity_metrics"] = equity_metrics
         logger.info("equity 메트릭 — total_return=%.2f%% / CAGR=%.2f%% / "

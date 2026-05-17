@@ -2,7 +2,10 @@ package com.modu.backend.domain.ai.controller;
 
 import com.modu.backend.domain.ai.dto.AiJudgmentDetailResponse;
 import com.modu.backend.domain.ai.dto.AiJudgmentPageResponse;
+import com.modu.backend.domain.ai.dto.DecisionApprovalResponse;
+import com.modu.backend.domain.ai.dto.PendingDecisionResponse;
 import com.modu.backend.domain.ai.service.AiJudgmentService;
+import com.modu.backend.domain.ai.service.PendingJudgmentService;
 import com.modu.backend.global.dto.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -13,9 +16,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 @Tag(name = "AI Agent", description = "AI 판단 이력 조회 API")
 @RestController
@@ -24,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AiJudgmentController {
 
     private final AiJudgmentService aiJudgmentService;
+    private final PendingJudgmentService pendingJudgmentService;
 
     @Operation(
             summary = "AI 판단 전체 이력 조회",
@@ -79,5 +86,78 @@ public class AiJudgmentController {
 
         AiJudgmentDetailResponse response = aiJudgmentService.getJudgmentByOrder(userId, orderId);
         return ResponseEntity.ok(ApiResponse.success("주문별 AI 판단 근거를 조회했습니다.", response));
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 승인 대기 / 승인 / 거부 (S14P31B106-292)
+    // ──────────────────────────────────────────────────────────────────────
+
+    @Operation(
+            summary = "승인 대기 AI 판단 목록",
+            description = """
+                    execution_status = APPROVAL_REQUIRED 이고 만료되지 않은 판단을 최신순으로 반환합니다.
+                    APPROVAL_REQUIRED 진입 시점에 5분 만료 시각이 설정되며, 만료된 판단은 스케줄러가 EXPIRED 로 전환합니다.
+                    """
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "인증 필요")
+    })
+    @GetMapping("/pending")
+    public ResponseEntity<ApiResponse<List<PendingDecisionResponse>>> listPending(
+            @AuthenticationPrincipal Long userId) {
+        List<PendingDecisionResponse> pending = pendingJudgmentService.listPending(userId);
+        return ResponseEntity.ok(ApiResponse.success("승인 대기 목록을 조회했습니다.", pending));
+    }
+
+    @Operation(
+            summary = "AI 판단 승인",
+            description = """
+                    APPROVAL_REQUIRED 상태인 AI 판단을 승인하여 LIMIT 주문 발행 흐름으로 전환합니다.
+
+                    [흐름]
+                      1. execution_status → READY, order_id 연결
+                      2. orders 신규 row INSERT (PENDING / LIMIT / AI_DECISION)
+                      3. BUY 시 PositionThreshold.ai_*_price 갱신 (활성 row 있을 때만)
+                      4. trade.order.submitted Kafka 발행 (커밋 후)
+
+                    [실패]
+                      - 본인 판단 아님 → DECISION_FORBIDDEN
+                      - 이미 처리됨 → DECISION_NOT_PENDING
+                      - 만료됨 → DECISION_EXPIRED
+                    """
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "승인 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "본인 판단 아님"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "AI 판단 없음"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "이미 처리됨"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "410", description = "만료됨")
+    })
+    @PostMapping("/{judgmentId}/approve")
+    public ResponseEntity<ApiResponse<DecisionApprovalResponse>> approve(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long judgmentId) {
+        DecisionApprovalResponse response = pendingJudgmentService.approve(userId, judgmentId);
+        return ResponseEntity.ok(ApiResponse.success("AI 판단을 승인했습니다.", response));
+    }
+
+    @Operation(
+            summary = "AI 판단 거부",
+            description = "APPROVAL_REQUIRED 상태인 AI 판단을 거부합니다. execution_status → REJECTED."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "거부 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "본인 판단 아님"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "AI 판단 없음"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "이미 처리됨"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "410", description = "만료됨")
+    })
+    @PostMapping("/{judgmentId}/reject")
+    public ResponseEntity<ApiResponse<DecisionApprovalResponse>> reject(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long judgmentId) {
+        DecisionApprovalResponse response = pendingJudgmentService.reject(userId, judgmentId);
+        return ResponseEntity.ok(ApiResponse.success("AI 판단을 거부했습니다.", response));
     }
 }

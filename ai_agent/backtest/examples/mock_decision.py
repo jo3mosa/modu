@@ -85,24 +85,38 @@ def flat_user_context(day: date, user_id: str) -> dict:
 
 @dataclass
 class SimplePortfolio:
-    """v1 placeholder — cash + holdings dict + per-stock open position 메타.
+    """v1 placeholder — pending order 패턴으로 시점 정합성 보장.
 
     체결 모델:
+      - Day T 결정은 `execute()`에서 pending_orders에 적재만. cash / holdings /
+        open_positions는 미변경. record에는 예약 Fill을 그대로 발행 (체결가는
+        T+1 시가로 확정 — 다음 사이클에 그대로 적용되므로 의미 정합).
+      - Day T+1 사이클 시작 시 `settle(day)`가 pending을 실제 적용.
+      - 따라서 같은 사이클의 evaluate_open_positions / mark_to_market은 아직
+        settle 안 된 새 진입을 보지 않음 → "T+1 진입을 T 데이터로 평가"하는
+        시점 꼬임 해결.
+      - 동일 사이클에 같은 종목 다중 매수/매도가 큐잉되어도 over-commit 안
+        되게 execute()는 `_available_cash` / `_sellable_qty` (pending 반영)로 검사.
+
+      가격/수수료:
       - next-day open 가격으로 시장가 체결
       - 수수료 0.015% (양방향), 매도시 거래세 0.20% (KRX 표준)
       - 보유 기간 동안 매일 intraday high/low로 stop_loss/target_price 평가 →
         도달 시 자동 청산 (evaluate_open_positions)
-      - 슬리피지·부분체결·갭상하한 미고려
+      - 슬리피지·갭상하한 미고려. 부분체결은 cash/holdings 부족 시만 발생.
 
     open_positions:
       {stock_code: {entry_price, stop_loss_price, target_price, entry_date}}
       단일 포지션 모델 (한 종목 = 한 포지션). 추가 매수 시 entry_price는
-      거래량 가중 평균, stop/target은 최신 Decision 값으로 덮어쓴다 (가장
-      최근 에이전트 판단을 신뢰).
+      거래량 가중 평균, stop/target은 최신 Decision 값으로 덮어쓴다.
+
+    pending_orders:
+      settle 호출 전까지 미적용 상태. 백테스트 마지막 일자에 남은 pending은
+      체결되지 않고 경고만 — record에는 이미 Fill이 발행되어 있으므로
+      "그날 결정 + 다음날 체결 가정" 시뮬레이션은 그대로 유효.
 
     initial_holdings:
       backtest 시작 시 보유 종목 seed. SELL 결정이 정상 체결되려면 필수.
-      예: {"005930": 100, "000660": 50}.
     """
     user_id: str = "backtest-user"
     initial_cash_krw: float = 10_000_000
@@ -113,6 +127,7 @@ class SimplePortfolio:
     cash: float = field(init=False)
     holdings: dict[str, int] = field(default_factory=dict)
     open_positions: dict[str, dict] = field(default_factory=dict)
+    pending_orders: list[dict] = field(default_factory=list)
     equity_curve: list[dict] = field(default_factory=list)
 
     def __post_init__(self):
@@ -134,6 +149,14 @@ class SimplePortfolio:
 
     def execute(self, trigger: Trigger, decision: Decision,
                 market_state: dict) -> Optional[Fill]:
+        """Day T 결정 → Day T+1 시가 체결 "예약". 실제 적용은 settle(T+1).
+
+        cash / holdings / open_positions는 미변경. pending_orders에 적재만.
+        Fill은 record 작성용으로 반환 (예약 가격 = T+1 시가).
+
+        같은 사이클에 같은 종목 다중 주문이 들어와도 over-commit 안 되게
+        _available_cash / _sellable_qty가 pending 누계를 반영.
+        """
         if decision.action == "hold":
             return None
 
@@ -145,54 +168,114 @@ class SimplePortfolio:
                         notes="missing_next_open_or_amount")
 
         amount = int(decision.order_amount)
-        gross = next_open * amount
+        fill_date = next_date or trigger.as_of_date
 
         if decision.action == "buy":
-            fee = gross * self.fee_ratio
-            total = gross + fee
-            if total > self.cash:
-                # 현금 부족 — 가능 수량만 부분체결
-                amount = max(0, int(self.cash / (next_open * (1 + self.fee_ratio))))
+            available = self._available_cash()
+            fee = next_open * amount * self.fee_ratio
+            total = next_open * amount + fee
+            if total > available:
+                # 현금 부족(동일 사이클 pending buy 누계 반영) — 가능 수량만 부분체결
+                amount = max(0, int(available / (next_open * (1 + self.fee_ratio))))
                 if amount == 0:
-                    return Fill(fill_date=next_date, fill_price=None,
+                    return Fill(fill_date=fill_date, fill_price=None,
                                 filled_amount=0, notes="insufficient_cash")
-                gross = next_open * amount
-                fee = gross * self.fee_ratio
-                total = gross + fee
-            self.cash -= total
-            prev_qty = self.holdings.get(trigger.stock_code, 0)
-            new_qty = prev_qty + amount
-            self.holdings[trigger.stock_code] = new_qty
-            self._record_open_position(
-                stock_code=trigger.stock_code,
-                add_qty=amount, add_price=next_open,
-                stop_loss=decision.stop_loss_price,
-                target=decision.target_price,
-                entry_date=next_date or trigger.as_of_date,
-            )
-            return Fill(fill_date=next_date, fill_price=next_open,
-                        filled_amount=amount, fee=fee, tax=0.0,
+                fee = next_open * amount * self.fee_ratio
+                total = next_open * amount + fee
+            self.pending_orders.append({
+                "side": "buy",
+                "stock_code": trigger.stock_code,
+                "qty": amount,
+                "price": float(next_open),
+                "fee": float(fee),
+                "tax": 0.0,
+                "total_cash": float(total),
+                "stop_loss_price": decision.stop_loss_price,
+                "target_price": decision.target_price,
+                "fill_date": fill_date,
+            })
+            return Fill(fill_date=fill_date, fill_price=float(next_open),
+                        filled_amount=amount, fee=float(fee), tax=0.0,
                         notes="next_day_open_buy")
 
         if decision.action == "sell":
-            held = self.holdings.get(trigger.stock_code, 0)
-            amount = min(amount, held)
+            sellable = self._sellable_qty(trigger.stock_code)
+            amount = min(amount, sellable)
             if amount <= 0:
-                return Fill(fill_date=next_date, fill_price=None,
+                return Fill(fill_date=fill_date, fill_price=None,
                             filled_amount=0, notes="no_holdings")
             gross = next_open * amount
             fee = gross * self.fee_ratio
             tax = gross * self.sell_tax_ratio
-            self.cash += gross - fee - tax
-            self.holdings[trigger.stock_code] = held - amount
-            if self.holdings[trigger.stock_code] == 0:
-                del self.holdings[trigger.stock_code]
-                self.open_positions.pop(trigger.stock_code, None)
-            return Fill(fill_date=next_date, fill_price=next_open,
-                        filled_amount=amount, fee=fee, tax=tax,
+            net = gross - fee - tax
+            self.pending_orders.append({
+                "side": "sell",
+                "stock_code": trigger.stock_code,
+                "qty": amount,
+                "price": float(next_open),
+                "fee": float(fee),
+                "tax": float(tax),
+                "total_cash": float(net),
+                "fill_date": fill_date,
+            })
+            return Fill(fill_date=fill_date, fill_price=float(next_open),
+                        filled_amount=amount, fee=float(fee), tax=float(tax),
                         notes="next_day_open_sell")
 
         return None
+
+    def _available_cash(self) -> float:
+        """현재 cash에서 pending buy로 commit된 금액을 차감한 가용 cash."""
+        committed = sum(p["total_cash"] for p in self.pending_orders if p["side"] == "buy")
+        return max(0.0, self.cash - committed)
+
+    def _sellable_qty(self, stock_code: str) -> int:
+        """현재 보유에서 pending sell로 commit된 수량을 차감한 매도 가능 수량."""
+        held = self.holdings.get(stock_code, 0)
+        committed = sum(
+            p["qty"] for p in self.pending_orders
+            if p["side"] == "sell" and p["stock_code"] == stock_code
+        )
+        return max(0, held - committed)
+
+    def settle(self, day: date) -> list[Fill]:
+        """매 사이클 시작에 호출 — 이전 사이클에 예약된 pending_orders를 실제 적용.
+
+        cash / holdings / open_positions 갱신. 처리한 항목은 pending에서 제거.
+        반환 Fill은 event_loop의 stats용 (record에는 이전 사이클 execute가 이미
+        Fill을 발행했으므로 별도 기록 안 함 — 중복 방지).
+        """
+        if not self.pending_orders:
+            return []
+        applied: list[Fill] = []
+        for order in self.pending_orders:
+            code = order["stock_code"]
+            qty = int(order["qty"])
+            if order["side"] == "buy":
+                self.cash -= float(order["total_cash"])
+                self.holdings[code] = self.holdings.get(code, 0) + qty
+                self._record_open_position(
+                    stock_code=code, add_qty=qty, add_price=float(order["price"]),
+                    stop_loss=order.get("stop_loss_price"),
+                    target=order.get("target_price"),
+                    entry_date=order["fill_date"],
+                )
+            else:  # sell
+                self.cash += float(order["total_cash"])
+                held = self.holdings.get(code, 0)
+                remaining = held - qty
+                if remaining <= 0:
+                    self.holdings.pop(code, None)
+                    self.open_positions.pop(code, None)
+                else:
+                    self.holdings[code] = remaining
+            applied.append(Fill(
+                fill_date=order["fill_date"], fill_price=float(order["price"]),
+                filled_amount=qty, fee=float(order["fee"]), tax=float(order["tax"]),
+                notes=f"settled_{order['side']}",
+            ))
+        self.pending_orders.clear()
+        return applied
 
     def _record_open_position(
         self, *, stock_code: str, add_qty: int, add_price: float,

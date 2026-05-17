@@ -1,5 +1,7 @@
 package com.modu.backend.domain.strategy.controller;
 
+import com.modu.backend.domain.strategy.dto.AutoTradeStatusRequest;
+import com.modu.backend.domain.strategy.dto.AutoTradeStatusResponse;
 import com.modu.backend.domain.strategy.dto.ProfileQuestionListResponse;
 import com.modu.backend.domain.strategy.dto.ProfileResponse;
 import com.modu.backend.domain.strategy.dto.ProfileUpdateRequest;
@@ -7,6 +9,7 @@ import com.modu.backend.domain.strategy.dto.ProfileUpdateResponse;
 import com.modu.backend.domain.strategy.dto.RuleResponse;
 import com.modu.backend.domain.strategy.dto.RuleUpdateRequest;
 import com.modu.backend.domain.strategy.dto.RuleUpdateResponse;
+import com.modu.backend.domain.strategy.service.AutoTradeStatusService;
 import com.modu.backend.domain.strategy.service.StrategyProfileQuestionService;
 import com.modu.backend.domain.strategy.service.StrategyProfileService;
 import com.modu.backend.domain.strategy.service.StrategyRuleService;
@@ -34,6 +37,7 @@ public class StrategyController {
     private final StrategyProfileQuestionService strategyProfileQuestionService;
     private final StrategyProfileService strategyProfileService;
     private final StrategyRuleService strategyRuleService;
+    private final AutoTradeStatusService autoTradeStatusService;
 
     @Operation(
             summary = "투자 성향 설문 문항 조회",
@@ -148,5 +152,41 @@ public class StrategyController {
 
         ProfileUpdateResponse response = strategyProfileService.updateProfile(userId, request);
         return ResponseEntity.ok(ApiResponse.success("투자 성향이 저장되었습니다.", response));
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 자동매매 ON/OFF (S14P31B106-292)
+    // ──────────────────────────────────────────────────────────────────────
+
+    @Operation(
+            summary = "자동매매 ON/OFF",
+            description = """
+                    자동매매 상태를 토글한다. Redis 에 즉시 동기화되어 AI 판단 엔진이 참조한다.
+
+                    [선행 검증 — isActive=true 시만]
+                      - KIS 연동 (KIS_NOT_CONNECTED)
+                      - 투자 성향 입력 (PROFILE_NOT_FOUND)
+                      - 리스크 룰셋 설정 (RULE_NOT_FOUND)
+
+                    [KILL_SWITCHED 상태 처리]
+                      - isActive=true  → ACTIVE 로 해제
+                      - isActive=false → INACTIVE 로 전환 + kill switch 기록 클리어
+                    """
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "변경 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "KIS 미연동 / 투자 성향 미입력 / 리스크 룰셋 미설정"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "인증 필요")
+    })
+    @PatchMapping("/me/status")
+    public ResponseEntity<ApiResponse<AutoTradeStatusResponse>> updateAutoTradeStatus(
+            @AuthenticationPrincipal Long userId,
+            @RequestBody @Valid AutoTradeStatusRequest request) {
+
+        AutoTradeStatusResponse response = autoTradeStatusService.updateStatus(userId, request);
+        String message = response.isActive()
+                ? "자동매매가 활성화되었습니다."
+                : "자동매매가 비활성화되었습니다.";
+        return ResponseEntity.ok(ApiResponse.success(message, response));
     }
 }
