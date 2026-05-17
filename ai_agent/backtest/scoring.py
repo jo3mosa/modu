@@ -210,19 +210,69 @@ def score_with_post_mortem(
     holding_days: int = 7,
     post_mortem_fn: Callable[..., Any] | None = None,
     benchmark_fetcher: Any | None = None,
+    persist_engine: Any | None = None,
 ) -> None:
     """JSONL 라인별로 raw_return 계산 + post_mortem_agent 호출 → scored JSONL.
 
     post_mortem_fn 미주입 시 app.agents.feedback.post_mortem_agent를 실 LLM 호출.
     benchmark_fetcher (KospiBenchmarkFetcher 등) 주입 시 alpha_return 산출.
+    persist_engine (SQLAlchemy Engine) 주입 시 reflection을 post_mortem_reports에
+        INSERT — 다음 backtest day의 retrieval에 노출됨. ai_judgment_id가
+        record에 있어야 동작 (graph_decision adapter가 부착).
     """
     pm_fn = post_mortem_fn or _default_post_mortem
+    persist_store = None
+    if persist_engine is not None:
+        from app.memory.db_store import DBMemoryStore
+        persist_store = DBMemoryStore(persist_engine)
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    persisted = skipped_no_id = 0
     with output_path.open("w", encoding="utf-8") as f_out:
         for raw_rec in _iter_records(input_path):
             rec = _normalize_record(raw_rec)
             scored = _score_one(rec, price_fetcher, holding_days, pm_fn, benchmark_fetcher)
+            if persist_store is not None and scored.get("post_mortem"):
+                ok = _persist_reflection(persist_store, scored)
+                if ok is True:
+                    persisted += 1
+                elif ok is False:
+                    skipped_no_id += 1
             f_out.write(json.dumps(scored, ensure_ascii=False, default=str) + "\n")
+
+    if persist_store is not None:
+        logger.info("post_mortem persist: INSERT %d건, ai_judgment_id 누락 skip %d건 — %s",
+                    persisted, skipped_no_id, output_path.name)
+
+
+def _persist_reflection(persist_store: Any, scored: dict[str, Any]) -> bool | None:
+    """scored record의 post_mortem을 DB INSERT.
+
+    Returns:
+        True   — INSERT 성공
+        False  — ai_judgment_id 누락으로 skip (mode random/mock 또는 store_decision 실패 case)
+        None   — INSERT 시도했으나 예외 (로깅됨)
+    """
+    ai_judgment_id = scored.get("ai_judgment_id")
+    if not ai_judgment_id:
+        return False
+    pm = scored.get("post_mortem") or {}
+    record = {
+        "ai_judgment_id": int(ai_judgment_id),
+        "trade_pnl_record_id": None,   # backtest엔 실 거래 PnL 레코드 없음
+        "entry_timing_assessment": pm.get("entry_timing_assessment") or "",
+        "exit_rule_assessment": pm.get("exit_rule_assessment") or "",
+        "risk_prediction_accuracy": pm.get("risk_prediction_accuracy") or "",
+        "missed_signals": pm.get("missed_signals") or [],
+        "lessons": pm.get("lessons") or [],
+        "summary": pm.get("summary") or "",
+    }
+    try:
+        persist_store.store_postmortem(record)
+        return True
+    except Exception:
+        logger.exception("post_mortem persist 실패 ai_judgment_id=%s", ai_judgment_id)
+        return None
 
 
 def _default_post_mortem(**kwargs):
@@ -402,6 +452,10 @@ def _normalize_record(rec: dict[str, Any]) -> dict[str, Any]:
             out["winning_side"] = extras.get("winning_side")
             out["bull_claim"] = extras.get("bull_claim")
             out["bear_claim"] = extras.get("bear_claim")
+            # reflection loop: graph_decision adapter가 ai_judgments INSERT 후
+            # 부착한 PK. post_mortem_reports.ai_judgment_id FK 매핑에 사용.
+            if extras.get("ai_judgment_id") is not None:
+                out["ai_judgment_id"] = extras["ai_judgment_id"]
 
     fill = rec.get("fill") or {}
     fill_price = fill.get("fill_price") if isinstance(fill, dict) else None

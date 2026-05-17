@@ -25,6 +25,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from sqlalchemy.engine import Engine
+
 from ..interfaces import Decision, Trigger
 
 # repo 루트에서 `python -m ai_agent.backtest.run_ai_backtest`로 실행 시
@@ -36,12 +38,18 @@ if str(_AI_AGENT_ROOT) not in sys.path:
 
 from app.graph.builder import GraphMode  # noqa: E402
 from app.graph.runner import run_pipeline  # noqa: E402
+from app.memory.db_store import DBMemoryStore  # noqa: E402
+from app.memory.interfaces import DecisionLog  # noqa: E402
 from app.triggers.schemas import MarketTrigger, UserTriggerEvent  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
 
-def make_graph_decision_fn(mode: GraphMode = "A", numeric_user_id: int = 1):
+def make_graph_decision_fn(
+    mode: GraphMode = "A",
+    numeric_user_id: int = 1,
+    engine: Engine | None = None,
+):
     """DA framework가 받는 decision_fn 형태로 LangGraph를 래핑한다.
 
     mode:
@@ -50,7 +58,12 @@ def make_graph_decision_fn(mode: GraphMode = "A", numeric_user_id: int = 1):
     numeric_user_id:
         graph가 요구하는 int user_id. DA framework의 user_id(str) 와 분리.
         memory retrieval 시점 동일 user_id 누적용.
+    engine:
+        주입 시 결정을 ai_judgments에 INSERT하고 ai_judgment_id를
+        Decision.extras에 부착. None이면 DB write skip — reflection loop 안 닫힘.
+        production은 Kafka → backend가 INSERT하므로 ai_agent 단독 실행 시 필요.
     """
+    memory_store = DBMemoryStore(engine) if engine is not None else None
 
     def decision_fn(trigger: Trigger, user_context: dict, portfolio_snapshot: Any) -> Decision:
         try:
@@ -61,12 +74,127 @@ def make_graph_decision_fn(mode: GraphMode = "A", numeric_user_id: int = 1):
                 user_id=numeric_user_id,
             )
             final_state = run_pipeline(event, mode=mode)
-            return _to_da_decision(final_state)
+            da_decision = _to_da_decision(final_state)
+            if memory_store is not None:
+                ai_judgment_id = _persist_decision(
+                    memory_store=memory_store,
+                    event=event,
+                    final_state=final_state,
+                )
+                if ai_judgment_id is not None:
+                    new_extras = dict(da_decision.extras or {})
+                    new_extras["ai_judgment_id"] = ai_judgment_id
+                    da_decision = _replace_extras(da_decision, new_extras)
+            return da_decision
         except Exception:
             logger.exception("graph_decision: 실패 → hold로 강등 (stock=%s)", trigger.stock_code)
             return Decision(action="hold", reasoning="graph_decision_fn 내부 예외")
 
     return decision_fn
+
+
+def _replace_extras(decision: Decision, extras: dict) -> Decision:
+    """frozen dataclass라 replace 패턴 — 기존 필드 보존 + extras만 갱신."""
+    return Decision(
+        action=decision.action,
+        order_amount=decision.order_amount,
+        target_price=decision.target_price,
+        stop_loss_price=decision.stop_loss_price,
+        confidence=decision.confidence,
+        reasoning=decision.reasoning,
+        extras=extras,
+    )
+
+
+def _persist_decision(
+    *,
+    memory_store: DBMemoryStore,
+    event: UserTriggerEvent,
+    final_state: Any,
+) -> int | None:
+    """final_state를 DecisionLog로 변환해 ai_judgments에 INSERT.
+
+    실패 시 logger.exception 후 None — 회고 매핑 못해도 backtest 본 흐름은 진행.
+    """
+    try:
+        log = _build_decision_log(event, final_state)
+        if log is None:
+            return None
+        return memory_store.store_decision(log, judged_at=event.as_of)
+    except Exception:
+        logger.exception("graph_decision: store_decision 실패 (stock=%s)", event.stock_code)
+        return None
+
+
+def _build_decision_log(event: UserTriggerEvent, final_state: Any) -> DecisionLog | None:
+    """final_state + event → DecisionLog (TypedDict).
+
+    FinalDecision 없으면 None 반환 → INSERT skip.
+    DB의 decision enum은 BUY/SELL/HOLD 대문자.
+    """
+    final_decision = _get_field(final_state, "final_decision")
+    if final_decision is None:
+        return None
+    fd_dump = final_decision.model_dump() if hasattr(final_decision, "model_dump") else dict(final_decision)
+
+    action = fd_dump.get("action")
+    side = fd_dump.get("side")
+    if action == "hold" or side not in ("buy", "sell"):
+        decision_enum = "HOLD"
+        order_amount = 0
+    else:
+        decision_enum = side.upper()
+        order_amount = int(fd_dump.get("order_amount") or 0)
+
+    verdict = _get_field(final_state, "research_verdict")
+    verdict_dump = (
+        verdict.model_dump() if hasattr(verdict, "model_dump")
+        else dict(verdict) if verdict else {}
+    )
+
+    winning_raw = verdict_dump.get("winning_side") if verdict_dump else None
+    winning_side = winning_raw.upper() if winning_raw else None
+
+    # ai_agent/app/context/memory_context.py extract_key_signals 재사용
+    from app.context.memory_context import extract_key_signals
+    key_signals = extract_key_signals(event.analysis_snapshot or {})
+
+    log: DecisionLog = {
+        "user_id": int(event.user_id),
+        "stock_code": event.stock_code,
+        "sector": None,   # analysis_snapshot에 sector 없음 — 추후 stock_master JOIN 추가 여지
+        "risk_grade": (event.user_context or {}).get("risk_profile"),
+        "decision": decision_enum,
+        "order_amount": order_amount,
+        "target_price": _to_int_or_none(fd_dump.get("target_price")),
+        "stop_loss_price": _to_int_or_none(fd_dump.get("stop_loss_price")),
+        "judgment_reason": fd_dump.get("reason_summary") or "",
+        "key_signals": key_signals,
+        "confidence_score": int(round((fd_dump.get("confidence") or 0.0) * 100)),
+        "bull_claim": _join_lines(verdict_dump.get("key_bull_points")),
+        "bear_claim": _join_lines(verdict_dump.get("key_bear_points")),
+        "winning_side": winning_side,
+        "expected_scenario": None,
+        "indicators_snapshot": (event.analysis_snapshot or {}).get("signals") or {},
+    }
+    return log
+
+
+def _to_int_or_none(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(round(float(value)))
+    except (TypeError, ValueError):
+        return None
+
+
+def _join_lines(items: Any) -> str | None:
+    if not items:
+        return None
+    if isinstance(items, list):
+        return "\n".join(str(x) for x in items)
+    return str(items)
 
 
 def _to_user_trigger_event(

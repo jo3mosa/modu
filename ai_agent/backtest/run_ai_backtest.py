@@ -56,7 +56,12 @@ logger = logging.getLogger(__name__)
 # ============================================================
 
 
-def _build_decision_fn(mode: str) -> DecisionFn:
+def _build_decision_fn(
+    mode: str,
+    *,
+    backtest_user_id: int = 99999,
+    engine: Engine | None = None,
+) -> DecisionFn:
     """--mode 인자를 실제 decision_fn으로 변환.
 
     각 모드의 LLM 호출 횟수:
@@ -64,6 +69,9 @@ def _build_decision_fn(mode: str) -> DecisionFn:
         mock   — 0 (단순 룰 패턴 매칭)
         A      — 4회/결정 (context + bull + bear + strategy + decision; context/risk_gate는 LLM 없음)
         B      — 2회/결정 (context + strategy + decision)
+
+    backtest_user_id / engine: mode A/B에서 ai_judgments DB INSERT 시 사용.
+        engine이 None이면 graph 어댑터는 store_decision skip — reflection loop 닫히지 않음.
     """
     if mode == "random":
         from .adapters.random_decision import make_random_decision_fn
@@ -72,8 +80,35 @@ def _build_decision_fn(mode: str) -> DecisionFn:
         return simple_rule_decision
     if mode in ("A", "B"):
         from .adapters.graph_decision import make_graph_decision_fn
-        return make_graph_decision_fn(mode=mode)
+        return make_graph_decision_fn(
+            mode=mode,
+            numeric_user_id=backtest_user_id,
+            engine=engine,
+        )
     raise ValueError(f"unknown mode: {mode}")
+
+
+def _reset_backtest_memory(engine: Engine, backtest_user_id: int) -> None:
+    """backtest 회차 간 격리 — 해당 user_id의 ai_judgments / post_mortem_reports DELETE.
+
+    이전 run의 회고가 새 run의 retrieval에 섞이지 않도록 시작 전 cleanup.
+    FK ON DELETE CASCADE 없으므로 post_mortem_reports 먼저 지움.
+    """
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        pm_deleted = conn.execute(
+            text("""DELETE FROM post_mortem_reports
+                    WHERE ai_judgment_id IN (
+                        SELECT id FROM ai_judgments WHERE user_id = :uid
+                    )"""),
+            {"uid": backtest_user_id},
+        ).rowcount
+        aj_deleted = conn.execute(
+            text("DELETE FROM ai_judgments WHERE user_id = :uid"),
+            {"uid": backtest_user_id},
+        ).rowcount
+    logger.info("--reset-memory: user_id=%s → ai_judgments %d건, post_mortem_reports %d건 삭제",
+                backtest_user_id, aj_deleted, pm_deleted)
 
 
 # ============================================================
@@ -123,12 +158,16 @@ def _score_after_run(
     holding_days: int,
     pm_mock: bool,
     benchmark_csv: Path | None = None,
+    persist_post_mortem: bool = False,
 ) -> None:
     """DA가 출력한 triggers_*.jsonl을 읽어 scored_*.jsonl을 만든다.
 
     pm_mock=True 면 LLM 호출 없이 fake_post_mortem 사용 (인프라 검증).
     pm_mock=False 면 실 post_mortem_agent (LLM 호출, 추가 비용).
     benchmark_csv가 있으면 alpha_return(= raw_return - KOSPI 같은기간 수익률) 산출.
+    persist_post_mortem=True 면 회고를 post_mortem_reports 테이블에도 INSERT
+        (reflection loop를 닫아 다음 결정 retrieval에 노출). ai_judgment_id가
+        record에 있어야 동작.
     """
     from .scoring import score_with_post_mortem
     pm_fn = None
@@ -151,14 +190,17 @@ def _score_after_run(
         logger.warning("score-after: triggers_*.jsonl 파일 없음 — %s", output_root)
         return
 
+    persist_engine = engine if persist_post_mortem else None
     for f in files:
         out = f.parent / f.name.replace("triggers_", "scored_")
         score_with_post_mortem(
             f, out, price_fetcher=price, holding_days=holding_days,
             post_mortem_fn=pm_fn, benchmark_fetcher=benchmark,
+            persist_engine=persist_engine,
         )
-    logger.info("score-after: %d 파일 scored 생성 (alpha=%s)",
-                len(files), "ON" if benchmark else "OFF")
+    logger.info("score-after: %d 파일 scored 생성 (alpha=%s, persist=%s)",
+                len(files), "ON" if benchmark else "OFF",
+                "ON" if persist_engine else "OFF")
 
 
 # ============================================================
@@ -243,6 +285,13 @@ def main() -> int:
                              "파일 없으면 alpha 비활성. "
                              "기본: ai_agent/backtest/data/kospi_daily.csv "
                              "(scripts/fetch_kospi.py로 생성)")
+    parser.add_argument("--backtest-user-id", type=int, default=99999,
+                        help="reflection loop용 DB 격리 user_id. "
+                             "ai_judgments / post_mortem_reports에 이 user_id로 저장됨. "
+                             "기본 99999 — 운영 사용자(보통 1자리~4자리)와 분리.")
+    parser.add_argument("--reset-memory", action="store_true",
+                        help="run 시작 전 --backtest-user-id의 ai_judgments / "
+                             "post_mortem_reports DELETE. 이전 회차 회고가 섞이지 않도록.")
     args = parser.parse_args()
 
     try:
@@ -271,10 +320,23 @@ def main() -> int:
                   file=sys.stderr)
             return 1
 
-    logger.info("=== AI backtest 시작 (mode=%s, 초기 자금=%s KRW, 초기 보유=%s) ===",
+    logger.info("=== AI backtest 시작 (mode=%s, 초기 자금=%s KRW, 초기 보유=%s, "
+                "backtest_user_id=%s) ===",
                 args.mode, f"{args.initial_cash:,.0f}",
-                initial_holdings or "없음")
-    decision_fn = _build_decision_fn(args.mode)
+                initial_holdings or "없음", args.backtest_user_id)
+
+    # mode A/B는 reflection loop를 위해 engine 필요. random/mock은 None이어도 OK.
+    engine: Engine | None = None
+    if args.mode in ("A", "B") or args.reset_memory:
+        engine = make_engine(env)
+        if args.reset_memory:
+            _reset_backtest_memory(engine, args.backtest_user_id)
+
+    decision_fn = _build_decision_fn(
+        args.mode,
+        backtest_user_id=args.backtest_user_id,
+        engine=engine,
+    )
     portfolio = SimplePortfolio(
         user_id=args.user_id,
         initial_cash_krw=args.initial_cash,
@@ -299,13 +361,15 @@ def main() -> int:
     _export_equity_curve(portfolio, args.output)
 
     if args.score_after:
-        engine = make_engine(env)
+        if engine is None:
+            engine = make_engine(env)
         _score_after_run(
             engine=engine,
             output_root=args.output,
             holding_days=args.holding_days,
             pm_mock=args.pm_mock,
             benchmark_csv=args.benchmark_csv,
+            persist_post_mortem=(args.mode in ("A", "B") and not args.pm_mock),
         )
 
     return 0
