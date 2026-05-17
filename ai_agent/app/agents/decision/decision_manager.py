@@ -133,7 +133,7 @@ def decision_manager(state: InvestmentAgentState) -> dict[str, Any]:
     })
 
     round_count = debate_state.get("round_count", 0)
-    publish_agent_message(state, "DECIDE", round_count * 2 + 1, final_decision.user_message or final_decision.reason_summary)
+    publish_agent_message(state, "DECIDE", round_count * 2 + 1, final_decision.user_message or final_decision.reason_summary, stock_code=final_decision.asset or None)
 
     return {
         "final_decision": final_decision,

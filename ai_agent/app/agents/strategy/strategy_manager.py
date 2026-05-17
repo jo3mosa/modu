@@ -93,7 +93,7 @@ def strategy_manager(state: InvestmentAgentState) -> dict[str, Any]:
     })
 
     round_count = debate_state.get("round_count", 0)
-    publish_agent_message(state, "STRATEGY", round_count * 2, verdict.rationale)
+    publish_agent_message(state, "STRATEGY", round_count * 2, verdict.rationale, stock_code=verdict.asset or None)
 
     return {
         "research_verdict": verdict,
