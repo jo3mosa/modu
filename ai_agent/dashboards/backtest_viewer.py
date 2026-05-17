@@ -1613,6 +1613,25 @@ def _detect_progress(output_dir: str, start_str: str, end_str: str) -> dict[str,
 _RUN_STATE_FILE = "_run_state.json"
 
 
+@st.cache_data(show_spinner=False, ttl=60)
+def _load_mode_choices() -> tuple[list[str], str]:
+    """backtest/modes.py MODE_REGISTRY → selectbox 옵션 + help 문자열.
+
+    cache TTL 60초 — modes.py 수정 시 streamlit 자동 reload + 캐시 만료로 반영.
+    import 실패 시 안전한 기본값 fallback.
+    """
+    try:
+        repo_root = _repo_root()
+        if str(repo_root) not in sys.path:
+            sys.path.insert(0, str(repo_root))
+        from ai_agent.backtest.modes import MODE_REGISTRY
+        choices = list(MODE_REGISTRY.keys())
+        help_str = "\n".join(f"• {n} — {s.description}" for n, s in MODE_REGISTRY.items())
+        return choices, help_str
+    except Exception as e:
+        return ["A", "B", "random", "mock"], f"(modes.py 로드 실패: {e}) 기본 목록 사용"
+
+
 def _spawn_backtest(
     cmd: list[str], output_dir: Path, args: dict[str, Any],
 ) -> dict[str, Any]:
@@ -1835,14 +1854,13 @@ def tab_run() -> None:
     while candidate_uid in used_uids:
         candidate_uid += 1
 
+    # 등록된 mode 동적 조회 — modes.py MODE_REGISTRY가 단일 source
+    mode_choices, mode_help = _load_mode_choices()
+
     with st.form(f"backtest_form_{len(procs)}", clear_on_submit=False):
         c1, c2, c3 = st.columns(3)
         with c1:
-            mode = st.selectbox(
-                "모드", ["A", "B", "random", "mock"],
-                help="A=Bull/Bear 토론 (MVP, LLM 4회/결정), B=단일 에이전트 ablation, "
-                     "random/mock=LLM 없는 baseline",
-            )
+            mode = st.selectbox("모드", mode_choices, help=mode_help)
             start = st.date_input("시작일", value=date(2024, 1, 2))
             end = st.date_input("종료일", value=date(2024, 1, 15))
         with c2:

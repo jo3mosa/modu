@@ -41,12 +41,9 @@ from sqlalchemy.engine import Engine
 from . import config
 from .data_sources import fetch_ohlcv_by_date, make_engine
 from .event_loop import run
-from .examples.mock_decision import (
-    SimplePortfolio,
-    flat_user_context,
-    simple_rule_decision,
-)
+from .examples.mock_decision import SimplePortfolio, flat_user_context
 from .interfaces import DecisionFn
+from .modes import MODE_REGISTRY, available_modes, get_mode_spec
 
 logger = logging.getLogger(__name__)
 
@@ -62,30 +59,11 @@ def _build_decision_fn(
     backtest_user_id: int = 99999,
     engine: Engine | None = None,
 ) -> DecisionFn:
-    """--mode 인자를 실제 decision_fn으로 변환.
+    """--mode 인자를 실제 decision_fn으로 변환. registry에 위임.
 
-    각 모드의 LLM 호출 횟수:
-        random — 0 (랜덤 dict 생성)
-        mock   — 0 (단순 룰 패턴 매칭)
-        A      — 4회/결정 (context + bull + bear + strategy + decision; context/risk_gate는 LLM 없음)
-        B      — 2회/결정 (context + strategy + decision)
-
-    backtest_user_id / engine: mode A/B에서 ai_judgments DB INSERT 시 사용.
-        engine이 None이면 graph 어댑터는 store_decision skip — reflection loop 닫히지 않음.
+    새 mode 등록은 ai_agent/backtest/modes.py의 MODE_REGISTRY에서.
     """
-    if mode == "random":
-        from .adapters.random_decision import make_random_decision_fn
-        return make_random_decision_fn(seed=42)
-    if mode == "mock":
-        return simple_rule_decision
-    if mode in ("A", "B"):
-        from .adapters.graph_decision import make_graph_decision_fn
-        return make_graph_decision_fn(
-            mode=mode,
-            numeric_user_id=backtest_user_id,
-            engine=engine,
-        )
-    raise ValueError(f"unknown mode: {mode}")
+    return get_mode_spec(mode).factory(backtest_user_id, engine)
 
 
 def _reset_backtest_memory(engine: Engine, backtest_user_id: int) -> None:
@@ -109,6 +87,35 @@ def _reset_backtest_memory(engine: Engine, backtest_user_id: int) -> None:
         ).rowcount
     logger.info("--reset-memory: user_id=%s → ai_judgments %d건, post_mortem_reports %d건 삭제",
                 backtest_user_id, aj_deleted, pm_deleted)
+
+
+def _ensure_backtest_user(engine: Engine, backtest_user_id: int) -> None:
+    """ai_judgments.user_id FK용 backtest 전용 users row를 idempotent 생성.
+
+    ai_judgments.user_id가 users(id)의 FK라서 row 없으면 INSERT 실패한다.
+    provider='BACKTEST', provider_id='backtest_{uid}' 조합으로 UNIQUE 충돌 회피.
+    ON CONFLICT (id) DO NOTHING으로 매 run 호출해도 안전.
+    """
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+                INSERT INTO users (
+                    id, provider, provider_id, nickname,
+                    is_news_notify_enabled, created_at, updated_at
+                ) VALUES (
+                    :uid, 'BACKTEST', :provider_id, :nickname,
+                    false, NOW(), NOW()
+                )
+                ON CONFLICT (id) DO NOTHING
+            """),
+            {
+                "uid": backtest_user_id,
+                "provider_id": f"backtest_{backtest_user_id}",
+                "nickname": f"Backtest {backtest_user_id}",
+            },
+        )
+    logger.info("backtest user ensured: id=%s", backtest_user_id)
 
 
 # ============================================================
@@ -258,8 +265,11 @@ def main() -> int:
     _maybe_compose_database_url()
 
     parser = argparse.ArgumentParser(description="AI 통합 backtest (LangGraph + post_mortem)")
-    parser.add_argument("--mode", required=True, choices=["random", "mock", "A", "B"],
-                        help="decision_fn 선택")
+    mode_help = "decision_fn 선택. 등록된 mode:\n" + "\n".join(
+        f"  {name} — {spec.description}" for name, spec in MODE_REGISTRY.items()
+    )
+    parser.add_argument("--mode", required=True, choices=available_modes(),
+                        help=mode_help)
     parser.add_argument("--start", default=config.DEFAULT_START_DATE.isoformat())
     parser.add_argument("--end", default=config.DEFAULT_END_DATE.isoformat())
     parser.add_argument("--user-id", default="backtest-user")
@@ -325,10 +335,14 @@ def main() -> int:
                 args.mode, f"{args.initial_cash:,.0f}",
                 initial_holdings or "없음", args.backtest_user_id)
 
-    # mode A/B는 reflection loop를 위해 engine 필요. random/mock은 None이어도 OK.
+    # registry가 mode별 DB 필요성 선언. uses_db=True인 mode만 engine + ensure_user 호출.
+    mode_spec = get_mode_spec(args.mode)
     engine: Engine | None = None
-    if args.mode in ("A", "B") or args.reset_memory:
+    if mode_spec.uses_db or args.reset_memory:
         engine = make_engine(env)
+        if mode_spec.uses_db:
+            # ai_judgments.user_id FK 충족 — 없으면 INSERT 실패
+            _ensure_backtest_user(engine, args.backtest_user_id)
         if args.reset_memory:
             _reset_backtest_memory(engine, args.backtest_user_id)
 
@@ -369,7 +383,8 @@ def main() -> int:
             holding_days=args.holding_days,
             pm_mock=args.pm_mock,
             benchmark_csv=args.benchmark_csv,
-            persist_post_mortem=(args.mode in ("A", "B") and not args.pm_mock),
+            # uses_db 모드만 reflection loop 닫을 수 있음 (ai_judgment_id가 부착됨)
+            persist_post_mortem=(mode_spec.uses_db and not args.pm_mock),
         )
 
     return 0
