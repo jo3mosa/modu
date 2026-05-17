@@ -176,4 +176,31 @@ public class Order {
         this.rejectReason = reason;
         this.updatedAt    = OffsetDateTime.now();
     }
+
+    /**
+     * KIS 예약주문 접수 성공 처리 (S14P31B106-336)
+     *
+     * placeReservedOrder 응답의 RSVN_ORD_SEQ 를 kis_rsvn_seq 에 저장.
+     * KIS 일반 주문 (placeOrder) 가 발급하는 kis_order_no / kis_org_no 는 없음.
+     *
+     * @param kisRsvnSeq  KIS 예약주문 순번
+     * @param submittedAt 접수 시각
+     */
+    public void markReserved(String kisRsvnSeq, OffsetDateTime submittedAt) {
+        this.status      = OrderStatus.RESERVED;
+        this.kisRsvnSeq  = kisRsvnSeq;
+        this.submittedAt = submittedAt;
+        this.updatedAt   = OffsetDateTime.now();
+    }
+
+    /**
+     * 예약주문 발행 대기 상태로 전환 (S14P31B106-336)
+     *
+     * 자동매매 결정이 예약 가능 시간 직전 (E gap 15:30~15:40) 또는 공휴일 정규장 시간대에
+     * 도달했을 때 사용. ReservedPendingOrderSweeper 가 예약 가능 시간 도래 시 picks up.
+     */
+    public void markReservedPending() {
+        this.status    = OrderStatus.RESERVED_PENDING;
+        this.updatedAt = OffsetDateTime.now();
+    }
 }
