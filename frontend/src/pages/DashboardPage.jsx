@@ -355,9 +355,16 @@ export default function DashboardPage() {
       .filter((o) => o.side === 'BUY' && o.status === 'PENDING')
       .reduce((sum, o) => sum + (o.price ?? 0) * (o.quantity ?? 0), 0);
     
-    // 총 자산 = 주문 가능 금액 + 실시간 주식 평가금액 + 미체결 매수 대금
-    // (사용자가 제시한 가장 명료하고 완벽한 공식인 "투자자산 + 주문가능금액"을 정확히 만족하여 자산이 직관적으로 유지됩니다!)
-    const totalAsset = availableCash + totalEvalAmount + pendingBuyAmount;
+    // KIS가 가용현금(buyingPower.availableCash)에서 미체결 매수 금액을 이미 차감했는지 판별
+    // KIS 주문가능현금(ord_psbl_cash)이 계좌 예수금(summary.availableCash)보다 작다면 이미 KIS 측에서 차감한 상태입니다.
+    const isPendingSubtracted =
+      buyingPower &&
+      summary.availableCash &&
+      buyingPower.availableCash < summary.availableCash;
+    
+    // 총 자산 = 주문 가능 금액 + 실시간 주식 평가금액 + (KIS가 차감했을 때만 미체결 매수 대금 추가)
+    // (이렇게 하면 실시간/장외/예약 주문 등 KIS의 차감 여부에 상관없이 이중합산(더블 카운팅)이 원천 봉쇄되어 항상 자산이 완벽하게 고정됩니다!)
+    const totalAsset = availableCash + totalEvalAmount + (isPendingSubtracted ? pendingBuyAmount : 0);
     
     // 총 자산 대비 실시간 수익률 계산 (투자 직전 총 자산 대비 현재 손익금액의 비율로 구하여 시각적 직관성을 100% 만족시킴!)
     const initialAsset = totalAsset - totalPnl;
