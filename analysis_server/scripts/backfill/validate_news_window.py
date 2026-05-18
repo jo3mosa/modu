@@ -141,20 +141,17 @@ def _build_user_trigger_event(
 ) -> "UserTriggerEvent":
     """검증용 UserTriggerEvent 구성.
 
-    analysis_snapshot 에 (a) 빈 signals 4종 (b) news_summary 만 주입.
-    portfolio_snapshot/user_context 는 빈 dict — context_loader 가 DB 에서 채움.
+    analysis_snapshot 은 운영 경로 (engine.event_publisher._build_payload) 와 동일
+    하게 4종 (technical/fundamental/event/sentiment) 을 top-level 키로 + news_summary.
+    운영 payload 구조와 일치해야 검증 결과가 실제 의사결정과 비교 가능.
 
-    ai_agent.backtest.adapters.graph_decision._to_user_trigger_event 패턴 차용.
+    portfolio_snapshot/user_context 는 빈 dict — context_loader 가 DB 에서 채움.
     """
     analysis_snapshot: dict = {
-        "stock_code": stock_code,
-        "timestamp":  anchor_dt.isoformat(),
-        "signals": {
-            "technical":   {},
-            "fundamental": {},
-            "event":       {},
-            "sentiment":   {},
-        },
+        "technical":   {},
+        "fundamental": {},
+        "event":       {},
+        "sentiment":   {},
     }
     if news_summary_block is not None:
         analysis_snapshot["news_summary"] = news_summary_block
@@ -256,9 +253,15 @@ def evaluate_sample(
     missing: list[int] = []
     for n in windows:
         summary, article_count = summarize_for_window(sample["stock_code"], sample["timestamp"], n)
-        if article_count == 0:
+        # 요약 못 만든 케이스는 모두 UNKNOWN — 윈도우 효과가 아니라 데이터/LLM 실패가
+        # 일치율에 섞이면 안 됨. agreement_rate 에서 분모 제외 처리됨.
+        if article_count == 0 or summary is None:
             missing.append(n)
-            by_window[n] = {"decision": "UNKNOWN", "article_count": 0}
+            by_window[n] = {
+                "decision":      "UNKNOWN",
+                "article_count": article_count,
+                "skip_reason":   "no_articles" if article_count == 0 else "llm_failed",
+            }
             continue
         news_block = {
             "summary":       summary,
@@ -427,7 +430,24 @@ def main() -> None:
         )
         sys.exit(2)
 
-    windows = tuple(int(x) for x in args.windows.split(","))
+    # --windows 파싱 + 검증 — 비정수 / 빈 값 / 0 이하 모두 차단.
+    try:
+        windows = tuple(sorted({int(x) for x in args.windows.split(",") if x.strip()}))
+    except ValueError:
+        sys.stderr.write("[ERROR] --windows: 쉼표 구분 정수만 허용. 예: '3,7,14'\n")
+        sys.exit(2)
+    if not windows or any(w <= 0 for w in windows):
+        sys.stderr.write("[ERROR] --windows: 양의 정수가 1개 이상 필요\n")
+        sys.exit(2)
+
+    if args.repeat <= 0:
+        sys.stderr.write(f"[ERROR] --repeat: 양의 정수 (received {args.repeat})\n")
+        sys.exit(2)
+
+    if not (0.0 <= args.threshold <= 1.0):
+        sys.stderr.write(f"[ERROR] --threshold: 0.0~1.0 (received {args.threshold})\n")
+        sys.exit(2)
+
     samples = load_samples(args.csv)
     if not samples:
         sys.stderr.write(f"[ERROR] CSV 에 유효한 샘플 없음: {args.csv}\n")

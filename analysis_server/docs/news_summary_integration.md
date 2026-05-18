@@ -33,6 +33,9 @@
         {
           "title":           "삼성전자 HBM …",
           "url":             "https://…",
+          // published_at: KST naive ISO (offset 미포함) — news_collector
+          // 가 strftime("%Y-%m-%dT%H:%M:%S") 로 저장한 stored format 그대로.
+          // event 의 top-level timestamp 와 형식이 다른 점에 유의.
           "published_at":    "2026-05-18T09:12:00",
           "sentiment_score": 42
         }

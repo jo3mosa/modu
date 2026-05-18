@@ -405,6 +405,10 @@ RULE_NEWS_WINDOWS: dict[str, tuple[str, int]] = {
 }
 
 
+# 윈도우 단위 화이트리스트 — 오타("day", "hour" 등) 가 조용히 hours 로 처리되는 사고 방지.
+WINDOW_KINDS = frozenset({"days", "hours"})
+
+
 # RULES ↔ RULE_REASONS ↔ RULE_NEWS_WINDOWS 키셋 드리프트 차단 — 룰 추가 시 누락하면 모듈 로드 자체가 실패.
 # event_publisher._build_payload 의 .get(rid, rid) fallback 은 production -O 모드 등 만일의 안전망.
 _RULE_KEY_MISMATCH = (set(RULES) ^ set(RULE_REASONS)) | (set(RULES) ^ set(RULE_NEWS_WINDOWS))
@@ -413,6 +417,18 @@ if _RULE_KEY_MISMATCH:
         f"RULES / RULE_REASONS / RULE_NEWS_WINDOWS 키셋 불일치: {sorted(_RULE_KEY_MISMATCH)}. "
         "세 dict 를 동시에 갱신해야 합니다."
     )
+
+# kind/value 명시 검증 — 모듈 로드 시점에 잡힘 (런타임 silent fallback 방지).
+for _rid, (_kind, _value) in RULE_NEWS_WINDOWS.items():
+    if _kind not in WINDOW_KINDS:
+        raise RuntimeError(
+            f"RULE_NEWS_WINDOWS[{_rid!r}] kind={_kind!r} — "
+            f"허용값: {sorted(WINDOW_KINDS)}"
+        )
+    if not isinstance(_value, int) or _value <= 0:
+        raise RuntimeError(
+            f"RULE_NEWS_WINDOWS[{_rid!r}] value={_value!r} — 양의 정수여야 함"
+        )
 
 
 def pick_news_window(rule_ids: list[str]) -> tuple[str, int]:
@@ -436,11 +452,17 @@ def pick_news_window(rule_ids: list[str]) -> tuple[str, int]:
 
 
 def window_to_timedelta(window: tuple[str, int]) -> timedelta:
-    """("days"|"hours", value) → timedelta. MongoDB 시간 범위 쿼리용."""
+    """("days"|"hours", value) → timedelta. MongoDB 시간 범위 쿼리용.
+
+    kind 가 WINDOW_KINDS 밖이면 ValueError — 모듈 로드 검증을 통과한 RULE_NEWS_WINDOWS
+    출처라면 도달 불가하나 외부 caller 입력 방어용.
+    """
     kind, value = window
     if kind == "days":
         return timedelta(days=value)
-    return timedelta(hours=value)
+    if kind == "hours":
+        return timedelta(hours=value)
+    raise ValueError(f"unknown window kind: {kind!r} (허용: {sorted(WINDOW_KINDS)})")
 
 
 def detect(signal: Signal) -> list[str]:

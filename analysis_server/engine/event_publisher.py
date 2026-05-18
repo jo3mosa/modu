@@ -31,7 +31,9 @@ main.py 사이클 흐름 안 위치:
 import atexit
 import logging
 import os
+from datetime import datetime
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
@@ -52,6 +54,8 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+
+_KST = ZoneInfo("Asia/Seoul")
 
 # 요약 prompt 에 포함할 기사 본문 길이 cap (자 단위) — 너무 길면 토큰 폭증,
 # 너무 짧으면 맥락 손실. 한국 금융 기사 평균 본문이 1500~3000자 수준.
@@ -116,12 +120,27 @@ _SUMMARY_SYSTEM_PROMPT = (
 )
 
 
+def _to_kst_naive_iso(dt: datetime) -> str:
+    """tz-aware/naive 둘 다 받아 KST naive ISO 문자열로 정규화.
+
+    news_articles.published_at 은 collector 가 `strftime("%Y-%m-%dT%H:%M:%S")` 로
+    KST naive 형식으로 저장한다 (collectors/news_collector.py 의 _normalize_published).
+    쿼리 측도 같은 정규화를 거쳐야 lexicographic 비교가 실제 시각 순서와 일치.
+
+    tz-aware datetime 은 KST 로 변환 후 tz 정보를 떼서 stored format 과 정확히 맞춤.
+    초 단위까지만 (timespec="seconds") — stored format 과 일치.
+    """
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(_KST).replace(tzinfo=None)
+    return dt.isoformat(timespec="seconds")
+
+
 def _fetch_news_for_summary(stock_code: str, anchor_dt, window) -> list[dict]:
     """anchor_dt 기준 window 범위 이전 기사들을 최근순으로 조회.
 
     anchor_dt 는 KST tz-aware datetime (signal.timestamp). MongoDB 의
-    published_at 은 문자열(ISO) 로 저장돼 있어 lexicographic 비교가 의도대로 동작
-    (ISO 8601 의 특성).
+    published_at 은 KST naive ISO 문자열 — 양쪽을 `_to_kst_naive_iso` 로 같은 포맷에
+    맞춰 lexicographic 비교 안전성 확보.
 
     Returns: 기사 dict 리스트 (최대 SUMMARY_ARTICLES_LIMIT). 실패/0건은 [].
     """
@@ -132,10 +151,8 @@ def _fetch_news_for_summary(stock_code: str, anchor_dt, window) -> list[dict]:
     delta = window_to_timedelta(window)
     from_dt = anchor_dt - delta
 
-    # published_at 은 ISO 문자열로 저장됨 — `Z`/오프셋 포함 형식 둘 다 호환.
-    # tz 정보 잘릴 위험 회피 위해 KST naive ISO 까지 양쪽 비교.
-    from_iso = from_dt.isoformat()
-    to_iso = anchor_dt.isoformat()
+    from_iso = _to_kst_naive_iso(from_dt)
+    to_iso = _to_kst_naive_iso(anchor_dt)
 
     try:
         cursor = (

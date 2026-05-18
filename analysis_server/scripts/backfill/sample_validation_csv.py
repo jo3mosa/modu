@@ -139,9 +139,17 @@ def main() -> None:
                    help="생성할 샘플 수. 기본 30 (검증 통계 표본). 시간/토큰 줄이려면 줄여도 OK.")
     p.add_argument("--lookback", type=int, default=60,
                    help="MongoDB 조회 룩백 일수. 기본 60. 데이터 부족하면 늘릴 것.")
-    p.add_argument("--hour", type=int, default=9,
-                   help="timestamp 시각 (KST). 기본 9 (장 시작 직전).")
+    p.add_argument("--hour", type=int, default=9, choices=range(0, 24),
+                   metavar="{0-23}",
+                   help="timestamp 시각 (KST, 0~23). 기본 9 (장 시작 직전).")
     args = p.parse_args()
+
+    if args.n <= 0:
+        sys.stderr.write(f"[ERROR] --n: 양의 정수 (received {args.n})\n")
+        sys.exit(2)
+    if args.lookback <= 0:
+        sys.stderr.write(f"[ERROR] --lookback: 양의 정수 (received {args.lookback})\n")
+        sys.exit(2)
 
     pairs = pick_active_stock_days(args.lookback, args.n)
     if not pairs:
