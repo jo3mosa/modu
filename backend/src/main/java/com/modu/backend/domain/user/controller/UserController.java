@@ -2,7 +2,9 @@ package com.modu.backend.domain.user.controller;
 
 import com.modu.backend.domain.user.dto.KisKeyRegisterRequest;
 import com.modu.backend.domain.user.dto.KisKeyUpdateRequest;
+import com.modu.backend.domain.user.dto.MyInfoResponse;
 import com.modu.backend.domain.user.service.KisKeyService;
+import com.modu.backend.domain.user.service.UserService;
 import com.modu.backend.global.dto.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -15,6 +17,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -28,6 +31,29 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserController {
 
     private final KisKeyService kisKeyService;
+    private final UserService userService;
+
+    @Operation(
+            summary = "내 정보 조회",
+            description = """
+                    로그인한 사용자의 프로필 정보와 한국투자증권 API 연동 상태를 함께 반환합니다.
+
+                    - 마이페이지 진입 시 1회 호출 용도
+                    - `kisKeyStatus.isConnected`가 `false`면 `accountNo`는 `null`
+                    - `accountNo`는 `계좌번호-상품코드` 형식으로 합쳐서 반환 (예: `50012345-01`)
+                    """
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "인증 필요 (accessToken 없음 또는 만료)")
+    })
+    @GetMapping
+    public ResponseEntity<ApiResponse<MyInfoResponse>> getMyInfo(
+            @AuthenticationPrincipal Long userId) {
+
+        MyInfoResponse response = userService.getMyInfo(userId);
+        return ResponseEntity.ok(ApiResponse.success("내 정보 조회 성공", response));
+    }
 
     @Operation(
             summary = "한국투자증권 API 연동",
