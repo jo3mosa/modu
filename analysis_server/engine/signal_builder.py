@@ -139,8 +139,11 @@ def _load_fundamental_from_db(stock_code: str) -> Optional[dict]:
             "status": row["valuation_status"],
         },
         "profitability": {
-            "roe":    row["roe"],
-            "status": row["profitability_status"],
+            "roe":           row["roe"],
+            # cross-sectional ROE percentile rank (0=최상위, 1=최하위).
+            # compute_fundamental_ranks 가 분기 갱신 시 사전 계산. QUAL-001 rule 이 사용.
+            "roe_rank_pct":  row["roe_rank_pct"],
+            "status":        row["profitability_status"],
         },
         "growth": {
             "revenue_growth":   row["revenue_growth"],
