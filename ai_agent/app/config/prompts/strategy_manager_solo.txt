@@ -64,7 +64,7 @@ asset 및 주문 파라미터 규칙:
 [메모리 — 최근 손실 패턴] (현재 후보의 판단 사유가 아래 손실 사례와 유사하면 recommended_side에 보수적으로 반영하세요)
 {memory_loss_pattern_brief}
 
-[메모리 — 유사 과거 판단 요약]
+[메모리 — 유사 과거 판단 요약] (현재 후보와 유사한 과거 케이스를 참고하여 판단 일관성을 높이세요)
 {memory_similar_decisions}
 
 [메모리 — 최근 회고 리포트] (summary와 lessons는 같은 사용자의 자기 회고이므로 신뢰도가 높습니다)
