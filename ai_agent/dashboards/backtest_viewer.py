@@ -1812,6 +1812,31 @@ def _proc_is_alive(pid: int) -> bool:
         return False
 
 
+# backtest/event_loop.py가 콘솔에 출력하는 Mongo 단절/복구 마커.
+# 형식 변경 시 event_loop.py의 _MONGO_*_MARKER 상수도 함께 갱신할 것.
+_MONGO_MARKERS = (
+    ("[MONGO_RECONNECTED]", "reconnected"),
+    ("[MONGO_WAITING]",     "waiting"),
+    ("[MONGO_DISCONNECTED]", "disconnected"),
+)
+
+
+def _mongo_status_from_log(log_text: str) -> tuple[str, str] | None:
+    """run.log 마지막 N줄에서 가장 최근 Mongo 상태 마커를 감지한다.
+
+    Returns:
+        (status, detail) — status ∈ {"disconnected", "waiting", "reconnected"}
+        detail은 마커 뒤 본문 (예: "day=2024-03-15 attempt=5 elapsed=150s")
+        None — 마커 없음 (정상 동작 중)
+    """
+    for line in reversed(log_text.splitlines()):
+        for marker, status in _MONGO_MARKERS:
+            if marker in line:
+                detail = line.split(marker, 1)[1].strip()
+                return status, detail
+    return None
+
+
 def _tail_log(log_path: str, n_lines: int = 80) -> str:
     """로그 파일 마지막 N줄. Windows cp949로 쓰인 구버전 로그도 자동 복구.
 
@@ -1931,6 +1956,35 @@ def _render_running_card(proc: dict[str, Any], idx: int) -> None:
                     ]
                     _delete_run_state_file(proc["output_dir"])
                     st.rerun()
+
+        # Mongo 원격 단절/복구 상태 — 진행 표시줄 위쪽에 강조 노출.
+        # 백테스트 측 event_loop._run_one_day_with_mongo_retry가 콘솔에 출력하는
+        # [MONGO_*] 마커를 감지해 카드 헤더에 보이게 한다.
+        if alive:
+            log_text = _tail_log(proc["log_path"], n_lines=200)
+            mongo_status = _mongo_status_from_log(log_text)
+            prev_status_key = f"mongo_status_{proc['pid']}"
+            prev_status = st.session_state.get(prev_status_key)
+
+            if mongo_status is not None:
+                status, detail = mongo_status
+                if status == "disconnected":
+                    st.error(f"MongoDB 연결 끊김 — {detail}", icon="🔴")
+                elif status == "waiting":
+                    st.warning(f"MongoDB 재연결 대기 중 — {detail}", icon="🟡")
+                elif status == "reconnected":
+                    st.success(f"MongoDB 재연결 성공 — {detail}", icon="🟢")
+
+                # 상태 전이 시 우측 상단 toast로 한 번만 알림.
+                if status != prev_status:
+                    if status == "disconnected":
+                        st.toast("MongoDB 연결 끊김 — 재연결 대기 중", icon="🔴")
+                    elif status == "reconnected":
+                        st.toast("MongoDB 재연결 — 백테스트 재개", icon="🟢")
+                    st.session_state[prev_status_key] = status
+            elif prev_status is not None:
+                # 마커가 더 이상 안 보이고 정상 진행 중 → 상태 reset
+                st.session_state.pop(prev_status_key, None)
 
         # 진행 표시줄
         if progress["current_date"]:
