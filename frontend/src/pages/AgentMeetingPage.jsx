@@ -1,40 +1,46 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Search } from 'lucide-react';
 import { getPortfolio } from '../api/account';
 import { getStocks } from '../api/market';
-import { getAiDecisions } from '../api/aiAgent';
-import { useAiChat, BOT_PROFILES, decisionToMessages } from '../hooks/useAiChat';
+import { useAgentChat, BOT_PROFILES } from '../hooks/useAgentChat';
 import './AgentMeetingPage.css';
 
+/**
+ * AI 에이전트 회의 페이지
+ *
+ * [데이터 흐름]
+ *  - 좌측 채널 리스트: 보유 종목(없으면 기본 5개)
+ *  - 우측 채팅 피드: useAgentChat 의 per-stock 버퍼 사용
+ *    · 채널 진입 시 loadHistory 로 최신 50개 fetch
+ *    · 위로 스크롤 시 IntersectionObserver 가 loadMore 호출
+ *    · BE SSE 'agent-message' 수신 시 자동으로 맨 위(최신)에 prepend
+ */
 export default function AgentMeetingPage() {
   const [channels, setChannels] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStock, setSelectedStock] = useState(null);
-  const [historyMessages, setHistoryMessages] = useState([]);
   const [isLoadingChannels, setIsLoadingChannels] = useState(true);
 
-  const { messages: liveMessages, typingBot } = useAiChat();
-  const feedRef = useRef(null);
+  const { byStock, unreadByStock, loadHistory, loadMore, markRead } = useAgentChat();
 
-  // 1. 관심/보유 종목(채널) 로드
+  const feedRef = useRef(null);
+  const topSentinelRef = useRef(null);
+  const prevScrollHeightRef = useRef(0);
+
+  // ── 1. 채널 리스트 로드 ────────────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
     const fetchChannels = async () => {
       try {
         const portfolio = await getPortfolio();
         let list = portfolio?.holdings ?? [];
-
-        // 보유 종목이 없으면 기본 5개 종목 노출
         if (list.length === 0) {
           const defaultStocks = await getStocks({ size: 5 });
           list = defaultStocks?.stocks ?? [];
         }
-
         if (mounted) {
           setChannels(list);
-          if (list.length > 0) {
-            setSelectedStock(list[0]);
-          }
+          if (list.length > 0) setSelectedStock(list[0]);
           setIsLoadingChannels(false);
         }
       } catch (err) {
@@ -46,75 +52,90 @@ export default function AgentMeetingPage() {
     return () => { mounted = false; };
   }, []);
 
-  // 2. 선택된 채널이 바뀔 때 과거 데이터 페칭
+  // ── 2. 채널 선택 시 히스토리 로드 + 읽음 처리 ──────────────────────────
   useEffect(() => {
     if (!selectedStock) return;
-    let mounted = true;
+    loadHistory(selectedStock.stockCode);
+    markRead(selectedStock.stockCode);
+  }, [selectedStock, loadHistory, markRead]);
 
-    const fetchHistory = async () => {
-      try {
-        const res = await getAiDecisions({ stockCode: selectedStock.stockCode, size: 20 });
-        const decisions = res?.content ?? [];
+  const channel = selectedStock ? byStock[selectedStock.stockCode] : null;
+  const rawMessages = channel?.messages ?? [];
 
-        if (mounted) {
-          // 오래된 순으로 정렬 후 메시지 변환
-          const msgs = [...decisions]
-            .reverse()
-            .flatMap(d => decisionToMessages(d));
-          setHistoryMessages(msgs);
-        }
-      } catch (err) {
-        console.error('Failed to load history decisions', err);
-      }
-    };
+  // BE 응답은 DESC — 화면은 시간순(오래된 → 최신)으로 보이는 게 자연스러우므로 reverse
+  const displayMessages = useMemo(() => [...rawMessages].reverse(), [rawMessages]);
 
-    fetchHistory();
-    return () => { mounted = false; };
-  }, [selectedStock]);
-
-  // 3. 스크롤을 맨 아래로
+  // ── 3. 위로 스크롤 무한 로딩 (IntersectionObserver) ────────────────────
   useEffect(() => {
-    if (feedRef.current) {
-      feedRef.current.scrollTop = feedRef.current.scrollHeight;
+    const sentinel = topSentinelRef.current;
+    if (!sentinel || !selectedStock || !channel?.hasMore) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && feedRef.current) {
+          // 추가 페이지 로드 전 스크롤 높이 기록 — 로드 후 보정해서 점프 방지
+          prevScrollHeightRef.current = feedRef.current.scrollHeight;
+          loadMore(selectedStock.stockCode);
+        }
+      },
+      { root: feedRef.current, threshold: 0.1 },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [selectedStock, channel?.hasMore, channel?.nextCursorId, loadMore]);
+
+  // ── 4. 스크롤 위치 보정 ────────────────────────────────────────────────
+  // 새 메시지 도착 시(맨 아래) / 채널 전환 시: 맨 아래로
+  // 위로 스크롤 페이지 추가 시: 위에 추가된 만큼 스크롤 보정 (점프 방지)
+  const messagesLength = displayMessages.length;
+  const prevLengthRef = useRef(0);
+  const prevStockRef = useRef(null);
+
+  useEffect(() => {
+    const feed = feedRef.current;
+    if (!feed) return;
+
+    const stockChanged = prevStockRef.current !== selectedStock?.stockCode;
+    const messageAdded = messagesLength > prevLengthRef.current;
+    const messagesPrepended = prevScrollHeightRef.current > 0
+      && feed.scrollHeight > prevScrollHeightRef.current
+      && !stockChanged;
+
+    if (messagesPrepended) {
+      // 위에 메시지가 추가된 경우 — 사용자가 보던 위치 유지
+      const diff = feed.scrollHeight - prevScrollHeightRef.current;
+      feed.scrollTop = feed.scrollTop + diff;
+      prevScrollHeightRef.current = 0;
+    } else if (stockChanged || messageAdded) {
+      // 채널 전환 또는 새 SSE 메시지 → 맨 아래
+      feed.scrollTop = feed.scrollHeight;
     }
-  }, [historyMessages, liveMessages, typingBot, selectedStock]);
 
-  const handleChannelSelect = (channel) => {
-    setSelectedStock(channel);
-  };
+    prevLengthRef.current = messagesLength;
+    prevStockRef.current = selectedStock?.stockCode;
+  }, [messagesLength, selectedStock?.stockCode]);
 
-  // 현재 종목에 해당하는 실시간 메시지 필터링
-  const currentLiveMessages = selectedStock 
-    ? liveMessages.filter(m => m.stockCode === selectedStock.stockCode)
-    : [];
-
-  // 과거 + 실시간 메시지 병합 (중복 방지: ID 기준)
-  const allMessagesMap = new Map();
-  historyMessages.forEach(m => allMessagesMap.set(m.id, m));
-  currentLiveMessages.forEach(m => allMessagesMap.set(m.id, m));
-  const mergedMessages = Array.from(allMessagesMap.values())
-    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-
-  const filteredChannels = channels.filter(c => 
-    c.stockName.includes(searchQuery) || c.stockCode.includes(searchQuery)
+  // ── 5. 채널 검색 / 선택 핸들러 ─────────────────────────────────────────
+  const filteredChannels = channels.filter(c =>
+    c.stockName.includes(searchQuery) || c.stockCode.includes(searchQuery),
   );
 
-  const getUnreadCountForChannel = (stockCode) => {
-    // 실시간 메시지 중 해당 채널의 메시지 수 (예시용 간단 계산)
-    return liveMessages.filter(m => m.stockCode === stockCode).length;
+  const handleChannelSelect = (channelInfo) => {
+    setSelectedStock(channelInfo);
   };
 
+  // ── 6. 렌더 ───────────────────────────────────────────────────────────
   return (
     <div className="agent-meeting-container">
-      {/* 1. 좌측 채널 리스트 */}
+      {/* 좌측 채널 사이드바 */}
       <div className="channel-sidebar">
         <div className="channel-sidebar-header">
           <h2>종목 채널</h2>
           <div className="channel-search">
             <Search size={16} color="#666" />
-            <input 
-              type="text" 
-              placeholder="검색" 
+            <input
+              type="text"
+              placeholder="검색"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
             />
@@ -124,22 +145,21 @@ export default function AgentMeetingPage() {
         <div className="channel-list">
           {isLoadingChannels ? (
             <div style={{ padding: '1rem', color: '#666' }}>로딩 중...</div>
-          ) : filteredChannels.map(channel => {
-            const isActive = selectedStock?.stockCode === channel.stockCode;
-            const unreadCount = getUnreadCountForChannel(channel.stockCode);
-            // 모의 데이터 등으로 price가 없으면 '-' 처리
-            const price = channel.currentPrice ? channel.currentPrice.toLocaleString() : '-';
-            const rate = channel.pnlPct ?? channel.compareRate ?? 0;
+          ) : filteredChannels.map(channelInfo => {
+            const isActive = selectedStock?.stockCode === channelInfo.stockCode;
+            const unreadCount = unreadByStock[channelInfo.stockCode] ?? 0;
+            const price = channelInfo.currentPrice ? channelInfo.currentPrice.toLocaleString() : '-';
+            const rate = channelInfo.pnlPct ?? channelInfo.compareRate ?? 0;
             const rateClass = rate > 0 ? 'up' : rate < 0 ? 'down' : 'steady';
 
             return (
-              <div 
-                key={channel.stockCode} 
+              <div
+                key={channelInfo.stockCode}
                 className={`channel-item ${isActive ? 'active' : ''}`}
-                onClick={() => handleChannelSelect(channel)}
+                onClick={() => handleChannelSelect(channelInfo)}
               >
                 <div className="channel-info">
-                  <div className="channel-name">{channel.stockName}</div>
+                  <div className="channel-name">{channelInfo.stockName}</div>
                   <div className="channel-price">
                     <span>{price}원</span>
                     <span className={rateClass}>
@@ -157,7 +177,7 @@ export default function AgentMeetingPage() {
         </div>
       </div>
 
-      {/* 2. 우측 채팅 피드 */}
+      {/* 우측 채팅 피드 */}
       <div className="chat-panel">
         <div className="chat-header">
           <div className="chat-header-title">
@@ -176,21 +196,29 @@ export default function AgentMeetingPage() {
         </div>
 
         <div className="chat-feed" ref={feedRef}>
-          {selectedStock && mergedMessages.length === 0 && !typingBot && (
+          {/* 위로 스크롤 sentinel — 보이면 loadMore 트리거 */}
+          {channel?.hasMore && (
+            <div ref={topSentinelRef} style={{ padding: '0.5rem', textAlign: 'center', color: '#888' }}>
+              이전 메시지 불러오는 중…
+            </div>
+          )}
+
+          {selectedStock && channel?.loaded === true && displayMessages.length === 0 && (
             <div className="empty-chat">
               <p>아직 이 종목에 대한 AI 에이전트 토론이 없습니다.</p>
             </div>
           )}
 
-          {mergedMessages.map((msg, i) => {
-            const bot = BOT_PROFILES[msg.bot];
+          {displayMessages.map(msg => {
+            const bot = BOT_PROFILES[msg.agent];
             if (!bot) return null;
 
-            const timeStr = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            // 간단하게 하루가 바뀌는 경계를 처리할 수도 있으나, 여기선 생략
-            
+            const timeStr = new Date(msg.createdAt).toLocaleTimeString([], {
+              hour: '2-digit', minute: '2-digit',
+            });
+
             return (
-              <div key={msg.id} className="chat-message">
+              <div key={msg.messageId} className="chat-message">
                 <div className="agent-avatar" style={{ backgroundColor: bot.color }}>
                   {bot.icon}
                 </div>
@@ -200,37 +228,11 @@ export default function AgentMeetingPage() {
                     <span className="message-agent-role">{bot.role} Agent</span>
                     <span className="message-time">{timeStr}</span>
                   </div>
-                  
-                  <div className="message-text">
-                    {msg.text}
-                  </div>
+                  <div className="message-text">{msg.text}</div>
                 </div>
               </div>
             );
           })}
-
-          {/* 현재 채널에서 타이핑 중인 봇 표시 */}
-          {typingBot && (() => {
-            const bot = BOT_PROFILES[typingBot];
-            if (!bot) return null;
-            // 타이핑은 useAiChat이 전역으로 관리하므로 종목 구분이 안될 수 있음 (모의 환경 한계)
-            // 여기선 표시해줍니다.
-            return (
-              <div className="typing-indicator">
-                <div className="agent-avatar" style={{ backgroundColor: bot.color }}>
-                  {bot.icon}
-                </div>
-                <div className="message-content">
-                  <div className="message-header">
-                    <span className="message-agent-name">{bot.name}</span>
-                  </div>
-                  <div className="typing-dots">
-                    <span></span><span></span><span></span>
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
         </div>
       </div>
     </div>
