@@ -1,6 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Search, Bell } from 'lucide-react';
+import {
+  Search,
+  Bell,
+  LayoutDashboard,
+  TrendingUp,
+  Bot,
+  FileText,
+  ShieldCheck,
+  User,
+  Menu
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { getStocks } from '../api/market';
 import { useOrderSSE } from '../hooks/useOrderSSE';
@@ -31,13 +41,38 @@ export default function MainLayout() {
   // Bell 뱃지 — 안 읽은 알림 + 승인 대기 합산 (사용자 인지 영역 통합)
   const bellBadgeCount = unreadCount + pendingCount;
 
+  // 사이드바 축소/최소화 상태 관리 (새로고침 시에도 유지)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    return localStorage.getItem('modu.sidebarCollapsed') === 'true';
+  });
+
+  const toggleSidebar = () => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem('modu.sidebarCollapsed', String(next));
+      return next;
+    });
+
+    // 300ms 트랜지션 동안 실시간으로 window resize 이벤트를 발생시켜 차트가 실시간으로 유동적으로 리사이징되도록 함!
+    const startTime = performance.now();
+    const duration = 350; // 트랜지션 지속 시간(300ms)보다 약간 여유 있게 설정
+
+    function animateResize(time) {
+      window.dispatchEvent(new Event('resize'));
+      if (time - startTime < duration) {
+        requestAnimationFrame(animateResize);
+      }
+    }
+    requestAnimationFrame(animateResize);
+  };
+
   const menuItems = [
-    { path: '/home', label: '대시보드' },
-    { path: '/trading', label: '트레이딩 룸' },
-    { path: '/agent-meeting', label: '에이전트 회의실' },
-    { path: '/report', label: '리포트' },
-    { path: '/risk-manage', label: '리스크 관리' },
-    { path: '/mypage', label: '마이페이지' },
+    { path: '/home', label: '대시보드', icon: <LayoutDashboard size={20} /> },
+    { path: '/trading', label: '트레이딩 룸', icon: <TrendingUp size={20} /> },
+    { path: '/agent-meeting', label: '에이전트 회의실', icon: <Bot size={20} /> },
+    { path: '/report', label: '리포트', icon: <FileText size={20} /> },
+    { path: '/risk-manage', label: '리스크 관리', icon: <ShieldCheck size={20} /> },
+    { path: '/mypage', label: '마이페이지', icon: <User size={20} /> },
   ];
 
   const { latestEvent } = useOrderSSE();
@@ -128,13 +163,18 @@ export default function MainLayout() {
   };
 
   return (
-    <div className="main-layout">
+    <div className={`main-layout ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       {/* 1. 사이드바 */}
       <aside className="sidebar">
         <div className="sidebar-logo">
-          <Link to="/home" style={{ textDecoration: 'none', color: 'inherit' }}>
-            <h2>MODU</h2>
-          </Link>
+          <button className="sidebar-menu-btn" onClick={toggleSidebar} aria-label="사이드바 토글">
+            <Menu size={22} />
+          </button>
+          {!isSidebarCollapsed && (
+            <Link to="/home" style={{ textDecoration: 'none', color: 'inherit' }} className="sidebar-logo-text">
+              <h2>MODU</h2>
+            </Link>
+          )}
         </div>
         <nav className="sidebar-nav">
           {menuItems.map((item) => (
@@ -142,9 +182,10 @@ export default function MainLayout() {
               key={item.path}
               to={item.path}
               className={`nav-item ${location.pathname.startsWith(item.path) ? 'active' : ''}`}
+              title={isSidebarCollapsed ? item.label : undefined}
             >
               {item.icon}
-              <span>{item.label}</span>
+              <span className="nav-label">{item.label}</span>
               {item.isNew && <span className="nav-new-badge">NEW</span>}
             </Link>
           ))}
