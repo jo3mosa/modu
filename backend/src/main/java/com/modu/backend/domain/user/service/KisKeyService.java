@@ -56,6 +56,7 @@ public class KisKeyService {
                     .userId(userId)
                     .appKeyEnc(encryptor.encrypt(request.appKey()))
                     .appSecretEnc(encryptor.encrypt(request.appSecret()))
+                    .htsIdEnc(encryptor.encrypt(request.htsId()))
                     .accountNo(accountParts[0])
                     .accountPrdtCd(accountParts[1])
                     .isRealAccount(request.isRealAccount())
@@ -90,6 +91,7 @@ public class KisKeyService {
         credential.update(
                 request.appKey() != null ? encryptor.encrypt(request.appKey()) : null,
                 request.appSecret() != null ? encryptor.encrypt(request.appSecret()) : null,
+                request.htsId() != null ? encryptor.encrypt(request.htsId()) : null,
                 accountParts != null ? accountParts[0] : null,
                 accountParts != null ? accountParts[1] : null,
                 request.isRealAccount()
