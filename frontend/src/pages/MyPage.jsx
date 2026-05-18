@@ -155,40 +155,42 @@ export default function MyPage() {
           한국투자증권 연동 관리
         </h2>
         <div className="api-form">
-          <div className="input-group">
-            <label>App Key</label>
-            <input
-              type="text"
-              value={apiKeys.appKey}
-              onChange={(e) => setApiKeys({ ...apiKeys, appKey: e.target.value })}
-              placeholder="한국투자증권 App Key를 입력하세요"
-            />
-          </div>
-          <div className="input-group">
-            <label>App Secret</label>
-            <div className="password-input-wrapper">
+          <div className="api-grid">
+            <div className="input-group">
+              <label>App Key</label>
               <input
-                type={showSecret ? "text" : "password"}
-                value={apiKeys.appSecret}
-                onChange={(e) => setApiKeys({ ...apiKeys, appSecret: e.target.value })}
-                placeholder="한국투자증권 App Secret을 입력하세요"
+                type="text"
+                value={apiKeys.appKey}
+                onChange={(e) => setApiKeys({ ...apiKeys, appKey: e.target.value })}
+                placeholder="한국투자증권 App Key를 입력하세요"
               />
-              <button
-                type="button"
-                className="eye-btn"
-                onClick={() => setShowSecret(!showSecret)}
-              >
-                {showSecret ? <EyeOff size={20} /> : <Eye size={20} />}
-              </button>
             </div>
-          </div>
-          <div className="input-group">
-            <label>종합계좌번호</label>
-            <input
-              type="text"
-              value={apiKeys.accountNo}
-              onChange={(e) => setApiKeys({ ...apiKeys, accountNo: e.target.value })}
-            />
+            <div className="input-group">
+              <label>App Secret</label>
+              <div className="password-input-wrapper">
+                <input
+                  type={showSecret ? "text" : "password"}
+                  value={apiKeys.appSecret}
+                  onChange={(e) => setApiKeys({ ...apiKeys, appSecret: e.target.value })}
+                  placeholder="한국투자증권 App Secret을 입력하세요"
+                />
+                <button
+                  type="button"
+                  className="eye-btn"
+                  onClick={() => setShowSecret(!showSecret)}
+                >
+                  {showSecret ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              </div>
+            </div>
+            <div className="input-group">
+              <label>종합계좌번호</label>
+              <input
+                type="text"
+                value={apiKeys.accountNo}
+                onChange={(e) => setApiKeys({ ...apiKeys, accountNo: e.target.value })}
+              />
+            </div>
           </div>
           <button className="save-btn" onClick={handleSaveKeys} disabled={savingKeys}>
             {savingKeys ? '저장 중 …' : '연동 테스트 및 저장'}

@@ -691,9 +691,9 @@ export default function TradingChart({ stockCode }) {
       priceScaleId: 'rsi',
       title: 'RSI',
     });
-    // RSI 기준선 추가 (30, 70 실선)
-    rsiSeriesRef.current.createPriceLine({ price: 70, color: 'rgba(255, 255, 255, 0.35)', lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: '70' });
-    rsiSeriesRef.current.createPriceLine({ price: 30, color: 'rgba(255, 255, 255, 0.35)', lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: '30' });
+    // RSI 기준선 추가 (30, 70 실선 - 라벨 숨김으로 깔끔하게 처리)
+    rsiSeriesRef.current.createPriceLine({ price: 70, color: 'rgba(255, 255, 255, 0.35)', lineWidth: 1, lineStyle: 0, axisLabelVisible: false, title: '' });
+    rsiSeriesRef.current.createPriceLine({ price: 30, color: 'rgba(255, 255, 255, 0.35)', lineWidth: 1, lineStyle: 0, axisLabelVisible: false, title: '' });
 
     // MACD 시리즈 추가
     macdSeriesRefs.current.macd = chart.addLineSeries({ color: '#3b82f6', lineWidth: 1, priceScaleId: 'macd', title: 'MACD' });
