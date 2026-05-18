@@ -1,14 +1,19 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { placeOrder, getPendingOrders, updateOrder, getBuyingPower } from '../api/order';
 import { getStockDetail } from '../api/market';
+import { getPortfolio } from '../api/account';
 import { useOrderSSE } from '../hooks/useOrderSSE';
 import { useNotifications } from '../hooks/useNotifications';
 import ConfirmDialog from './ConfirmDialog';
 import './OrderBook.css';
 
 export default function OrderBook({ stockCode }) {
-  const [activeTab, setActiveTab] = useState('ORDER'); // 'ORDER' | 'PENDING'
+  const [activeTab, setActiveTab] = useState('ORDER'); // 'ORDER' | 'PENDING' | 'HOLDING'
+  const [, setSearchParams] = useSearchParams();
+  const [holdings, setHoldings] = useState([]);
+  const [loadingHoldings, setLoadingHoldings] = useState(false);
   const [orderType, setOrderType] = useState('BUY'); // 'BUY' | 'SELL'
   const [orderMethod, setOrderMethod] = useState('LIMIT'); // 'LIMIT' | 'MARKET'
 
@@ -136,10 +141,29 @@ export default function OrderBook({ stockCode }) {
     }
   }, [stockCode]);
 
+  // 보유현황 조회 (GET /api/v1/accounts/me/holdings)
+  const fetchHoldings = useCallback(async () => {
+    setLoadingHoldings(true);
+    try {
+      const data = await getPortfolio();
+      setHoldings(data?.holdings ?? []);
+    } catch (error) {
+      console.warn('보유현황 조회 실패:', error);
+      setHoldings([]);
+    } finally {
+      setLoadingHoldings(false);
+    }
+  }, []);
+
   // 미체결 탭 진입 또는 종목 변경 시 조회
   useEffect(() => {
     if (activeTab === 'PENDING') fetchPending();
   }, [activeTab, fetchPending]);
+
+  // 보유현황 탭 진입 시 조회
+  useEffect(() => {
+    if (activeTab === 'HOLDING') fetchHoldings();
+  }, [activeTab, fetchHoldings]);
 
   // 전역 SSE 구독 — Provider 가 단일 EventSource 를 유지하고 최신 이벤트만 흘려준다.
   // (useOrderSSE 는 인자를 받지 않는 Context 훅이라 콜백 등록 방식이 아닌 latestEvent watch 패턴 사용)
@@ -466,6 +490,12 @@ export default function OrderBook({ stockCode }) {
           호가·주문
         </button>
         <button
+          className={`tab-btn ${activeTab === 'HOLDING' ? 'active' : ''}`}
+          onClick={() => setActiveTab('HOLDING')}
+        >
+          보유현황
+        </button>
+        <button
           className={`tab-btn ${activeTab === 'PENDING' ? 'active' : ''}`}
           onClick={() => setActiveTab('PENDING')}
         >
@@ -664,6 +694,108 @@ export default function OrderBook({ stockCode }) {
               {submittingOrder ? '접수 중…' : (orderType === 'BUY' ? '매수 주문' : '매도 주문')}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* 보유현황 탭 */}
+      {activeTab === 'HOLDING' && (
+        <div className="holding-content">
+          <div className="holding-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0' }}>
+            <span style={{ color: '#aaa', fontSize: '0.9em' }}>실시간 보유 자산</span>
+            <button
+              className="tool-btn"
+              onClick={fetchHoldings}
+              disabled={loadingHoldings}
+              style={{ fontSize: '0.85em' }}
+            >
+              {loadingHoldings ? '새로고침 중 …' : '새로고침'}
+            </button>
+          </div>
+
+          {loadingHoldings && holdings.length === 0 ? (
+            <div className="empty-state">보유 자산을 불러오는 중입니다 …</div>
+          ) : holdings.length === 0 ? (
+            <div className="empty-state">보유 중인 주식이 없습니다.</div>
+          ) : (
+            <div className="holdings-inner-container">
+              {/* 1. 현재 선택 종목 보유 요약 카드 */}
+              {(() => {
+                const currentHolding = holdings.find(h => h.stockCode === stockCode);
+                if (!currentHolding) return null;
+                const isProfit = (currentHolding.pnl ?? 0) >= 0;
+                const pnlSign = isProfit ? '+' : '';
+                const pnlColorClass = isProfit ? 'up' : 'down';
+
+                return (
+                  <div className="current-holding-card">
+                    <div className="card-top">
+                      <div className="stock-meta">
+                        <span className="card-stock-name">{currentHolding.stockName}</span>
+                        <span className="card-stock-code">{currentHolding.stockCode}</span>
+                      </div>
+                      <span className={`card-pnl-pct ${pnlColorClass}`}>
+                        {pnlSign}{currentHolding.pnlPct?.toFixed(2) ?? '0.00'}%
+                      </span>
+                    </div>
+                    
+                    <div className="card-body-grid">
+                      <div className="card-field">
+                        <span className="field-lbl">보유 수량</span>
+                        <strong className="field-val">{currentHolding.quantity?.toLocaleString() ?? '0'}주</strong>
+                      </div>
+                      <div className="card-field">
+                        <span className="field-lbl">평균 매수가</span>
+                        <strong className="field-val">{currentHolding.avgBuyPrice?.toLocaleString() ?? '0'}원</strong>
+                      </div>
+                      <div className="card-field">
+                        <span className="field-lbl">현재 평가금액</span>
+                        <strong className="field-val">
+                          {((currentHolding.currentPrice ?? 0) * (currentHolding.quantity ?? 0)).toLocaleString()}원
+                        </strong>
+                      </div>
+                      <div className="card-field">
+                        <span className="field-lbl">평가 손익</span>
+                        <strong className={`field-val ${pnlColorClass}`}>
+                          {pnlSign}{currentHolding.pnl?.toLocaleString() ?? '0'}원
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* 2. 전체 보유 종목 미니 리스트 */}
+              <div className="other-holdings-title">전체 보유 종목</div>
+              <div className="holdings-list">
+                {holdings.map((h) => {
+                  const isCurrent = h.stockCode === stockCode;
+                  const isProfit = (h.pnl ?? 0) >= 0;
+                  const pnlSign = isProfit ? '+' : '';
+                  const pnlColorClass = isProfit ? 'up' : 'down';
+                  
+                  return (
+                    <div
+                      key={h.stockCode}
+                      className={`holding-item-row ${isCurrent ? 'selected' : ''}`}
+                      onClick={() => setSearchParams({ stock: h.stockCode })}
+                      title="클릭 시 이 종목으로 차트 및 호가창이 전환됩니다"
+                    >
+                      <div className="item-left">
+                        <span className="item-name">{h.stockName}</span>
+                        <span className="item-qty">{h.quantity?.toLocaleString() ?? 0}주</span>
+                      </div>
+                      <div className="item-right">
+                        <span className="item-price">{h.currentPrice?.toLocaleString() ?? 0}원</span>
+                        <span className={`item-pnl-pct ${pnlColorClass}`}>
+                          {pnlSign}{h.pnlPct?.toFixed(2) ?? '0.00'}%
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
