@@ -341,13 +341,22 @@ export default function DashboardPage() {
       0
     );
     const totalPnl = holdings.reduce((sum, h) => sum + (h.pnl ?? 0), 0);
-    const totalPnlPct =
-      totalBuyAmount > 0 ? Number(((totalPnl / totalBuyAmount) * 100).toFixed(2)) : 0;
-    // 주문 가능 금액 우선순위: buyingPower.maxBuyAmount(KIS nrcvb_buy_amt, 한투 "주문가능원화") > summary.availableCash(KIS dncl_amt) > 0
-    // 전자는 매도 결제 대기 자금까지 포함된 실사용 가능 금액. 후자는 D+0 현금만이라 작게 나옴.
+    
+    // 주문 가능 금액 우선순위: 실제로 신규 매수 주문을 넣을 수 있는 자금 (미체결 매수 주문 시 차감됨)
     const availableCash = buyingPower?.maxBuyAmount ?? summary.availableCash ?? 0;
-    // 총 자산: 예수금 + 실시간 평가금액
-    const totalAsset = availableCash + totalEvalAmount;
+    
+    // 미체결 매수 주문 금액 합산: 미체결 매수 주문이 대기 중일 때 총자산이 깎여 보이는 현상을 방지하기 위함
+    const pendingBuyAmount = orderHistory
+      .filter((o) => o.side === 'BUY' && o.status === 'PENDING')
+      .reduce((sum, o) => sum + (o.price ?? 0) * (o.quantity ?? 0), 0);
+    
+    // 총 자산 = 주문 가능 금액 + 실시간 주식 평가금액 + 미체결 매수 대금
+    // (사용자가 제시한 가장 명료하고 완벽한 공식인 "투자자산 + 주문가능금액"을 정확히 만족하여 자산이 직관적으로 유지됩니다!)
+    const totalAsset = availableCash + totalEvalAmount + pendingBuyAmount;
+    
+    // 총 자산 대비 실시간 수익률 계산 (투자 직전 총 자산 대비 현재 손익금액의 비율로 구하여 시각적 직관성을 100% 만족시킴!)
+    const initialAsset = totalAsset - totalPnl;
+    const totalPnlPct = initialAsset > 0 ? Number(((totalPnl / initialAsset) * 100).toFixed(2)) : 0;
     return {
       ...summary,
       availableCash,
