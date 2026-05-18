@@ -64,21 +64,22 @@ public class PortfolioUpdateConsumer {
 
     @KafkaListener(
             topics = KafkaTopic.TRADE_ORDER_EXECUTED,
-            groupId = KafkaConsumerGroup.PORTFOLIO_UPDATE
+            groupId = KafkaConsumerGroup.PORTFOLIO_UPDATE,
+            containerFactory = "portfolioUpdateListenerContainerFactory"
     )
+    @Transactional
     public void onMessage(TradeOrderExecutedMessage message, Acknowledgment ack) {
         try {
             processMessage(message);
         } catch (Exception e) {
-            // 시스템 예외 — Kafka 재시도. ack 미커밋
+            // 시스템 예외 — Kafka 재시도. ack 미커밋, 트랜잭션 rollback
             log.error("[PortfolioUpdateConsumer] 미처리 예외 - orderId: {}", message.orderId(), e);
             throw e;
         }
         ack.acknowledge();
     }
 
-    @Transactional
-    protected void processMessage(TradeOrderExecutedMessage message) {
+    private void processMessage(TradeOrderExecutedMessage message) {
         // 1) Pessimistic write lock 으로 order 조회
         Optional<Order> opt = orderRepository.findByIdForUpdate(message.orderId());
         if (opt.isEmpty()) {
