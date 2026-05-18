@@ -310,6 +310,7 @@ export default function TradingChart({ stockCode }) {
   const stockCodeRef = useRef(stockCode);
   const timeframeRef = useRef('D');
   const [timeframe, setTimeframe] = useState('D');
+  const [isChartReady, setIsChartReady] = useState(false);
 
   // 활성화된 보조지표 (기본값: 이동평균선과 거래량을 기본 켜두어 차트가 가득 차고 고급스럽게 보이도록 함)
   const [activeIndicators, setActiveIndicators] = useState(() => {
@@ -385,7 +386,7 @@ export default function TradingChart({ stockCode }) {
 
   // [평단가 가로선 업데이트] 종목 변경 시 포트폴리오를 로드하여 Toss 스타일 가로 점선 그리기
   useEffect(() => {
-    if (!stockCode || !candlestickSeriesRef.current) return;
+    if (!stockCode || !isChartReady || !candlestickSeriesRef.current) return;
     let active = true;
 
     async function updatePriceLine() {
@@ -403,16 +404,24 @@ export default function TradingChart({ stockCode }) {
         const portfolio = await getPortfolio();
         if (!active) return;
         const holding = (portfolio?.holdings ?? []).find((h) => h.stockCode === stockCode);
-        if (holding && holding.quantity > 0 && holding.avgBuyPrice > 0) {
-          const priceLine = candlestickSeriesRef.current.createPriceLine({
-            price: holding.avgBuyPrice,
-            color: '#10b981', // Toss Green
-            lineWidth: 2,
-            lineStyle: 2, // Dashed = 2
-            axisLabelVisible: true,
-            title: `평단가: ${holding.avgBuyPrice.toLocaleString()}원`,
-          });
-          priceLineRef.current = priceLine;
+        if (holding && holding.quantity > 0) {
+          const incomingAvg = holding.avgBuyPrice ?? 0;
+          const derivedAvg = Math.round(
+            ((holding.currentPrice ?? 0) * holding.quantity - (holding.pnl ?? 0)) / holding.quantity
+          );
+          const avgBuyPrice = incomingAvg > 0 ? incomingAvg : derivedAvg;
+
+          if (avgBuyPrice > 0) {
+            const priceLine = candlestickSeriesRef.current.createPriceLine({
+              price: avgBuyPrice,
+              color: '#10b981', // Toss Green
+              lineWidth: 2,
+              lineStyle: 2, // Dashed = 2
+              axisLabelVisible: true,
+              title: `평단가: ${avgBuyPrice.toLocaleString()}원`,
+            });
+            priceLineRef.current = priceLine;
+          }
         }
       } catch (err) {
         console.warn('평단가 데이터 로드 실패:', err);
@@ -432,7 +441,7 @@ export default function TradingChart({ stockCode }) {
         priceLineRef.current = null;
       }
     };
-  }, [stockCode, candlestickSeriesRef.current]);
+  }, [stockCode, isChartReady]);
 
   const toggleIndicator = (key) => {
     setActiveIndicators((prev) => {
@@ -691,7 +700,10 @@ export default function TradingChart({ stockCode }) {
     window.addEventListener('resize', handleResize);
     setTimeout(handleResize, 100);
 
+    setIsChartReady(true);
+
     return () => {
+      setIsChartReady(false);
       window.removeEventListener('resize', handleResize);
       chart.unsubscribeClick(onClick);
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange);
