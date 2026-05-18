@@ -207,6 +207,60 @@ public class Order {
     }
 
     /**
+     * 체결 단건 반영 (S14P31B106-291)
+     *
+     * 부분 체결이면 filled_quantity / filled_avg_price 누적만 갱신, 상태는 PENDING 유지.
+     * 전량 체결 (isFinalFill=true) 이면 FILLED 로 전이 + filled_at 기록.
+     *
+     * [전이 가능 상태]
+     *  PENDING / MODIFIED 만 허용. RESERVED 는 변환 동기화로 먼저 PENDING 으로 와야 함 — 변환 전
+     *  H0STCNI0 도착 race 발생 시 IllegalStateException 으로 보호.
+     *
+     * [가중 평균 단가]
+     *  (기존 누적금액 + 이번 체결금액) / 새 누적수량. 정수 나눗셈으로 1원 미만 절삭 — KIS 가 1원 단위라 무난.
+     */
+    public void markFilled(long executedQuantity, long executedPrice,
+                           boolean isFinalFill, OffsetDateTime executedAt) {
+        guardNotTerminal(OrderStatus.FILLED);
+        if (this.status != OrderStatus.PENDING && this.status != OrderStatus.MODIFIED) {
+            throw new IllegalStateException(
+                    "체결 반영은 PENDING / MODIFIED 만 가능 - currentStatus: " + this.status);
+        }
+        long prevFilled = this.filledQuantity == null ? 0L : this.filledQuantity;
+        long prevAvg    = this.filledAvgPrice  == null ? 0L : this.filledAvgPrice;
+        long newFilled  = prevFilled + executedQuantity;
+        long newAvg     = newFilled == 0L
+                ? 0L
+                : (prevAvg * prevFilled + executedPrice * executedQuantity) / newFilled;
+
+        this.filledQuantity = newFilled;
+        this.filledAvgPrice = newAvg;
+        if (isFinalFill) {
+            this.status   = OrderStatus.FILLED;
+            this.filledAt = executedAt;
+        }
+        this.updatedAt = OffsetDateTime.now();
+    }
+
+    /**
+     * 예약주문 → 일반 주문 전환 처리 (S14P31B106-291)
+     *
+     * 매일 09:05 KST 변환 모니터링 스케줄러가 KIS order-resv-ccnl 조회 후 발급된 새 ODER_NO 를 동기화.
+     * RESERVED → PENDING 전이 + kis_order_no 채움. 이후 일반 체결 흐름 (H0STCNI0 → markFilled) 진입.
+     *
+     * @param newKisOrderNo KIS 변환 후 발급된 ODER_NO
+     */
+    public void markReservationConverted(String newKisOrderNo) {
+        if (this.status != OrderStatus.RESERVED) {
+            throw new IllegalStateException(
+                    "RESERVED 만 변환 전이 가능 - currentStatus: " + this.status);
+        }
+        this.kisOrderNo = newKisOrderNo;
+        this.status     = OrderStatus.PENDING;
+        this.updatedAt  = OffsetDateTime.now();
+    }
+
+    /**
      * 종착 상태 (FILLED / CANCELED / REJECTED) 에서 다른 상태로의 전이 차단 — 상태 머신 불변성 보호.
      * 호출자 (서비스 레이어) 가 락 + 사전 체크하지만 엔티티 레벨에서도 방어적 검증.
      */
