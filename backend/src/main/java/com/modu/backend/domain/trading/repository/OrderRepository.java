@@ -1,6 +1,7 @@
 package com.modu.backend.domain.trading.repository;
 
 import com.modu.backend.domain.trading.entity.Order;
+import com.modu.backend.domain.trading.entity.OrderSide;
 import com.modu.backend.domain.trading.entity.OrderStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -27,6 +28,19 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT o FROM Order o WHERE o.id = :id")
     Optional<Order> findByIdForUpdate(@Param("id") Long id);
+
+    /**
+     * KIS 주문번호 단건 조회 — H0STCNI0 체결 통보 매칭 (S14P31B106-291).
+     * KIS 가 보장하는 ODER_NO 유일성에 의존. 동일 ODER_NO 가 여러 row 에 존재할 가능성 매우 낮음.
+     */
+    Optional<Order> findByKisOrderNo(String kisOrderNo);
+
+    /**
+     * PnL 매칭용 — 동일 사용자/종목/매수/체결 상태의 가장 최근 FILLED 매수 주문 (S14P31B106-291).
+     * MVP 가정: 한 사용자가 한 종목에 대해 1 매수 chunk → 1 매도 chunk 로 거래. 다중 분할 매수 시 부정확 (followups).
+     */
+    Optional<Order> findFirstByUserIdAndStockCodeAndSideAndStatusOrderByFilledAtDesc(
+            Long userId, String stockCode, OrderSide side, OrderStatus status);
 
     /**
      * KIS 주문번호(kis_order_no) 목록으로 주문 일괄 조회
