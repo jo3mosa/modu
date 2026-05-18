@@ -122,6 +122,11 @@ def compute_indicators_for_stock(ohlcv: pd.DataFrame) -> pd.DataFrame:
     )
     df["mfi_14"] = mfi.money_flow_index()
 
+    # 거래량 급증 — candle_collector.VOLUME_SPIKE_MULTIPLIER=2.0 와 일치.
+    # 직전 20일 평균(오늘 제외) 의 2배 초과 → True. detection_engine 의 VOL-001 / TPL-*에서 사용.
+    vol_avg_20d = df["volume"].shift(1).rolling(20, min_periods=20).mean()
+    df["volume_spike"] = (df["volume"] > 2.0 * vol_avg_20d).where(vol_avg_20d.notna(), other=None)
+
     # state column들 (분류) — 행 단위 룰
     df["sma_alignment"] = [
         _classify_sma_alignment(s5, s20, s60)
@@ -170,7 +175,7 @@ OUTPUT_COLS = [
     "rsi_14",
     "bb_upper", "bb_lower", "bollinger_position",
     "atr", "atr_ratio",
-    "mfi_14",
+    "mfi_14", "volume_spike",
     "candle_pattern", "candle_body_ratio", "upper_shadow_ratio", "lower_shadow_ratio",
     "gap_ratio",
     "return_1d", "return_5d",

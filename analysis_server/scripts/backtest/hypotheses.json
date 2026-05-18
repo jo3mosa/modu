@@ -1,0 +1,1054 @@
+{
+  "version": "1.0",
+  "registered_at": "2026-05-17",
+  "principles": [
+    "State 는 종목 필터, Transition 만 트리거",
+    "호재/악재 · 양/음은 대칭 mirror",
+    "트리거는 임계 진입 시점 1번 발화 (며칠 연속이어도 첫날만)",
+    "main_horizon T+5 기본, 펀더멘털 조합은 T+20"
+  ],
+  "counts": {
+    "single_measurement_only": 19,
+    "double_hypothesis_test": 26,
+    "triple_hypothesis_test": 10,
+    "test_targets_total": 36
+  },
+  "hypotheses": [
+    {
+      "id": "A1",
+      "name": "RSI<30 진입",
+      "category": "single",
+      "kind": "transition",
+      "components": [
+        "RSI<30 transition"
+      ],
+      "expected_direction": "positive",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "measurement_only",
+      "mirror_of": "A2",
+      "rationale": "기술적 과매도 → 반등 기대"
+    },
+    {
+      "id": "A2",
+      "name": "RSI>70 진입",
+      "category": "single",
+      "kind": "transition",
+      "components": [
+        "RSI>70 transition"
+      ],
+      "expected_direction": "negative",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "measurement_only",
+      "mirror_of": "A1",
+      "rationale": "기술적 과매수 → 조정 기대"
+    },
+    {
+      "id": "A3",
+      "name": "MFI<20 진입",
+      "category": "single",
+      "kind": "transition",
+      "components": [
+        "MFI<20 transition"
+      ],
+      "expected_direction": "positive",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "measurement_only",
+      "mirror_of": "A4",
+      "rationale": "자금 흐름 과매도 → 반등 기대"
+    },
+    {
+      "id": "A4",
+      "name": "MFI>80 진입",
+      "category": "single",
+      "kind": "transition",
+      "components": [
+        "MFI>80 transition"
+      ],
+      "expected_direction": "negative",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "measurement_only",
+      "mirror_of": "A3",
+      "rationale": "자금 흐름 과매수 → 조정 기대"
+    },
+    {
+      "id": "A5",
+      "name": "MACD 골든크로스",
+      "category": "single",
+      "kind": "transition",
+      "components": [
+        "MACD 골든"
+      ],
+      "expected_direction": "positive",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "measurement_only",
+      "mirror_of": "A6",
+      "rationale": "모멘텀 상승 전환"
+    },
+    {
+      "id": "A6",
+      "name": "MACD 데드크로스",
+      "category": "single",
+      "kind": "transition",
+      "components": [
+        "MACD 데드"
+      ],
+      "expected_direction": "negative",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "measurement_only",
+      "mirror_of": "A5",
+      "rationale": "모멘텀 하락 전환"
+    },
+    {
+      "id": "A7",
+      "name": "SMA20 상향 돌파",
+      "category": "single",
+      "kind": "transition",
+      "components": [
+        "종가>SMA20 transition"
+      ],
+      "expected_direction": "positive",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "measurement_only",
+      "mirror_of": "A8",
+      "rationale": "단기 추세 상승 전환"
+    },
+    {
+      "id": "A8",
+      "name": "SMA20 하향 돌파",
+      "category": "single",
+      "kind": "transition",
+      "components": [
+        "종가<SMA20 transition"
+      ],
+      "expected_direction": "negative",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "measurement_only",
+      "mirror_of": "A7",
+      "rationale": "단기 추세 하락 전환"
+    },
+    {
+      "id": "A9",
+      "name": "볼린저 하단 터치",
+      "category": "single",
+      "kind": "transition",
+      "components": [
+        "가격<=BB_lower"
+      ],
+      "expected_direction": "positive",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "measurement_only",
+      "mirror_of": "A10",
+      "rationale": "변동성 범위 하단 → 반등 기대"
+    },
+    {
+      "id": "A10",
+      "name": "볼린저 상단 터치",
+      "category": "single",
+      "kind": "transition",
+      "components": [
+        "가격>=BB_upper"
+      ],
+      "expected_direction": "negative",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "measurement_only",
+      "mirror_of": "A9",
+      "rationale": "변동성 범위 상단 → 조정 기대"
+    },
+    {
+      "id": "A11",
+      "name": "볼린저 밴드폭 급증",
+      "category": "single",
+      "kind": "transition",
+      "components": [
+        "BB_width 평소 대비 N배"
+      ],
+      "expected_direction": "two_sided",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "measurement_only",
+      "mirror_of": null,
+      "rationale": "변동성 확장 = 큰 가격 움직임 임박 (방향성 X)"
+    },
+    {
+      "id": "A12",
+      "name": "ATR 급증",
+      "category": "single",
+      "kind": "transition",
+      "components": [
+        "ATR 평소 대비 N배"
+      ],
+      "expected_direction": "two_sided",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "measurement_only",
+      "mirror_of": null,
+      "rationale": "변동성 확장 신호"
+    },
+    {
+      "id": "A13",
+      "name": "거래량 급증",
+      "category": "single",
+      "kind": "transition",
+      "components": [
+        "거래량 > 20일평균 × N"
+      ],
+      "expected_direction": "two_sided",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "measurement_only",
+      "mirror_of": null,
+      "rationale": "시장 관심 급증 (방향성은 가격으로 결정)"
+    },
+    {
+      "id": "A14",
+      "name": "호재공시 발생",
+      "category": "single",
+      "kind": "event",
+      "components": [
+        "impact_level=positive"
+      ],
+      "expected_direction": "positive",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "measurement_only",
+      "mirror_of": "A15",
+      "rationale": "긍정적 공시"
+    },
+    {
+      "id": "A15",
+      "name": "악재공시 발생",
+      "category": "single",
+      "kind": "event",
+      "components": [
+        "impact_level=negative"
+      ],
+      "expected_direction": "negative",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "measurement_only",
+      "mirror_of": "A14",
+      "rationale": "부정적 공시"
+    },
+    {
+      "id": "A16",
+      "name": "URGENT 공시 발생",
+      "category": "single",
+      "kind": "event",
+      "components": [
+        "URGENT 키워드 매칭"
+      ],
+      "expected_direction": "negative",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "measurement_only",
+      "mirror_of": null,
+      "rationale": "거래정지/관리종목/상장폐지 등 긴급 사안"
+    },
+    {
+      "id": "A17",
+      "name": "뉴스감성 강양 진입",
+      "category": "single",
+      "kind": "media",
+      "components": [
+        "sentiment_score 임계 상회 transition"
+      ],
+      "expected_direction": "positive",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "measurement_only",
+      "mirror_of": "A18",
+      "rationale": "미디어 호재 점수 강세"
+    },
+    {
+      "id": "A18",
+      "name": "뉴스감성 강음 진입",
+      "category": "single",
+      "kind": "media",
+      "components": [
+        "sentiment_score 임계 하회 transition"
+      ],
+      "expected_direction": "negative",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "measurement_only",
+      "mirror_of": "A17",
+      "rationale": "미디어 악재 점수 강세"
+    },
+    {
+      "id": "A19",
+      "name": "뉴스감성 급변",
+      "category": "single",
+      "kind": "media",
+      "components": [
+        "|Δsentiment| > 임계"
+      ],
+      "expected_direction": "two_sided",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "measurement_only",
+      "mirror_of": null,
+      "rationale": "감성 점수 급변 (방향성 X)"
+    },
+    {
+      "id": "B1",
+      "name": "RSI<30 & MFI<20",
+      "category": "double",
+      "kind": "transition",
+      "components": [
+        "RSI<30 transition",
+        "MFI<20 transition"
+      ],
+      "expected_direction": "positive",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "B4",
+      "rationale": "이중 과매도 → 반등 강화 (모멘텀+자금흐름 동조)"
+    },
+    {
+      "id": "B2",
+      "name": "RSI<30 & 볼린저 하단",
+      "category": "double",
+      "kind": "transition",
+      "components": [
+        "RSI<30 transition",
+        "BB_lower 터치"
+      ],
+      "expected_direction": "positive",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "B5",
+      "rationale": "모멘텀 과매도 + 가격 범위 하단 동조"
+    },
+    {
+      "id": "B3",
+      "name": "MFI<20 & 볼린저 하단",
+      "category": "double",
+      "kind": "transition",
+      "components": [
+        "MFI<20 transition",
+        "BB_lower 터치"
+      ],
+      "expected_direction": "positive",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "B6",
+      "rationale": "자금흐름 과매도 + 가격 범위 하단 동조"
+    },
+    {
+      "id": "B4",
+      "name": "RSI>70 & MFI>80",
+      "category": "double",
+      "kind": "transition",
+      "components": [
+        "RSI>70 transition",
+        "MFI>80 transition"
+      ],
+      "expected_direction": "negative",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "B1",
+      "rationale": "이중 과매수 → 조정 강화"
+    },
+    {
+      "id": "B5",
+      "name": "RSI>70 & 볼린저 상단",
+      "category": "double",
+      "kind": "transition",
+      "components": [
+        "RSI>70 transition",
+        "BB_upper 터치"
+      ],
+      "expected_direction": "negative",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "B2",
+      "rationale": "모멘텀 과매수 + 가격 범위 상단 동조"
+    },
+    {
+      "id": "B6",
+      "name": "MFI>80 & 볼린저 상단",
+      "category": "double",
+      "kind": "transition",
+      "components": [
+        "MFI>80 transition",
+        "BB_upper 터치"
+      ],
+      "expected_direction": "negative",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "B3",
+      "rationale": "자금흐름 과매수 + 가격 범위 상단 동조"
+    },
+    {
+      "id": "B7",
+      "name": "MACD 골든 & SMA20 상향 돌파",
+      "category": "double",
+      "kind": "transition",
+      "components": [
+        "MACD 골든",
+        "종가>SMA20 transition"
+      ],
+      "expected_direction": "positive",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "B8",
+      "rationale": "모멘텀+단기추세 동시 상승 전환"
+    },
+    {
+      "id": "B8",
+      "name": "MACD 데드 & SMA20 하향 돌파",
+      "category": "double",
+      "kind": "transition",
+      "components": [
+        "MACD 데드",
+        "종가<SMA20 transition"
+      ],
+      "expected_direction": "negative",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "B7",
+      "rationale": "모멘텀+단기추세 동시 하락 전환"
+    },
+    {
+      "id": "B18",
+      "name": "호재공시 & 거래량 급증",
+      "category": "double",
+      "kind": "event+transition",
+      "components": [
+        "호재공시",
+        "거래량 급증"
+      ],
+      "expected_direction": "positive",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "B19",
+      "rationale": "호재 + 시장 동조 확인"
+    },
+    {
+      "id": "B19",
+      "name": "악재공시 & 거래량 급증",
+      "category": "double",
+      "kind": "event+transition",
+      "components": [
+        "악재공시",
+        "거래량 급증"
+      ],
+      "expected_direction": "negative",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "B18",
+      "rationale": "악재 + 시장 동조 확인"
+    },
+    {
+      "id": "B21",
+      "name": "호재공시 & 뉴스감성 양",
+      "category": "double",
+      "kind": "event+media",
+      "components": [
+        "호재공시",
+        "sentiment 양 (윈도우 내)"
+      ],
+      "expected_direction": "positive",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "B22",
+      "rationale": "호재 + 미디어 동조"
+    },
+    {
+      "id": "B22",
+      "name": "악재공시 & 뉴스감성 음",
+      "category": "double",
+      "kind": "event+media",
+      "components": [
+        "악재공시",
+        "sentiment 음 (윈도우 내)"
+      ],
+      "expected_direction": "negative",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "B21",
+      "rationale": "악재 + 미디어 동조"
+    },
+    {
+      "id": "B33",
+      "name": "뉴스감성 양 & 거래량 급증",
+      "category": "double",
+      "kind": "media+transition",
+      "components": [
+        "sentiment 양 진입",
+        "거래량 급증"
+      ],
+      "expected_direction": "positive",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "B34",
+      "rationale": "미디어 호재 + 시장 반응"
+    },
+    {
+      "id": "B34",
+      "name": "뉴스감성 음 & 거래량 급증",
+      "category": "double",
+      "kind": "media+transition",
+      "components": [
+        "sentiment 음 진입",
+        "거래량 급증"
+      ],
+      "expected_direction": "negative",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "B33",
+      "rationale": "미디어 악재 + 시장 반응 (panic selling)"
+    },
+    {
+      "id": "B23",
+      "name": "호재공시 & SMA20 상향 돌파",
+      "category": "double",
+      "kind": "event+transition",
+      "components": [
+        "호재공시",
+        "종가>SMA20 transition (윈도우 내)"
+      ],
+      "expected_direction": "positive",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "B24",
+      "rationale": "호재 + 단기 추세 동조 (smart money 진입 가능)"
+    },
+    {
+      "id": "B24",
+      "name": "악재공시 & SMA20 하향 돌파",
+      "category": "double",
+      "kind": "event+transition",
+      "components": [
+        "악재공시",
+        "종가<SMA20 transition (윈도우 내)"
+      ],
+      "expected_direction": "negative",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "B23",
+      "rationale": "악재 + 단기 추세 동조"
+    },
+    {
+      "id": "B25",
+      "name": "호재공시 & MACD 골든",
+      "category": "double",
+      "kind": "event+transition",
+      "components": [
+        "호재공시",
+        "MACD 골든 (윈도우 내)"
+      ],
+      "expected_direction": "positive",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "B26",
+      "rationale": "호재 + 모멘텀 동조"
+    },
+    {
+      "id": "B26",
+      "name": "악재공시 & MACD 데드",
+      "category": "double",
+      "kind": "event+transition",
+      "components": [
+        "악재공시",
+        "MACD 데드 (윈도우 내)"
+      ],
+      "expected_direction": "negative",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "B25",
+      "rationale": "악재 + 모멘텀 동조"
+    },
+    {
+      "id": "B29",
+      "name": "뉴스감성 양 & SMA20 상향 돌파",
+      "category": "double",
+      "kind": "media+transition",
+      "components": [
+        "sentiment 양 진입",
+        "종가>SMA20 transition (윈도우 내)"
+      ],
+      "expected_direction": "positive",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "B30",
+      "rationale": "미디어 호재 + 단기 추세 동조"
+    },
+    {
+      "id": "B30",
+      "name": "뉴스감성 음 & SMA20 하향 돌파",
+      "category": "double",
+      "kind": "media+transition",
+      "components": [
+        "sentiment 음 진입",
+        "종가<SMA20 transition (윈도우 내)"
+      ],
+      "expected_direction": "negative",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "B29",
+      "rationale": "미디어 악재 + 단기 추세 동조"
+    },
+    {
+      "id": "B31",
+      "name": "뉴스감성 양 & MACD 골든",
+      "category": "double",
+      "kind": "media+transition",
+      "components": [
+        "sentiment 양 진입",
+        "MACD 골든 (윈도우 내)"
+      ],
+      "expected_direction": "positive",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "B32",
+      "rationale": "미디어 호재 + 모멘텀 동조"
+    },
+    {
+      "id": "B32",
+      "name": "뉴스감성 음 & MACD 데드",
+      "category": "double",
+      "kind": "media+transition",
+      "components": [
+        "sentiment 음 진입",
+        "MACD 데드 (윈도우 내)"
+      ],
+      "expected_direction": "negative",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "B31",
+      "rationale": "미디어 악재 + 모멘텀 동조"
+    },
+    {
+      "id": "B35",
+      "name": "ROE 상위 풀 ∩ RSI<30",
+      "category": "double",
+      "kind": "filter+transition",
+      "components": [
+        "filter: ROE 상위 N%",
+        "trigger: RSI<30 transition"
+      ],
+      "expected_direction": "positive",
+      "main_horizon": 20,
+      "additional_horizons": [
+        5,
+        60
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": null,
+      "rationale": "퀄리티 종목 풀에서 저가 진입 (Quality at low price)"
+    },
+    {
+      "id": "B38",
+      "name": "PBR 하위 풀 ∩ MACD 골든",
+      "category": "double",
+      "kind": "filter+transition",
+      "components": [
+        "filter: PBR 하위 N%",
+        "trigger: MACD 골든"
+      ],
+      "expected_direction": "positive",
+      "main_horizon": 20,
+      "additional_horizons": [
+        5,
+        60
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": null,
+      "rationale": "Fama-French Value+Momentum 학계 표준"
+    },
+    {
+      "id": "B27",
+      "name": "악재공시 & RSI<30",
+      "category": "double",
+      "kind": "event+transition",
+      "components": [
+        "악재공시",
+        "RSI<30 (이미 과매도)"
+      ],
+      "expected_direction": "two_sided",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "B28",
+      "rationale": "이미 과매도 + 추가 악재 → 반등? 추가 하락? 방향 불확실"
+    },
+    {
+      "id": "B28",
+      "name": "호재공시 & RSI>70",
+      "category": "double",
+      "kind": "event+transition",
+      "components": [
+        "호재공시",
+        "RSI>70 (이미 과매수)"
+      ],
+      "expected_direction": "two_sided",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "B27",
+      "rationale": "이미 과매수 + 추가 호재 → 추가 상승? 차익실현? 방향 불확실"
+    },
+    {
+      "id": "C1",
+      "name": "RSI<30 & MFI<20 & 거래량 급증",
+      "category": "triple",
+      "kind": "transition",
+      "components": [
+        "RSI<30",
+        "MFI<20",
+        "거래량 급증"
+      ],
+      "expected_direction": "positive",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "C2",
+      "rationale": "이중 과매도 + 시장 동조 (B1 강화)"
+    },
+    {
+      "id": "C2",
+      "name": "RSI>70 & MFI>80 & 거래량 급증",
+      "category": "triple",
+      "kind": "transition",
+      "components": [
+        "RSI>70",
+        "MFI>80",
+        "거래량 급증"
+      ],
+      "expected_direction": "negative",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "C1",
+      "rationale": "이중 과매수 + 시장 동조 (B4 강화)"
+    },
+    {
+      "id": "C3",
+      "name": "RSI<30 & 볼린저 하단 & 거래량 급증",
+      "category": "triple",
+      "kind": "transition",
+      "components": [
+        "RSI<30",
+        "BB_lower 터치",
+        "거래량 급증"
+      ],
+      "expected_direction": "positive",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "C4",
+      "rationale": "패닉 바닥 신호 (B2 강화)"
+    },
+    {
+      "id": "C4",
+      "name": "RSI>70 & 볼린저 상단 & 거래량 급증",
+      "category": "triple",
+      "kind": "transition",
+      "components": [
+        "RSI>70",
+        "BB_upper 터치",
+        "거래량 급증"
+      ],
+      "expected_direction": "negative",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "C3",
+      "rationale": "과매수 가속 신호 (B5 강화)"
+    },
+    {
+      "id": "C5",
+      "name": "RSI<30 & MFI<20 & 볼린저 하단",
+      "category": "triple",
+      "kind": "transition",
+      "components": [
+        "RSI<30",
+        "MFI<20",
+        "BB_lower"
+      ],
+      "expected_direction": "positive",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "C6",
+      "rationale": "트리플 과매도 — B1+B2+B3 동시 (거래량 X)"
+    },
+    {
+      "id": "C6",
+      "name": "RSI>70 & MFI>80 & 볼린저 상단",
+      "category": "triple",
+      "kind": "transition",
+      "components": [
+        "RSI>70",
+        "MFI>80",
+        "BB_upper"
+      ],
+      "expected_direction": "negative",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "C5",
+      "rationale": "트리플 과매수 — B4+B5+B6 동시"
+    },
+    {
+      "id": "C7",
+      "name": "MACD 골든 & SMA20 상향 & 거래량 급증",
+      "category": "triple",
+      "kind": "transition",
+      "components": [
+        "MACD 골든",
+        "종가>SMA20 transition",
+        "거래량 급증"
+      ],
+      "expected_direction": "positive",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "C8",
+      "rationale": "모멘텀+추세+동조 (B7 강화)"
+    },
+    {
+      "id": "C8",
+      "name": "MACD 데드 & SMA20 하향 & 거래량 급증",
+      "category": "triple",
+      "kind": "transition",
+      "components": [
+        "MACD 데드",
+        "종가<SMA20 transition",
+        "거래량 급증"
+      ],
+      "expected_direction": "negative",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "C7",
+      "rationale": "모멘텀+추세+동조 하락 (B8 강화)"
+    },
+    {
+      "id": "C9",
+      "name": "호재공시 & 거래량 급증 & 뉴스감성 양",
+      "category": "triple",
+      "kind": "event+transition+media",
+      "components": [
+        "호재공시",
+        "거래량 급증",
+        "sentiment 양 (윈도우)"
+      ],
+      "expected_direction": "positive",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "C10",
+      "rationale": "사건+시장+미디어 3중 확인 — 가장 강한 호재 신호"
+    },
+    {
+      "id": "C10",
+      "name": "악재공시 & 거래량 급증 & 뉴스감성 음",
+      "category": "triple",
+      "kind": "event+transition+media",
+      "components": [
+        "악재공시",
+        "거래량 급증",
+        "sentiment 음 (윈도우)"
+      ],
+      "expected_direction": "negative",
+      "main_horizon": 5,
+      "additional_horizons": [
+        1,
+        20
+      ],
+      "test_status": "hypothesis_test",
+      "mirror_of": "C9",
+      "rationale": "사건+시장+미디어 3중 확인 — 가장 강한 악재 신호"
+    }
+  ]
+}
