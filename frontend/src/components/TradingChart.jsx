@@ -79,9 +79,9 @@ const TIMEFRAME_OPTIONS = [
   { label: '1분', value: '1' },
   { label: '5분', value: '5' },
   { label: '60분', value: '60' },
-  { label: '일봉', value: 'D' },
-  { label: '주봉', value: 'W' },
-  { label: '월봉', value: 'M' },
+  { label: '일', value: 'D' },
+  { label: '주', value: 'W' },
+  { label: '월', value: 'M' },
 ];
 
 const DAILY_PERIODS = new Set(['D', 'W', 'M']);
@@ -277,7 +277,7 @@ export default function TradingChart({ stockCode }) {
       return new Set([INDICATOR.MA, INDICATOR.VOLUME]);
     }
   });
-  
+
   // applyIndicators 콜백 안에서 최신 state 참조용 (의존성 폭주 회피)
   const activeIndicatorsRef = useRef(activeIndicators);
   activeIndicatorsRef.current = activeIndicators;

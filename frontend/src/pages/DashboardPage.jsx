@@ -213,7 +213,12 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!latestEvent) return;
     if (latestEvent.type === 'ORDER_EXECUTED') {
-      refreshAccountData();
+      // KIS API 서버의 주문 처리가 내부 자산 원장에 완전히 반영되도록 1.5초(1500ms) 딜레이 후 갱신
+      // (이렇게 해야 로컬 DB의 미체결 내역과 KIS의 주문가능금액이 완벽히 동기화되어 총자산이 튀는 현상을 막을 수 있습니다!)
+      const timer = setTimeout(() => {
+        refreshAccountData();
+      }, 1500);
+      return () => clearTimeout(timer);
     }
   }, [latestEvent, refreshAccountData]);
 
