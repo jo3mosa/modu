@@ -140,8 +140,6 @@ public class KisExecutionWebSocketClient {
 
             WebSocketSession session = ensureSession(userId);
             String payload = buildPayload(approvalKey, htsId, trType);
-            log.warn("[DEBUG-WIRE] EXEC SUBSCRIBE send - userId: {}, htsId: {}, payload: {}",
-                    userId, maskHts(htsId), payload);
             synchronized (session) {
                 session.sendMessage(new TextMessage(payload));
             }
@@ -194,11 +192,6 @@ public class KisExecutionWebSocketClient {
         return objectMapper.writeValueAsString(message);
     }
 
-    private static String maskHts(String htsId) {
-        if (htsId == null || htsId.length() <= 2) return "***";
-        return htsId.substring(0, 2) + "*".repeat(htsId.length() - 2);
-    }
-
     // ───────────────────────────────────────────────────────────────────
     // WebSocket 핸들러 (사용자별)
     // ───────────────────────────────────────────────────────────────────
@@ -235,7 +228,6 @@ public class KisExecutionWebSocketClient {
         }
 
         private void handleSystemMessage(WebSocketSession s, String payload) throws Exception {
-            log.warn("[DEBUG-WIRE] EXEC system message recv - userId: {}, payload: {}", userId, payload);
             JsonNode root = objectMapper.readTree(payload);
             String trId = root.path("header").path("tr_id").asText();
             if ("PINGPONG".equals(trId)) {

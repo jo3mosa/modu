@@ -150,8 +150,6 @@ public class KisRealtimeUpstreamClient {
     private void sendSubscription(String trId, String trKey, String trType) {
         try {
             String payload = subscriptionPayload(trId, trKey, trType);
-            log.warn("[DEBUG-WIRE] SUBSCRIBE send - trId: {}, trKey: {}, trType: {}, payload: {}",
-                    trId, trKey, trType, payload);
             send(payload);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -257,7 +255,6 @@ public class KisRealtimeUpstreamClient {
         }
 
         private void handleSystemMessage(WebSocketSession s, String payload) throws Exception {
-            log.warn("[DEBUG-WIRE] system message recv - payload: {}", payload);
             JsonNode root = objectMapper.readTree(payload);
             String trId = root.path("header").path("tr_id").asText();
 
