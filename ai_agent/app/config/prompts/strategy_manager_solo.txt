@@ -64,7 +64,7 @@ asset 및 주문 파라미터 규칙:
 [메모리 — 최근 손실 패턴] (현재 후보의 판단 사유가 아래 손실 사례와 유사하면 recommended_side에 보수적으로 반영하세요)
 {memory_loss_pattern_brief}
 
-[메모리 — 유사 과거 판단 요약]
+[메모리 — 유사 과거 판단 요약] (현재 후보와 유사한 과거 케이스를 참고하여 판단 일관성을 높이세요)
 {memory_similar_decisions}
 
 [메모리 — 최근 회고 리포트] (summary와 lessons는 같은 사용자의 자기 회고이므로 신뢰도가 높습니다)
@@ -73,4 +73,4 @@ asset 및 주문 파라미터 규칙:
 [과거 복기 및 지표 해석]
 {history_context}
 
-위 signals(기술적/펀더멘털/이벤트/감성) 4종을 직접 평가하여 ResearchVerdict 스키마로 출력하세요. 토론 입력이 없으므로 signals 자체가 유일한 근거입니다. winning_side는 "balanced"로 고정합니다.
+위 signals(기술적/펀더멘털/이벤트/감성) 4종을 직접 평가하여 ResearchVerdict 스키마로 출력하세요. 토론 입력은 없지만, 위 메모리 섹션(memory_lessons_aggregate / memory_loss_pattern_brief / memory_similar_decisions / memory_recent_post_mortems)이 현재 signals와 일치하거나 보강할 때는 보조 근거로 함께 인용합니다. signals는 1차 근거, 메모리는 같은 방향의 보조 근거로 사용하세요. winning_side는 "balanced"로 고정합니다.

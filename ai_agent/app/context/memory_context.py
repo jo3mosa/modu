@@ -68,6 +68,11 @@ def load_memory_context(
         as_of=as_of,
     )
 
+    # recent_loss_decisions는 recent_decisions와 동일 user/종목/signal 풀에서 조회되어
+    # 같은 ai_judgment_id가 양쪽에 들어올 수 있다. 그대로 + 로 합치면 _aggregate_lessons가
+    # 동일 결정의 lesson을 중복 카운트하므로 ai_judgment_id 기준 dedup 후 전달.
+    deduped_for_lessons = _dedupe_past_decisions(recent_decisions + recent_loss_decisions)
+
     return {
         "query_basis": {
             "stock_codes": stock_codes,
@@ -76,7 +81,7 @@ def load_memory_context(
         },
         "recent_decisions": recent_decisions,
         "recent_loss_decisions": recent_loss_decisions,
-        "lessons_aggregate": _aggregate_lessons(recent_decisions + recent_loss_decisions),
+        "lessons_aggregate": _aggregate_lessons(deduped_for_lessons),
         "loss_pattern_brief": _summarize_loss_pattern(recent_loss_decisions),
         "similar_decisions_table": _brief_table(recent_decisions),
         "recent_post_mortems": _recent_post_mortems(recent_decisions),
@@ -146,6 +151,23 @@ def _summarize(
 #   - 정형 메타(ai_judgment_id, user_id, order_id 등 LLM에 무의미한 식별자)는
 #     이 단계에서 제거해 LLM 주의 분산을 막는다.
 # ────────────────────────────────────────────────────────────────────────────
+
+
+def _dedupe_past_decisions(decisions: list[PastDecision]) -> list[PastDecision]:
+    """ai_judgment_id 기준 중복 제거 — 동일 결정이 여러 list에 등장 시 첫 항목 유지.
+
+    호출자(load_memory_context)가 recent_decisions + recent_loss_decisions를 합쳐
+    _aggregate_lessons에 넘기는데, 두 list 풀이 겹쳐 같은 결정이 두 번 들어가는 것을
+    방지. ai_judgment_id가 없는 (이론상 불가) row는 dict id를 fallback 키로 사용.
+    """
+    seen: dict[Any, PastDecision] = {}
+    for d in decisions:
+        key = d.get("ai_judgment_id") if isinstance(d, dict) else None
+        if key is None:
+            key = id(d)
+        if key not in seen:
+            seen[key] = d
+    return list(seen.values())
 
 
 def _aggregate_lessons(
