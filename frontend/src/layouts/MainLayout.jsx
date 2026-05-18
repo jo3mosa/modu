@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getStocks } from '../api/market';
+import { logout } from '../api/auth';
+import { deleteKisKey } from '../api/user';
 import { useOrderSSE } from '../hooks/useOrderSSE';
 import { useNotifications, NOTIFICATION_TYPE_META } from '../hooks/useNotifications';
 import { usePendingDecisions } from '../hooks/usePendingDecisions';
@@ -32,7 +34,9 @@ export default function MainLayout() {
   // 알림 팝업 / 승인 모달 토글
   const [isAlarmOpen, setIsAlarmOpen] = useState(false);
   const [isPendingModalOpen, setIsPendingModalOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const alarmRef = useRef(null);
+  const profileDropdownRef = useRef(null);
 
   // 전역 알림 + 승인 대기 — Provider에서 제공
   const { notifications, unreadCount, addNotification, markAllAsRead } = useNotifications();
@@ -137,6 +141,50 @@ export default function MainLayout() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isAlarmOpen]);
 
+  // 프로필 드롭다운 외부 클릭 시 닫기
+  useEffect(() => {
+    if (!isProfileOpen) return;
+    function handleClickOutside(e) {
+      if (profileDropdownRef.current && !profileDropdownRef.current.contains(e.target)) {
+        setIsProfileOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isProfileOpen]);
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (e) {
+      console.error('로그아웃 실패:', e);
+    } finally {
+      localStorage.removeItem('modu.token');
+      localStorage.removeItem('modu.user');
+      toast.success('로그아웃되었습니다');
+      navigate('/login');
+    }
+  };
+
+  const handleDisconnectKis = async () => {
+    const confirmDisconnect = window.confirm(
+      "정말 한국투자증권 API 연동을 해제하시겠습니까?\n해제 시 실시간 거래 및 자동 투자가 중단됩니다."
+    );
+    if (!confirmDisconnect) return;
+
+    try {
+      await deleteKisKey();
+      toast.success('한국투자증권 연동이 해제되었습니다');
+      setIsProfileOpen(false);
+      if (location.pathname === '/mypage') {
+        window.location.reload();
+      }
+    } catch (e) {
+      console.error('연동 해제 실패:', e);
+      toast.error(e.message || '연동 해제에 실패했습니다.');
+    }
+  };
+
   const handleReadAll = () => markAllAsRead();
 
   const handleOpenPendingModal = () => {
@@ -220,68 +268,111 @@ export default function MainLayout() {
             )}
           </div>
 
-          <div className="alarm-controls" ref={alarmRef}>
-            <button
-              className="global-notification-btn"
-              aria-label="알림"
-              onClick={() => setIsAlarmOpen(prev => !prev)}
-            >
-              <Bell size={20} />
-              {bellBadgeCount > 0 && (
-                <span className="alarm-badge">{bellBadgeCount > 99 ? '99+' : bellBadgeCount}</span>
-              )}
-            </button>
-
-            {isAlarmOpen && (
-              <div className="alarm-popup">
-                <div className="alarm-popup-header">
-                  <span>알림 목록</span>
-                  {unreadCount > 0 && (
-                    <button className="alarm-read-all" onClick={handleReadAll}>모두 읽음</button>
-                  )}
-                </div>
-
-                {/* AI 승인 대기가 있을 때만 상단 강조 영역 */}
-                {pendingCount > 0 && (
-                  <button
-                    type="button"
-                    className="alarm-pending-banner"
-                    onClick={handleOpenPendingModal}
-                  >
-                    <span className="alarm-pending-banner-text">
-                      AI 승인 대기 <strong>{pendingCount}건</strong>
-                    </span>
-                    <span className="alarm-pending-banner-cta">확인 →</span>
-                  </button>
+          <div className="header-right-actions">
+            <div className="alarm-controls" ref={alarmRef}>
+              <button
+                className="global-notification-btn"
+                aria-label="알림"
+                onClick={() => setIsAlarmOpen(prev => !prev)}
+              >
+                <Bell size={20} />
+                {bellBadgeCount > 0 && (
+                  <span className="alarm-badge">{bellBadgeCount > 99 ? '99+' : bellBadgeCount}</span>
                 )}
+              </button>
 
-                <div className="alarm-popup-list">
-                  {notifications.length === 0 ? (
-                    <div className="alarm-empty">알림이 없습니다.</div>
-                  ) : (
-                    notifications.map(n => {
-                      const meta = NOTIFICATION_TYPE_META[n.type] ?? { label: '', color: '#888' };
-                      return (
-                        <div key={n.id} className={`alarm-item${n.isRead ? '' : ' unread'}`}>
-                          <div className="alarm-item-content">
-                            <span className="alarm-item-type-tag" style={{ color: meta.color, borderColor: meta.color }}>
-                              {meta.label}
-                            </span>
-                            <div className="alarm-item-text">
-                              <div className="alarm-item-message">{n.message}</div>
-                              {n.description && (
-                                <div className="alarm-item-description">{n.description}</div>
-                              )}
-                            </div>
-                          </div>
-                          <div className="alarm-item-time">{formatNotiTime(n.timestamp)}</div>
-                        </div>
-                      );
-                    })
+              {isAlarmOpen && (
+                <div className="alarm-popup">
+                  <div className="alarm-popup-header">
+                    <span>알림 목록</span>
+                    {unreadCount > 0 && (
+                      <button className="alarm-read-all" onClick={handleReadAll}>모두 읽음</button>
+                    )}
+                  </div>
+
+                  {/* AI 승인 대기가 있을 때만 상단 강조 영역 */}
+                  {pendingCount > 0 && (
+                    <button
+                      type="button"
+                      className="alarm-pending-banner"
+                      onClick={handleOpenPendingModal}
+                    >
+                      <span className="alarm-pending-banner-text">
+                        AI 승인 대기 <strong>{pendingCount}건</strong>
+                      </span>
+                      <span className="alarm-pending-banner-cta">확인 →</span>
+                    </button>
                   )}
+
+                  <div className="alarm-popup-list">
+                    {notifications.length === 0 ? (
+                      <div className="alarm-empty">알림이 없습니다.</div>
+                    ) : (
+                      notifications.map(n => {
+                        const meta = NOTIFICATION_TYPE_META[n.type] ?? { label: '', color: '#888' };
+                        return (
+                          <div key={n.id} className={`alarm-item${n.isRead ? '' : ' unread'}`}>
+                            <div className="alarm-item-content">
+                              <span className="alarm-item-type-tag" style={{ color: meta.color, borderColor: meta.color }}>
+                                {meta.label}
+                              </span>
+                              <div className="alarm-item-text">
+                                <div className="alarm-item-message">{n.message}</div>
+                                {n.description && (
+                                  <div className="alarm-item-description">{n.description}</div>
+                                )}
+                              </div>
+                            </div>
+                            <div className="alarm-item-time">{formatNotiTime(n.timestamp)}</div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
+
+            <div className="profile-controls" ref={profileDropdownRef}>
+              <button
+                className="global-profile-btn"
+                aria-label="마이페이지"
+                onClick={() => setIsProfileOpen(prev => !prev)}
+              >
+                <User size={20} />
+              </button>
+
+              {isProfileOpen && (
+                <div className="profile-popup">
+                  <div className="profile-popup-header">
+                    <span>내 계정</span>
+                  </div>
+                  <div className="profile-popup-list">
+                    <button
+                      className="profile-popup-item"
+                      onClick={() => {
+                        navigate('/mypage');
+                        setIsProfileOpen(false);
+                      }}
+                    >
+                      마이페이지
+                    </button>
+                    <button
+                      className="profile-popup-item disconnect"
+                      onClick={handleDisconnectKis}
+                    >
+                      연동 해제
+                    </button>
+                    <button
+                      className="profile-popup-item logout"
+                      onClick={handleLogout}
+                    >
+                      로그아웃
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
