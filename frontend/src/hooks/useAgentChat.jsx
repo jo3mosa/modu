@@ -33,10 +33,46 @@ import decideImg from '../assets/12345.webp';
 // BE 의 AgentType enum 과 동일 키 (대문자)
 // useAiChat 의 소문자 키(bull/bear/strategy/decide) 와는 별개
 export const BOT_PROFILES = {
-  BULL:     { name: '강세 리서처',    role: '리서치',   icon: '강세', color: '#ef4444', avatar: bullImg },
-  BEAR:     { name: '약세 리서처',    role: '리서치',   icon: '약세', color: '#3b82f6', avatar: bearImg },
-  STRATEGY: { name: '전략 매니저',    role: '전략',     icon: '전략', color: '#a78bfa', avatar: strategyImg },
-  DECIDE:   { name: '의사결정 매니저', role: '의사결정', icon: '결정', color: '#10b981', avatar: decideImg },
+  BULL: {
+    name: '강세 리서처',
+    role: '리서치',
+    icon: '강세',
+    color: '#ef4444',
+    avatar: bullImg,
+    tagline: '상방 시나리오 전담',
+    description: '기술적 지표와 매크로 호재 속에서 상승 트리거를 발굴합니다. 강세 근거를 적극적으로 제시해 회의의 한 축을 담당합니다.',
+    style: '공격적 · 모멘텀 중시',
+  },
+  BEAR: {
+    name: '약세 리서처',
+    role: '리서치',
+    icon: '약세',
+    color: '#3b82f6',
+    avatar: bearImg,
+    tagline: '하방 리스크 전담',
+    description: '거시 위험, 수급 부담, 밸류에이션 부담을 점검합니다. 강세 리서처와의 균형을 통해 한쪽 편향을 방지합니다.',
+    style: '보수적 · 리스크 우선',
+  },
+  STRATEGY: {
+    name: '전략 매니저',
+    role: '전략',
+    icon: '전략',
+    color: '#a78bfa',
+    avatar: strategyImg,
+    tagline: '포지션 설계 담당',
+    description: '강세·약세 리서치를 종합해 진입 시점, 분할 매수 비중, 손절가를 설계합니다. 실행 가능한 전략으로 구체화합니다.',
+    style: '균형 · 분할 진입 선호',
+  },
+  DECIDE: {
+    name: '의사결정 매니저',
+    role: '의사결정',
+    icon: '결정',
+    color: '#10b981',
+    avatar: decideImg,
+    tagline: '최종 매수/매도 판단',
+    description: '전략 매니저의 제안을 검토해 최종 BUY/SELL/HOLD를 결정합니다. 회의 결론을 종합 의견으로 압축합니다.',
+    style: '결정적 · 신뢰도 기반',
+  },
 };
 
 const DEFAULT_PAGE_SIZE = 50;

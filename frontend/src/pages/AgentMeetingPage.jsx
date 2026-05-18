@@ -1,9 +1,24 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Search } from 'lucide-react';
+import { Search, ArrowDown } from 'lucide-react';
 import { getPortfolio } from '../api/account';
 import { getStocks } from '../api/market';
 import { useAgentChat, BOT_PROFILES } from '../hooks/useAgentChat';
 import './AgentMeetingPage.css';
+
+/**
+ * "오늘 / 어제 / 2026년 5월 18일 (월)" 카톡 스타일 날짜 포매팅
+ */
+function formatDateDivider(date) {
+  const today = new Date();
+  const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+  const sameDay = (a, b) => a.toDateString() === b.toDateString();
+
+  if (sameDay(date, today)) return '오늘';
+  if (sameDay(date, yesterday)) return '어제';
+
+  const weekday = ['일', '월', '화', '수', '목', '금', '토'][date.getDay()];
+  return `${date.getFullYear()}년 ${date.getMonth() + 1}월 ${date.getDate()}일 (${weekday})`;
+}
 
 /**
  * 말풍선 글자 타이핑 애니메이션 및 동적 피드 스크롤 핸들링 컴포넌트
@@ -65,6 +80,12 @@ export default function AgentMeetingPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStock, setSelectedStock] = useState(null);
   const [isLoadingChannels, setIsLoadingChannels] = useState(true);
+
+  // 우측 상단 roster 아바타 클릭 시 띄울 에이전트 프로필 모달 키 (BULL/BEAR/STRATEGY/DECIDE)
+  const [profileAgentKey, setProfileAgentKey] = useState(null);
+
+  // 사용자가 위쪽에서 과거 메시지를 읽는 중일 때 새로 들어온 메시지 카운트 — 플로팅 버튼에 표시
+  const [newMessageCount, setNewMessageCount] = useState(0);
 
   const { byStock, unreadByStock, loadHistory, loadMore, markRead } = useAgentChat();
 
@@ -222,14 +243,42 @@ export default function AgentMeetingPage() {
       const diff = feed.scrollHeight - prevScrollHeightRef.current;
       feed.scrollTop = feed.scrollTop + diff;
       prevScrollHeightRef.current = 0;
-    } else if (stockChanged || messageAdded) {
-      // 채널 전환 또는 새 SSE 메시지 → 맨 아래
+    } else if (stockChanged) {
+      // 채널 전환 → 무조건 맨 아래 + 누적 카운트 리셋
       feed.scrollTop = feed.scrollHeight;
+      setNewMessageCount(0);
+    } else if (messageAdded) {
+      // 새 SSE 메시지 — 사용자가 맨 아래 근처에 있으면 따라가고, 위에서 과거를 읽는 중이면 카운트만 증가
+      const distanceFromBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight;
+      if (distanceFromBottom < 80) {
+        feed.scrollTop = feed.scrollHeight;
+      } else {
+        const delta = messagesLength - prevLengthRef.current;
+        setNewMessageCount((prev) => prev + delta);
+      }
     }
 
     prevLengthRef.current = messagesLength;
     prevStockRef.current = selectedStock?.stockCode;
   }, [messagesLength, selectedStock?.stockCode]);
+
+  // 스크롤이 다시 맨 아래에 도달하면 "새 메시지 N개" 카운트를 자동 리셋
+  const handleFeedScroll = useCallback(() => {
+    const feed = feedRef.current;
+    if (!feed) return;
+    const distanceFromBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight;
+    if (distanceFromBottom < 80) {
+      setNewMessageCount((prev) => (prev === 0 ? prev : 0));
+    }
+  }, []);
+
+  // 플로팅 버튼 클릭 → 맨 아래로 점프
+  const handleJumpToBottom = useCallback(() => {
+    const feed = feedRef.current;
+    if (!feed) return;
+    feed.scrollTop = feed.scrollHeight;
+    setNewMessageCount(0);
+  }, []);
 
   // ── 5. 채널 검색 / 선택 핸들러 ─────────────────────────────────────────
   const filteredChannels = channels.filter(c =>
@@ -303,15 +352,20 @@ export default function AgentMeetingPage() {
             </span>
           </div>
           <div className="agent-roster">
-            {Object.values(BOT_PROFILES).map((bot, idx) => (
-              <div key={idx} className="agent-avatar-mini" title={bot.name}>
+            {Object.entries(BOT_PROFILES).map(([key, bot]) => (
+              <div
+                key={key}
+                className="agent-avatar-mini"
+                title={`${bot.name} — 클릭하면 소개를 볼 수 있어요`}
+                onClick={() => setProfileAgentKey(key)}
+              >
                 <img src={bot.avatar} className="agent-avatar-mini-img" alt={bot.name} />
               </div>
             ))}
           </div>
         </div>
 
-        <div className="chat-feed" ref={feedRef}>
+        <div className="chat-feed" ref={feedRef} onScroll={handleFeedScroll}>
           {/* 위로 스크롤 sentinel — 보이면 loadMore 트리거 */}
           {channel?.hasMore && (
             <div ref={topSentinelRef} style={{ padding: '0.5rem', textAlign: 'center', color: '#888' }}>
@@ -325,41 +379,116 @@ export default function AgentMeetingPage() {
             </div>
           )}
 
-          {displayMessages.filter(msg => revealedIds.has(msg.messageId)).map(msg => {
-            const bot = BOT_PROFILES[msg.agent];
-            if (!bot) return null;
+          {(() => {
+            // 날짜 디바이더 + 연속 메시지 그룹핑을 위한 렌더 아이템 빌드
+            const items = [];
+            let prevDateKey = null;
+            let prevAgent = null;
+            let prevMinuteKey = null;
 
-            const timeStr = new Date(msg.createdAt).toLocaleTimeString([], {
-              hour: '2-digit', minute: '2-digit',
+            for (const msg of displayMessages) {
+              if (!revealedIds.has(msg.messageId)) continue;
+              const date = new Date(msg.createdAt);
+              const dateKey = date.toDateString();
+
+              if (dateKey !== prevDateKey) {
+                items.push({ kind: 'divider', key: `d-${dateKey}`, date });
+                prevDateKey = dateKey;
+                // 새 날짜에서는 그룹 초기화
+                prevAgent = null;
+                prevMinuteKey = null;
+              }
+
+              const minuteKey = `${date.getHours()}:${date.getMinutes()}`;
+              // 같은 에이전트가 같은 분 내에 이어 말한 경우만 카톡식 연속 메시지로 묶음
+              const isContinuation = msg.agent === prevAgent && minuteKey === prevMinuteKey;
+
+              items.push({ kind: 'message', key: `m-${msg.messageId}`, msg, date, isContinuation });
+              prevAgent = msg.agent;
+              prevMinuteKey = minuteKey;
+            }
+
+            return items.map((item) => {
+              if (item.kind === 'divider') {
+                return (
+                  <div key={item.key} className="date-divider">
+                    <span>{formatDateDivider(item.date)}</span>
+                  </div>
+                );
+              }
+
+              const { msg, date, isContinuation } = item;
+              const bot = BOT_PROFILES[msg.agent];
+              if (!bot) return null;
+
+              const timeStr = date.toLocaleTimeString([], {
+                hour: '2-digit', minute: '2-digit',
+              });
+              const isAnimated = activeAnimationId === msg.messageId;
+              const groupClass = isContinuation ? 'group-continuation' : 'group-start';
+
+              return (
+                <div key={item.key} className={`chat-message agent-msg-${msg.agent.toLowerCase()} ${groupClass}`}>
+                  <div className="agent-avatar-wrap">
+                    <img src={bot.avatar} className="agent-avatar-img" alt={bot.name} />
+                  </div>
+                  <div className="message-content">
+                    <div className="message-header">
+                      <span className="message-agent-name">{bot.name}</span>
+                      <span className="message-agent-role">{bot.role} Agent</span>
+                    </div>
+                    <div className="message-bubble-wrapper">
+                      <TypingMessageBubble
+                        text={msg.text}
+                        isAnimated={isAnimated}
+                        onComplete={() => handleTypeComplete(msg.messageId)}
+                        feedRef={feedRef}
+                      />
+                      {/* 같은 그룹 내 중간 메시지는 시간 중복 노출 방지 */}
+                      {!isContinuation && <span className="message-time">{timeStr}</span>}
+                    </div>
+                  </div>
+                </div>
+              );
             });
-
-            const isAnimated = activeAnimationId === msg.messageId;
-
-            return (
-              <div key={msg.messageId} className={`chat-message agent-msg-${msg.agent.toLowerCase()}`}>
-                <div className="agent-avatar-wrap">
-                  <img src={bot.avatar} className="agent-avatar-img" alt={bot.name} />
-                </div>
-                <div className="message-content">
-                  <div className="message-header">
-                    <span className="message-agent-name">{bot.name}</span>
-                    <span className="message-agent-role">{bot.role} Agent</span>
-                  </div>
-                  <div className="message-bubble-wrapper">
-                    <TypingMessageBubble
-                      text={msg.text}
-                      isAnimated={isAnimated}
-                      onComplete={() => handleTypeComplete(msg.messageId)}
-                      feedRef={feedRef}
-                    />
-                    <span className="message-time">{timeStr}</span>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+          })()}
         </div>
+
+        {/* 위에서 과거 메시지 읽는 중 새 SSE 메시지가 도착했을 때만 노출되는 플로팅 점프 버튼 */}
+        {newMessageCount > 0 && (
+          <button type="button" className="new-messages-pill" onClick={handleJumpToBottom}>
+            <ArrowDown size={14} />
+            새 메시지 {newMessageCount}개
+          </button>
+        )}
       </div>
+
+      {/* 에이전트 프로필 모달 — roster 아바타 클릭 시 캐릭터 소개 노출 */}
+      {profileAgentKey && BOT_PROFILES[profileAgentKey] && (
+        <div className="profile-modal-backdrop" onClick={() => setProfileAgentKey(null)}>
+          <div className="profile-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="profile-modal-header">
+              <div className="profile-modal-avatar">
+                <img src={BOT_PROFILES[profileAgentKey].avatar} alt={BOT_PROFILES[profileAgentKey].name} />
+              </div>
+              <div className="profile-modal-name">
+                <h3>{BOT_PROFILES[profileAgentKey].name}</h3>
+                <span className="profile-modal-tagline">{BOT_PROFILES[profileAgentKey].tagline}</span>
+              </div>
+            </div>
+            <p className="profile-modal-description">
+              {BOT_PROFILES[profileAgentKey].description}
+            </p>
+            <div className="profile-modal-meta">
+              <span className="profile-modal-tag">역할 · {BOT_PROFILES[profileAgentKey].role}</span>
+              <span className="profile-modal-tag">스타일 · {BOT_PROFILES[profileAgentKey].style}</span>
+            </div>
+            <button type="button" className="profile-modal-close" onClick={() => setProfileAgentKey(null)}>
+              닫기
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
