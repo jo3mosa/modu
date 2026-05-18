@@ -160,11 +160,14 @@ class TestUserTriggerEventCreation:
         assert event.stock_code == "005930"
 
     def test_snapshots_not_empty(self):
-        """분석/포트폴리오 스냅샷과 trigger 메타가 모두 채워진다"""
+        """분석/포트폴리오 스냅샷과 trigger 메타가 모두 채워진다.
+
+        user_context는 UserTriggerEvent의 책임이 아니므로 검증 대상 아님 —
+        context_loader 노드가 그래프 실행 중 DB에서 직접 로드한다 (schemas.py 참고).
+        """
         event = create_mock_user_trigger()
         assert event.analysis_snapshot
         assert event.portfolio_snapshot
-        assert event.user_context
         assert event.trigger.rule_ids
         assert event.trigger.trigger_reason
 
@@ -189,12 +192,16 @@ class TestStateConversion:
         assert isinstance(state, InvestmentAgentState)
 
     def test_snapshots_transferred(self):
-        """UserTriggerEvent의 스냅샷이 state로 복사되고, candidate_assets는 stock_code 기반 자동 생성된다"""
+        """UserTriggerEvent의 스냅샷이 state로 복사되고, candidate_assets는 stock_code 기반 자동 생성된다.
+
+        user_context는 트리거에서 전달되지 않고 context_loader 노드가 채우므로,
+        state_factory 직후 시점에는 기본값(빈 dict)이어야 정상.
+        """
         event = create_mock_user_trigger()
         state = build_state_from_user_trigger(event)
         assert state.analysis_snapshot == event.analysis_snapshot
         assert state.portfolio_snapshot == event.portfolio_snapshot
-        assert state.user_context == event.user_context
+        assert state.user_context == {}
         # candidate_assets는 DA 명세에 없어서 state_factory가 stock_code 기반으로 구성
         assert state.candidate_assets == [{"stock_code": event.stock_code}]
 
