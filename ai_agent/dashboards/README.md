@@ -22,7 +22,7 @@ streamlit run dashboards/backtest_viewer.py
 
 ```
 1. backtest 실행 → decisions JSONL
-   python -m app.backtest.cli --output runs/decisions_modeA.jsonl --mode A
+   python -m app.backtest.cli --output runs/decisions_debate_1.jsonl --mode debate_1
 
 2. scorer + post_mortem 후처리 → scored JSONL
    python -c "

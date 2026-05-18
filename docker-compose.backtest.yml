@@ -1,0 +1,41 @@
+# Backtest 전용 docker-compose — Postgres만 실행.
+#
+# 일반 dev 스택(docker-compose.yml)이 backend / redis / collectors / analysis-server
+# 모두 띄우는 것과 달리, backtest는 historical Postgres만 있으면 동작한다.
+# (Mongo는 원격 SSAFY 서버, LLM은 외부 GMS API)
+#
+# 사용:
+#   # 띄우기
+#   docker compose -f docker-compose.backtest.yml up -d
+#
+#   # 상태 확인
+#   docker compose -f docker-compose.backtest.yml ps
+#
+#   # 내리기
+#   docker compose -f docker-compose.backtest.yml down
+#
+# 주의:
+#   - container_name(modu-postgres) / volumes(./data/postgres)가 메인 compose와
+#     동일하므로 둘 중 하나만 실행. 동시에 띄우면 이름 충돌.
+#   - 이미 메인 compose의 postgres가 떠 있다면 그대로 backtest 진행 가능 (이 파일
+#     별도 실행 불필요).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: modu-postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME:-modu_db}
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-localpassword}
+    ports:
+      - "5432:5432"
+      - "5433:5432" # 로컬 충돌 방지용 (선택적)
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped

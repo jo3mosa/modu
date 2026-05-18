@@ -204,7 +204,7 @@ def main() -> None:
     parser.add_argument("--start", type=str, default="2025-01-02")
     parser.add_argument("--user-id", type=str, default="backtest-user")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--mode", type=str, default="A")
+    parser.add_argument("--mode", type=str, default="debate_1")
     args = parser.parse_args()
 
     args.output.mkdir(parents=True, exist_ok=True)

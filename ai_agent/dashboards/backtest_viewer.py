@@ -34,9 +34,10 @@ import streamlit as st
 
 # 모드별 일관 색 (모든 탭에서 동일 색)
 MODE_COLORS = {
-    "rule_trigger": "#2563EB",  # blue — 우리 방식 (지표 룰 트리거)
+    "debate_0": "#EC4899",      # pink — 토론 0R (구 single_agent, ablation)
+    "debate_1": "#2563EB",      # blue — 토론 1R (구 rule_trigger, MVP)
+    "debate_2": "#7C3AED",      # violet — 토론 2R (round 가치 측정 실험용)
     "daily_scan": "#F59E0B",    # amber — TradingAgents 방식 (전 종목 일일 스캔)
-    "single_agent": "#EC4899",  # pink — ablation (Bull/Bear 토론 없음)
     "random": "#94A3B8",        # slate — baseline
     "mock": "#10B981",          # emerald — 룰 stub
     "DA": "#8B5CF6",            # violet — DA framework default
@@ -52,6 +53,17 @@ ACTION_COLORS = {
 
 # 종목코드 → 종목명 매핑 (KOSPI/KOSDAQ 주요 30개 fallback).
 # ai_agent/backtest/data/stock_master.csv가 있으면 그게 우선.
+# Form default — 새 세션에서 종목별 초기 보유 수량 (session_state 비어 있을 때 사용).
+# 사용자가 form에서 입력해 submit하면 session_state에 저장되어 다음 form에서 그 값이 우선.
+_DEFAULT_INITIAL_HOLDINGS: dict[str, int] = {
+    "005930": 100,  # 삼성전자
+    "035420": 30,   # NAVER
+    "051910": 20,   # LG화학
+    "005380": 30,   # 현대차
+    "068270": 10,   # 셀트리온
+}
+
+
 _FALLBACK_STOCK_NAMES: dict[str, str] = {
     "005930": "삼성전자", "000660": "SK하이닉스", "035420": "NAVER",
     "035720": "카카오", "051910": "LG화학", "068270": "셀트리온",
@@ -91,15 +103,18 @@ def label_stock(code: str | None) -> str:
 
 
 def _run_dir_label(run_dir: Path) -> str:
-    """run 디렉터리 → '2024-01-02 ~ 2024-01-15 · 8 files' 형식.
+    """run 디렉터리 → '<폴더명> (YYYY-MM-DD ~ YYYY-MM-DD) · N files' 형식.
+
+    폴더명이 항상 앞에 와서 mode/실험 구분이 즉시 보이고, 괄호에 기간이 따른다.
 
     날짜 추출 우선순위:
       1. summary_<start>_<end>_*.json 파일명 파싱
       2. triggers_*.jsonl 또는 scored_*.jsonl 의 min/max 날짜
-      3. 둘 다 실패 시 폴더명
+      3. 둘 다 실패 시 폴더명만
     """
     files = list(run_dir.glob("*.jsonl"))
     n_files = len(files)
+    folder = run_dir.name
 
     # summary 파일에서 추출 시도
     for s in run_dir.glob("summary_*.json"):
@@ -110,7 +125,7 @@ def _run_dir_label(run_dir: Path) -> str:
                 from datetime import date as _d
                 start = _d.fromisoformat(parts[1])
                 end = _d.fromisoformat(parts[2])
-                return f"{start.isoformat()} ~ {end.isoformat()} · {n_files} files"
+                return f"{folder} ({start.isoformat()} ~ {end.isoformat()}) · {n_files} files"
             except (ValueError, IndexError):
                 pass
 
@@ -122,12 +137,12 @@ def _run_dir_label(run_dir: Path) -> str:
     if date_files:
         try:
             dates = [f.stem.split("_", 1)[1] for f in date_files]
-            return f"{min(dates)} ~ {max(dates)} · {n_files} files"
+            return f"{folder} ({min(dates)} ~ {max(dates)}) · {n_files} files"
         except (ValueError, IndexError):
             pass
 
-    # fallback: 폴더명
-    return f"{run_dir.name} · {n_files} files"
+    # fallback: 폴더명만
+    return f"{folder} · {n_files} files"
 
 
 def _apply_chart_style(fig: go.Figure, height: int = 420) -> go.Figure:
@@ -663,6 +678,40 @@ def tab_pnl(df: pd.DataFrame, scored: bool, equity_df: pd.DataFrame | None = Non
         c4.metric("MDD", f"{row.get('mdd', 0):.2%}")
         c5.metric("Win Rate", f"{row['win_rate']:.1%}")
         c6.metric("거래 수", f"{int(row['n']):,}")
+
+    # === LLM 토큰/비용 (debate_* 모드 cost-effectiveness 비교용) ===
+    # decision.extras에 graph_decision adapter가 부착한 토큰/비용 집계.
+    # random/mock은 LLM 미호출이라 0 — 표에서 자동 제외.
+    if "decision" in df.columns:
+        def _ext(d: Any, k: str) -> float:
+            if not isinstance(d, dict):
+                return 0.0
+            return float((d.get("extras") or {}).get(k) or 0)
+
+        token_df = df.copy()
+        token_df["_tokens"] = token_df["decision"].apply(lambda d: _ext(d, "total_tokens"))
+        token_df["_cost"] = token_df["decision"].apply(lambda d: _ext(d, "estimated_cost_usd"))
+        by_mode_tokens = (
+            token_df.groupby("mode")
+            .agg(
+                total_tokens=("_tokens", "sum"),
+                avg_per_trigger=("_tokens", "mean"),
+                total_cost=("_cost", "sum"),
+                n_triggers=("_tokens", "count"),
+            )
+            .reset_index()
+        )
+        # LLM 미호출 mode(0 토큰) 제외 — random/mock은 비교 무의미
+        by_mode_tokens = by_mode_tokens[by_mode_tokens["total_tokens"] > 0]
+        if not by_mode_tokens.empty:
+            st.markdown("#### 💸 LLM 토큰/비용")
+            for _, trow in by_mode_tokens.iterrows():
+                st.markdown(f"**Mode {trow['mode']}**")
+                t1, t2, t3, t4 = st.columns(4)
+                t1.metric("총 토큰", f"{int(trow['total_tokens']):,}")
+                t2.metric("결정당 평균", f"{trow['avg_per_trigger']:,.0f}")
+                t3.metric("총 비용 (USD)", f"${trow['total_cost']:.4f}")
+                t4.metric("trigger 수", f"{int(trow['n_triggers']):,}")
 
     st.divider()
 
@@ -1506,7 +1555,7 @@ def tab_comparison(df: pd.DataFrame, scored: bool) -> None:
             br = db.loc[eid, "raw_return"]
             a_hits.append(bool(pd.notna(ar) and ar > 0))
             b_hits.append(bool(pd.notna(br) and br > 0))
-        result = mcnemar_paired(a_hits, b_hits)
+        result = mcnemar_paired(a_hits, b_hits, label_a=str(a), label_b=str(b))
         st.markdown("#### McNemar paired test (hit-based)")
         c1, c2, c3 = st.columns(3)
         c1.metric(f"{a}만 hit", result.b)
@@ -1558,6 +1607,8 @@ def _build_run_command(args: dict[str, Any], output_dir: Path) -> list[str]:
         cmd.append("--pm-mock")
     if args.get("reset_memory"):
         cmd.append("--reset-memory")
+    if args.get("resume"):
+        cmd.append("--resume")
     return cmd
 
 
@@ -1576,8 +1627,11 @@ def _count_business_days(start: date, end: date) -> int:
 def _detect_progress(output_dir: str, start_str: str, end_str: str) -> dict[str, Any]:
     """진행 중인 backtest의 현재 시뮬레이션 날짜와 진행률 추정.
 
-    근거: event_loop가 매 영업일마다 triggers_YYYY-MM-DD.jsonl을 생성/갱신.
-    파일명 자체의 날짜를 max로 잡음 (mtime은 동시 생성 시 부정확).
+    근거:
+      - 진행 중: event_loop가 매 영업일마다 triggers_YYYY-MM-DD.jsonl을 생성/갱신.
+        weekday 기반 영업일 추정으로 total_days 산출 (한국 공휴일 일부 over-estimate).
+      - 완료: summary_*.json이 있으면 그 안의 stats.days를 신뢰 → 정확한 영업일 수 +
+        progress_pct=100. 공휴일/주말 누락 무관하게 정확.
 
     Returns:
         {current_date, total_days, processed_days, progress_pct} — 파일 없으면 모두 None/0
@@ -1594,14 +1648,32 @@ def _detect_progress(output_dir: str, start_str: str, end_str: str) -> dict[str,
         except ValueError:
             continue
     current_date = max(dates).isoformat() if dates else None
+    processed = len(dates) or len(trigger_files)
 
+    # 완료된 backtest: summary_*.json이 있으면 그 안의 stats.days로 정확한 total 표시.
+    # event_loop이 마지막 일자에만 작성하므로 존재 = 완료 신호.
+    summary_files = sorted(p.glob("summary_*.json"))
+    if summary_files:
+        try:
+            data = json.loads(summary_files[-1].read_text(encoding="utf-8"))
+            total = int((data.get("stats") or {}).get("days") or 0) or len(dates)
+            return {
+                "current_date": current_date,
+                "total_days": total,
+                "processed_days": total,
+                "progress_pct": 100,
+            }
+        except Exception:
+            # summary 파싱 실패 시 아래 weekday 추정으로 폴백 (silent — dashboard라 로깅 인프라 없음)
+            pass
+
+    # 진행 중: weekday 추정 (월~금). 한국 공휴일 누락은 +몇% 오차 — 진행 중일 때만 영향.
     try:
         start_d = date.fromisoformat(start_str)
         end_d = date.fromisoformat(end_str)
         total = _count_business_days(start_d, end_d)
     except Exception:
         total = 0
-    processed = len(dates) or len(trigger_files)
     pct = int(round(processed / total * 100)) if total else 0
     return {
         "current_date": current_date,
@@ -1627,10 +1699,15 @@ def _load_mode_choices() -> tuple[list[str], str]:
             sys.path.insert(0, str(repo_root))
         from ai_agent.backtest.modes import MODE_REGISTRY
         choices = list(MODE_REGISTRY.keys())
-        help_str = "\n".join(f"• {n} — {s.description}" for n, s in MODE_REGISTRY.items())
+        # streamlit tooltip은 markdown 렌더. 한 줄 줄바꿈은 합쳐지므로
+        # 항목 사이를 빈 줄로 분리해서 가독성 확보.
+        help_lines = ["**모드 선택지**", ""]
+        for n, s in MODE_REGISTRY.items():
+            help_lines.append(f"- **`{n}`** — {s.description}")
+        help_str = "\n".join(help_lines)
         return choices, help_str
     except Exception as e:
-        return ["rule_trigger", "daily_scan", "single_agent", "random", "mock"], f"(modes.py 로드 실패: {e}) 기본 목록 사용"
+        return ["debate_0", "debate_1", "debate_2", "daily_scan", "random", "mock"], f"(modes.py 로드 실패: {e}) 기본 목록 사용"
 
 
 def _spawn_backtest(
@@ -1762,6 +1839,46 @@ def _tail_log(log_path: str, n_lines: int = 80) -> str:
     return "".join(lines[-n_lines:]) or "(빈 로그)"
 
 
+def _format_elapsed_since(
+    started_at_iso: str,
+    *,
+    alive: bool = True,
+    log_path: str | None = None,
+) -> str:
+    """ISO timestamp 기준 경과 시간을 'X시간 Y분 Z초' 형식으로 반환.
+
+    alive=True: 지금 시각까지의 경과. 카드가 매 2초 rerun되므로 자동 갱신.
+    alive=False: log_path mtime을 종료 시각으로 사용한 총 소요. log_path가 없거나
+        읽기 실패하면 지금 시각으로 fallback.
+    """
+    try:
+        started = datetime.fromisoformat(started_at_iso)
+    except (ValueError, TypeError):
+        return "?"
+
+    if alive:
+        end = datetime.now()
+    else:
+        end = datetime.now()
+        if log_path:
+            try:
+                end = datetime.fromtimestamp(Path(log_path).stat().st_mtime)
+            except Exception:
+                pass
+
+    total_sec = int((end - started).total_seconds())
+    if total_sec < 0:
+        return "?"
+    if total_sec < 60:
+        return f"{total_sec}초"
+    if total_sec < 3600:
+        m, s = divmod(total_sec, 60)
+        return f"{m}분 {s}초"
+    h, rem = divmod(total_sec, 3600)
+    m, _ = divmod(rem, 60)
+    return f"{h}시간 {m}분"
+
+
 def _render_running_card(proc: dict[str, Any], idx: int) -> None:
     """진행 중/완료된 단일 backtest를 카드로 표시.
 
@@ -1783,7 +1900,16 @@ def _render_running_card(proc: dict[str, Any], idx: int) -> None:
                 f"**{status}** · `mode={mode}` · "
                 f"기간 `{start_str} ~ {end_str}` · PID `{proc['pid']}`"
             )
-            st.caption(f"📁 `{proc['output_dir']}` · 시작 {proc['started_at']}")
+            elapsed = _format_elapsed_since(
+                proc["started_at"],
+                alive=alive,
+                log_path=proc.get("log_path"),
+            )
+            elapsed_label = "⏱ 경과" if alive else "⏱ 총 소요"
+            st.caption(
+                f"📁 `{proc['output_dir']}` · 시작 {proc['started_at']} · "
+                f"{elapsed_label} **{elapsed}**"
+            )
         with head_c2:
             if alive:
                 if st.button("⛔ 종료", key=f"kill_{idx}_{proc['pid']}"):
@@ -1858,37 +1984,68 @@ def tab_run() -> None:
     # 등록된 mode 동적 조회 — modes.py MODE_REGISTRY가 단일 source
     mode_choices, mode_help = _load_mode_choices()
 
+    # 종목 입력은 form 밖에 두어 변경 즉시 rerun → form 안 "종목별 보유 수량"
+    # number_input이 종목 목록에 맞춰 동적으로 다시 그려진다. (form 안은 submit
+    # 전까지 widget 값이 commit되지 않아 동적 표 구성이 불가.)
+    watchlist = st.text_input(
+        "종목 (쉼표 구분)",
+        value=st.session_state.get(
+            "bt_watchlist", "005930,035420,051910,005380,068270"
+        ),
+        key="bt_watchlist",
+        help="비우면 활성 종목 자동. 변경하면 아래 ‘초기 보유 수량’ 표가 갱신됩니다.",
+    )
+    parsed_stocks = [s.strip() for s in watchlist.split(",") if s.strip()]
+
     with st.form(f"backtest_form_{len(procs)}", clear_on_submit=False):
         c1, c2, c3 = st.columns(3)
         with c1:
             mode = st.selectbox("모드", mode_choices, help=mode_help)
-            start = st.date_input("시작일", value=date(2024, 1, 2))
-            end = st.date_input("종료일", value=date(2024, 1, 15))
+            start = st.date_input("시작일", value=date(2025, 1, 1))
+            end = st.date_input("종료일", value=date(2025, 6, 30))
         with c2:
-            watchlist = st.text_input(
-                "종목 (쉼표 구분)", value="005930,000660",
-                help="비우면 활성 종목 자동",
-            )
             initial_cash = st.number_input(
                 "초기 현금 (KRW)", min_value=0, value=10_000_000, step=1_000_000,
             )
-            initial_holdings = st.text_input(
-                "초기 보유 (CODE:QTY,...)", value="005930:100,000660:50",
-                help="SELL 결정이 정상 체결되려면 필요. 비워두면 매수만 가능.",
-            )
+            st.caption("초기 보유 수량 (주) — SELL 정상 체결에 필요. 0이면 매수만 가능.")
+            holdings_qtys: dict[str, int] = {}
+            if parsed_stocks:
+                for code in parsed_stocks:
+                    qty = st.number_input(
+                        label_stock(code),
+                        min_value=0,
+                        value=int(st.session_state.get(
+                            f"bt_hold_default_{code}",
+                            _DEFAULT_INITIAL_HOLDINGS.get(code, 0),
+                        )),
+                        step=10,
+                        key=f"bt_hold_{code}_{len(procs)}",
+                    )
+                    holdings_qtys[code] = int(qty)
+            else:
+                st.info("종목 미지정 — 활성 종목 자동, 초기 보유 0")
         with c3:
             backtest_user_id = st.number_input(
                 "backtest_user_id (DB 격리)", min_value=1, value=candidate_uid,
                 help="회고를 저장할 DB user_id. 동시 실행 시 다른 값을 써야 회고가 섞이지 않음. "
                      "자동으로 빈 번호를 추천합니다.",
             )
+            # streamlit 동작 주의: value=datetime.now() 처럼 매 rerun마다 변하는
+            # 값을 넘기면 widget이 매번 reset되어 사용자 입력이 안 먹는다. 따라서
+            # 첫 render에서만 session_state에 default를 set하고 그 후엔 key만으로
+            # 동작 (value 인자 사용 X). 사용자 입력은 session_state[key]에 누적.
+            run_name_key = f"bt_run_name_{len(procs)}"
+            if run_name_key not in st.session_state:
+                st.session_state[run_name_key] = (
+                    f"ui_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                )
             run_name = st.text_input(
                 "결과 폴더명",
-                value=f"ui_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                key=run_name_key,
                 help="ai_agent/backtest/runs/<이름>/ 에 저장",
             )
 
-        c4, c5, c6 = st.columns(3)
+        c4, c5, c6, c7 = st.columns(4)
         with c4:
             score_after = st.checkbox("score-after", value=True,
                                        help="scored_*.jsonl 생성 (PnL/회고/Calibration 탭 활성)")
@@ -1899,6 +2056,13 @@ def tab_run() -> None:
             reset_memory = st.checkbox("reset-memory", value=True,
                                         help="run 시작 전 backtest_user_id의 ai_judgments / "
                                              "post_mortem_reports DELETE. 회차 격리.")
+        with c7:
+            resume = st.checkbox(
+                "이어서 실행", value=False,
+                help="끊긴 backtest를 같은 결과 폴더로 이어서. triggers_*.done 영업일은 "
+                     "skip, .partial 또는 부분 jsonl은 재처리. 체크 시 reset-memory는 "
+                     "자동 무시 (portfolio는 이어가는데 회고만 비우는 모순 회피).",
+            )
 
         with st.expander("고급 옵션", expanded=False):
             holding_days = st.number_input(
@@ -1927,17 +2091,26 @@ def tab_run() -> None:
                 st.error(f"backtest_user_id={backtest_user_id}는 이미 다른 진행 중인 run이 사용 중입니다. "
                           f"DB 회고가 섞이니 다른 값을 쓰세요.")
                 return
-        if mode in ("rule_trigger", "daily_scan", "single_agent") and not (
+        if mode in ("debate_0", "debate_1", "debate_2", "daily_scan") and not (
             os.getenv("GMS_KEY") or os.getenv("ANTHROPIC_API_KEY") or os.getenv("XAI_API_KEY")
         ):
             st.warning("⚠️ LLM 키 필요 — .env에 GMS_KEY 등이 있는지 확인하세요. 그래도 진행합니다.")
+
+        # 종목별 수량 → CODE:QTY 문자열 합성 (0인 종목은 생략)
+        initial_holdings = ",".join(
+            f"{code}:{qty}" for code, qty in holdings_qtys.items() if qty > 0
+        )
+        # 다음 form 인스턴스에서 default 복원 가능하도록 종목별 수량 기억
+        for code, qty in holdings_qtys.items():
+            st.session_state[f"bt_hold_default_{code}"] = qty
 
         args = {
             "mode": mode, "start": start, "end": end,
             "watchlist": watchlist, "initial_cash": initial_cash,
             "initial_holdings": initial_holdings, "holding_days": holding_days,
             "backtest_user_id": int(backtest_user_id),
-            "score_after": score_after, "pm_mock": pm_mock, "reset_memory": reset_memory,
+            "score_after": score_after, "pm_mock": pm_mock,
+            "reset_memory": reset_memory, "resume": resume,
         }
         cmd = _build_run_command(args, output_dir)
         # 디스크 영속화에 isoformat 문자열로 저장 (json 호환)
@@ -1954,7 +2127,7 @@ def tab_run() -> None:
         st.rerun()
 
     if not procs:
-        st.caption("⏱ rule_trigger/daily_scan은 결정당 LLM 4회 호출 — 2주 × 2종목 = 약 5~15분 소요 예상.")
+        st.caption("⏱ debate_1/debate_2/daily_scan은 결정당 LLM 호출 다수 — 2주 × 2종목 = 약 5~15분 소요 예상. debate_2는 라운드 1대비 약 1.5~2배.")
 
     # 진행 중인 run이 하나라도 있으면 카드의 진행률/로그 갱신을 위해 자동 새로고침.
     if any_alive:
@@ -1985,6 +2158,21 @@ def main() -> None:
     """, unsafe_allow_html=True)
     st.title("MODU Backtesting")
     st.caption("Bull/Bear 토론 + LangGraph 의사결정 평가")
+
+    # 진행 중 backtest 복구 — 모든 탭에서 동작하도록 page top에서 한 번.
+    # 새로고침/streamlit 재시작 후에도 ai_agent/backtest/runs/*/_run_state.json의
+    # 살아있는 PID를 복구해 session_state["running_procs"]에 채운다.
+    _restored = st.session_state.get("running_procs", [])
+    _known = {p["pid"] for p in _restored}
+    for _disk in _discover_alive_runs():
+        if _disk["pid"] not in _known:
+            _restored.append(_disk)
+            _known.add(_disk["pid"])
+    st.session_state["running_procs"] = _restored
+    # 다른 탭에 있어도 진행 중인 backtest가 있으면 알림 — "🚀 실행" 탭에서 카드 확인.
+    _alive_count = sum(1 for p in _restored if _proc_is_alive(p["pid"]))
+    if _alive_count:
+        st.info(f"🟢 진행 중인 backtest {_alive_count}개 — '🚀 실행' 탭에서 진행 카드 확인.")
 
     st.sidebar.markdown("### 데이터 입력")
 
@@ -2018,7 +2206,7 @@ def main() -> None:
 
     if not run_dirs:
         st.sidebar.warning("JSONL 데이터를 찾을 수 없습니다.")
-        path_str = st.sidebar.text_input("디렉터리 경로", value="backtest_out/mode_A_2024")
+        path_str = st.sidebar.text_input("디렉터리 경로", value="backtest_out/debate_1_2024")
         run_dir = Path(path_str)
     else:
         labels = [_run_dir_label(p) for p in run_dirs]
