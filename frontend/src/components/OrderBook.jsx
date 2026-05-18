@@ -567,15 +567,27 @@ export default function OrderBook({ stockCode }) {
 
             {/* 매수가능 정보 — 백엔드 미연결 시 표시 안 함 */}
             {buyingPower && (
-              <div className="buying-power-info" style={{ fontSize: '0.85em', color: '#aaa', margin: '0.5rem 0' }}>
+              <div className="buying-power-info">
                 {orderType === 'BUY' ? (
                   <>
-                    <div>주문 가능 금액: <strong style={{ color: '#fff' }}>{buyingPower.maxBuyAmount?.toLocaleString() ?? '-'}원</strong></div>
-                    <div>최대 매수 가능 수량: {buyingPower.maxBuyQuantity?.toLocaleString() ?? '-'}주</div>
-                    <div>예수금: {buyingPower.availableCash?.toLocaleString() ?? '-'}원</div>
+                    <div className="buying-power-row">
+                      <span>주문 가능 금액</span>
+                      <strong>{buyingPower.maxBuyAmount?.toLocaleString() ?? '-'}원</strong>
+                    </div>
+                    <div className="buying-power-row">
+                      <span>최대 매수 수량</span>
+                      <strong>{buyingPower.maxBuyQuantity?.toLocaleString() ?? '-'}주</strong>
+                    </div>
+                    <div className="buying-power-row">
+                      <span>예수금</span>
+                      <strong>{buyingPower.availableCash?.toLocaleString() ?? '-'}원</strong>
+                    </div>
                   </>
                 ) : (
-                  <div>매도 가능 수량: <strong style={{ color: '#fff' }}>{buyingPower.maxSellQuantity?.toLocaleString() ?? '-'}주</strong></div>
+                  <div className="buying-power-row">
+                    <span>매도 가능 수량</span>
+                    <strong>{buyingPower.maxSellQuantity?.toLocaleString() ?? '-'}주</strong>
+                  </div>
                 )}
               </div>
             )}

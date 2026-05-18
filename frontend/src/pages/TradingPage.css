@@ -77,7 +77,7 @@
 
 .trading-top {
   display: grid;
-  grid-template-columns: 1fr 480px;
+  grid-template-columns: 1fr 380px; /* 우측 호가창 가로폭을 380px로 컴팩트화하여 차트 면적 대폭 확대 */
   gap: 1.5rem;
   height: 520px;
   /* 차트 - 호가창 높이 동시 고정 */

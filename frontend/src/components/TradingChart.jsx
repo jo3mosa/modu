@@ -268,8 +268,16 @@ export default function TradingChart({ stockCode }) {
   const timeframeRef = useRef('D');
   const [timeframe, setTimeframe] = useState('D');
 
-  // 활성화된 보조지표 (초기값: 모두 꺼짐)
-  const [activeIndicators, setActiveIndicators] = useState(new Set());
+  // 활성화된 보조지표 (기본값: 이동평균선과 거래량을 기본 켜두어 차트가 가득 차고 고급스럽게 보이도록 함)
+  const [activeIndicators, setActiveIndicators] = useState(() => {
+    try {
+      const saved = localStorage.getItem('activeIndicators');
+      return saved ? new Set(JSON.parse(saved)) : new Set([INDICATOR.MA, INDICATOR.VOLUME]);
+    } catch {
+      return new Set([INDICATOR.MA, INDICATOR.VOLUME]);
+    }
+  });
+  
   // applyIndicators 콜백 안에서 최신 state 참조용 (의존성 폭주 회피)
   const activeIndicatorsRef = useRef(activeIndicators);
   activeIndicatorsRef.current = activeIndicators;
@@ -287,10 +295,14 @@ export default function TradingChart({ stockCode }) {
   stockCodeRef.current = stockCode;
   timeframeRef.current = timeframe;
 
-  // 토글 변경 시 보조지표 즉시 재적용 (차트 series는 살아있고 데이터만 갱신)
+  // 토글 변경 시 보조지표 즉시 재적용 및 LocalStorage 영구 보관
   useEffect(() => {
+    try {
+      localStorage.setItem('activeIndicators', JSON.stringify([...activeIndicators]));
+    } catch (e) {
+      console.error('보조지표 상태 저장 실패:', e);
+    }
     applyIndicators();
-    // applyIndicators는 ref만 읽으므로 의존성 명시 불필요
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeIndicators]);
 
