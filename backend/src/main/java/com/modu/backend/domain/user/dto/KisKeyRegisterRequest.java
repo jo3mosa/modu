@@ -12,6 +12,9 @@ public record KisKeyRegisterRequest(
         @Schema(description = "한국투자증권 App Secret", example = "yZxxx...")
         @NotBlank String appSecret,
 
+        @Schema(description = "KIS HTS 로그인 ID (체결통보 WS 구독에 필수)", example = "myhts01")
+        @NotBlank String htsId,
+
         @Schema(description = "증권 계좌번호 (형식: 계좌번호-상품코드)", example = "50012345-01")
         @NotBlank String accountNo,
 

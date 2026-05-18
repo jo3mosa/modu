@@ -8,7 +8,14 @@ package com.modu.backend.domain.market.websocket;
 public enum KisRealtimeStreamType {
 
     PRICE("H0STCNT0"),
-    ORDERBOOK("H0STASP0");
+    ORDERBOOK("H0STASP0"),
+
+    /**
+     * 체결통보 (실전) — S14P31B106-291.
+     * tr_key = 계좌번호 앞 8자리(CANO). 응답은 AES-256 CBC 암호화 — KisExecutionCipher 로 복호화 필요.
+     * 모의계좌는 서비스 미제공이라 H0STCNI9 미지원.
+     */
+    EXECUTION("H0STCNI0");
 
     private final String trId;
 

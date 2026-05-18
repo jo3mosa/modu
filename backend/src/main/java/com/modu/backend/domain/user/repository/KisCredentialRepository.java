@@ -18,4 +18,7 @@ public interface KisCredentialRepository extends JpaRepository<KisCredential, Lo
     boolean existsByUserId(Long userId);
 
     void deleteByUserId(Long userId);
+
+    /** 체결통보 부팅 자동 구독 대상 — HTS ID 가 등록된 사용자 */
+    java.util.List<KisCredential> findByHtsIdEncIsNotNull();
 }

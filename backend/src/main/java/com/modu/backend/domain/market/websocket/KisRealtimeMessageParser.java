@@ -31,6 +31,12 @@ public class KisRealtimeMessageParser {
             return Optional.empty();
         }
 
+        // 본 parser 는 시세 전용 (PRICE/ORDERBOOK). 체결통보 (EXECUTION) 는 KisExecutionWebSocketClient 가
+        // 별도 세션에서 처리하므로 본 경로엔 도달하지 않음. 안전망으로 skip.
+        if (type != KisRealtimeStreamType.PRICE && type != KisRealtimeStreamType.ORDERBOOK) {
+            return Optional.empty();
+        }
+
         String[] fields = frame[3].split("\\^", -1);
         if (fields.length == 0 || fields[0].isBlank()) {
             return Optional.empty();
@@ -40,6 +46,7 @@ public class KisRealtimeMessageParser {
         Object payload = switch (type) {
             case PRICE -> parsePrice(fields);
             case ORDERBOOK -> parseOrderbook(fields);
+            default -> throw new IllegalStateException("Unreachable - type guarded above: " + type);
         };
 
         return Optional.of(new KisRealtimeParsedMessage(new KisRealtimeStreamKey(type, stockCode), payload));

@@ -3,7 +3,7 @@ import { Toaster } from 'sonner';
 import AuthLayout from './layouts/AuthLayout';
 import MainLayout from './layouts/MainLayout';
 import { OrderSSEProvider } from './hooks/useOrderSSE';
-import { AiChatProvider } from './hooks/useAiChat';
+import { AgentChatProvider } from './hooks/useAgentChat';
 import { NotificationsProvider } from './hooks/useNotifications';
 import { PendingDecisionsProvider } from './hooks/usePendingDecisions';
 import PrivateRoute from './components/PrivateRoute';
@@ -41,15 +41,16 @@ function App() {
         <Route
           element={
             <PrivateRoute>
-              {/* 알림 → SSE → AiChat → PendingDecisions 순서 중첩.
-                  PendingDecisions가 useNotifications 사용하므로 안쪽에 둠. */}
+              {/* 알림 → SSE → AgentChat → PendingDecisions 순서 중첩.
+                  AgentChat 은 OrderSSE 의 latestAgentMessage 를 구독하므로 그 안쪽.
+                  PendingDecisions가 useNotifications 사용하므로 가장 안쪽에 둠. */}
               <NotificationsProvider>
                 <OrderSSEProvider>
-                  <AiChatProvider>
+                  <AgentChatProvider>
                     <PendingDecisionsProvider>
                       <MainLayout />
                     </PendingDecisionsProvider>
-                  </AiChatProvider>
+                  </AgentChatProvider>
                 </OrderSSEProvider>
               </NotificationsProvider>
             </PrivateRoute>

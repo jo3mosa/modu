@@ -16,7 +16,8 @@
   background: transparent;
   border: none;
   color: #888;
-  padding: 0.8rem;
+  padding: 0.5rem; /* 패딩 축소 */
+  font-size: 0.82rem; /* 상단 탭 폰트 크기 미세 축소 */
   font-weight: 600;
   cursor: pointer;
   border-radius: 8px;
@@ -30,32 +31,41 @@
 
 .orderbook-content {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   flex: 1;
-  overflow-y: auto;
+  overflow: hidden; /* 전체 패널 스크롤 완벽 차단 */
 }
 
 .orderbook-table {
   display: flex;
   flex-direction: column;
-  flex: none;
+  flex: 1.15; /* 약 54% 가로폭 할당 */
   padding: 0;
+  overflow: hidden; /* 테이블 자체 스크롤 차단 */
+}
+
+/* 매도/매수 호가 목록 개별 스크롤 및 크기 균등 분할 */
+.asks-list,
+.bids-list {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0; /* flex container 내에서 정상 스크롤 작동을 보장 */
 }
 
 .table-head {
   display: flex;
   justify-content: space-between;
-  padding: 0.5rem 1.5rem;
+  padding: 0.4rem 1rem; /* 가로 패딩 축소 */
   color: #888;
-  font-size: 0.85rem;
+  font-size: 0.8rem; /* 폰트 축소 */
 }
 
 .order-row {
   display: flex;
   justify-content: space-between;
-  padding: 0.35rem 1.2rem;
+  padding: 0.3rem 0.8rem; /* 줄 간격 밀착 및 패딩 최소화 */
   position: relative;
-  font-size: 0.85rem;
+  font-size: 0.8rem; /* 폰트 축소 */
   font-family: 'Pretendard', sans-serif;
   cursor: pointer;
 }
@@ -115,23 +125,26 @@
 }
 
 .current-price {
-  font-size: 1.4rem;
+  font-size: 1.15rem; /* 글자 크기 축소 */
   font-weight: 800;
   color: #fff;
 }
 
 .price-diff {
   color: #ef4444;
-  font-size: 0.9rem;
-  margin-top: 0.2rem;
+  font-size: 0.8rem; /* 폰트 축소 */
+  margin-top: 0.1rem;
 }
 
 .order-form {
-  padding: 1.2rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 0.5rem 0.8rem; /* 상하 패딩을 줄여서 상단 스크롤 잘림 완벽 차단! */
+  border-top: none;
+  border-left: 1px solid rgba(255, 255, 255, 0.05); /* 수직 디바이더 보더 적용 */
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.5rem; /* 간격을 축소하여 한화면에 100% 안착 */
+  flex: 1; /* 약 46% 가로폭 할당 */
+  overflow-y: auto; /* 극단적 저해상도 시 내부 스크롤 안전장치 */
 }
 
 .order-type-switch {
@@ -145,7 +158,7 @@
   flex: 1;
   background: transparent;
   border: none;
-  padding: 0.8rem;
+  padding: 0.5rem 0.8rem; /* 버튼 세로 패딩 축소로 스페이스 확보 */
   color: #888;
   font-weight: 700;
   cursor: pointer;
@@ -163,16 +176,29 @@
 
 .buying-power-info {
   display: flex;
-  justify-content: space-between;
-  font-size: 0.9rem;
-  color: #888;
-  background: rgba(255, 255, 255, 0.05);
-  padding: 0.6rem;
+  flex-direction: column; /* 세로 행 배치로 변경하여 글자 깨짐 방지 */
+  gap: 0.3rem; /* 행 사이 간격 */
+  font-size: 0.76rem; /* 폰트 미세 조정 */
+  color: #aaa;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 0.45rem 0.6rem;
   border-radius: 6px;
 }
 
-.buying-power-info strong {
+.buying-power-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.buying-power-row span {
+  color: #888;
+}
+
+.buying-power-row strong {
   color: #fff;
+  font-weight: 600;
 }
 
 .input-group {
@@ -183,44 +209,126 @@
 
 .input-group label {
   color: #aaa;
-  font-size: 0.95rem;
+  font-size: 0.8rem; /* 글자 크기 축소 */
 }
 
 .input-group input {
   background: rgba(0, 0, 0, 0.3);
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: #fff;
-  padding: 0.6rem;
+  padding: 0.4rem 0.6rem; /* 패딩 축소 */
   border-radius: 6px;
-  width: 120px;
+  width: 95px; /* 가로폭 축소 */
+  font-size: 0.85rem; /* 글자 크기 축소 */
   text-align: right;
   font-family: inherit;
+}
+
+/* Custom Price Input Styling with + / - Buttons */
+.price-control-wrapper {
+  display: flex;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  overflow: hidden;
+  width: 110px; /* 380px 너비 맞춤 축소 */
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.price-control-wrapper:focus-within {
+  border-color: rgba(255, 255, 255, 0.25);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.05);
+}
+
+.price-field {
+  flex: 1;
+  background: transparent !important;
+  border: none !important;
+  color: #fff;
+  padding: 0.4rem 0.2rem; /* 패딩 조절 */
+  text-align: center !important;
+  font-family: inherit;
+  font-size: 0.85rem; /* 폰트 축소 */
+  font-weight: 600;
+  width: 100%;
+  box-sizing: border-box;
+  -moz-appearance: textfield;
+  appearance: none;
+}
+
+/* Chrome, Safari, Edge 기본 스피너 완전히 제거 */
+.price-field::-webkit-outer-spin-button,
+.price-field::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.price-step-btn {
+  background: transparent;
+  border: none;
+  color: #aaa;
+  width: 24px; /* 단추 크기 축소 */
+  height: 26px;
+  font-size: 0.95rem; /* 글자 크기 축소 */
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s, color 0.15s;
+  user-select: none;
+}
+
+.price-step-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.price-step-btn:active:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.price-step-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* 수량 인풋 스피너도 제거하여 외관 통일 */
+.input-group input[type="number"]::-webkit-outer-spin-button,
+.input-group input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.input-group input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: none;
 }
 
 .order-total {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 0.5rem;
-  padding-top: 0.5rem;
+  margin-top: 0.3rem; /* 마진 축소 */
+  padding-top: 0.3rem;
   border-top: 1px dashed rgba(255, 255, 255, 0.1);
-  font-size: 1.05rem;
+  font-size: 0.9rem; /* 폰트 축소 */
 }
 
 .order-total strong {
   color: #84cc16;
-  font-size: 1.2rem;
+  font-size: 1.05rem; /* 글자 크기 축소 */
 }
 
 .submit-order-btn {
-  padding: 1rem;
+  padding: 0.7rem; /* 패딩을 줄여서 한화면에 100% 핏 */
   border: none;
   border-radius: 8px;
   font-weight: 700;
-  font-size: 1.05rem;
+  font-size: 1rem;
   color: #fff;
   cursor: pointer;
-  margin-top: 0.5rem;
+  margin-top: 0.2rem; /* 마진 최소화 */
   transition: opacity 0.2s;
 }
 
@@ -438,4 +546,33 @@
 .modify-cancel-btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.08);
   color: #ccc;
+}
+
+/* 반응형 대응: 모바일/좁은 화면에서는 다시 세로 배치로 부드럽게 복원 */
+@media (max-width: 768px) {
+  .orderbook-content {
+    flex-direction: column;
+    overflow-y: auto; /* 세로 스크롤 허용 */
+  }
+
+  .orderbook-table {
+    flex: none;
+    overflow: visible;
+  }
+
+  .asks-list,
+  .bids-list {
+    flex: none;
+    overflow-y: visible;
+    min-height: auto;
+  }
+
+  .order-form {
+    padding: 1.2rem;
+    border-left: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    flex: none;
+    gap: 1rem;
+    overflow-y: visible;
+  }
 }

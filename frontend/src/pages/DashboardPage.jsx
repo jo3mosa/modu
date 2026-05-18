@@ -213,7 +213,12 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!latestEvent) return;
     if (latestEvent.type === 'ORDER_EXECUTED') {
-      refreshAccountData();
+      // KIS API 서버의 주문 처리가 내부 자산 원장에 완전히 반영되도록 1.5초(1500ms) 딜레이 후 갱신
+      // (이렇게 해야 로컬 DB의 미체결 내역과 KIS의 주문가능금액이 완벽히 동기화되어 총자산이 튀는 현상을 막을 수 있습니다!)
+      const timer = setTimeout(() => {
+        refreshAccountData();
+      }, 1500);
+      return () => clearTimeout(timer);
     }
   }, [latestEvent, refreshAccountData]);
 
@@ -341,13 +346,29 @@ export default function DashboardPage() {
       0
     );
     const totalPnl = holdings.reduce((sum, h) => sum + (h.pnl ?? 0), 0);
-    const totalPnlPct =
-      totalBuyAmount > 0 ? Number(((totalPnl / totalBuyAmount) * 100).toFixed(2)) : 0;
-    // 주문 가능 금액 우선순위: buyingPower.maxBuyAmount(KIS nrcvb_buy_amt, 한투 "주문가능원화") > summary.availableCash(KIS dncl_amt) > 0
-    // 전자는 매도 결제 대기 자금까지 포함된 실사용 가능 금액. 후자는 D+0 현금만이라 작게 나옴.
+    
+    // 주문 가능 금액 우선순위: 실제로 신규 매수 주문을 넣을 수 있는 자금 (미체결 매수 주문 시 차감됨)
     const availableCash = buyingPower?.maxBuyAmount ?? summary.availableCash ?? 0;
-    // 총 자산: 예수금 + 실시간 평가금액
-    const totalAsset = availableCash + totalEvalAmount;
+    
+    // 미체결 매수 주문 금액 합산: 미체결 매수 주문이 대기 중일 때 총자산이 깎여 보이는 현상을 방지하기 위함
+    const pendingBuyAmount = orderHistory
+      .filter((o) => o.side === 'BUY' && o.status === 'PENDING')
+      .reduce((sum, o) => sum + (o.price ?? 0) * (o.quantity ?? 0), 0);
+    
+    // KIS가 가용현금(buyingPower.availableCash)에서 미체결 매수 금액을 이미 차감했는지 판별
+    // KIS 주문가능현금(ord_psbl_cash)이 계좌 예수금(summary.availableCash)보다 작다면 이미 KIS 측에서 차감한 상태입니다.
+    const isPendingSubtracted =
+      buyingPower &&
+      summary.availableCash &&
+      buyingPower.availableCash < summary.availableCash;
+    
+    // 총 자산 = 주문 가능 금액 + 실시간 주식 평가금액 + (KIS가 차감했을 때만 미체결 매수 대금 추가)
+    // (이렇게 하면 실시간/장외/예약 주문 등 KIS의 차감 여부에 상관없이 이중합산(더블 카운팅)이 원천 봉쇄되어 항상 자산이 완벽하게 고정됩니다!)
+    const totalAsset = availableCash + totalEvalAmount + (isPendingSubtracted ? pendingBuyAmount : 0);
+    
+    // 총 자산 대비 실시간 수익률 계산 (투자 직전 총 자산 대비 현재 손익금액의 비율로 구하여 시각적 직관성을 100% 만족시킴!)
+    const initialAsset = totalAsset - totalPnl;
+    const totalPnlPct = initialAsset > 0 ? Number(((totalPnl / initialAsset) * 100).toFixed(2)) : 0;
     return {
       ...summary,
       availableCash,

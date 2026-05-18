@@ -386,9 +386,9 @@ export default function ReportPage() {
                     >
                       {actionDisplay.label}
                     </span>
-                    <span className="log-stock">{log.stockCode}</span>
+                    <span className="log-stock">{log.stockName || log.stockCode}</span>
                     {log.stockName && (
-                      <span style={{ color: '#888', fontSize: '0.85em' }}>{log.stockName}</span>
+                      <span style={{ color: '#888', fontSize: '0.85em' }}>{log.stockCode}</span>
                     )}
                     {statusDisplay && (
                       <span className="log-status" style={{ color: statusDisplay.color, fontSize: '0.85em' }}>

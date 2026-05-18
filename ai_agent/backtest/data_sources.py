@@ -69,10 +69,13 @@ def make_engine(env: config.BacktestEnv) -> Engine:
 @contextmanager
 def mongo_client(env: config.BacktestEnv) -> Iterator[MongoClient]:
     """Mongo 클라이언트 컨텍스트 — 종료 시 자동 close."""
+    # backtest 중 wifi가 잠시 끊겨도 견디게 — serverSelection / socket timeout 늘리고
+    # retryReads 활성화. backtest는 Mongo를 read-only로 쓰지만 retryWrites도 켜둠.
     client = MongoClient(
         env.mongo_uri,
-        serverSelectionTimeoutMS=10000,
-        socketTimeoutMS=30000,
+        serverSelectionTimeoutMS=30000,
+        socketTimeoutMS=60000,
+        retryReads=True,
         retryWrites=True,
     )
     try:

@@ -29,6 +29,10 @@ class MarketTrigger(BaseModel):
       코드/필터/로그 분석은 이 값을 정형 키로 사용한다.
     - trigger_reason: 사람이 읽는 한국어 사유 목록 (예: ["RSI 과매수"]).
       LangSmith / 사용자 노출 메시지 등에서 사용한다.
+
+    방침: 백테스트로 측정된 Lv·effect 같은 강도 메타는 의도적으로 전달하지 않는다.
+    LLM 의 자율적 의사결정을 보존하기 위해 모든 trigger 는 동일 weight 로 노출되고,
+    가중치 부여는 AI Agent 가 자체 판단으로 한다.
     """
 
     rule_ids: list[str] = Field(default_factory=list)
@@ -69,8 +73,9 @@ class UserTriggerEvent(BaseModel):
     """
     Reasoning Layer 실행 직전에 사용되는 사용자별 실행 이벤트.
 
-    Market Event 또는 Position Event가 사용자 정보(portfolio_snapshot, user_context)와
+    Market Event 또는 Position Event가 사용자 정보(portfolio_snapshot)와
     결합된 최종 입력. LangGraph는 이 이벤트를 InvestmentAgentState로 변환해 실행한다.
+    user_context는 LangGraph 내 context_loader 노드가 DB에서 직접 로드한다.
     """
 
     event_id: str = Field(default_factory=lambda: f"user_trigger_{uuid4()}")
@@ -85,7 +90,6 @@ class UserTriggerEvent(BaseModel):
     analysis_snapshot: dict[str, Any] = Field(default_factory=dict)
 
     portfolio_snapshot: dict[str, Any] = Field(default_factory=dict)
-    user_context: dict[str, Any] = Field(default_factory=dict)
 
     # backtest 시뮬레이션 기준 시각. None이면 실시간(NOW). retrieval/memory_log가 이 값을 사용.
     as_of: datetime | None = Field(default=None, description="backtest 시뮬레이션 시각 (실시간은 None)")

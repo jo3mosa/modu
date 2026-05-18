@@ -9,11 +9,15 @@ import apiClient from './apiClient';
  * 백엔드 status 값(FILLED/CANCELED/MODIFIED/PENDING/REJECTED)을 그대로 키로 사용.
  */
 export const ORDER_STATUS_DISPLAY = {
-  FILLED:   { label: '체결', color: '#84cc16' },
-  MODIFIED: { label: '정정', color: '#eab308' },
-  CANCELED: { label: '취소', color: '#888'   },
-  PENDING:  { label: '대기', color: '#aaa'   },
-  REJECTED: { label: '거절', color: '#ef4444' },
+  FILLED:            { label: '체결',         color: '#84cc16' },
+  MODIFIED:          { label: '정정',         color: '#eab308' },
+  CANCELED:          { label: '취소',         color: '#888'    },
+  PENDING:           { label: '대기',         color: '#aaa'    },
+  REJECTED:          { label: '거절',         color: '#ef4444' },
+  // KIS 예약주문 — 다음 거래일 정규장 시작 시 자동 실행
+  RESERVED:          { label: '예약 접수',    color: '#3b82f6' },
+  // 예약 가능 시간 도래 전 대기 (E gap 10분 또는 공휴일)
+  RESERVED_PENDING:  { label: '발행 대기',    color: '#a78bfa' },
 };
 
 /**

@@ -22,5 +22,4 @@ def build_state_from_user_trigger(
         analysis_snapshot=event.analysis_snapshot,
         candidate_assets=candidate_assets,
         portfolio_snapshot=event.portfolio_snapshot,
-        user_context=event.user_context,
     )

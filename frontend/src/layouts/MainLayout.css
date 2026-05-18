@@ -227,10 +227,15 @@
   min-width: 0;
 }
 
-.alarm-item-icon {
+.alarm-item-type-tag {
   flex-shrink: 0;
-  font-size: 1.05rem;
-  line-height: 1.4;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  line-height: 1.2;
+  margin-top: 2px;
 }
 
 .alarm-item-text {
