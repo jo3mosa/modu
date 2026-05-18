@@ -36,6 +36,7 @@ def bull_researcher(state: InvestmentAgentState) -> dict[str, Any]:
     add_run_metadata({"node": "bull_researcher", "round": current_round})
 
     signals = state.analysis_snapshot.get("signals", {}) if state.analysis_snapshot else {}
+    mc = state.memory_context or {}
 
     inputs = {
         "candidate_assets": to_json(state.candidate_assets),
@@ -46,7 +47,10 @@ def bull_researcher(state: InvestmentAgentState) -> dict[str, Any]:
         "portfolio_snapshot": to_json(state.portfolio_snapshot),
         "user_context": to_json(state.user_context),
         "policy_context": to_json(state.policy_context),
-        "memory_context": to_json(state.memory_context),
+        "memory_lessons_aggregate": to_json(mc.get("lessons_aggregate", [])),
+        "memory_loss_pattern_brief": mc.get("loss_pattern_brief", "(해당 없음)"),
+        "memory_similar_decisions": to_json(mc.get("similar_decisions_table", [])),
+        "memory_recent_post_mortems": to_json(mc.get("recent_post_mortems", [])),
         "history_context": to_json(state.history_context),
         "last_bear_argument": latest_bear_argument or "(첫 라운드 — 직전 Bear 주장 없음)",
     }
