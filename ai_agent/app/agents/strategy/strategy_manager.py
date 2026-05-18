@@ -56,6 +56,7 @@ def strategy_manager(state: InvestmentAgentState) -> dict[str, Any]:
     chain = load_prompt(str(prompt_path)) | get_structured_llm() | _parser
 
     signals = state.analysis_snapshot.get("signals", {}) if state.analysis_snapshot else {}
+    mc = state.memory_context or {}
 
     inputs = {
         "candidate_assets": to_json(state.candidate_assets),
@@ -66,7 +67,10 @@ def strategy_manager(state: InvestmentAgentState) -> dict[str, Any]:
         "portfolio_snapshot": to_json(state.portfolio_snapshot),
         "user_context": to_json(state.user_context),
         "policy_context": to_json(state.policy_context),
-        "memory_context": to_json(state.memory_context),
+        "memory_lessons_aggregate": to_json(mc.get("lessons_aggregate", [])),
+        "memory_loss_pattern_brief": mc.get("loss_pattern_brief", "(해당 없음)"),
+        "memory_similar_decisions": to_json(mc.get("similar_decisions_table", [])),
+        "memory_recent_post_mortems": to_json(mc.get("recent_post_mortems", [])),
         "history_context": to_json(state.history_context),
         "format_instructions": _parser.get_format_instructions(),
     }
