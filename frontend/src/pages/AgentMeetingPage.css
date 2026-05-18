@@ -174,17 +174,28 @@
   gap: 0.5rem;
 }
 
-.agent-icon-small {
-  width: 28px;
-  height: 28px;
-  border-radius: 4px;
+.agent-avatar-mini {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 1px solid #3a3a3a;
+  background-color: #2a2a2a;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.75rem;
-  font-weight: 800;
-  color: #fff;
-  opacity: 0.8;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s ease;
+}
+
+.agent-avatar-mini:hover {
+  transform: scale(1.1);
+}
+
+.agent-avatar-mini-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .chat-feed {
@@ -194,6 +205,7 @@
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  scroll-behavior: smooth; /* 모든 스크롤 이동이 마술처럼 부드럽게 움직이도록 설정 */
 }
 
 .date-divider {
@@ -224,62 +236,152 @@
 
 .chat-message {
   display: flex;
-  gap: 1rem;
-  animation: slideIn 0.3s ease-out;
+  gap: 0.8rem;
+  align-items: flex-start;
+  animation: smooth-slide-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-@keyframes slideIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+@keyframes smooth-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-.agent-avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
+.agent-avatar-wrap {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 1px solid #3a3a3a;
+  background-color: #2a2a2a;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1rem;
-  font-weight: 800;
-  color: #fff;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.25);
   flex-shrink: 0;
+}
+
+.agent-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .message-content {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 .message-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.5rem;
   margin-bottom: 0.3rem;
 }
 
 .message-agent-name {
   font-weight: 700;
-  font-size: 1rem;
+  font-size: 0.95rem;
+  color: #efefef;
 }
 
 .message-agent-role {
-  font-size: 0.75rem;
-  color: #888;
-  background-color: rgba(255, 255, 255, 0.05);
+  font-size: 0.72rem;
+  color: #999;
+  background-color: rgba(255, 255, 255, 0.04);
   padding: 2px 6px;
   border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.message-bubble-wrapper {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  max-width: 100%;
+}
+
+.message-bubble {
+  font-size: 0.92rem;
+  line-height: 1.5;
+  padding: 0.75rem 1rem;
+  border-radius: 4px 16px 16px 16px;
+  color: #e5e7eb;
+  max-width: 580px;
+  word-break: break-word;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  position: relative;
+}
+
+/* 카카오톡 단톡방 스타일의 아바타 방향 뾰족한 말풍선 꼬리깃 공통 */
+.message-bubble::before {
+  content: '';
+  position: absolute;
+  top: 12px;
+  left: -4px;
+  width: 8px;
+  height: 8px;
+  transform: rotate(45deg);
+  z-index: 1; /* z-index를 올려서 투명 배경 겹침 결함 방지 */
+}
+
+/* 에이전트 역할별 컬러풀하고 세련된 글래스모피즘 테마 말풍선 및 꼬리깃 명시 선언 */
+/* BULL (강세) */
+.agent-msg-bull .message-bubble {
+  background: #251616; /* rgba 투명성 겹침으로 인한 얼룩 방지를 위해 100% 불투명 어두운 테마 기반 컬러 적용 */
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+.agent-msg-bull .message-bubble::before {
+  background: #251616;
+  border-left: 1px solid rgba(239, 68, 68, 0.25);
+  border-bottom: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+/* BEAR (약세) */
+.agent-msg-bear .message-bubble {
+  background: #161c28;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+}
+.agent-msg-bear .message-bubble::before {
+  background: #161c28;
+  border-left: 1px solid rgba(59, 130, 246, 0.25);
+  border-bottom: 1px solid rgba(59, 130, 246, 0.25);
+}
+
+/* STRATEGY (전략) */
+.agent-msg-strategy .message-bubble {
+  background: #1e1928;
+  border: 1px solid rgba(167, 139, 250, 0.25);
+}
+.agent-msg-strategy .message-bubble::before {
+  background: #1e1928;
+  border-left: 1px solid rgba(167, 139, 250, 0.25);
+  border-bottom: 1px solid rgba(167, 139, 250, 0.25);
+}
+
+/* DECIDE (결정) */
+.agent-msg-decide .message-bubble {
+  background: #14201b;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+.agent-msg-decide .message-bubble::before {
+  background: #14201b;
+  border-left: 1px solid rgba(16, 185, 129, 0.25);
+  border-bottom: 1px solid rgba(16, 185, 129, 0.25);
 }
 
 .message-time {
-  font-size: 0.75rem;
-  color: #666;
-  margin-left: auto;
-}
-
-.message-text {
-  font-size: 0.95rem;
-  line-height: 1.5;
-  color: #ddd;
+  font-size: 0.7rem;
+  color: #555;
+  flex-shrink: 0;
+  margin-bottom: 2px;
 }
 
 .message-card {
@@ -373,4 +475,19 @@
 @keyframes typingBounce {
   0%, 80%, 100% { transform: scale(0); }
   40% { transform: scale(1); }
+}
+
+/* 타이핑 커서 깜빡임 애니메이션 */
+.typing-cursor {
+  display: inline-block;
+  width: 2px;
+  background-color: currentColor;
+  margin-left: 3px;
+  animation: blink-cursor 0.8s infinite;
+  vertical-align: middle;
+}
+
+@keyframes blink-cursor {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
 }
