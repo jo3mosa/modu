@@ -58,7 +58,7 @@ class KisKeyServiceTest {
     void KIS_연동_성공() {
         // given
         KisKeyRegisterRequest request = new KisKeyRegisterRequest(
-                "real-app-key", "real-app-secret", "50012345-01", true);
+                "real-app-key", "real-app-secret", "myhts01", "50012345-01", true);
         when(kisCredentialRepository.existsByUserId(1L)).thenReturn(false);
         when(encryptor.encrypt("real-app-key")).thenReturn("encrypted-key");
         when(encryptor.encrypt("real-app-secret")).thenReturn("encrypted-secret");
@@ -77,7 +77,7 @@ class KisKeyServiceTest {
     void 중복_연동_시_예외() {
         // given
         KisKeyRegisterRequest request = new KisKeyRegisterRequest(
-                "real-app-key", "real-app-secret", "50012345-01", true);
+                "real-app-key", "real-app-secret", "myhts01", "50012345-01", true);
         when(kisCredentialRepository.existsByUserId(1L)).thenReturn(true);
 
         // when & then
@@ -94,7 +94,7 @@ class KisKeyServiceTest {
     void 잘못된_계좌번호_형식_시_예외() {
         // given
         KisKeyRegisterRequest request = new KisKeyRegisterRequest(
-                "real-app-key", "real-app-secret", "5001234501", true); // "-" 없음
+                "real-app-key", "real-app-secret", "myhts01", "5001234501", true); // "-" 없음
         when(kisCredentialRepository.existsByUserId(1L)).thenReturn(false);
 
         // when & then
@@ -109,7 +109,7 @@ class KisKeyServiceTest {
     void 빈_계좌번호_형식_시_예외() {
         // given
         KisKeyRegisterRequest request = new KisKeyRegisterRequest(
-                "real-app-key", "real-app-secret", "-", true);
+                "real-app-key", "real-app-secret", "myhts01", "-", true);
         when(kisCredentialRepository.existsByUserId(1L)).thenReturn(false);
 
         // when & then
@@ -125,7 +125,7 @@ class KisKeyServiceTest {
     @DisplayName("연동 정보 수정 성공 - 요청한 필드만 업데이트")
     void KIS_수정_성공() {
         // given
-        KisKeyUpdateRequest request = new KisKeyUpdateRequest(null, "new-secret", null, null);
+        KisKeyUpdateRequest request = new KisKeyUpdateRequest(null, "new-secret", null, null, null);
         when(kisCredentialRepository.findByUserId(1L)).thenReturn(Optional.of(testCredential));
         when(encryptor.encrypt("new-secret")).thenReturn("encrypted-new-secret");
 
@@ -141,7 +141,7 @@ class KisKeyServiceTest {
     @DisplayName("연동 정보 없을 때 수정 시 KIS_NOT_CONNECTED 예외")
     void 연동_없을_때_수정_시_예외() {
         // given
-        KisKeyUpdateRequest request = new KisKeyUpdateRequest("new-key", null, null, null);
+        KisKeyUpdateRequest request = new KisKeyUpdateRequest("new-key", null, null, null, null);
         when(kisCredentialRepository.findByUserId(1L)).thenReturn(Optional.empty());
 
         // when & then
@@ -155,7 +155,7 @@ class KisKeyServiceTest {
     @DisplayName("수정 요청에서 accountNo 포함 시 형식 검증")
     void 수정_시_잘못된_계좌번호_형식_예외() {
         // given
-        KisKeyUpdateRequest request = new KisKeyUpdateRequest(null, null, "잘못된형식", null);
+        KisKeyUpdateRequest request = new KisKeyUpdateRequest(null, null, null, "잘못된형식", null);
         when(kisCredentialRepository.findByUserId(1L)).thenReturn(Optional.of(testCredential));
 
         // when & then

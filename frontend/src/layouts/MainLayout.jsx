@@ -207,7 +207,6 @@ export default function MainLayout() {
                     className="alarm-pending-banner"
                     onClick={handleOpenPendingModal}
                   >
-                    <span className="alarm-pending-banner-icon">🚨</span>
                     <span className="alarm-pending-banner-text">
                       AI 승인 대기 <strong>{pendingCount}건</strong>
                     </span>
@@ -220,12 +219,12 @@ export default function MainLayout() {
                     <div className="alarm-empty">알림이 없습니다.</div>
                   ) : (
                     notifications.map(n => {
-                      const meta = NOTIFICATION_TYPE_META[n.type] ?? { label: '', icon: '🔔', color: '#888' };
+                      const meta = NOTIFICATION_TYPE_META[n.type] ?? { label: '', color: '#888' };
                       return (
                         <div key={n.id} className={`alarm-item${n.isRead ? '' : ' unread'}`}>
                           <div className="alarm-item-content">
-                            <span className="alarm-item-icon" style={{ color: meta.color }} aria-hidden="true">
-                              {meta.icon}
+                            <span className="alarm-item-type-tag" style={{ color: meta.color, borderColor: meta.color }}>
+                              {meta.label}
                             </span>
                             <div className="alarm-item-text">
                               <div className="alarm-item-message">{n.message}</div>
