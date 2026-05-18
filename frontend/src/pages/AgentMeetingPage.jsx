@@ -188,8 +188,8 @@ export default function AgentMeetingPage() {
           </div>
           <div className="agent-roster">
             {Object.values(BOT_PROFILES).map((bot, idx) => (
-              <div key={idx} className="agent-icon-small" style={{ backgroundColor: bot.color }}>
-                {bot.icon}
+              <div key={idx} className="agent-avatar-mini" title={bot.name}>
+                <img src={bot.avatar} className="agent-avatar-mini-img" alt={bot.name} />
               </div>
             ))}
           </div>
@@ -218,17 +218,21 @@ export default function AgentMeetingPage() {
             });
 
             return (
-              <div key={msg.messageId} className="chat-message">
-                <div className="agent-avatar" style={{ backgroundColor: bot.color }}>
-                  {bot.icon}
+              <div key={msg.messageId} className={`chat-message agent-msg-${msg.agent.toLowerCase()}`}>
+                <div className="agent-avatar-wrap">
+                  <img src={bot.avatar} className="agent-avatar-img" alt={bot.name} />
                 </div>
                 <div className="message-content">
                   <div className="message-header">
                     <span className="message-agent-name">{bot.name}</span>
                     <span className="message-agent-role">{bot.role} Agent</span>
+                  </div>
+                  <div className="message-bubble-wrapper">
+                    <div className="message-bubble">
+                      {msg.text}
+                    </div>
                     <span className="message-time">{timeStr}</span>
                   </div>
-                  <div className="message-text">{msg.text}</div>
                 </div>
               </div>
             );
