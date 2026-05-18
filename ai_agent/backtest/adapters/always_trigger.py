@@ -121,21 +121,36 @@ def _fmt_event(docs: list[dict]) -> dict | None:
 
 
 def _fmt_sentiment(docs: list[dict]) -> dict | None:
-    """실 서비스 5-1 정합: '가장 마지막으로 계산된 뉴스 감성 지수' (단건, 최신)."""
+    """news_collector.update_sentiment_redis() 집계 재현 — window 평균, Redis 포맷."""
     if not docs:
         return None
-    candidates = sorted(
-        [d for d in docs if isinstance(d.get("sentiment_score"), (int, float))],
-        key=lambda d: d.get("published_at") or "",
-        reverse=True,
-    )
-    if not candidates:
-        return None
-    latest = candidates[0]
+    valid = [
+        d for d in docs
+        if isinstance(d.get("sentiment_score"), (int, float))
+        and d.get("sentiment_confidence") is not None
+    ]
+    if not valid:
+        scores = [d["sentiment_score"] for d in docs
+                  if isinstance(d.get("sentiment_score"), (int, float))]
+        if not scores:
+            return None
+        return {"daily_score": round(sum(scores) / len(scores), 2),
+                "confidence_level": None, "article_count": len(scores)}
+    n = len(valid)
+    avg_score = sum(d["sentiment_score"]               for d in valid) / n
+    avg_conf  = sum(d["sentiment_confidence"]          for d in valid) / n
+    avg_pos   = sum(d.get("sentiment_pos_prob") or 0   for d in valid) / n
+    avg_neu   = sum(d.get("sentiment_neu_prob") or 0   for d in valid) / n
+    avg_neg   = sum(d.get("sentiment_neg_prob") or 0   for d in valid) / n
+
+    def _conf_level(c: float) -> str:
+        return "high" if c >= 70 else ("medium" if c >= 30 else "low")
+
     return {
-        "sentiment_score": latest.get("sentiment_score"),
-        "confidence":      latest.get("confidence"),
-        "neg_prob":        latest.get("neg_prob"),
-        "pos_prob":        latest.get("pos_prob"),
-        "neu_prob":        latest.get("neu_prob"),
+        "daily_score":      round(avg_score, 2),
+        "confidence_level": _conf_level(avg_conf),
+        "pos_prob":         round(avg_pos, 2),
+        "neu_prob":         round(avg_neu, 2),
+        "neg_prob":         round(avg_neg, 2),
+        "article_count":    n,
     }

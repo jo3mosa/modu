@@ -152,29 +152,54 @@ def _to_event(disclosure_docs: Optional[list[dict]]) -> Optional[dict]:
     return build_event_payload(raw_docs)
 
 
+def _confidence_level(conf: float) -> str:
+    """news_collector._confidence_level() 와 동일 — 70↑=high, 30↑=medium, else low."""
+    if conf >= 70.0:
+        return "high"
+    if conf >= 30.0:
+        return "medium"
+    return "low"
+
+
 def _to_sentiment(news_docs: Optional[list[dict]]) -> Optional[dict]:
     """뉴스 문서 → sentiment payload.
 
-    실 서비스 5-1 정합: '가장 마지막으로 계산된 뉴스 감성 지수'.
-    published_at 내림차순으로 정렬 후 sentiment_score 가 있는 첫 번째 문서 사용.
-    confidence / neg_prob / pos_prob / neu_prob 는 FinBERT 출력 그대로 포함.
+    news_collector.update_sentiment_redis() 집계 재현:
+    - lookback window 기사 전체 평균 (단건 최신 아님)
+    - MongoDB 필드: sentiment_score / sentiment_confidence / sentiment_*_prob
+    - 반환 포맷: daily_score / confidence_level(str) / pos·neu·neg_prob / article_count
     """
     if not news_docs:
         return None
-    candidates = sorted(
-        [d for d in news_docs if isinstance(d.get("sentiment_score"), (int, float))],
-        key=lambda d: d.get("published_at") or "",
-        reverse=True,
-    )
-    if not candidates:
-        return None
-    latest = candidates[0]
+    valid = [
+        d for d in news_docs
+        if isinstance(d.get("sentiment_score"), (int, float))
+        and d.get("sentiment_confidence") is not None
+    ]
+    if not valid:
+        # sentiment_confidence 없는 백필 데이터 fallback
+        scores = [d["sentiment_score"] for d in news_docs
+                  if isinstance(d.get("sentiment_score"), (int, float))]
+        if not scores:
+            return None
+        return {
+            "daily_score":      round(sum(scores) / len(scores), 2),
+            "confidence_level": None,
+            "article_count":    len(scores),
+        }
+    n = len(valid)
+    avg_score = sum(d["sentiment_score"]               for d in valid) / n
+    avg_conf  = sum(d["sentiment_confidence"]          for d in valid) / n
+    avg_pos   = sum(d.get("sentiment_pos_prob") or 0   for d in valid) / n
+    avg_neu   = sum(d.get("sentiment_neu_prob") or 0   for d in valid) / n
+    avg_neg   = sum(d.get("sentiment_neg_prob") or 0   for d in valid) / n
     return {
-        "sentiment_score": latest.get("sentiment_score"),
-        "confidence":      latest.get("confidence"),
-        "neg_prob":        latest.get("neg_prob"),
-        "pos_prob":        latest.get("pos_prob"),
-        "neu_prob":        latest.get("neu_prob"),
+        "daily_score":      round(avg_score, 2),
+        "confidence_level": _confidence_level(avg_conf),
+        "pos_prob":         round(avg_pos, 2),
+        "neu_prob":         round(avg_neu, 2),
+        "neg_prob":         round(avg_neg, 2),
+        "article_count":    n,
     }
 
 
