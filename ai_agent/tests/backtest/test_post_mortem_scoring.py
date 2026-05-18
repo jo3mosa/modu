@@ -31,11 +31,20 @@ class _FakeReflection:
 
 
 class _FixedPriceFetcher:
+    """PriceFetcher Protocol(scoring.py:25-35) mock — close_price + ohlc 모두 구현.
+
+    target/stop 시뮬레이션은 ohlc의 high/low로 판정하는데, 본 테스트는 target_price /
+    stop_loss_price를 주지 않으므로 4종 모두 self.price로 반환해도 N일 강제 청산
+    분기로 자연스럽게 흘러간다.
+    """
     def __init__(self, price: float) -> None:
         self.price = price
 
     def close_price(self, stock_code: str, target_date: date) -> float:
         return self.price
+
+    def ohlc(self, stock_code: str, target_date: date) -> dict[str, float]:
+        return {"open": self.price, "high": self.price, "low": self.price, "close": self.price}
 
 
 def _write_input(path: Path, lines: list[dict]) -> None:
