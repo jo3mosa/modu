@@ -640,16 +640,7 @@ export default function OrderBook({ stockCode }) {
 
             <div className="input-group price-input-group">
               <label>단가 (원)</label>
-              <div className="price-control-wrapper">
-                <button
-                  type="button"
-                  className="price-step-btn minus"
-                  onClick={handleDecreasePrice}
-                  disabled={orderMethod === 'MARKET'}
-                  aria-label="가격 낮추기"
-                >
-                  -
-                </button>
+              <div className="price-control-container">
                 <input
                   type="number"
                   className="price-field"
@@ -658,15 +649,26 @@ export default function OrderBook({ stockCode }) {
                   disabled={orderMethod === 'MARKET'}
                   placeholder={orderMethod === 'MARKET' ? '시장가' : ''}
                 />
-                <button
-                  type="button"
-                  className="price-step-btn plus"
-                  onClick={handleIncreasePrice}
-                  disabled={orderMethod === 'MARKET'}
-                  aria-label="가격 높이기"
-                >
-                  +
-                </button>
+                <div className="price-btn-group">
+                  <button
+                    type="button"
+                    className="price-step-btn minus"
+                    onClick={handleDecreasePrice}
+                    disabled={orderMethod === 'MARKET'}
+                    aria-label="가격 낮추기"
+                  >
+                    -
+                  </button>
+                  <button
+                    type="button"
+                    className="price-step-btn plus"
+                    onClick={handleIncreasePrice}
+                    disabled={orderMethod === 'MARKET'}
+                    aria-label="가격 높이기"
+                  >
+                    +
+                  </button>
+                </div>
               </div>
             </div>
             <div className="input-group">

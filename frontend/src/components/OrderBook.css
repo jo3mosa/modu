@@ -225,36 +225,30 @@
 }
 
 /* Custom Price Input Styling with + / - Buttons */
-.price-control-wrapper {
+.price-control-container {
   display: flex;
   align-items: center;
+  gap: 0.4rem;
+}
+
+.price-control-container .price-field {
   background: rgba(0, 0, 0, 0.3);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  overflow: hidden;
-  width: 110px; /* 380px 너비 맞춤 축소 */
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-.price-control-wrapper:focus-within {
-  border-color: rgba(255, 255, 255, 0.25);
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.05);
-}
-
-.price-field {
-  flex: 1;
-  background: transparent !important;
-  border: none !important;
   color: #fff;
-  padding: 0.4rem 0.2rem; /* 패딩 조절 */
-  text-align: center !important;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  width: 95px; /* 수량 인풋 박스와 완벽 대칭 */
+  font-size: 0.85rem;
+  text-align: right;
   font-family: inherit;
-  font-size: 0.85rem; /* 폰트 축소 */
   font-weight: 600;
-  width: 100%;
+  transition: border-color 0.2s;
   box-sizing: border-box;
-  -moz-appearance: textfield;
-  appearance: none;
+}
+
+.price-control-container .price-field:focus {
+  border-color: rgba(255, 255, 255, 0.25);
+  outline: none;
 }
 
 /* Chrome, Safari, Edge 기본 스피너 완전히 제거 */
@@ -264,32 +258,39 @@
   margin: 0;
 }
 
-.price-step-btn {
-  background: transparent;
-  border: none;
-  color: #aaa;
-  width: 24px; /* 단추 크기 축소 */
-  height: 26px;
-  font-size: 0.95rem; /* 글자 크기 축소 */
-  font-weight: 600;
+.price-btn-group {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.price-btn-group .price-step-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #ccc;
+  width: 24px;
+  height: 24px;
+  font-size: 0.85rem;
+  font-weight: 700;
   cursor: pointer;
+  border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background-color 0.15s, color 0.15s;
+  transition: all 0.15s;
   user-select: none;
 }
 
-.price-step-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
+.price-btn-group .price-step-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.25);
   color: #fff;
 }
 
-.price-step-btn:active:not(:disabled) {
-  background: rgba(255, 255, 255, 0.15);
+.price-btn-group .price-step-btn:active:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
 }
 
-.price-step-btn:disabled {
+.price-btn-group .price-step-btn:disabled {
   opacity: 0.3;
   cursor: not-allowed;
 }
