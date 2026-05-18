@@ -75,7 +75,9 @@ public class SecurityConfig {
                                 "/ws/stocks/**",
                                 "/actuator/**",
                                 "/swagger-ui/**",
-                                "/v3/api-docs/**"
+                                "/v3/api-docs/**",
+                                // S14P31B106-291 수동 검증용 임시 endpoint — 검증 후 제거
+                                "/debug/**"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
