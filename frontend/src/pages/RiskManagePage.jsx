@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { getProfile, getProfileQuestions, getRules, updateProfile, updateRules, updateAutoTradeStatus } from '../api/strategy';
+import { useNotifications } from '../hooks/useNotifications';
 import './RiskManagePage.css';
 
 const RISK_LEVEL_LABEL = {
@@ -119,8 +120,9 @@ export default function RiskManagePage() {
   }, [isModalOpen, questions.length]);
 
   // 자동매매 ON/OFF — PATCH /strategies/me/status
-  // DashboardPage와 동일 패턴: optimistic update + 실패 시 롤백 + 503은 Kill Switch
+  // DashboardPage와 동일 패턴: optimistic update + 실패 시 롤백 + 503은 Kill Switch + 알림 목록 추가
   const [togglingAi, setTogglingAi] = useState(false);
+  const { addNotification } = useNotifications();
   const handleToggleAi = async () => {
     if (togglingAi) return;
     const previous = isActive;
@@ -138,6 +140,11 @@ export default function RiskManagePage() {
       if (error.status === 503) {
         toast.error('자동매매가 강제 중단됨 (Kill Switch)', {
           description: '안전 한도 초과로 자동매매가 차단된 상태입니다.',
+        });
+        addNotification({
+          type: 'KILL_SWITCH',
+          message: '자동매매 강제 중단됨',
+          description: '안전 한도 초과 — Kill Switch가 발동되었습니다.',
         });
       } else {
         toast.error(error.message || '자동매매 상태 변경에 실패했습니다.');

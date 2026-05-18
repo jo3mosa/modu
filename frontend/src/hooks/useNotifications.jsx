@@ -22,12 +22,12 @@ const SWEEP_INTERVAL_MS = 60 * 1000;      // 1분 간격 만료 정리
 const MAX_ITEMS = 100;
 
 export const NOTIFICATION_TYPE_META = {
-  EXECUTED:         { label: '체결',         icon: '✅', color: '#84cc16' },
-  EXPIRED:          { label: '만료',         icon: '⏱',  color: '#888'    },
-  KILL_SWITCH:      { label: 'Kill Switch',  icon: '🚨', color: '#ef4444' },
-  APPROVAL_REQUEST: { label: '승인 요청',     icon: '🤔', color: '#eab308' },
-  APPROVED:         { label: '승인',         icon: '✔',  color: '#84cc16' },
-  REJECTED:         { label: '거부',         icon: '✕',  color: '#888'    },
+  EXECUTED: { label: '체결', color: '#84cc16' },
+  EXPIRED: { label: '만료', color: '#888' },
+  KILL_SWITCH: { label: 'Kill Switch', color: '#ef4444' },
+  APPROVAL_REQUEST: { label: '승인 요청', color: '#eab308' },
+  APPROVED: { label: '승인', color: '#84cc16' },
+  REJECTED: { label: '거부', color: '#888' },
 };
 
 function loadFromStorage() {
@@ -57,12 +57,11 @@ function saveToStorage(items) {
 const NotificationsContext = createContext({
   notifications: [],
   unreadCount: 0,
-  addNotification: () => {},
-  markAsRead: () => {},
-  markAllAsRead: () => {},
-  removeNotification: () => {},
-  clearAll: () => {},
-  markJudgmentAsRead: () => {},
+  addNotification: () => { },
+  markAsRead: () => { },
+  markAllAsRead: () => { },
+  removeNotification: () => { },
+  clearAll: () => { },
 });
 
 export function NotificationsProvider({ children }) {
