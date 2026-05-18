@@ -103,15 +103,18 @@ def label_stock(code: str | None) -> str:
 
 
 def _run_dir_label(run_dir: Path) -> str:
-    """run 디렉터리 → '2024-01-02 ~ 2024-01-15 · 8 files' 형식.
+    """run 디렉터리 → '<폴더명> (YYYY-MM-DD ~ YYYY-MM-DD) · N files' 형식.
+
+    폴더명이 항상 앞에 와서 mode/실험 구분이 즉시 보이고, 괄호에 기간이 따른다.
 
     날짜 추출 우선순위:
       1. summary_<start>_<end>_*.json 파일명 파싱
       2. triggers_*.jsonl 또는 scored_*.jsonl 의 min/max 날짜
-      3. 둘 다 실패 시 폴더명
+      3. 둘 다 실패 시 폴더명만
     """
     files = list(run_dir.glob("*.jsonl"))
     n_files = len(files)
+    folder = run_dir.name
 
     # summary 파일에서 추출 시도
     for s in run_dir.glob("summary_*.json"):
@@ -122,7 +125,7 @@ def _run_dir_label(run_dir: Path) -> str:
                 from datetime import date as _d
                 start = _d.fromisoformat(parts[1])
                 end = _d.fromisoformat(parts[2])
-                return f"{start.isoformat()} ~ {end.isoformat()} · {n_files} files"
+                return f"{folder} ({start.isoformat()} ~ {end.isoformat()}) · {n_files} files"
             except (ValueError, IndexError):
                 pass
 
@@ -134,12 +137,12 @@ def _run_dir_label(run_dir: Path) -> str:
     if date_files:
         try:
             dates = [f.stem.split("_", 1)[1] for f in date_files]
-            return f"{min(dates)} ~ {max(dates)} · {n_files} files"
+            return f"{folder} ({min(dates)} ~ {max(dates)}) · {n_files} files"
         except (ValueError, IndexError):
             pass
 
-    # fallback: 폴더명
-    return f"{run_dir.name} · {n_files} files"
+    # fallback: 폴더명만
+    return f"{folder} · {n_files} files"
 
 
 def _apply_chart_style(fig: go.Figure, height: int = 420) -> go.Figure:
@@ -1590,8 +1593,11 @@ def _count_business_days(start: date, end: date) -> int:
 def _detect_progress(output_dir: str, start_str: str, end_str: str) -> dict[str, Any]:
     """진행 중인 backtest의 현재 시뮬레이션 날짜와 진행률 추정.
 
-    근거: event_loop가 매 영업일마다 triggers_YYYY-MM-DD.jsonl을 생성/갱신.
-    파일명 자체의 날짜를 max로 잡음 (mtime은 동시 생성 시 부정확).
+    근거:
+      - 진행 중: event_loop가 매 영업일마다 triggers_YYYY-MM-DD.jsonl을 생성/갱신.
+        weekday 기반 영업일 추정으로 total_days 산출 (한국 공휴일 일부 over-estimate).
+      - 완료: summary_*.json이 있으면 그 안의 stats.days를 신뢰 → 정확한 영업일 수 +
+        progress_pct=100. 공휴일/주말 누락 무관하게 정확.
 
     Returns:
         {current_date, total_days, processed_days, progress_pct} — 파일 없으면 모두 None/0
@@ -1608,14 +1614,32 @@ def _detect_progress(output_dir: str, start_str: str, end_str: str) -> dict[str,
         except ValueError:
             continue
     current_date = max(dates).isoformat() if dates else None
+    processed = len(dates) or len(trigger_files)
 
+    # 완료된 backtest: summary_*.json이 있으면 그 안의 stats.days로 정확한 total 표시.
+    # event_loop이 마지막 일자에만 작성하므로 존재 = 완료 신호.
+    summary_files = sorted(p.glob("summary_*.json"))
+    if summary_files:
+        try:
+            data = json.loads(summary_files[-1].read_text(encoding="utf-8"))
+            total = int((data.get("stats") or {}).get("days") or 0) or len(dates)
+            return {
+                "current_date": current_date,
+                "total_days": total,
+                "processed_days": total,
+                "progress_pct": 100,
+            }
+        except Exception:
+            # summary 파싱 실패 시 아래 weekday 추정으로 폴백 (silent — dashboard라 로깅 인프라 없음)
+            pass
+
+    # 진행 중: weekday 추정 (월~금). 한국 공휴일 누락은 +몇% 오차 — 진행 중일 때만 영향.
     try:
         start_d = date.fromisoformat(start_str)
         end_d = date.fromisoformat(end_str)
         total = _count_business_days(start_d, end_d)
     except Exception:
         total = 0
-    processed = len(dates) or len(trigger_files)
     pct = int(round(processed / total * 100)) if total else 0
     return {
         "current_date": current_date,
@@ -2100,6 +2124,21 @@ def main() -> None:
     """, unsafe_allow_html=True)
     st.title("MODU Backtesting")
     st.caption("Bull/Bear 토론 + LangGraph 의사결정 평가")
+
+    # 진행 중 backtest 복구 — 모든 탭에서 동작하도록 page top에서 한 번.
+    # 새로고침/streamlit 재시작 후에도 ai_agent/backtest/runs/*/_run_state.json의
+    # 살아있는 PID를 복구해 session_state["running_procs"]에 채운다.
+    _restored = st.session_state.get("running_procs", [])
+    _known = {p["pid"] for p in _restored}
+    for _disk in _discover_alive_runs():
+        if _disk["pid"] not in _known:
+            _restored.append(_disk)
+            _known.add(_disk["pid"])
+    st.session_state["running_procs"] = _restored
+    # 다른 탭에 있어도 진행 중인 backtest가 있으면 알림 — "🚀 실행" 탭에서 카드 확인.
+    _alive_count = sum(1 for p in _restored if _proc_is_alive(p["pid"]))
+    if _alive_count:
+        st.info(f"🟢 진행 중인 backtest {_alive_count}개 — '🚀 실행' 탭에서 진행 카드 확인.")
 
     st.sidebar.markdown("### 데이터 입력")
 

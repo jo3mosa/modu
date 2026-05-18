@@ -114,6 +114,7 @@ def run(
     run_id: Optional[str] = None,
     signal_fn: Optional[SignalFn] = None,
     resume: bool = False,
+    mode: Optional[str] = None,
 ) -> dict:
     """백테스트 1회 실행. 통계 dict 반환.
 
@@ -232,6 +233,7 @@ def run(
                     run_id=run_id, user_id=user_id, trigger=trig,
                     decision=record_decision, fill=record_fill,
                     user_context=user_ctx, portfolio_snapshot=snapshot,
+                    mode=mode,
                 ))
 
             # 보유 포지션의 stop_loss / target_price 도달 평가 (선택 구현).
@@ -251,6 +253,7 @@ def run(
                     writer.write(day, _build_auto_fill_record(
                         run_id=run_id, user_id=user_id, day=day, fill=af,
                         portfolio_snapshot=portfolio.snapshot(),
+                        mode=mode,
                     ))
 
             # EOD: mark-to-market — close_prices 는 그날 종가.
@@ -310,6 +313,7 @@ def run(
             "start": start.isoformat(),
             "end": end.isoformat(),
             "user_id": user_id,
+            "mode": mode,
             "watchlist_override": watchlist_override,
             "event_lookback_days": EVENT_LOOKBACK_DAYS,
             "sentiment_lookback_days": SENTIMENT_LOOKBACK_DAYS,
@@ -337,6 +341,7 @@ def _compute_equity_metrics_if_available(portfolio: PortfolioFn) -> Optional[dic
 def _build_auto_fill_record(
     *, run_id: str, user_id: str, day, fill: Fill,
     portfolio_snapshot,
+    mode: Optional[str] = None,
 ) -> dict:
     """stop_loss/target_price 자동 청산 Fill 전용 레코드.
 
@@ -346,6 +351,7 @@ def _build_auto_fill_record(
     return {
         "run_id": run_id,
         "user_id": user_id,
+        "mode": mode,
         "as_of_date": day,
         "record_type": "auto_fill",
         "stock_code": fill.notes.split(":")[-1] if fill.notes and ":" in fill.notes else None,

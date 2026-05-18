@@ -113,15 +113,19 @@ def build_record(
     user_context: Optional[dict] = None,
     portfolio_snapshot: Optional[Any] = None,
     extras: Optional[dict] = None,
+    mode: Optional[str] = None,
 ) -> dict:
     """한 트리거의 처리 결과를 직렬화 가능한 dict 로.
 
     decision=None 은 의사결정 단계 도달 못 한 케이스(예: 의사결정 함수 예외).
     fill=None 은 hold 결정이거나 체결 시뮬레이션 skip.
+    mode: backtest CLI --mode 그대로. dashboard가 mode별 grouping에 사용. None이면
+        dashboard가 "default"로 fallback (혼선 원인이라 가급적 전달 권장).
     """
     return {
         "run_id": run_id,
         "user_id": user_id,
+        "mode": mode,
         "as_of_date": trigger.as_of_date,
         "stock_code": trigger.stock_code,
         "rule_ids": list(trigger.rule_ids),

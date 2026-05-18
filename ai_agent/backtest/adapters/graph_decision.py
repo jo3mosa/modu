@@ -43,6 +43,12 @@ from app.memory.db_store import DBMemoryStore  # noqa: E402
 from app.memory.interfaces import DecisionLog  # noqa: E402
 from app.triggers.schemas import MarketTrigger, UserTriggerEvent  # noqa: E402
 
+# trigger별 LLM 토큰/비용 캡처. langchain_community 미설치 환경에서도 graceful.
+try:
+    from langchain_community.callbacks.manager import get_openai_callback  # noqa: E402
+except ImportError:  # pragma: no cover
+    get_openai_callback = None  # type: ignore[assignment]
+
 logger = logging.getLogger(__name__)
 
 

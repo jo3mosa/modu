@@ -471,6 +471,7 @@ def main() -> int:
         watchlist_override=watchlist,
         signal_fn=signal_fn,
         resume=args.resume,
+        mode=args.mode,
     )
     print(f"run_id={result['run_id']}  summary={result['summary_path']}")
 
