@@ -41,11 +41,51 @@ public class UserController {
                     - 마이페이지 진입 시 1회 호출 용도
                     - `kisKeyStatus.isConnected`가 `false`면 `accountNo`는 `null`
                     - `accountNo`는 `계좌번호-상품코드` 형식으로 합쳐서 반환 (예: `50012345-01`)
+                    - `email`은 소셜 이메일 제공 미동의 시 `null`일 수 있음
                     """
     )
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "인증 필요 (accessToken 없음 또는 만료)")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공",
+                    content = @Content(schema = @Schema(implementation = MyInfoResponse.class),
+                            examples = {
+                                    @io.swagger.v3.oas.annotations.media.ExampleObject(
+                                            name = "KIS 연동된 사용자",
+                                            value = """
+                                                    {
+                                                      "success": true,
+                                                      "message": "내 정보 조회 성공",
+                                                      "data": {
+                                                        "name": "홍길동",
+                                                        "email": "user@example.com",
+                                                        "socialProvider": "kakao",
+                                                        "createdAt": "2026-05-18T12:34:56+09:00",
+                                                        "kisKeyStatus": {
+                                                          "isConnected": true,
+                                                          "accountNo": "50012345-01"
+                                                        }
+                                                      }
+                                                    }"""),
+                                    @io.swagger.v3.oas.annotations.media.ExampleObject(
+                                            name = "KIS 미연동 사용자",
+                                            value = """
+                                                    {
+                                                      "success": true,
+                                                      "message": "내 정보 조회 성공",
+                                                      "data": {
+                                                        "name": "홍길동",
+                                                        "email": "user@example.com",
+                                                        "socialProvider": "kakao",
+                                                        "createdAt": "2026-05-18T12:34:56+09:00",
+                                                        "kisKeyStatus": {
+                                                          "isConnected": false,
+                                                          "accountNo": null
+                                                        }
+                                                      }
+                                                    }""")
+                            })),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "인증 필요 (accessToken 없음 또는 만료)"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "토큰은 유효하나 사용자 레코드가 없음 (탈퇴 등)",
+                    content = @Content(schema = @Schema(example = "{\"success\":false,\"message\":\"존재하지 않는 사용자입니다.\",\"errorCode\":\"AUTH_007\"}")))
     })
     @GetMapping
     public ResponseEntity<ApiResponse<MyInfoResponse>> getMyInfo(

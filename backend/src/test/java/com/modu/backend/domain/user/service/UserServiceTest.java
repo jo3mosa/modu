@@ -1,10 +1,12 @@
 package com.modu.backend.domain.user.service;
 
+import com.modu.backend.domain.auth.exception.AuthErrorCode;
 import com.modu.backend.domain.user.dto.MyInfoResponse;
 import com.modu.backend.domain.user.entity.KisCredential;
 import com.modu.backend.domain.user.entity.User;
 import com.modu.backend.domain.user.repository.KisCredentialRepository;
 import com.modu.backend.domain.user.repository.UserRepository;
+import com.modu.backend.global.error.ApiException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -107,14 +109,15 @@ class UserServiceTest {
     }
 
     @Test
-    @DisplayName("존재하지 않는 userId — IllegalStateException")
-    void 사용자_없음_시_예외() {
+    @DisplayName("존재하지 않는 userId — ApiException(AUTH_007 USER_NOT_FOUND, 404)")
+    void 사용자_없음_시_도메인_예외() {
         // given
         when(userRepository.findById(99L)).thenReturn(Optional.empty());
 
         // when & then
         assertThatThrownBy(() -> userService.getMyInfo(99L))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("userId=99");
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode())
+                        .isEqualTo(AuthErrorCode.USER_NOT_FOUND));
     }
 }
