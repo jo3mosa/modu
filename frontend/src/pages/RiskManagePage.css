@@ -202,7 +202,7 @@
 /* 룰셋 설정 폼 */
 .rules-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 2rem;
 }
 
