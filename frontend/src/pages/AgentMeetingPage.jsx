@@ -1,9 +1,54 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Search } from 'lucide-react';
 import { getPortfolio } from '../api/account';
 import { getStocks } from '../api/market';
 import { useAgentChat, BOT_PROFILES } from '../hooks/useAgentChat';
 import './AgentMeetingPage.css';
+
+/**
+ * 말풍선 글자 타이핑 애니메이션 및 동적 피드 스크롤 핸들링 컴포넌트
+ */
+function TypingMessageBubble({ text, isAnimated, onComplete, feedRef }) {
+  const [displayedText, setDisplayedText] = useState(isAnimated ? '' : text);
+  const textRef = useRef(text);
+  textRef.current = text;
+
+  useEffect(() => {
+    if (!isAnimated) {
+      setDisplayedText(text);
+      return;
+    }
+
+    setDisplayedText('');
+    let index = 0;
+    const interval = setInterval(() => {
+      setDisplayedText((prev) => {
+        const next = prev + textRef.current.charAt(index);
+        if (feedRef && feedRef.current) {
+          // scroll-behavior: smooth와 충돌 없이 완벽하게 최하단으로 부드럽게 흐르도록 애니메이션 프레임에 맞춤
+          feedRef.current.scrollTop = feedRef.current.scrollHeight;
+        }
+        return next;
+      });
+      index++;
+      if (index >= textRef.current.length) {
+        clearInterval(interval);
+        if (onComplete) onComplete();
+      }
+    }, 38); // 기계적인 느낌을 탈피하고 가장 부드러우며 가독성이 극대화되는 38ms로 튜닝
+
+    return () => clearInterval(interval);
+  }, [isAnimated, feedRef, onComplete]);
+
+  return (
+    <div className="message-bubble">
+      {displayedText}
+      {isAnimated && displayedText.length < text.length && (
+        <span className="typing-cursor">|</span>
+      )}
+    </div>
+  );
+}
 
 /**
  * AI 에이전트 회의 페이지
@@ -64,6 +109,77 @@ export default function AgentMeetingPage() {
 
   // BE 응답은 DESC — 화면은 시간순(오래된 → 최신)으로 보이는 게 자연스러우므로 reverse
   const displayMessages = useMemo(() => [...rawMessages].reverse(), [rawMessages]);
+
+  // ── 2.5 말풍선 순차 타이핑 애니메이션 로직 ──────────────────────────────────────
+  const [revealedIds, setRevealedIds] = useState(new Set());
+  const [activeAnimationId, setActiveAnimationId] = useState(null);
+  const oldestMessageIdRef = useRef(null);
+
+  // 채널(종목) 변경 시 타이핑 애니메이션 상태 초기화
+  useEffect(() => {
+    setRevealedIds(new Set());
+    setActiveAnimationId(null);
+    oldestMessageIdRef.current = null;
+  }, [selectedStock?.stockCode]);
+
+  // 메시지 배열 변경에 맞춰 순차 노출 큐 실행
+  useEffect(() => {
+    if (displayMessages.length === 0) return;
+
+    // 1) 초기 채널 진입: 첫 번째 메시지부터 cascade 시작
+    if (revealedIds.size === 0) {
+      const firstMsg = displayMessages[0];
+      oldestMessageIdRef.current = firstMsg.messageId;
+      setRevealedIds(new Set([firstMsg.messageId]));
+      setActiveAnimationId(firstMsg.messageId);
+      return;
+    }
+
+    // 2) 스크롤 히스토리(과거 데이터) 또는 실시간 SSE 메시지 구분 처리
+    let changed = false;
+    const nextRevealed = new Set(revealedIds);
+
+    displayMessages.forEach(msg => {
+      if (!nextRevealed.has(msg.messageId)) {
+        // 기존 가장 오래된 메시지보다 타임스탬프가 이전이면 '스크롤로 추가된 히스토리'로 인지하여 애니메이션 생략하고 즉시 노출
+        const oldestMsg = displayMessages.find(m => m.messageId === oldestMessageIdRef.current);
+        const isOlder = oldestMsg && new Date(msg.createdAt) < new Date(oldestMsg.createdAt);
+
+        if (isOlder) {
+          nextRevealed.add(msg.messageId);
+          changed = true;
+        } else {
+          // 실시간으로 흘러들어온 최신 SSE 메시지인 경우에만 큐에 넣어 부드러운 타이핑 실행
+          const isLatest = msg.messageId === displayMessages[displayMessages.length - 1].messageId;
+          if (isLatest) {
+            nextRevealed.add(msg.messageId);
+            setActiveAnimationId(msg.messageId);
+            changed = true;
+          }
+        }
+      }
+    });
+
+    if (changed) {
+      setRevealedIds(nextRevealed);
+    }
+  }, [displayMessages]);
+
+  // 현재 활성화된 타이핑이 끝났을 때 다음 메시지를 이어서 타이핑하도록 트리거
+  const handleTypeComplete = useCallback((msgId) => {
+    setActiveAnimationId(null);
+
+    const currentIndex = displayMessages.findIndex(m => m.messageId === msgId);
+    if (currentIndex !== -1 && currentIndex + 1 < displayMessages.length) {
+      const nextMsg = displayMessages[currentIndex + 1];
+      setRevealedIds(prev => {
+        const nextSet = new Set(prev);
+        nextSet.add(nextMsg.messageId);
+        return nextSet;
+      });
+      setActiveAnimationId(nextMsg.messageId);
+    }
+  }, [displayMessages]);
 
   // ── 3. 위로 스크롤 무한 로딩 (IntersectionObserver) ────────────────────
   useEffect(() => {
@@ -209,13 +325,15 @@ export default function AgentMeetingPage() {
             </div>
           )}
 
-          {displayMessages.map(msg => {
+          {displayMessages.filter(msg => revealedIds.has(msg.messageId)).map(msg => {
             const bot = BOT_PROFILES[msg.agent];
             if (!bot) return null;
 
             const timeStr = new Date(msg.createdAt).toLocaleTimeString([], {
               hour: '2-digit', minute: '2-digit',
             });
+
+            const isAnimated = activeAnimationId === msg.messageId;
 
             return (
               <div key={msg.messageId} className={`chat-message agent-msg-${msg.agent.toLowerCase()}`}>
@@ -228,9 +346,12 @@ export default function AgentMeetingPage() {
                     <span className="message-agent-role">{bot.role} Agent</span>
                   </div>
                   <div className="message-bubble-wrapper">
-                    <div className="message-bubble">
-                      {msg.text}
-                    </div>
+                    <TypingMessageBubble
+                      text={msg.text}
+                      isAnimated={isAnimated}
+                      onComplete={() => handleTypeComplete(msg.messageId)}
+                      feedRef={feedRef}
+                    />
                     <span className="message-time">{timeStr}</span>
                   </div>
                 </div>
