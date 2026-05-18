@@ -679,6 +679,40 @@ def tab_pnl(df: pd.DataFrame, scored: bool, equity_df: pd.DataFrame | None = Non
         c5.metric("Win Rate", f"{row['win_rate']:.1%}")
         c6.metric("거래 수", f"{int(row['n']):,}")
 
+    # === LLM 토큰/비용 (debate_* 모드 cost-effectiveness 비교용) ===
+    # decision.extras에 graph_decision adapter가 부착한 토큰/비용 집계.
+    # random/mock은 LLM 미호출이라 0 — 표에서 자동 제외.
+    if "decision" in df.columns:
+        def _ext(d: Any, k: str) -> float:
+            if not isinstance(d, dict):
+                return 0.0
+            return float((d.get("extras") or {}).get(k) or 0)
+
+        token_df = df.copy()
+        token_df["_tokens"] = token_df["decision"].apply(lambda d: _ext(d, "total_tokens"))
+        token_df["_cost"] = token_df["decision"].apply(lambda d: _ext(d, "estimated_cost_usd"))
+        by_mode_tokens = (
+            token_df.groupby("mode")
+            .agg(
+                total_tokens=("_tokens", "sum"),
+                avg_per_trigger=("_tokens", "mean"),
+                total_cost=("_cost", "sum"),
+                n_triggers=("_tokens", "count"),
+            )
+            .reset_index()
+        )
+        # LLM 미호출 mode(0 토큰) 제외 — random/mock은 비교 무의미
+        by_mode_tokens = by_mode_tokens[by_mode_tokens["total_tokens"] > 0]
+        if not by_mode_tokens.empty:
+            st.markdown("#### 💸 LLM 토큰/비용")
+            for _, trow in by_mode_tokens.iterrows():
+                st.markdown(f"**Mode {trow['mode']}**")
+                t1, t2, t3, t4 = st.columns(4)
+                t1.metric("총 토큰", f"{int(trow['total_tokens']):,}")
+                t2.metric("결정당 평균", f"{trow['avg_per_trigger']:,.0f}")
+                t3.metric("총 비용 (USD)", f"${trow['total_cost']:.4f}")
+                t4.metric("trigger 수", f"{int(trow['n_triggers']):,}")
+
     st.divider()
 
     # === 메인 차트: 자산 추이 + Drawdown subplot (KIS 스타일) ===

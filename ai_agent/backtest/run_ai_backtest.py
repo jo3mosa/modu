@@ -304,6 +304,9 @@ def main() -> int:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+    # backtest는 Kafka 미사용 — publish_agent_message가 DNS lookup retry로 호출당
+    # 10초+ 낭비하는 것을 차단. 사용자가 명시적으로 환경변수 세팅한 경우는 존중.
+    os.environ.setdefault("DISABLE_AGENT_MESSAGE", "1")
     # DA config는 repo 루트 .env만 보지만 우리 팀은 보통 ai_agent/.env에 둔다.
     # 둘 다 시도 — 먼저 로드한 쪽이 우선되지 않도록 override=True 사용.
     here = Path(__file__).resolve()

@@ -74,6 +74,12 @@ class BacktestStats:
     settled_fills: int = 0       # 다음 사이클 settle()로 실제 적용된 pending 건수
     settled_buys: int = 0
     settled_sells: int = 0
+    # LLM 토큰/비용 누적 — graph_decision adapter가 Decision.extras에 부착하면 누적.
+    # random/mock 모드는 LLM 미호출이라 0 유지.
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    estimated_cost_usd: float = 0.0
     action_counter: Counter = None
     rule_counter: Counter = None
 
@@ -95,6 +101,10 @@ class BacktestStats:
             "settled_fills": self.settled_fills,
             "settled_buys": self.settled_buys,
             "settled_sells": self.settled_sells,
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "total_tokens": self.total_tokens,
+            "estimated_cost_usd": round(self.estimated_cost_usd, 6),
             "action_distribution": dict(self.action_counter),
             "rule_distribution": dict(self.rule_counter),
         }
@@ -214,6 +224,14 @@ def run(
                     # resume 시 재처리하도록.
                     if _is_llm_failed(decision):
                         fallback_detected = True
+
+                    # 토큰/비용 누적 — graph_decision adapter가 Decision.extras에 부착.
+                    # random/mock은 extras에 토큰 키 없음 → 0 누적 (no-op).
+                    extras = getattr(decision, "extras", None) or {}
+                    stats.prompt_tokens += int(extras.get("prompt_tokens") or 0)
+                    stats.completion_tokens += int(extras.get("completion_tokens") or 0)
+                    stats.total_tokens += int(extras.get("total_tokens") or 0)
+                    stats.estimated_cost_usd += float(extras.get("estimated_cost_usd") or 0.0)
 
                     if decision.action != "hold":
                         market = next_day_market.get(trig.stock_code, {})

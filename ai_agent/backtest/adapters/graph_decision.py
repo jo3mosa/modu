@@ -79,8 +79,28 @@ def make_graph_decision_fn(
                 portfolio_snapshot=portfolio_snapshot,
                 user_id=numeric_user_id,
             )
-            final_state = run_pipeline(event, mode=mode)
+            # LLM 토큰/비용 캡처 — get_openai_callback이 run_pipeline 안의 모든
+            # LLM 호출(bull/bear/strategy_manager/decision_manager)을 자동 누적.
+            # langchain_community 미설치 시 None — fallback 경로로 그래프만 실행.
+            token_usage: dict[str, Any] = {}
+            if get_openai_callback is not None:
+                with get_openai_callback() as cb:
+                    final_state = run_pipeline(event, mode=mode)
+                token_usage = {
+                    "prompt_tokens": int(cb.prompt_tokens),
+                    "completion_tokens": int(cb.completion_tokens),
+                    "total_tokens": int(cb.total_tokens),
+                    "estimated_cost_usd": float(cb.total_cost),
+                }
+            else:
+                final_state = run_pipeline(event, mode=mode)
+
             da_decision = _to_da_decision(final_state)
+            if token_usage:
+                new_extras = dict(da_decision.extras or {})
+                new_extras.update(token_usage)
+                da_decision = _replace_extras(da_decision, new_extras)
+
             if memory_store is not None:
                 ai_judgment_id = _persist_decision(
                     memory_store=memory_store,
