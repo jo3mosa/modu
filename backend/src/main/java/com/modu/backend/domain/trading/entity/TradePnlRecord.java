@@ -90,6 +90,17 @@ public class TradePnlRecord {
                           Long quantity, Long avgBuyPrice, Long sellPrice,
                           Long commission, Long tax,
                           Long holdingDays, OffsetDateTime closedAt) {
+        if (stockCode == null || userId == null
+                || buyOrderId == null || sellOrderId == null
+                || quantity == null || avgBuyPrice == null || sellPrice == null
+                || holdingDays == null || closedAt == null) {
+            throw new IllegalArgumentException("TradePnlRecord 필수 인자 누락");
+        }
+        if (quantity <= 0L || avgBuyPrice <= 0L || sellPrice <= 0L) {
+            throw new IllegalArgumentException(
+                    "quantity / avgBuyPrice / sellPrice > 0 필요 - qty: " + quantity
+                            + ", buyAvg: " + avgBuyPrice + ", sell: " + sellPrice);
+        }
         this.stockCode = stockCode;
         this.userId = userId;
         this.buyOrderId = buyOrderId;
@@ -99,8 +110,17 @@ public class TradePnlRecord {
         this.sellPrice = sellPrice;
         this.commission = commission == null ? 0L : commission;
         this.tax = tax == null ? 0L : tax;
-        this.grossPnl = (sellPrice - avgBuyPrice) * quantity;
-        this.netPnl = this.grossPnl - this.commission - this.tax;
+        try {
+            // 핵심 정산 — silent overflow 차단
+            long diff = Math.subtractExact(sellPrice, avgBuyPrice);
+            this.grossPnl = Math.multiplyExact(diff, quantity);
+            long afterCommission = Math.subtractExact(this.grossPnl, this.commission);
+            this.netPnl = Math.subtractExact(afterCommission, this.tax);
+        } catch (ArithmeticException e) {
+            throw new IllegalArgumentException(
+                    "PnL 계산 오버플로우 - qty: " + quantity
+                            + ", buyAvg: " + avgBuyPrice + ", sell: " + sellPrice, e);
+        }
         this.holdingDays = holdingDays;
         this.closedAt = closedAt;
     }

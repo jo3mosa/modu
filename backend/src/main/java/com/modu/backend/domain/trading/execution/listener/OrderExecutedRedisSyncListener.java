@@ -46,28 +46,48 @@ public class OrderExecutedRedisSyncListener {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onOrderExecuted(OrderExecutedEvent event) {
-        updatePositionIndex(event);
-        updatePortfolioSnapshot(event);
+        // KIS 잔고 1회 조회 — position-index 결정 + snapshot SET 공통 데이터 소스
+        Optional<PortfolioResponse> portfolio = portfolioBalanceCacheService.fetch(event.userId());
+        updatePositionIndex(event, portfolio);
+        updatePortfolioSnapshot(event, portfolio);
     }
 
-    private void updatePositionIndex(OrderExecutedEvent event) {
+    private void updatePositionIndex(OrderExecutedEvent event, Optional<PortfolioResponse> portfolio) {
         if (event.side() == OrderSide.BUY) {
             // BUY 체결 시 SADD (이미 있어도 idempotent)
             positionIndexRedisRepository.addUser(event.stockCode(), event.userId());
-        } else if (event.side() == OrderSide.SELL && event.isFinalFill()) {
-            // SELL 전량 체결 시 SREM
+            return;
+        }
+        if (event.side() == OrderSide.SELL && event.isFinalFill()) {
+            // 다중 매수 lot 보유자 보호 — 단일 SELL 주문 전량 체결 ≠ 종목 전량 매도.
+            // KIS 잔고에 같은 종목 보유 수량이 남아있으면 SREM 금지.
+            if (stillHolding(event.stockCode(), portfolio)) {
+                log.info("[RedisSync] SELL 전량 체결이지만 종목 보유 잔여 — SREM skip. userId: {}, stock: {}",
+                        event.userId(), event.stockCode());
+                return;
+            }
             positionIndexRedisRepository.removeUser(event.stockCode(), event.userId());
         }
         // SELL 부분 체결은 변경 없음 (보유 사용자 유지)
     }
 
-    private void updatePortfolioSnapshot(OrderExecutedEvent event) {
-        Optional<PortfolioResponse> opt = portfolioBalanceCacheService.fetch(event.userId());
-        if (opt.isEmpty()) {
+    /**
+     * KIS 잔고 응답에 동일 종목 보유 수량 > 0 이면 still holding.
+     * 잔고 조회 실패 (Optional.empty) 시 보수적으로 true 반환 → SREM 보류 (다음 체결 시 재시도).
+     */
+    private static boolean stillHolding(String stockCode, Optional<PortfolioResponse> portfolio) {
+        if (portfolio.isEmpty()) return true;
+        return portfolio.get().holdings().stream()
+                .anyMatch(h -> stockCode.equals(h.stockCode())
+                        && h.quantity() != null && h.quantity() > 0L);
+    }
+
+    private void updatePortfolioSnapshot(OrderExecutedEvent event, Optional<PortfolioResponse> portfolio) {
+        if (portfolio.isEmpty()) {
             log.warn("[RedisSync] portfolio snapshot 조회 실패 — SET skip. userId: {}", event.userId());
             return;
         }
-        List<Map<String, Object>> holdings = toHoldingsMap(opt.get());
+        List<Map<String, Object>> holdings = toHoldingsMap(portfolio.get());
         // cash_balance / total_assets 는 KIS output2 매핑 미구현 — null 로 전송 (followups)
         portfolioSnapshotRedisRepository.set(event.userId(), null, null, holdings);
     }

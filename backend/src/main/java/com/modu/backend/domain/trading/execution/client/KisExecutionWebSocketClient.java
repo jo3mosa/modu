@@ -69,6 +69,8 @@ public class KisExecutionWebSocketClient {
     private final Map<Long, WebSocketSession> sessions = new ConcurrentHashMap<>();
     /** 사용자별 AES 복호화기 — SUBSCRIBE 응답 시점 초기화 */
     private final Map<Long, KisExecutionCipher> ciphers = new ConcurrentHashMap<>();
+    /** 사용자별 재연결 진행 플래그 — 연속 close 시 reconnect 폭주 차단 */
+    private final Map<Long, java.util.concurrent.atomic.AtomicBoolean> reconnecting = new ConcurrentHashMap<>();
 
     public KisExecutionWebSocketClient(
             KisCredentialRepository credentialRepository,
@@ -218,8 +220,20 @@ public class KisExecutionWebSocketClient {
         public void afterConnectionClosed(WebSocketSession s, CloseStatus status) {
             log.warn("[ExecutionWS] connection closed - userId: {}, status: {}", userId, status);
             sessions.remove(userId, s);
-            // 재연결 — 가상 스레드로 SUBSCRIBE 재발신 (세션 자동 생성)
-            Thread.ofVirtual().start(() -> reconnect(userId));
+            // 재연결 단일 실행 가드 — 연속 close 시 reconnect 병렬 실행 차단
+            java.util.concurrent.atomic.AtomicBoolean flag =
+                    reconnecting.computeIfAbsent(userId, k -> new java.util.concurrent.atomic.AtomicBoolean(false));
+            if (!flag.compareAndSet(false, true)) {
+                log.info("[ExecutionWS] reconnect 이미 진행 중 — skip. userId: {}", userId);
+                return;
+            }
+            Thread.ofVirtual().start(() -> {
+                try {
+                    reconnect(userId);
+                } finally {
+                    flag.set(false);
+                }
+            });
         }
 
         @Override

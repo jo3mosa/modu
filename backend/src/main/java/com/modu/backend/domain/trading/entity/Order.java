@@ -226,16 +226,38 @@ public class Order {
             throw new IllegalStateException(
                     "체결 반영은 PENDING / MODIFIED 만 가능 - currentStatus: " + this.status);
         }
+        // 입력 불변식 — 비정상 메시지 / 호출 실수 차단
+        if (executedQuantity <= 0L) {
+            throw new IllegalArgumentException("executedQuantity > 0 필요. actual: " + executedQuantity);
+        }
+        if (executedPrice <= 0L) {
+            throw new IllegalArgumentException("executedPrice > 0 필요. actual: " + executedPrice);
+        }
         long prevFilled = this.filledQuantity == null ? 0L : this.filledQuantity;
         long prevAvg    = this.filledAvgPrice  == null ? 0L : this.filledAvgPrice;
-        long newFilled  = prevFilled + executedQuantity;
-        long newAvg     = newFilled == 0L
-                ? 0L
-                : (prevAvg * prevFilled + executedPrice * executedQuantity) / newFilled;
+        long total      = this.quantity == null ? 0L : this.quantity;
+        long remaining  = total - prevFilled;
+        if (executedQuantity > remaining) {
+            throw new IllegalArgumentException(
+                    "executedQuantity 가 잔여 수량 초과 - executed: " + executedQuantity
+                            + ", remaining: " + remaining);
+        }
+        long newFilled = prevFilled + executedQuantity;
+        // 누적금액 / 가격 overflow 가드
+        long prevAmount  = Math.multiplyExact(prevAvg, prevFilled);
+        long thisAmount  = Math.multiplyExact(executedPrice, executedQuantity);
+        long totalAmount = Math.addExact(prevAmount, thisAmount);
+        long newAvg      = newFilled == 0L ? 0L : totalAmount / newFilled;
 
         this.filledQuantity = newFilled;
         this.filledAvgPrice = newAvg;
-        if (isFinalFill) {
+        // isFinalFill 은 실제 누적이 총량과 일치할 때만 신뢰
+        boolean actualFinal = newFilled == total;
+        if (isFinalFill && !actualFinal) {
+            throw new IllegalArgumentException(
+                    "isFinalFill=true 인데 누적 != 총량 - newFilled: " + newFilled + ", total: " + total);
+        }
+        if (actualFinal) {
             this.status   = OrderStatus.FILLED;
             this.filledAt = executedAt;
         }
@@ -254,6 +276,10 @@ public class Order {
         if (this.status != OrderStatus.RESERVED) {
             throw new IllegalStateException(
                     "RESERVED 만 변환 전이 가능 - currentStatus: " + this.status);
+        }
+        // null/blank 저장 시 이후 findByKisOrderNo 매칭 실패로 체결 이벤트 영구 누락
+        if (newKisOrderNo == null || newKisOrderNo.isBlank()) {
+            throw new IllegalArgumentException("newKisOrderNo 필수. null/blank 거부.");
         }
         this.kisOrderNo = newKisOrderNo;
         this.status     = OrderStatus.PENDING;

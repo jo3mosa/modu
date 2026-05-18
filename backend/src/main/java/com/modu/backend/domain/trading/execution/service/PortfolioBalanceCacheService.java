@@ -18,6 +18,8 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * 사용자 포트폴리오 잔고 단기 캐시 — S14P31B106-291
@@ -44,6 +46,12 @@ public class PortfolioBalanceCacheService {
     private static final String KEY_PREFIX = "portfolio:cache:balance:";
     private static final Duration TTL = Duration.ofSeconds(10);
 
+    /**
+     * 사용자별 single-flight 락 — 단일 인스턴스 가정. 다중 인스턴스는 분산 락 followups.
+     * 동일 userId 동시 cache miss → 한 호출만 KIS 진입, 나머지는 결과 대기 후 캐시 hit.
+     */
+    private final ConcurrentMap<Long, Object> singleFlight = new ConcurrentHashMap<>();
+
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
     private final KisBalanceClient kisBalanceClient;
@@ -58,6 +66,27 @@ public class PortfolioBalanceCacheService {
      */
     public Optional<PortfolioResponse> fetch(Long userId) {
         String key = KEY_PREFIX + userId;
+        Optional<PortfolioResponse> cached = readCache(key, userId);
+        if (cached.isPresent()) return cached;
+
+        // single-flight — 동일 userId 동시 miss 시 한 호출만 KIS 진입
+        Object lock = singleFlight.computeIfAbsent(userId, k -> new Object());
+        synchronized (lock) {
+            try {
+                // double-check — 락 대기 동안 다른 스레드가 채웠을 수 있음
+                Optional<PortfolioResponse> again = readCache(key, userId);
+                if (again.isPresent()) return again;
+
+                Optional<PortfolioResponse> fresh = callKis(userId);
+                fresh.ifPresent(value -> writeCache(key, value));
+                return fresh;
+            } finally {
+                singleFlight.remove(userId, lock);
+            }
+        }
+    }
+
+    private Optional<PortfolioResponse> readCache(String key, Long userId) {
         try {
             String cached = redisTemplate.opsForValue().get(key);
             if (cached != null) {
@@ -66,10 +95,7 @@ public class PortfolioBalanceCacheService {
         } catch (Exception e) {
             log.warn("[PortfolioBalanceCache] 캐시 read 실패 — KIS 호출로 폴백. userId: {}", userId, e);
         }
-
-        Optional<PortfolioResponse> fresh = callKis(userId);
-        fresh.ifPresent(value -> writeCache(key, value));
-        return fresh;
+        return Optional.empty();
     }
 
     private Optional<PortfolioResponse> callKis(Long userId) {
@@ -85,7 +111,13 @@ public class PortfolioBalanceCacheService {
                             credential.getAccountNo(), credential.getAccountPrdtCd()));
             return Optional.of(response);
         } catch (ApiException e) {
-            log.warn("[PortfolioBalanceCache] KIS 호출 실패 - userId: {}, code: {}",
+            // KIS_NOT_CONNECTED 는 도메인 설정 오류 — Optional.empty 로 삼키면 caller 가 일시 실패로 오인.
+            // 재전파해 상위 (snapshot listener / balance check) 가 명확히 알 수 있게 한다.
+            if (e.getErrorCode() == UserErrorCode.KIS_NOT_CONNECTED) {
+                log.warn("[PortfolioBalanceCache] KIS_NOT_CONNECTED — 도메인 오류 재전파. userId: {}", userId);
+                throw e;
+            }
+            log.warn("[PortfolioBalanceCache] KIS 호출 일시 실패 - userId: {}, code: {}",
                     userId, e.getErrorCode().getCode());
             return Optional.empty();
         } catch (Exception e) {

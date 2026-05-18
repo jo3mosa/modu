@@ -14,7 +14,7 @@ import com.modu.backend.global.util.AesGcmEncryptor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -56,6 +56,11 @@ public class ReservedOrderConversionSyncService {
     private final AesGcmEncryptor encryptor;
     private final KisApiCallTemplate kisApiCallTemplate;
     private final KisReservedOrderInquiryClient inquiryClient;
+    /**
+     * 명시적 트랜잭션 경계 — 같은 클래스 내부 self-call 시 Spring `@Transactional` 프록시가
+     * bypass 되어 order.markReservationConverted / reject 가 비-트랜잭션으로 실행되는 위험 차단.
+     */
+    private final TransactionTemplate transactionTemplate;
 
     public void sync() {
         List<Order> reserved = orderRepository.findByStatus(OrderStatus.RESERVED);
@@ -67,17 +72,19 @@ public class ReservedOrderConversionSyncService {
         log.info("[예약주문 변환 동기화] 시작 - users: {}, totalOrders: {}", byUser.size(), reserved.size());
 
         for (Map.Entry<Long, List<Order>> entry : byUser.entrySet()) {
+            Long userId = entry.getKey();
+            List<Order> userOrders = entry.getValue();
             try {
-                syncOneUser(entry.getKey(), entry.getValue());
+                // 명시적 트랜잭션 — self-call 프록시 bypass 회피
+                transactionTemplate.executeWithoutResult(status -> syncOneUser(userId, userOrders));
             } catch (Exception e) {
-                log.error("[예약주문 변환 동기화] 사용자 처리 실패 - userId: {}", entry.getKey(), e);
+                log.error("[예약주문 변환 동기화] 사용자 처리 실패 - userId: {}", userId, e);
             }
             sleepBetweenUsers();
         }
     }
 
-    @Transactional
-    protected void syncOneUser(Long userId, List<Order> userOrders) {
+    private void syncOneUser(Long userId, List<Order> userOrders) {
         KisCredential credential;
         String appKey;
         String appSecret;

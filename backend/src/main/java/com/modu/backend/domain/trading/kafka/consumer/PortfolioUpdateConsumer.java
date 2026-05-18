@@ -234,11 +234,17 @@ public class PortfolioUpdateConsumer {
 
     /**
      * KIS H0STCNI0 에 별도 체결번호 필드 없음 → 메시지 필드 합성으로 멱등키 생성.
-     * (kis_order_no, executedAt 초단위, qty) 조합 — 동일 주문 내 동일 시각·수량 중복 통보를 차단.
+     *
+     * (kis_order_no, executedAt millis + nano, qty) 조합.
+     * 초 단위 합성은 같은 초 내 다중 체결 (시장 매칭 동일 timestamp) 시 잘못된 충돌로
+     * 정상 체결이 silent skip 되는 위험 → 밀리초 + 나노초 까지 사용해 충돌 가능성 최소화.
+     * KIS 가 향후 체결번호 필드 제공하면 그것으로 교체 (followups).
      */
     private static String synthesizeKisExecutionNo(TradeOrderExecutedMessage message) {
+        java.time.OffsetDateTime t = message.executedAt();
         return message.kisOrderNo()
-                + "_" + message.executedAt().toEpochSecond()
+                + "_" + t.toInstant().toEpochMilli()
+                + "_" + t.getNano()
                 + "_" + message.executedQuantity();
     }
 }

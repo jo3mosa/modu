@@ -7,6 +7,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Repository;
 
+import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -27,7 +29,7 @@ import java.util.Map;
  *  AI 측은 dict.get 으로 graceful 처리. 정확값 필요 시 followups (output2 매핑).
  *
  * [TTL]
- *  없음 (영구). 268 재시작 복구 대상.
+ *  10초 — 본 PR 가 약속한 stale 허용 시간. 268 재시작 복구는 그대로 안전망.
  */
 @Slf4j
 @Repository
@@ -35,20 +37,22 @@ import java.util.Map;
 public class PortfolioSnapshotRedisRepository {
 
     private static final String KEY_PREFIX = "portfolio:snapshot:";
+    private static final Duration TTL = Duration.ofSeconds(10);
 
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
 
     public void set(Long userId, Long cashBalance, Long totalAssets,
                     List<Map<String, Object>> holdings) {
-        Map<String, Object> snapshot = Map.of(
-                "cash_balance", cashBalance == null ? "" : cashBalance,
-                "total_assets", totalAssets == null ? "" : totalAssets,
-                "holdings", holdings == null ? List.of() : holdings
-        );
+        // null 그대로 보존 — AI 측 명세는 "숫자 또는 null". 빈 문자열로 치환하면 타입 계약 깨짐.
+        // Map.of 는 null 미허용이라 HashMap 사용.
+        Map<String, Object> snapshot = new HashMap<>();
+        snapshot.put("cash_balance", cashBalance);
+        snapshot.put("total_assets", totalAssets);
+        snapshot.put("holdings", holdings == null ? List.of() : holdings);
         try {
             String json = objectMapper.writeValueAsString(snapshot);
-            redisTemplate.opsForValue().set(key(userId), json);
+            redisTemplate.opsForValue().set(key(userId), json, TTL);
         } catch (JsonProcessingException e) {
             log.error("[PortfolioSnapshot] JSON 직렬화 실패 - userId: {}", userId, e);
         } catch (Exception e) {

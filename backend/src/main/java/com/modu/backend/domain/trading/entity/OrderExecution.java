@@ -68,12 +68,28 @@ public class OrderExecution {
     public OrderExecution(Long userId, Long orderId, String kisExecutionNo,
                           Long executedQuantity, Long executedPrice,
                           OffsetDateTime executedAt, OffsetDateTime receivedAt) {
+        if (userId == null || orderId == null || kisExecutionNo == null
+                || executedQuantity == null || executedPrice == null
+                || executedAt == null || receivedAt == null) {
+            throw new IllegalArgumentException("OrderExecution 필수 인자 누락");
+        }
+        if (executedQuantity <= 0L || executedPrice <= 0L) {
+            throw new IllegalArgumentException(
+                    "executedQuantity / executedPrice > 0 필요 - qty: " + executedQuantity
+                            + ", price: " + executedPrice);
+        }
         this.userId = userId;
         this.orderId = orderId;
         this.kisExecutionNo = kisExecutionNo;
         this.executedQuantity = executedQuantity;
         this.executedPrice = executedPrice;
-        this.executedAmount = executedQuantity * executedPrice;
+        try {
+            // 정산 / PnL 핵심 필드 — silent wraparound 차단
+            this.executedAmount = Math.multiplyExact(executedQuantity, executedPrice);
+        } catch (ArithmeticException e) {
+            throw new IllegalArgumentException(
+                    "executedAmount 오버플로우 - qty: " + executedQuantity + ", price: " + executedPrice, e);
+        }
         this.executedAt = executedAt;
         this.receivedAt = receivedAt;
     }

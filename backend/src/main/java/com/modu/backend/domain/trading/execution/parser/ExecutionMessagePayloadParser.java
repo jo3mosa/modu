@@ -101,6 +101,24 @@ public class ExecutionMessagePayloadParser {
             // CNTG_YN=1 (주문/정정/취소/거부) 통보는 본 PR 무시
             return Optional.empty();
         }
+        // 체결 핵심 필드 (CNTG_QTY / CNTG_UNPR) 가 공백이면 레코드 자체 폐기 —
+        // 0 으로 처리하면 누적/평단/PnL 왜곡 발생.
+        String qtyRaw   = at(fields, base, IDX_CNTG_QTY);
+        String priceRaw = at(fields, base, IDX_CNTG_UNPR);
+        if (qtyRaw.isBlank() || priceRaw.isBlank()) {
+            log.warn("[ExecutionParser] CNTG_QTY/CNTG_UNPR 공백 — 레코드 폐기. base: {}", base);
+            return Optional.empty();
+        }
+        long qty;
+        long price;
+        try {
+            qty   = Long.parseLong(qtyRaw);
+            price = Long.parseLong(priceRaw);
+        } catch (NumberFormatException e) {
+            log.warn("[ExecutionParser] 숫자 파싱 실패 — 레코드 폐기. base: {}, qty: '{}', price: '{}'",
+                    base, qtyRaw, priceRaw);
+            return Optional.empty();
+        }
         try {
             return Optional.of(new ExecutionPayload(
                     at(fields, base, IDX_CUST_ID),
@@ -108,8 +126,8 @@ public class ExecutionMessagePayloadParser {
                     at(fields, base, IDX_ODER_NO),
                     ExecutionPayload.ExecutionSide.fromKisCode(at(fields, base, IDX_SELN_BYOV_CLS)),
                     at(fields, base, IDX_STCK_SHRN_ISCD),
-                    parseLong(at(fields, base, IDX_CNTG_QTY)),
-                    parseLong(at(fields, base, IDX_CNTG_UNPR)),
+                    qty,
+                    price,
                     at(fields, base, IDX_STCK_CNTG_HOUR)
             ));
         } catch (IllegalArgumentException e) {
@@ -124,11 +142,5 @@ public class ExecutionMessagePayloadParser {
         if (idx >= fields.length) return "";
         String v = fields[idx];
         return v == null ? "" : v.trim();
-    }
-
-    /** KIS 응답 숫자 필드 — leading zero 포함된 형태. blank 는 0 으로 간주 */
-    private static long parseLong(String value) {
-        if (value == null || value.isBlank()) return 0L;
-        return Long.parseLong(value);
     }
 }

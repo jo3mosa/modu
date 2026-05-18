@@ -42,17 +42,26 @@ public class ExecutionDispatchService {
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
     private static final DateTimeFormatter HHMMSS = DateTimeFormatter.ofPattern("HHmmss");
 
+    /** Redis dead-letter 키 — 운영자 수동 재처리 / 향후 retry 스케줄러 입력용 (followups). */
+    private static final String UNMATCHED_KEY = "execution:unmatched";
+    /** dead-letter TTL — 7일. 그 안에 reconcile 안 되면 영구 유실 인정 (운영 알람 권장). */
+    private static final java.time.Duration UNMATCHED_TTL = java.time.Duration.ofDays(7);
+
     private final OrderRepository orderRepository;
     private final TradeOrderProducer tradeOrderProducer;
+    private final org.springframework.data.redis.core.StringRedisTemplate redisTemplate;
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
     @Transactional(readOnly = true)
     public void dispatch(ExecutionPayload payload) {
         Optional<Order> opt = orderRepository.findByKisOrderNo(payload.kisOrderNo());
         if (opt.isEmpty()) {
-            // 우리 DB 에 없는 ODER_NO — 다른 채널 (KIS HTS 직접 거래 등) 또는 예약→일반 변환 미동기화
-            // RESERVED 의 kis_order_no 가 NULL 이라 변환 모니터링 후에야 매칭됨
-            log.warn("[ExecutionDispatch] kis_order_no 미매칭 — 메시지 무시. kisOrderNo: {}",
+            // 우리 DB 에 없는 ODER_NO — 다른 채널 (KIS HTS 직접 거래) 또는 예약→일반 변환 미동기화 상황.
+            // 단순 폐기 시 체결 영구 유실 위험. ERROR 로그 + Redis dead-letter 보관 → 운영자 reconcile 또는
+            // followups 의 retry 스케줄러가 후속 처리.
+            log.error("[ExecutionDispatch] kis_order_no 미매칭 — dead-letter 보관. kisOrderNo: {}",
                     payload.kisOrderNo());
+            persistUnmatched(payload);
             return;
         }
         Order order = opt.get();
@@ -98,5 +107,19 @@ public class ExecutionDispatchService {
             case BUY -> OrderSide.BUY;
             case SELL -> OrderSide.SELL;
         };
+    }
+
+    /**
+     * 미매칭 체결 보존 — Redis List 에 JSON push, 7일 TTL.
+     * 운영자가 LRANGE 로 확인 / 향후 retry 스케줄러 (followups) 가 LPOP 으로 재처리 가능.
+     */
+    private void persistUnmatched(ExecutionPayload payload) {
+        try {
+            String json = objectMapper.writeValueAsString(payload);
+            redisTemplate.opsForList().rightPush(UNMATCHED_KEY, json);
+            redisTemplate.expire(UNMATCHED_KEY, UNMATCHED_TTL);
+        } catch (Exception e) {
+            log.error("[ExecutionDispatch] dead-letter 보관 실패 - kisOrderNo: {}", payload.kisOrderNo(), e);
+        }
     }
 }
