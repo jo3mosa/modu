@@ -46,22 +46,25 @@ _ADD_COL_SQL = text("""
 
 # Cross-sectional ROE rank 계산 + UPDATE.
 # PERCENT_RANK 는 (rank-1)/(N-1) → 0 ~ 1. ORDER BY DESC 라 0 이 최상위.
-# NULLS LAST 로 NULL ROE 종목은 항상 끝 → rank_pct 도 NULL 처리.
+# 모든 행 update (NULL 행은 rank_pct = NULL 로 reset) — "ROE NULL ↔ rank NULL"
+# 계약 유지. 과거 실행에서 채워진 행의 ROE 가 NULL 로 바뀌어도 옛 순위 잔존 X.
 _COMPUTE_RANK_SQL = text("""
     WITH ranked AS (
         SELECT stock_code, date,
-               PERCENT_RANK() OVER (
-                   PARTITION BY date
-                   ORDER BY roe DESC NULLS LAST
-               ) AS rank_pct
+               CASE WHEN roe IS NULL THEN NULL
+                    ELSE PERCENT_RANK() OVER (
+                        PARTITION BY date
+                        ORDER BY roe DESC NULLS LAST
+                    )
+               END AS rank_pct
         FROM daily_fundamentals
-        WHERE roe IS NOT NULL
     )
     UPDATE daily_fundamentals AS dfu
     SET roe_rank_pct = ranked.rank_pct
     FROM ranked
     WHERE dfu.stock_code = ranked.stock_code
       AND dfu.date = ranked.date
+      AND dfu.roe_rank_pct IS DISTINCT FROM ranked.rank_pct
 """)
 
 # 진단용 — 분포 확인.
@@ -89,21 +92,24 @@ def main():
 
     engine = get_engine()
 
+    # ALTER 와 UPDATE 는 별도 트랜잭션 — ADD COLUMN ACCESS EXCLUSIVE 락이
+    # 수 분 소요되는 UPDATE 까지 유지되면 signal_builder 등 동시 reader 차단.
     t0 = time.monotonic()
     with engine.begin() as conn:
         logger.info("ALTER TABLE — daily_fundamentals.roe_rank_pct 컬럼 (idempotent)")
         conn.execute(_ADD_COL_SQL)
         logger.info("✓ ALTER 완료 (%.1fs)", time.monotonic() - t0)
 
-        if args.dry_run:
-            logger.info("--dry-run: UPDATE skip")
-            return
+    if args.dry_run:
+        logger.info("--dry-run: UPDATE skip")
+        return
 
-        t1 = time.monotonic()
+    t1 = time.monotonic()
+    with engine.begin() as conn:
         logger.info("UPDATE — cross-sectional ROE rank 계산 (수 분 소요 예상)")
         result = conn.execute(_COMPUTE_RANK_SQL)
-        logger.info("✓ UPDATE 완료: %d 행 (%.1fs)",
-                    result.rowcount, time.monotonic() - t1)
+    logger.info("✓ UPDATE 완료: %d 행 (%.1fs)",
+                result.rowcount, time.monotonic() - t1)
 
     # 분포 확인 (별도 connection — 트랜잭션 종료 후).
     with engine.connect() as conn:

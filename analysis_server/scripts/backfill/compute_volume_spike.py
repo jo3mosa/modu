@@ -94,21 +94,24 @@ def main():
 
     engine = get_engine()
 
+    # ALTER 와 UPDATE 는 별도 트랜잭션 — ADD COLUMN ACCESS EXCLUSIVE 락이
+    # 수 분 소요되는 UPDATE 까지 유지되면 동시 reader 차단.
     t0 = time.monotonic()
     with engine.begin() as conn:
         logger.info("ALTER TABLE — daily_indicators.volume_spike (idempotent)")
         conn.execute(_ADD_COL_SQL)
         logger.info("✓ ALTER 완료 (%.1fs)", time.monotonic() - t0)
 
-        if args.dry_run:
-            logger.info("--dry-run: UPDATE skip")
-            return
+    if args.dry_run:
+        logger.info("--dry-run: UPDATE skip")
+        return
 
-        t1 = time.monotonic()
+    t1 = time.monotonic()
+    with engine.begin() as conn:
         logger.info("UPDATE — volume_spike 일괄 계산 (수 분 소요 예상)")
         result = conn.execute(_COMPUTE_SQL)
-        logger.info("✓ UPDATE 완료: %d 행 (%.1fs)",
-                    result.rowcount, time.monotonic() - t1)
+    logger.info("✓ UPDATE 완료: %d 행 (%.1fs)",
+                result.rowcount, time.monotonic() - t1)
 
     # 분포 확인.
     with engine.connect() as conn:

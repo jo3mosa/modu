@@ -142,7 +142,9 @@ def _load_fundamental_from_db(stock_code: str) -> Optional[dict]:
             "roe":           row["roe"],
             # cross-sectional ROE percentile rank (0=최상위, 1=최하위).
             # compute_fundamental_ranks 가 분기 갱신 시 사전 계산. QUAL-001 rule 이 사용.
-            "roe_rank_pct":  row["roe_rank_pct"],
+            # 컬럼 미적용 환경(DDL 안 돈 환경)에서 KeyError 로 _safe 가 fundamental
+            # 전체를 None 으로 떨어뜨리지 않도록 dict-like .get 으로 안전 접근.
+            "roe_rank_pct":  row.get("roe_rank_pct") if hasattr(row, "get") else None,
             "status":        row["profitability_status"],
         },
         "growth": {

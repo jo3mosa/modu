@@ -113,11 +113,17 @@ def _entry_for_single(hid: str, stats_row: dict) -> dict:
 
 def build_map(finalists_path: str, bootstrap_ci_path: str,
               stats_2023_path: str) -> dict:
-    # bootstrap CI 합본만 사용 (가장 robust 한 점추정).
+    # finalists.csv 가 "채택 가설" 단일 소스. bootstrap_ci.csv 에 비-finalist
+    # 행이 섞여 있어도 finalists 로만 좁혀 매핑 누락 / 잉여 위험 차단.
+    finals = pd.read_csv(finalists_path)
+    finalist_ids = set(finals["id"].astype(str))
+
     boot = pd.read_csv(bootstrap_ci_path)
-    boot_all = boot[boot["period"] == "all"].set_index("id")
-    finalist_ids = set(boot_all.index)
-    logger.info("채택 가설(B/C) %d개 + A 단독 baseline 19개", len(finalist_ids))
+    boot_all = (
+        boot[(boot["period"] == "all") & (boot["id"].astype(str).isin(finalist_ids))]
+        .set_index("id")
+    )
+    logger.info("채택 가설(B/C) %d개 + A 단독 baseline 19개", len(boot_all))
 
     # A 단독 stats.
     stats_23 = pd.read_csv(stats_2023_path).set_index("id")
@@ -197,7 +203,7 @@ def print_summary(payload: dict) -> None:
     print("\n" + "=" * 80)
     print("Phase 4-1: triggers_map.json 생성 완료")
     print("=" * 80)
-    print(f"\n분포:")
+    print("\n분포:")
     for lv in ["Lv.3", "Lv.2", "Lv.1", "Lv.0_baseline"]:
         print(f"  {lv:<18} {counts[lv]:>3}개")
     print(f"  {'total':<18} {counts['total']:>3}개")
@@ -214,7 +220,7 @@ def print_summary(payload: dict) -> None:
             print(f"    {it['id']:<5} {it['name']:<32}  effect={it['effect_mean']:+.4f}  CI={ci}  n={it['n_events']}{warn}")
 
     print(f"\n[Lv.0 A 단독 baseline — {len(payload['triggers']['Lv.0'])}개]")
-    print(f"  (효과 측정만 — AI Agent 가 정보 신호로 참조)")
+    print("  (효과 측정만 — AI Agent 가 정보 신호로 참조)")
 
 
 def main():
