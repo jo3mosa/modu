@@ -672,7 +672,7 @@ export default function OrderBook({ stockCode }) {
         <div className="pending-content">
           <div className="pending-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0' }}>
             <span style={{ color: '#aaa', fontSize: '0.9em' }}>
-              {stockCode ? `현재 종목 ${stockCode} 기준` : '전체 종목'}
+              {stockCode ? '현재 종목 기준' : '전체 종목'}
             </span>
             <button
               className="tool-btn"
