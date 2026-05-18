@@ -24,6 +24,12 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+    # 로컬 DB 의 flyway_schema_history 가 유실됐으나 실제 스키마는 V20260515174500 까지 적용된 상태.
+    # 다음 부팅 시 history 테이블을 재생성하고 174500 baseline 행을 삽입한 뒤
+    # 그 이후 마이그레이션(005500, 015000, 100000) 만 적용한다.
+    # 한 번 복구 후에는 본 두 줄을 제거해도 무방 (이후엔 동작에 영향 없음).
+    baseline-on-migrate: true
+    baseline-version: '20260515174500'
 
   data:
     mongodb:
