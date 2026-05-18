@@ -19,6 +19,7 @@ import { useOrderSSE } from '../hooks/useOrderSSE';
 import { useNotifications, NOTIFICATION_TYPE_META } from '../hooks/useNotifications';
 import { usePendingDecisions } from '../hooks/usePendingDecisions';
 import PendingDecisionsModal from '../components/PendingDecisionsModal';
+import ConfirmDialog from '../components/ConfirmDialog';
 import './MainLayout.css';
 
 export default function MainLayout() {
@@ -35,6 +36,7 @@ export default function MainLayout() {
   const [isAlarmOpen, setIsAlarmOpen] = useState(false);
   const [isPendingModalOpen, setIsPendingModalOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [confirmState, setConfirmState] = useState(null);
   const alarmRef = useRef(null);
   const profileDropdownRef = useRef(null);
 
@@ -167,11 +169,6 @@ export default function MainLayout() {
   };
 
   const handleDisconnectKis = async () => {
-    const confirmDisconnect = window.confirm(
-      "정말 한국투자증권 API 연동을 해제하시겠습니까?\n해제 시 실시간 거래 및 자동 투자가 중단됩니다."
-    );
-    if (!confirmDisconnect) return;
-
     try {
       await deleteKisKey();
       toast.success('한국투자증권 연동이 해제되었습니다');
@@ -183,6 +180,31 @@ export default function MainLayout() {
       console.error('연동 해제 실패:', e);
       toast.error(e.message || '연동 해제에 실패했습니다.');
     }
+  };
+
+  const triggerLogoutConfirm = () => {
+    setIsProfileOpen(false);
+    setConfirmState({
+      title: '로그아웃',
+      message: '정말 로그아웃하시겠습니까?',
+      confirmLabel: '로그아웃',
+      cancelLabel: '취소',
+      variant: 'danger',
+      onConfirm: handleLogout,
+    });
+  };
+
+  const triggerDisconnectConfirm = () => {
+    setIsProfileOpen(false);
+    setConfirmState({
+      title: '연동 해제',
+      message: '한국투자증권 연동을 해제하시겠습니까?',
+      description: '자동매매가 중단되며 자산/주문 조회도 불가능해집니다.',
+      confirmLabel: '연동 해제',
+      cancelLabel: '닫기',
+      variant: 'danger',
+      onConfirm: handleDisconnectKis,
+    });
   };
 
   const handleReadAll = () => markAllAsRead();
@@ -359,13 +381,13 @@ export default function MainLayout() {
                     </button>
                     <button
                       className="profile-popup-item disconnect"
-                      onClick={handleDisconnectKis}
+                      onClick={triggerDisconnectConfirm}
                     >
                       연동 해제
                     </button>
                     <button
                       className="profile-popup-item logout"
-                      onClick={handleLogout}
+                      onClick={triggerLogoutConfirm}
                     >
                       로그아웃
                     </button>
@@ -385,6 +407,13 @@ export default function MainLayout() {
       {isPendingModalOpen && (
         <PendingDecisionsModal onClose={() => setIsPendingModalOpen(false)} />
       )}
+
+      {/* 커스텀 확인 다이얼로그 */}
+      <ConfirmDialog
+        open={!!confirmState}
+        {...(confirmState ?? {})}
+        onClose={() => setConfirmState(null)}
+      />
     </div>
   );
 }
