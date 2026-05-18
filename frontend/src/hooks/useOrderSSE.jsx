@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, createContext, useContext } from 'react';
 import { getSseToken } from '../api/order';
 
-const OrderSSEContext = createContext({ isConnected: false, latestEvent: null });
+const OrderSSEContext = createContext({ isConnected: false, latestEvent: null, latestAgentMessage: null });
 
 /**
  * SSE 연결 관리 및 이벤트를 전역으로 제공하는 Context Provider
@@ -10,6 +10,8 @@ export function OrderSSEProvider({ children }) {
   const eventSourceRef = useRef(null);
   const [isConnected, setIsConnected] = useState(false);
   const [latestEvent, setLatestEvent] = useState(null);
+  // AI 에이전트 발화(agent-message 이벤트) — useAgentChat 이 구독해 채널별 버퍼에 push
+  const [latestAgentMessage, setLatestAgentMessage] = useState(null);
   const reconnectTimeoutRef = useRef(null);
 
   useEffect(() => {
@@ -43,6 +45,16 @@ export function OrderSSEProvider({ children }) {
           }
         });
 
+        // AI 에이전트 발화 이벤트 — BE 가 ai.agent.message Kafka 토픽 수신 시 본인 연결로 푸시
+        sse.addEventListener('agent-message', (e) => {
+          try {
+            const data = JSON.parse(e.data);
+            if (isMounted) setLatestAgentMessage({ ...data, _t: Date.now() });
+          } catch (error) {
+            console.error('agent-message parse error:', error);
+          }
+        });
+
         sse.onerror = (error) => {
           console.error('SSE Connection Error:', error);
           sse.close();
@@ -71,7 +83,7 @@ export function OrderSSEProvider({ children }) {
   }, []);
 
   return (
-    <OrderSSEContext.Provider value={{ isConnected, latestEvent }}>
+    <OrderSSEContext.Provider value={{ isConnected, latestEvent, latestAgentMessage }}>
       {children}
     </OrderSSEContext.Provider>
   );

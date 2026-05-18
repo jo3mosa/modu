@@ -107,7 +107,7 @@ export default function PendingDecisionsModal({ onClose }) {
       <div className="pending-modal" role="document">
         <header className="pending-modal-header">
           <div className="pending-modal-title-group">
-            <h2 className="pending-modal-title">🚨 AI 판단 승인 대기</h2>
+            <h2 className="pending-modal-title">AI 판단 승인 대기</h2>
             <span className="pending-modal-count">{pending.length}건</span>
           </div>
           <button type="button" className="pending-modal-close" onClick={onClose} aria-label="닫기">

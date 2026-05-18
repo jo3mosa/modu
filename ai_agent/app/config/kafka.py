@@ -12,6 +12,7 @@ class KafkaTopic:
     MARKET_SIGNAL_DETECTED = "market.signal.detected"
     AI_TRIGGER_REQUESTED = "ai.trigger.requested"
     AI_DECISION_GENERATED = "ai.decision.generated"
+    AI_AGENT_MESSAGE = "ai.agent.message"
     TRADE_SETTLED = "trade.settled"
 
 

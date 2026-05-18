@@ -1,7 +1,10 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
 import { placeOrder, getPendingOrders, updateOrder, getBuyingPower } from '../api/order';
+import { getStockDetail } from '../api/market';
 import { useOrderSSE } from '../hooks/useOrderSSE';
+import { useNotifications } from '../hooks/useNotifications';
+import ConfirmDialog from './ConfirmDialog';
 import './OrderBook.css';
 
 export default function OrderBook({ stockCode }) {
@@ -10,6 +13,55 @@ export default function OrderBook({ stockCode }) {
   const [orderMethod, setOrderMethod] = useState('LIMIT'); // 'LIMIT' | 'MARKET'
 
   const [price, setPrice] = useState(0);
+
+  // 종목 변경 시 상세 데이터 로드하여 단가 초기값으로 세팅
+  useEffect(() => {
+    if (!stockCode) return;
+    let cancelled = false;
+    async function initPrice() {
+      try {
+        const detail = await getStockDetail(stockCode);
+        if (!cancelled && detail?.currentPrice) {
+          setPrice(detail.currentPrice);
+        }
+      } catch (error) {
+        console.warn('초기 단가 조회 실패:', error);
+      }
+    }
+    initPrice();
+    return () => {
+      cancelled = true;
+    };
+  }, [stockCode]);
+
+  /**
+   * 한국 주식시장(KRX)의 가격대별 호가 단위(Tick Size) 반환
+   */
+  const getKrxTickSize = (priceVal) => {
+    const p = Number(priceVal);
+    if (isNaN(p) || p <= 0) return 1;
+    if (p < 2000) return 1;
+    if (p < 5000) return 5;
+    if (p < 20000) return 10;
+    if (p < 50000) return 50;
+    if (p < 200000) return 100;
+    if (p < 500000) return 500;
+    return 1000;
+  };
+
+  const handleIncreasePrice = () => {
+    setPrice((prev) => {
+      const step = getKrxTickSize(prev);
+      return prev + step;
+    });
+  };
+
+  const handleDecreasePrice = () => {
+    setPrice((prev) => {
+      const step = getKrxTickSize(prev);
+      return Math.max(0, prev - step);
+    });
+  };
   const [quantity, setQuantity] = useState(1);
   const [submittingOrder, setSubmittingOrder] = useState(false);
   const [pendingSubmitOrderId, setPendingSubmitOrderId] = useState(null);
@@ -112,10 +164,14 @@ export default function OrderBook({ stockCode }) {
     }
   }, [stockCode, orderType]);
 
+  const { addNotification } = useNotifications();
+
   // SSE 이벤트 → 주문 상태 동기화
-  // ORDER_SUBMITTED : 비동기 주문의 KIS 접수 완료. 대기 중인 5초 타임아웃 해제 후 미체결 갱신.
-  // ORDER_FAILED    : KIS 접수 거절. 타임아웃 해제 후 실패 알림.
-  // ORDER_EXECUTED  : 체결 완료. 미체결 탭이면 해당 주문이 빠진 목록으로 즉시 갱신.
+  // ORDER_SUBMITTED        : 비동기 주문의 KIS 접수 완료. 대기 중 5초 타임아웃 해제 후 미체결 갱신.
+  // ORDER_FAILED           : KIS 접수 거절. message에 Kill Switch 키워드 있으면 알림 목록에도 추가.
+  // ORDER_EXECUTED         : 체결 완료. 미체결 탭이면 해당 주문이 빠진 목록으로 즉시 갱신.
+  // ORDER_RESERVED         : KIS 예약주문 접수. 다음 거래일 정규장 시작 시 자동 실행.
+  // ORDER_RESERVED_PENDING : 예약 가능 시간 대기 중 (E gap 10분 또는 공휴일 정규장 시간대).
   useEffect(() => {
     if (!latestEvent) return;
 
@@ -135,27 +191,60 @@ export default function OrderBook({ stockCode }) {
       // 매수 주문이 KIS에 접수되면 가용 현금이 잠기므로 매수가능 즉시 갱신
       fetchBuyingPower();
     } else if (latestEvent.type === 'ORDER_FAILED') {
+      // 백엔드가 KIS 원본 메시지를 SYS_002("외부 API 호출 중 오류")로 뭉뚱그리는 경우가 있어
+      // 사용자 입장 의미 없는 메시지를 보게 됨 — 키워드 기반으로 친화적 안내 치환.
+      // (근본 해결은 백엔드에서 KIS msg/msgCd 보존하도록 수정)
+      const rawMsg = String(latestEvent.message ?? '');
+      const friendlyMsg = /외부\s*API|SYS_002|EXTERNAL_API/i.test(rawMsg)
+        ? '주문이 거절되었습니다. 가격이 상/하한가 범위 안인지, 잔고와 보유 수량이 충분한지 확인해주세요.'
+        : (rawMsg || '잔고 부족 등의 사유로 거절되었습니다.');
       setPendingSubmitOrderId((prevId) => {
         if (prevId === String(latestEvent.orderId)) {
           if (submitTimeoutRef.current) clearTimeout(submitTimeoutRef.current);
           setSubmittingOrder(false);
-          toast.error('주문 실패', {
-            description: latestEvent.message || '잔고 부족 등의 사유로 거절되었습니다.',
-          });
+          toast.error('주문 실패', { description: friendlyMsg });
           return null;
         }
         return prevId;
       });
       // 접수 실패 시 잠겼던 자금 해제 — 정확한 잔고 반영 위해 갱신
       fetchBuyingPower();
+      // Kill Switch 키워드 감지 — 백엔드가 별도 푸시를 안 주니 메시지에서 추론
+      const msg = String(latestEvent.message ?? '');
+      if (/kill[\s_]*switch|강제\s*중단/i.test(msg)) {
+        addNotification({
+          type: 'KILL_SWITCH',
+          message: '자동매매 강제 중단됨',
+          description: msg || '안전 한도 초과 — Kill Switch가 발동되었습니다.',
+        });
+      }
     } else if (latestEvent.type === 'ORDER_EXECUTED') {
       if (latestEvent.stockCode === stockCode && activeTab === 'PENDING') {
         fetchPending();
       }
       // 체결로 자산/잔고 변동 — 매수가능 즉시 갱신
       fetchBuyingPower();
+    } else if (latestEvent.type === 'ORDER_RESERVED') {
+      // 예약주문 접수 — 다음 거래일 정규장 시작 시 자동 실행
+      setPendingSubmitOrderId((prevId) => {
+        if (prevId === String(latestEvent.orderId)) {
+          if (submitTimeoutRef.current) clearTimeout(submitTimeoutRef.current);
+          setSubmittingOrder(false);
+          return null;
+        }
+        return prevId;
+      });
+      toast.success('예약주문이 접수되었습니다', {
+        description: '다음 거래일 정규장 시작 시 자동 실행됩니다.',
+      });
+      fetchPending();
+    } else if (latestEvent.type === 'ORDER_RESERVED_PENDING') {
+      // 예약 가능 시간 도래 전 발행 대기
+      toast.info('예약주문 발행 대기 중', {
+        description: '예약 가능 시간 도래 시 자동으로 발행됩니다.',
+      });
     }
-  }, [latestEvent, fetchPending, fetchBuyingPower, stockCode, activeTab]);
+  }, [latestEvent, fetchPending, fetchBuyingPower, stockCode, activeTab, addNotification]);
 
   // side/stockCode 변경 시 1초 debounce로 호출.
   // (price 변경마다 호출하면 KIS 초당 거래건수 한도(EGW00201)에 걸려서 의존성에서 제외)
@@ -284,16 +373,22 @@ export default function OrderBook({ stockCode }) {
     }
   };
 
+  // 주문 취소 확인 다이얼로그 상태 — null이면 닫힘. 객체면 해당 주문 취소 confirm 표시
+  const [cancelConfirm, setCancelConfirm] = useState(null);
+
   // 미체결 주문 취소 (PATCH /api/v1/orders/{orderId}, action=CANCEL)
   // DB에 orderId가 있는 주문만 취소 가능 (KIS 외부 주문은 orderId가 null)
-  const handleCancelOrder = async (order) => {
+  const handleCancelOrder = (order) => {
     if (!order?.orderId) {
       toast.error('시스템에 기록된 주문만 취소할 수 있습니다.');
       return;
     }
     if (canceling[order.orderId]) return;
-    if (!window.confirm(`주문(${order.orderId})을 취소하시겠습니까?`)) return;
+    // window.confirm → 커스텀 ConfirmDialog로 교체
+    setCancelConfirm(order);
+  };
 
+  const executeCancelOrder = async (order) => {
     setCanceling((prev) => ({ ...prev, [order.orderId]: true }));
     try {
       await updateOrder(order.orderId, { action: 'CANCEL' });
@@ -472,15 +567,27 @@ export default function OrderBook({ stockCode }) {
 
             {/* 매수가능 정보 — 백엔드 미연결 시 표시 안 함 */}
             {buyingPower && (
-              <div className="buying-power-info" style={{ fontSize: '0.85em', color: '#aaa', margin: '0.5rem 0' }}>
+              <div className="buying-power-info">
                 {orderType === 'BUY' ? (
                   <>
-                    <div>주문 가능 금액: <strong style={{ color: '#fff' }}>{buyingPower.maxBuyAmount?.toLocaleString() ?? '-'}원</strong></div>
-                    <div>최대 매수 가능 수량: {buyingPower.maxBuyQuantity?.toLocaleString() ?? '-'}주</div>
-                    <div>예수금: {buyingPower.availableCash?.toLocaleString() ?? '-'}원</div>
+                    <div className="buying-power-row">
+                      <span>주문 가능 금액</span>
+                      <strong>{buyingPower.maxBuyAmount?.toLocaleString() ?? '-'}원</strong>
+                    </div>
+                    <div className="buying-power-row">
+                      <span>최대 매수 수량</span>
+                      <strong>{buyingPower.maxBuyQuantity?.toLocaleString() ?? '-'}주</strong>
+                    </div>
+                    <div className="buying-power-row">
+                      <span>예수금</span>
+                      <strong>{buyingPower.availableCash?.toLocaleString() ?? '-'}원</strong>
+                    </div>
                   </>
                 ) : (
-                  <div>매도 가능 수량: <strong style={{ color: '#fff' }}>{buyingPower.maxSellQuantity?.toLocaleString() ?? '-'}주</strong></div>
+                  <div className="buying-power-row">
+                    <span>매도 가능 수량</span>
+                    <strong>{buyingPower.maxSellQuantity?.toLocaleString() ?? '-'}주</strong>
+                  </div>
                 )}
               </div>
             )}
@@ -501,15 +608,36 @@ export default function OrderBook({ stockCode }) {
               </div>
             )}
 
-            <div className="input-group">
+            <div className="input-group price-input-group">
               <label>단가 (원)</label>
-              <input
-                type="number"
-                value={orderMethod === 'MARKET' ? '' : price}
-                onChange={(e) => setPrice(Number(e.target.value))}
-                disabled={orderMethod === 'MARKET'}
-                placeholder={orderMethod === 'MARKET' ? '시장가' : ''}
-              />
+              <div className="price-control-wrapper">
+                <button
+                  type="button"
+                  className="price-step-btn minus"
+                  onClick={handleDecreasePrice}
+                  disabled={orderMethod === 'MARKET'}
+                  aria-label="가격 낮추기"
+                >
+                  -
+                </button>
+                <input
+                  type="number"
+                  className="price-field"
+                  value={orderMethod === 'MARKET' ? '' : price}
+                  onChange={(e) => setPrice(Number(e.target.value))}
+                  disabled={orderMethod === 'MARKET'}
+                  placeholder={orderMethod === 'MARKET' ? '시장가' : ''}
+                />
+                <button
+                  type="button"
+                  className="price-step-btn plus"
+                  onClick={handleIncreasePrice}
+                  disabled={orderMethod === 'MARKET'}
+                  aria-label="가격 높이기"
+                >
+                  +
+                </button>
+              </div>
             </div>
             <div className="input-group">
               <label>수량 (주)</label>
@@ -544,7 +672,7 @@ export default function OrderBook({ stockCode }) {
         <div className="pending-content">
           <div className="pending-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0' }}>
             <span style={{ color: '#aaa', fontSize: '0.9em' }}>
-              {stockCode ? `현재 종목 ${stockCode} 기준` : '전체 종목'}
+              {stockCode ? '현재 종목 기준' : '전체 종목'}
             </span>
             <button
               className="tool-btn"
@@ -659,6 +787,18 @@ export default function OrderBook({ stockCode }) {
           )}
         </div>
       )}
+
+      {/* 주문 취소 확인 다이얼로그 — window.confirm 대체 */}
+      <ConfirmDialog
+        open={!!cancelConfirm}
+        title="주문 취소"
+        message={cancelConfirm ? `주문(${cancelConfirm.orderId})을 취소하시겠습니까?` : ''}
+        confirmLabel="주문 취소"
+        cancelLabel="닫기"
+        variant="danger"
+        onConfirm={() => cancelConfirm && executeCancelOrder(cancelConfirm)}
+        onClose={() => setCancelConfirm(null)}
+      />
     </div>
   );
 }
