@@ -73,4 +73,4 @@ asset 및 주문 파라미터 규칙:
 [과거 복기 및 지표 해석]
 {history_context}
 
-위 signals(기술적/펀더멘털/이벤트/감성) 4종을 직접 평가하여 ResearchVerdict 스키마로 출력하세요. 토론 입력이 없으므로 signals 자체가 유일한 근거입니다. winning_side는 "balanced"로 고정합니다.
+위 signals(기술적/펀더멘털/이벤트/감성) 4종을 직접 평가하여 ResearchVerdict 스키마로 출력하세요. 토론 입력은 없지만, 위 메모리 섹션(lessons_aggregate / loss_pattern_brief / similar_decisions / recent_post_mortems)이 현재 signals와 일치하거나 보강할 때는 보조 근거로 함께 인용합니다. signals는 1차 근거, 메모리는 같은 방향의 보조 근거로 사용하세요. winning_side는 "balanced"로 고정합니다.

@@ -60,7 +60,7 @@ asset 및 주문 파라미터 규칙:
 [메모리 — 회고에서 추출된 룰] (반드시 우선 검토하고, lesson과 현재 신호가 겹치면 판결 근거로 인용하세요)
 {memory_lessons_aggregate}
 
-[메모리 — 최근 손실 패턴] (현재 후보의 판단 사유가 아래 손실 사례와 유사하면 winning_side와 recommended_side에 보수적으로 반영하세요)
+[메모리 — 최근 손실 패턴] (현재 후보의 판단 사유가 아래 손실 사례와 유사하면 recommended_side와 confidence·order_amount(주문 강도)에만 보수적으로 반영하세요. winning_side는 Bull/Bear 토론의 우세 평가이므로 메모리로 변경하지 마세요.)
 {memory_loss_pattern_brief}
 
 [메모리 — 유사 과거 판단 요약]
