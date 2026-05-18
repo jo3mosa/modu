@@ -4,6 +4,7 @@ import { Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { getMyInfo, registerKisKey, updateKisKey, deleteKisKey } from '../api/user';
 import { logout } from '../api/auth';
+import ConfirmDialog from '../components/ConfirmDialog';
 import './MyPage.css';
 
 
@@ -102,8 +103,12 @@ export default function MyPage() {
     }
   };
 
-  const handleDisconnectKis = async () => {
-    if (!window.confirm('정말 연동을 해제하시겠습니까? 자동매매가 중단됩니다.')) return;
+  // KIS 연동 해제 확인 다이얼로그 — window.confirm 대체
+  const [disconnectConfirmOpen, setDisconnectConfirmOpen] = useState(false);
+
+  const handleDisconnectKis = () => setDisconnectConfirmOpen(true);
+
+  const executeDisconnectKis = async () => {
     try {
       await deleteKisKey();
       toast.success('한국투자증권 연동이 해제되었습니다');
@@ -201,6 +206,18 @@ export default function MyPage() {
         </button>
       </div>
 
+      {/* KIS 연동 해제 확인 다이얼로그 */}
+      <ConfirmDialog
+        open={disconnectConfirmOpen}
+        title="연동 해제"
+        message="한국투자증권 연동을 해제하시겠습니까?"
+        description="자동매매가 중단되며 자산/주문 조회도 불가능해집니다."
+        confirmLabel="연동 해제"
+        cancelLabel="닫기"
+        variant="danger"
+        onConfirm={executeDisconnectKis}
+        onClose={() => setDisconnectConfirmOpen(false)}
+      />
     </div>
   );
 }
