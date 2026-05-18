@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
 import { placeOrder, getPendingOrders, updateOrder, getBuyingPower } from '../api/order';
+import { getStockDetail } from '../api/market';
 import { useOrderSSE } from '../hooks/useOrderSSE';
 import { useNotifications } from '../hooks/useNotifications';
 import ConfirmDialog from './ConfirmDialog';
@@ -12,6 +13,55 @@ export default function OrderBook({ stockCode }) {
   const [orderMethod, setOrderMethod] = useState('LIMIT'); // 'LIMIT' | 'MARKET'
 
   const [price, setPrice] = useState(0);
+
+  // 종목 변경 시 상세 데이터 로드하여 단가 초기값으로 세팅
+  useEffect(() => {
+    if (!stockCode) return;
+    let cancelled = false;
+    async function initPrice() {
+      try {
+        const detail = await getStockDetail(stockCode);
+        if (!cancelled && detail?.currentPrice) {
+          setPrice(detail.currentPrice);
+        }
+      } catch (error) {
+        console.warn('초기 단가 조회 실패:', error);
+      }
+    }
+    initPrice();
+    return () => {
+      cancelled = true;
+    };
+  }, [stockCode]);
+
+  /**
+   * 한국 주식시장(KRX)의 가격대별 호가 단위(Tick Size) 반환
+   */
+  const getKrxTickSize = (priceVal) => {
+    const p = Number(priceVal);
+    if (isNaN(p) || p <= 0) return 1;
+    if (p < 2000) return 1;
+    if (p < 5000) return 5;
+    if (p < 20000) return 10;
+    if (p < 50000) return 50;
+    if (p < 200000) return 100;
+    if (p < 500000) return 500;
+    return 1000;
+  };
+
+  const handleIncreasePrice = () => {
+    setPrice((prev) => {
+      const step = getKrxTickSize(prev);
+      return prev + step;
+    });
+  };
+
+  const handleDecreasePrice = () => {
+    setPrice((prev) => {
+      const step = getKrxTickSize(prev);
+      return Math.max(0, prev - step);
+    });
+  };
   const [quantity, setQuantity] = useState(1);
   const [submittingOrder, setSubmittingOrder] = useState(false);
   const [pendingSubmitOrderId, setPendingSubmitOrderId] = useState(null);
@@ -546,15 +596,36 @@ export default function OrderBook({ stockCode }) {
               </div>
             )}
 
-            <div className="input-group">
+            <div className="input-group price-input-group">
               <label>단가 (원)</label>
-              <input
-                type="number"
-                value={orderMethod === 'MARKET' ? '' : price}
-                onChange={(e) => setPrice(Number(e.target.value))}
-                disabled={orderMethod === 'MARKET'}
-                placeholder={orderMethod === 'MARKET' ? '시장가' : ''}
-              />
+              <div className="price-control-wrapper">
+                <button
+                  type="button"
+                  className="price-step-btn minus"
+                  onClick={handleDecreasePrice}
+                  disabled={orderMethod === 'MARKET'}
+                  aria-label="가격 낮추기"
+                >
+                  -
+                </button>
+                <input
+                  type="number"
+                  className="price-field"
+                  value={orderMethod === 'MARKET' ? '' : price}
+                  onChange={(e) => setPrice(Number(e.target.value))}
+                  disabled={orderMethod === 'MARKET'}
+                  placeholder={orderMethod === 'MARKET' ? '시장가' : ''}
+                />
+                <button
+                  type="button"
+                  className="price-step-btn plus"
+                  onClick={handleIncreasePrice}
+                  disabled={orderMethod === 'MARKET'}
+                  aria-label="가격 높이기"
+                >
+                  +
+                </button>
+              </div>
             </div>
             <div className="input-group">
               <label>수량 (주)</label>
