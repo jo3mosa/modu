@@ -26,6 +26,9 @@ class Trigger:
     AI 팀이 의사결정에 필요한 모든 입력을 한 곳에 모았다. 같은 종목에 여러 룰이
     동시 발화하면 rule_ids 에 여러 개가 들어간다 (analysis_server engine 의
     detect() 가 같은 사이클에 multi-rule 발화하는 동작과 정합).
+
+    방침: Lv·effect 같은 강도 메타는 노출하지 않는다 — DecisionFn 이 자체 판단으로
+    가중치를 부여하도록. 모든 trigger 는 동일 weight 로 의사결정에 들어간다.
     """
     as_of_date: date              # 트리거 발생 EOD 기준 영업일
     stock_code: str

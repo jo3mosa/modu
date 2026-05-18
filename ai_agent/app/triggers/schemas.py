@@ -29,6 +29,10 @@ class MarketTrigger(BaseModel):
       코드/필터/로그 분석은 이 값을 정형 키로 사용한다.
     - trigger_reason: 사람이 읽는 한국어 사유 목록 (예: ["RSI 과매수"]).
       LangSmith / 사용자 노출 메시지 등에서 사용한다.
+
+    방침: 백테스트로 측정된 Lv·effect 같은 강도 메타는 의도적으로 전달하지 않는다.
+    LLM 의 자율적 의사결정을 보존하기 위해 모든 trigger 는 동일 weight 로 노출되고,
+    가중치 부여는 AI Agent 가 자체 판단으로 한다.
     """
 
     rule_ids: list[str] = Field(default_factory=list)
