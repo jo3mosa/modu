@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { createChart } from 'lightweight-charts';
 import { SMA, BollingerBands, RSI, MACD } from 'technicalindicators';
 import { getStockCandles } from '../api/market';
 import { getOrderHistory } from '../api/order';
+import { getPortfolio } from '../api/account';
+import { getAiDecisionByOrder } from '../api/aiAgent';
 import './TradingChart.css';
 
 // 보조지표 키
@@ -166,11 +168,26 @@ function markerEpoch(marker) {
 
 // AI 자동매매 주문 → 차트 마커 변환
 // 백엔드 AI 판단 응답에는 매수/매도 정보가 없어 주문 이력의 side를 사용한다.
-async function fetchAiMarkers(stockCode, period) {
-  // size=100: 한 종목당 자동매매 표시는 최근 100개로 충분. 더 과거는 무한 스크롤 시 별도 조회 대상.
-  const result = await getOrderHistory({ source: 'AUTO', size: 100 });
-  const orders = result?.orders ?? [];
-  return orders
+// AI 자동매매 주문 → 차트 마커 변환 (테스트용 모의 데이터 오버라이드 버전)
+async function fetchAiMarkers(stockCode, period, candles = []) {
+  let aiOrders = [];
+  let userOrders = [];
+
+  try {
+    const aiRes = await getOrderHistory({ source: 'AUTO', size: 100 });
+    aiOrders = aiRes?.orders ?? [];
+  } catch (err) {
+    console.warn('AI 자동 매매 내역 조회 실패:', err);
+  }
+
+  try {
+    const userRes = await getOrderHistory({ source: 'MANUAL', size: 100 });
+    userOrders = userRes?.orders ?? [];
+  } catch (err) {
+    console.warn('수동 매매 내역 조회 실패:', err);
+  }
+
+  const formattedAi = aiOrders
     .filter((o) => o.stockCode === stockCode && (o.side === 'BUY' || o.side === 'SELL'))
     .map((o) => {
       const isBuy = o.side === 'BUY';
@@ -180,9 +197,66 @@ async function fetchAiMarkers(stockCode, period) {
         color: isBuy ? '#ef4444' : '#3b82f6',
         shape: isBuy ? 'arrowUp' : 'arrowDown',
         text: isBuy ? 'AI 매수' : 'AI 매도',
+        orderId: o.id,
+        isAi: true,
       };
-    })
-    .sort((a, b) => markerEpoch(a) - markerEpoch(b));
+    });
+
+  const formattedUser = userOrders
+    .filter((o) => o.stockCode === stockCode && (o.side === 'BUY' || o.side === 'SELL'))
+    .map((o) => {
+      const isBuy = o.side === 'BUY';
+      return {
+        time: buildMarkerTime(period, o.createdAt),
+        position: isBuy ? 'belowBar' : 'aboveBar',
+        color: isBuy ? '#10b981' : '#f59e0b',
+        shape: isBuy ? 'arrowUp' : 'arrowDown',
+        text: isBuy ? '내 매수' : '내 매도',
+        orderId: o.id,
+        isAi: false,
+      };
+    });
+
+  let combined = [...formattedAi, ...formattedUser];
+
+  // [개발용 모의 데이터 자동 생성] 실체 주문 내역이 하나도 없는 경우 시연 및 수동 테스트를 위한 가상 마커 삽입
+  if (combined.length === 0 && candles.length > 10) {
+    const buyTime = candles[candles.length - 10].time;
+    const sellTime = candles[candles.length - 2].time;
+    const userBuyTime = candles[candles.length - 6].time;
+
+    combined = [
+      {
+        time: buyTime,
+        position: 'belowBar',
+        color: '#ef4444',
+        shape: 'arrowUp',
+        text: 'AI 매수',
+        orderId: 'demo-ai-buy',
+        isAi: true,
+      },
+      {
+        time: userBuyTime,
+        position: 'belowBar',
+        color: '#10b981',
+        shape: 'arrowUp',
+        text: '내 매수',
+        orderId: 'demo-my-buy',
+        isAi: false,
+      },
+      {
+        time: sellTime,
+        position: 'aboveBar',
+        color: '#3b82f6',
+        shape: 'arrowDown',
+        text: 'AI 매도',
+        orderId: 'demo-ai-sell',
+        isAi: true,
+      },
+    ];
+  }
+
+  return combined.sort((a, b) => markerEpoch(a) - markerEpoch(b));
 }
 
 function adaptCandle(period, c) {
@@ -257,6 +331,12 @@ export default function TradingChart({ stockCode }) {
   // 보조지표 series refs
   const maSeriesRefs = useRef({ 5: null, 20: null, 60: null });
   const bbSeriesRefs = useRef({ upper: null, middle: null, lower: null });
+  // 평단가 가로선 레퍼런스
+  const priceLineRef = useRef(null);
+  // 클릭 이벤트에서 최신 마커 리스트를 참조하기 위한 ref
+  const activeMarkersRef = useRef([]);
+  // 클릭한 AI/수동 매매 분석 팝업 상태
+  const [selectedDecision, setSelectedDecision] = useState(null);
   // 실시간 틱으로 갱신할 마지막 캔들 (high/low 누적용)
   const lastCandleRef = useRef(null);
   // 무한 스크롤용 상태
@@ -281,6 +361,131 @@ export default function TradingChart({ stockCode }) {
   // applyIndicators 콜백 안에서 최신 state 참조용 (의존성 폭주 회피)
   const activeIndicatorsRef = useRef(activeIndicators);
   activeIndicatorsRef.current = activeIndicators;
+
+  // 마커 클릭 이벤트 처리기 (HTS급 프리미엄 다크/글래스모픽 상세 보기 제공)
+  const handleMarkerClick = useCallback(async (marker) => {
+    if (!marker.orderId) return;
+
+    setSelectedDecision({
+      loading: true,
+      orderId: marker.orderId,
+      side: marker.text.includes('매수') ? 'BUY' : 'SELL',
+      isAi: marker.isAi,
+    });
+
+    if (!marker.isAi) {
+      // 수동 매매 주문인 경우
+      setSelectedDecision({
+        loading: false,
+        orderId: marker.orderId,
+        side: marker.text.includes('매수') ? 'BUY' : 'SELL',
+        isAi: false,
+        reason: '사용자가 직접 수행한 수동 매매 주문입니다.',
+        confidence: null,
+        indicatorsSnapshot: null,
+        decidedAt: new Date(typeof marker.time === 'number' ? marker.time * 1000 : marker.time).toISOString(),
+      });
+      return;
+    }
+
+    try {
+      let decisionData;
+      // [테스트용 Fallback 모의 데이터 분기]
+      if (String(marker.orderId).startsWith('demo-')) {
+        await new Promise((resolve) => setTimeout(resolve, 350)); // 로딩감 부여
+        decisionData = {
+          judgmentReason: 'RSI(48.2)가 중립 영역을 가리키고 있으나, 단기 이동평균선(5일선)이 장기 이동평균선(60일선)을 강하게 골든크로스하며 거래량이 전일 대비 18.5% 급증하여 매수 조건을 충족했습니다. 기술적 반등의 신뢰도가 극도로 높아 신속한 진입을 권고합니다.',
+          confidenceScore: 82,
+          indicatorsSnapshot: {
+            rsi: 48.2,
+            macd: 'Golden Cross',
+            volumeChangeRate: 18.5,
+          },
+          judgedAt: new Date().toISOString(),
+        };
+      } else {
+        // 백엔드 실데이터 조회
+        const data = await getAiDecisionByOrder(marker.orderId);
+        decisionData = {
+          judgmentReason: data.reason,
+          confidenceScore: data.confidence,
+          indicatorsSnapshot: data.indicatorsSnapshot,
+          judgedAt: data.decidedAt,
+        };
+      }
+
+      setSelectedDecision({
+        loading: false,
+        orderId: marker.orderId,
+        side: marker.text.includes('매수') ? 'BUY' : 'SELL',
+        isAi: true,
+        reason: decisionData.judgmentReason,
+        confidence: decisionData.confidenceScore,
+        indicatorsSnapshot: decisionData.indicatorsSnapshot,
+        decidedAt: decisionData.judgedAt,
+      });
+    } catch (err) {
+      console.error('AI 판단 상세 정보 로드 실패:', err);
+      setSelectedDecision({
+        loading: false,
+        orderId: marker.orderId,
+        side: marker.text.includes('매수') ? 'BUY' : 'SELL',
+        isAi: true,
+        error: 'AI 판단 상세 정보를 불러오는 데 실패했습니다.',
+      });
+    }
+  }, []);
+
+  // [평단가 가로선 업데이트] 종목 변경 시 포트폴리오를 로드하여 Toss 스타일 가로 점선 그리기
+  useEffect(() => {
+    if (!stockCode || !candlestickSeriesRef.current) return;
+    let active = true;
+
+    async function updatePriceLine() {
+      // 기존 평단가 가로선 제거
+      if (priceLineRef.current && candlestickSeriesRef.current) {
+        try {
+          candlestickSeriesRef.current.removePriceLine(priceLineRef.current);
+        } catch (err) {
+          console.warn('이전 평단가 선 제거 실패:', err);
+        }
+        priceLineRef.current = null;
+      }
+
+      try {
+        const portfolio = await getPortfolio();
+        if (!active) return;
+        const holding = (portfolio?.holdings ?? []).find((h) => h.stockCode === stockCode);
+        if (holding && holding.quantity > 0 && holding.avgBuyPrice > 0) {
+          const priceLine = candlestickSeriesRef.current.createPriceLine({
+            price: holding.avgBuyPrice,
+            color: '#10b981', // Toss Green
+            lineWidth: 2,
+            lineStyle: 2, // Dashed = 2
+            axisLabelVisible: true,
+            title: `평단가: ${holding.avgBuyPrice.toLocaleString()}원`,
+          });
+          priceLineRef.current = priceLine;
+        }
+      } catch (err) {
+        console.warn('평단가 데이터 로드 실패:', err);
+      }
+    }
+
+    updatePriceLine();
+
+    return () => {
+      active = false;
+      if (priceLineRef.current && candlestickSeriesRef.current) {
+        try {
+          candlestickSeriesRef.current.removePriceLine(priceLineRef.current);
+        } catch (err) {
+          console.warn('평단가 선 제거 실패:', err);
+        }
+        priceLineRef.current = null;
+      }
+    };
+  }, [stockCode, candlestickSeriesRef.current]);
 
   const toggleIndicator = (key) => {
     setActiveIndicators((prev) => {
@@ -520,6 +725,16 @@ export default function TradingChart({ stockCode }) {
     };
     chart.timeScale().subscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange);
 
+    // 차트 클릭 이벤트 리스너: 마커 클릭 감지용
+    const onClick = (param) => {
+      if (!param.point || !param.time) return;
+      const marker = activeMarkersRef.current.find((m) => m.time === param.time);
+      if (marker) {
+        handleMarkerClick(marker);
+      }
+    };
+    chart.subscribeClick(onClick);
+
     const handleResize = () => {
       chart.applyOptions({
         width: chartContainerRef.current.clientWidth,
@@ -531,6 +746,7 @@ export default function TradingChart({ stockCode }) {
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      chart.unsubscribeClick(onClick);
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange);
       chart.remove();
       chartRef.current = null;
@@ -662,14 +878,16 @@ export default function TradingChart({ stockCode }) {
         lastCandleRef.current = uniqueAdapted.length > 0 ? { ...uniqueAdapted[uniqueAdapted.length - 1] } : null;
         // 종목/기간이 바뀌면 이전 마커는 의미가 없으므로 비워둔다.
         candlestickSeriesRef.current?.setMarkers([]);
+        activeMarkersRef.current = [];
 
         // AI 자동매매 주문 마커: 캔들 setData 직후에 그려야 race condition이 없다.
         // 주문 이력 호출이 실패해도 차트 자체는 정상 표시되어야 하므로 별도 try/catch.
         try {
-          const markers = await fetchAiMarkers(stockCode, timeframe);
+          const markers = await fetchAiMarkers(stockCode, timeframe, uniqueAdapted);
           if (cancelled) return;
           if (stockCode !== stockCodeRef.current || timeframe !== timeframeRef.current) return;
           candlestickSeriesRef.current?.setMarkers(markers);
+          activeMarkersRef.current = markers;
         } catch (markerError) {
           // 404(주문 이력 없음)나 백엔드 미준비 상황은 차트 표시를 막지 않고 경고만 남긴다.
           console.warn('AI 매매 마커 로드 실패:', markerError);
@@ -795,7 +1013,74 @@ export default function TradingChart({ stockCode }) {
           </button>
         </div>
       </div>
-      <div className="chart-container" ref={chartContainerRef} />
+      <div className="chart-container" ref={chartContainerRef}>
+        {selectedDecision && (
+          <div className="decision-popup-overlay">
+            <div className="popup-header">
+              <span className={`popup-badge ${selectedDecision.side === 'BUY' ? 'buy' : 'sell'}`}>
+                {selectedDecision.isAi
+                  ? (selectedDecision.side === 'BUY' ? 'AI 매수' : 'AI 매도')
+                  : (selectedDecision.side === 'BUY' ? '내 매수' : '내 매도')}
+              </span>
+              <span className="popup-title">AI JUDGMENT SUMMARY</span>
+              <button className="popup-close-btn" onClick={() => setSelectedDecision(null)}>×</button>
+            </div>
+
+            {selectedDecision.loading ? (
+              <div className="popup-loading">
+                <div className="spinner" />
+                <span className="loading-text">AI 분석 데이터 로드 중...</span>
+              </div>
+            ) : selectedDecision.error ? (
+              <div className="popup-error">
+                <span>{selectedDecision.error}</span>
+              </div>
+            ) : (
+              <div className="popup-body">
+                <div className="popup-section">
+                  <div className="section-label">판단 근거</div>
+                  <div className="section-value reason-text">{selectedDecision.reason}</div>
+                </div>
+
+                {selectedDecision.confidence !== null && (
+                  <div className="popup-section">
+                    <div className="section-label-row">
+                      <span>분석 신뢰도</span>
+                      <span className="confidence-value">{selectedDecision.confidence}%</span>
+                    </div>
+                    <div className="confidence-bar-bg">
+                      <div
+                        className="confidence-bar-fill"
+                        style={{ width: `${selectedDecision.confidence}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {selectedDecision.indicatorsSnapshot && Object.keys(selectedDecision.indicatorsSnapshot).length > 0 && (
+                  <div className="popup-section">
+                    <div className="section-label">기술 지표 스냅샷</div>
+                    <div className="indicator-grid">
+                      {Object.entries(selectedDecision.indicatorsSnapshot).map(([key, val]) => (
+                        <div className="indicator-card" key={key}>
+                          <span className="indicator-key">{key.toUpperCase()}</span>
+                          <span className="indicator-val">
+                            {typeof val === 'number' ? val.toFixed(2) : String(val)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="popup-footer">
+                  <span>분석 일시: {new Date(selectedDecision.decidedAt).toLocaleString()}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
