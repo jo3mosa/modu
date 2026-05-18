@@ -1,7 +1,9 @@
 package com.modu.backend.domain.market.websocket;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.modu.backend.global.config.KisProfiles;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
@@ -13,6 +15,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 @Component
+@Profile(KisProfiles.NOT_GATEWAY)
 public class KisRealtimeSubscriptionManager {
 
     private final ObjectMapper objectMapper;
