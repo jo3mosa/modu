@@ -725,11 +725,11 @@ export default function TradingChart({ stockCode }) {
     };
     chart.timeScale().subscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange);
 
-    // 차트 클릭 이벤트 리스너: 마커 클릭 감지용
+    // 차트 클릭 이벤트 리스너: 마커 클릭 감지용 (수동 매매 마커는 클릭 방지)
     const onClick = (param) => {
       if (!param.point || !param.time) return;
       const marker = activeMarkersRef.current.find((m) => m.time === param.time);
-      if (marker) {
+      if (marker && marker.isAi) {
         handleMarkerClick(marker);
       }
     };
@@ -1022,14 +1022,14 @@ export default function TradingChart({ stockCode }) {
                   ? (selectedDecision.side === 'BUY' ? 'AI 매수' : 'AI 매도')
                   : (selectedDecision.side === 'BUY' ? '내 매수' : '내 매도')}
               </span>
-              <span className="popup-title">AI JUDGMENT SUMMARY</span>
+              <span className="popup-title">AI 판단 요약</span>
               <button className="popup-close-btn" onClick={() => setSelectedDecision(null)}>×</button>
             </div>
 
             {selectedDecision.loading ? (
               <div className="popup-loading">
                 <div className="spinner" />
-                <span className="loading-text">AI 분석 데이터 로드 중...</span>
+                <span className="loading-text">AI 분석 데이터 로드 중 ...</span>
               </div>
             ) : selectedDecision.error ? (
               <div className="popup-error">
