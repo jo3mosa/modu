@@ -44,6 +44,7 @@ _BEAR_ARGUMENT = (
 
 
 def _mock_bull_researcher(state):
+    debate = state.investment_debate_state or {}
     return {
         "investment_debate_state": {
             "history": _BULL_ARGUMENT,
@@ -51,6 +52,10 @@ def _mock_bull_researcher(state):
             "bear_history": "",
             "current_response": _BULL_ARGUMENT,
             "count": 1,
+            # round_count는 실제 bull_researcher와 동일하게 Bull에서는 건드리지 않는다.
+            "round_count": debate.get("round_count", 0),
+            "latest_bull_argument": _BULL_ARGUMENT,
+            "latest_bear_argument": debate.get("latest_bear_argument"),
         }
     }
 
@@ -59,6 +64,10 @@ def _mock_bear_researcher(state):
     debate = state.investment_debate_state or {}
     history = debate.get("history", "")
     new_history = f"{history}\n{_BEAR_ARGUMENT}" if history else _BEAR_ARGUMENT
+    # 실제 bear_researcher.py는 발언 완료 시점에 round_count를 증가시킨다.
+    # builder.route_after_bear가 이 값을 보고 종료를 결정하므로 mock도 동일 계약을 지켜야 한다 —
+    # 누락 시 conditional edge가 영원히 bull로 루프해 GraphRecursionError가 발생한다.
+    round_count = debate.get("round_count", 0) + 1
     return {
         "investment_debate_state": {
             "history": new_history,
@@ -66,6 +75,9 @@ def _mock_bear_researcher(state):
             "bear_history": _BEAR_ARGUMENT,
             "current_response": _BEAR_ARGUMENT,
             "count": debate.get("count", 0) + 1,
+            "round_count": round_count,
+            "latest_bull_argument": debate.get("latest_bull_argument"),
+            "latest_bear_argument": _BEAR_ARGUMENT,
         }
     }
 
