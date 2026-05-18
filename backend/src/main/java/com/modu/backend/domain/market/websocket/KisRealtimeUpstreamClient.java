@@ -8,6 +8,7 @@ import com.modu.backend.domain.market.service.KisPlatformWebSocketKeyService;
 import com.modu.backend.global.config.KisProfiles;
 import com.modu.backend.global.config.KisWebSocketProperties;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
@@ -48,6 +49,7 @@ import java.util.function.Consumer;
 @Slf4j
 @Component
 @Profile(KisProfiles.NOT_GATEWAY)
+@ConditionalOnProperty(name = "market.feed.client-mode", havingValue = "LOCAL", matchIfMissing = true)
 public class KisRealtimeUpstreamClient {
 
     private static final String SUBSCRIBE = "1";
