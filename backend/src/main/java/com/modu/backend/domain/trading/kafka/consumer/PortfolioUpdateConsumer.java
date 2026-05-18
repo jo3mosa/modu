@@ -4,8 +4,10 @@ import com.modu.backend.domain.trading.entity.Order;
 import com.modu.backend.domain.trading.entity.OrderExecution;
 import com.modu.backend.domain.trading.entity.OrderSide;
 import com.modu.backend.domain.trading.entity.OrderStatus;
+import com.modu.backend.domain.ai.repository.AiJudgmentRepository;
 import com.modu.backend.domain.trading.entity.TradePnlRecord;
 import com.modu.backend.domain.trading.execution.event.OrderExecutedEvent;
+import com.modu.backend.domain.trading.execution.producer.TradeSettledProducer;
 import com.modu.backend.domain.trading.repository.OrderExecutionRepository;
 import com.modu.backend.domain.trading.repository.OrderRepository;
 import com.modu.backend.domain.trading.repository.TradePnlRecordRepository;
@@ -14,6 +16,7 @@ import com.modu.backend.domain.trading.sse.OrderSseEvent;
 import com.modu.backend.global.kafka.constant.KafkaConsumerGroup;
 import com.modu.backend.global.kafka.constant.KafkaTopic;
 import com.modu.backend.global.kafka.dto.TradeOrderExecutedMessage;
+import com.modu.backend.global.kafka.dto.TradeSettledMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -56,6 +59,8 @@ public class PortfolioUpdateConsumer {
     private final TradePnlRecordRepository tradePnlRecordRepository;
     private final OrderSseEmitterManager sseEmitterManager;
     private final ApplicationEventPublisher eventPublisher;
+    private final TradeSettledProducer tradeSettledProducer;
+    private final AiJudgmentRepository aiJudgmentRepository;
 
     @KafkaListener(
             topics = KafkaTopic.TRADE_ORDER_EXECUTED,
@@ -123,9 +128,9 @@ public class PortfolioUpdateConsumer {
         // 6) Order 갱신 (markFilled — 가중평균 + isFinalFill 전이)
         order.markFilled(executedQty, message.executedPrice(), isFinalFill, message.executedAt());
 
-        // 7) SELL 전량 체결 시 PnL 기록
+        // 7) SELL 전량 체결 시 PnL 기록 + trade.settled 발행 (회고 Agent 트리거)
         if (isFinalFill && order.getSide() == OrderSide.SELL) {
-            insertPnlRecord(order);
+            insertPnlRecordAndPublishSettled(order);
         }
 
         // 8) SSE 발송
@@ -143,12 +148,15 @@ public class PortfolioUpdateConsumer {
     }
 
     /**
-     * SELL 전량 체결과 매칭되는 매수 주문을 찾아 trade_pnl_records INSERT.
+     * SELL 전량 체결과 매칭되는 매수 주문을 찾아 trade_pnl_records INSERT + trade.settled 발행.
      *
      * MVP 매칭: 동일 (user_id, stock_code) 의 가장 최근 FILLED BUY 주문, 아직 PnL 미매칭 row.
      * 다중 분할 매수 / 부분 매도 누적 대응은 followups (FIFO lot 매칭).
+     *
+     * trade.settled 페이로드의 ai_judgment_id 는 buyOrder.source = AI_DECISION 일 때만 조회.
+     * raw_return = (sell - buy) / buy. alpha_return 은 시장 지수 미산출 → null (followups).
      */
-    private void insertPnlRecord(Order sellOrder) {
+    private void insertPnlRecordAndPublishSettled(Order sellOrder) {
         Optional<Order> buyOpt = orderRepository
                 .findFirstByUserIdAndStockCodeAndSideAndStatusOrderByFilledAtDesc(
                         sellOrder.getUserId(), sellOrder.getStockCode(),
@@ -169,7 +177,7 @@ public class PortfolioUpdateConsumer {
                 ? 0L
                 : Duration.between(buyOrder.getFilledAt(), sellOrder.getFilledAt()).toDays();
 
-        tradePnlRecordRepository.save(TradePnlRecord.builder()
+        TradePnlRecord saved = tradePnlRecordRepository.save(TradePnlRecord.builder()
                 .stockCode(sellOrder.getStockCode())
                 .userId(sellOrder.getUserId())
                 .buyOrderId(buyOrder.getId())
@@ -182,8 +190,45 @@ public class PortfolioUpdateConsumer {
                 .holdingDays(holdingDays)
                 .closedAt(sellOrder.getFilledAt())
                 .build());
-        log.info("[PortfolioUpdateConsumer] PnL 기록 INSERT - buyOrderId: {}, sellOrderId: {}",
-                buyOrder.getId(), sellOrder.getId());
+        log.info("[PortfolioUpdateConsumer] PnL 기록 INSERT - tradePnlRecordId: {}, buyOrderId: {}, sellOrderId: {}",
+                saved.getId(), buyOrder.getId(), sellOrder.getId());
+
+        publishSettled(sellOrder, buyOrder, saved, holdingDays);
+    }
+
+    /**
+     * trade.settled 발행 — 회고 Agent 트리거.
+     *
+     * ai_judgment_id 는 매수가 AI source 일 때만 조회. 수동 매수면 null.
+     * raw_return = (sell - buy) / buy 소수. alpha_return 은 followups.
+     */
+    private void publishSettled(Order sellOrder, Order buyOrder, TradePnlRecord pnl, long holdingDays) {
+        Long aiJudgmentId = aiJudgmentRepository
+                .findFirstByUserIdAndOrderIdOrderByJudgedAtDesc(buyOrder.getUserId(), buyOrder.getId())
+                .map(com.modu.backend.domain.ai.entity.AiJudgment::getId)
+                .orElse(null);
+
+        Long buyAvg  = buyOrder.getFilledAvgPrice();
+        Long sellAvg = sellOrder.getFilledAvgPrice();
+        Double rawReturn = (buyAvg == null || buyAvg == 0L || sellAvg == null)
+                ? null
+                : (double) (sellAvg - buyAvg) / buyAvg;
+
+        TradeSettledMessage message = TradeSettledMessage.of(
+                sellOrder.getUserId(),
+                aiJudgmentId,
+                pnl.getId(),
+                rawReturn,
+                null,           // alpha_return: 시장 지수 산출 미구현 (followups)
+                holdingDays
+        );
+        try {
+            tradeSettledProducer.publish(message);
+        } catch (Exception e) {
+            // 메인 체결 흐름은 이미 완료 — settled 발행 실패는 회고만 영향. 본 트랜잭션은 commit 진행.
+            log.error("[PortfolioUpdateConsumer] trade.settled 발행 실패 - tradePnlRecordId: {}",
+                    pnl.getId(), e);
+        }
     }
 
     /**
