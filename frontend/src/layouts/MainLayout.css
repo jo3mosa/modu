@@ -129,6 +129,14 @@
   position: relative;
   width: 40%;
   max-width: 560px;
+  /* 헤더는 main-content 내부에 있어 justify-content: center 만으로는 사이드바 너비의 절반만큼 우측 쏠림이 생김.
+     사이드바 너비만큼 우측 여백을 주면 flex center 계산이 보정되어 viewport 기준 정중앙으로 옮겨진다. */
+  margin-right: 250px;
+  transition: margin-right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar-collapsed .global-search-wrapper {
+  margin-right: 72px;
 }
 
 .global-notification-btn {
