@@ -1,6 +1,7 @@
 package com.modu.backend.domain.trading.execution.parser;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -27,6 +28,7 @@ import java.util.Optional;
  *   본 PR 은 CNTG_YN=2 (체결 통보) 만 변환. CNTG_YN=1 은 무시 (followups 후보).
  */
 @Slf4j
+@Component
 public class ExecutionMessagePayloadParser {
 
     private static final char OUTER_DELIM = '|';
