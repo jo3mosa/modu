@@ -39,7 +39,10 @@ MONGO_NEWS_COLL       = "news_articles"
 # 백테스트의 as_of(t) 시점에 t-(window-1) ~ t 의 데이터를 본다.
 
 EVENT_LOOKBACK_DAYS    = 2
-SENTIMENT_LOOKBACK_DAYS = 1
+# 실 서비스 5-1: "가장 마지막으로 계산된 뉴스 감성 지수" 재현.
+# 1일이면 당일 뉴스 없는 날 sentiment=None → sell bias 증폭.
+# 30일 윈도우에서 가장 최근 1건을 쓰면 라이브와 동일한 시맨틱.
+SENTIMENT_LOOKBACK_DAYS = 30
 MAX_DISCLOSURES_PER_STOCK = 10    # event payload 크기 cap (live 와 동일)
 
 # ─── 시간 범위 기본값 ─────────────────────────────────────────────────────────

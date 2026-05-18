@@ -121,9 +121,21 @@ def _fmt_event(docs: list[dict]) -> dict | None:
 
 
 def _fmt_sentiment(docs: list[dict]) -> dict | None:
+    """실 서비스 5-1 정합: '가장 마지막으로 계산된 뉴스 감성 지수' (단건, 최신)."""
     if not docs:
         return None
-    scores = [d.get("sentiment_score") for d in docs if isinstance(d.get("sentiment_score"), (int, float))]
-    if not scores:
+    candidates = sorted(
+        [d for d in docs if isinstance(d.get("sentiment_score"), (int, float))],
+        key=lambda d: d.get("published_at") or "",
+        reverse=True,
+    )
+    if not candidates:
         return None
-    return {"daily_score": sum(scores) / len(scores), "news_count": len(scores)}
+    latest = candidates[0]
+    return {
+        "sentiment_score": latest.get("sentiment_score"),
+        "confidence":      latest.get("confidence"),
+        "neg_prob":        latest.get("neg_prob"),
+        "pos_prob":        latest.get("pos_prob"),
+        "neu_prob":        latest.get("neu_prob"),
+    }

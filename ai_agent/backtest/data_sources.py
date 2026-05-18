@@ -271,11 +271,13 @@ def fetch_news_window(
     client: MongoClient, day: date, stock_codes: list[str],
     lookback_days: int = config.SENTIMENT_LOOKBACK_DAYS,
 ) -> dict[str, list[dict]]:
-    """as_of day 기준 최근 lookback_days 일치 뉴스. stock_codes 매칭.
+    """as_of day 기준 최근 lookback_days 일치 뉴스 전체 반환. stock_codes 매칭.
 
-    news_articles 의 종목 매핑(stock_codes 배열 필드) 기준. FinBERT 점수
-    필드(sentiment_score, pos_prob, neg_prob 등) 가 이미 적재되어 있어야
-    signal_generator 의 sentiment payload 빌드 가능.
+    실 서비스 5-1 '가장 마지막으로 계산된 감성 지수' 재현을 위해 30일 윈도우 사용.
+    signal_generator / always_trigger 의 _to_sentiment 가 published_at 내림차순
+    정렬 후 최신 1건을 취하므로, 윈도우 내 뉴스가 없어도 None 처리 보장.
+    FinBERT 점수 필드(sentiment_score, confidence, neg_prob, pos_prob, neu_prob)
+    가 적재된 상태여야 sentiment payload 빌드 가능.
     """
     # end_dt = day 익일 00:00 KST (배타적), start_dt = end_dt - lookback_days.
     # 윈도우 길이 = lookback_days 일자 (예: lookback=1 → 당일 1 일치만).

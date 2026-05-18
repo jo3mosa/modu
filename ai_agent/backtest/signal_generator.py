@@ -149,24 +149,26 @@ def _to_event(disclosure_docs: Optional[list[dict]]) -> Optional[dict]:
 def _to_sentiment(news_docs: Optional[list[dict]]) -> Optional[dict]:
     """뉴스 문서 → sentiment payload.
 
-    news_collector 의 라이브 sentiment:{stock} schema 와 정합:
-      {daily_score, confidence_level, pos_prob, neu_prob, neg_prob}
-    뉴스가 없거나 sentiment_score 필드 누락이면 None — SENT-001/002 미발화.
-
-    daily_score 는 그날 매칭된 모든 뉴스의 sentiment_score 평균(-100~100 스케일).
-    AI 팀이 다른 집계법(가중 평균 등) 을 원하면 이 함수만 교체하면 됨.
+    실 서비스 5-1 정합: '가장 마지막으로 계산된 뉴스 감성 지수'.
+    published_at 내림차순으로 정렬 후 sentiment_score 가 있는 첫 번째 문서 사용.
+    confidence / neg_prob / pos_prob / neu_prob 는 FinBERT 출력 그대로 포함.
     """
     if not news_docs:
         return None
-    scores = [d.get("sentiment_score") for d in news_docs
-              if isinstance(d.get("sentiment_score"), (int, float))]
-    if not scores:
+    candidates = sorted(
+        [d for d in news_docs if isinstance(d.get("sentiment_score"), (int, float))],
+        key=lambda d: d.get("published_at") or "",
+        reverse=True,
+    )
+    if not candidates:
         return None
-    avg = sum(scores) / len(scores)
+    latest = candidates[0]
     return {
-        "daily_score":      avg,
-        "confidence_level": None,
-        "news_count":       len(scores),
+        "sentiment_score": latest.get("sentiment_score"),
+        "confidence":      latest.get("confidence"),
+        "neg_prob":        latest.get("neg_prob"),
+        "pos_prob":        latest.get("pos_prob"),
+        "neu_prob":        latest.get("neu_prob"),
     }
 
 
