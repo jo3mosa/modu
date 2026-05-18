@@ -61,12 +61,12 @@ spec:
           mountPath: /var/lib/postgresql/data
         resources:
           # shared_buffers + work_mem + OS page cache 여유 확보.
-          # 거래시간 트랜잭션 burst 대응.
+          # 거래시간 트랜잭션 burst 대응 — limit 4Gi 로 증액(메모리 압박 회피).
           requests:
-            memory: "512Mi"
+            memory: "2Gi"
             cpu: "250m"
           limits:
-            memory: "2Gi"
+            memory: "4Gi"
             cpu: "1000m"
         # DB가 준비됐는지 확인 — 준비 전까지 백엔드 트래픽 차단
         readinessProbe:
