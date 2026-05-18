@@ -10,10 +10,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
+import org.springframework.web.socket.WebSocketHttpHeaders;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
+import java.net.URI;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -21,35 +23,33 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 /**
- * KIS 실시간 시세 WebSocket Upstream 클라이언트
- *
- * [역할]
- * 플랫폼 KIS 계정 1개로 KIS WebSocket 에 연결하여 종목별 체결가/호가 등을 구독·수신.
- * 수신된 메시지는 (1) 프론트 세션 broadcast (SubscriptionManager) (2) Redis 캐시 (CacheService)
- * 두 경로로 전파.
+ * KIS 실시간 WebSocket Upstream 클라이언트 — 단일 세션 multiplex
  *
  * [세션 모델]
- *  - TR 종류(체결가/호가 등) 별 1개의 WebSocket 세션 (사용 종목 다수가 같은 세션 공유)
- *  - 종목 단위 구독은 같은 세션 안에서 메시지 단위로 수행 (SUBSCRIBE/UNSUBSCRIBE)
+ *   KIS 는 appkey 당 동시 WebSocket 세션 1개만 허용 ("ALREADY IN USE appkey" 거부).
+ *   따라서 시세 체결가 (H0STCNT0) / 시세 호가 (H0STASP0) / 체결통보 (H0STCNI0) 등
+ *   모든 TR_ID 를 단일 세션 내 SUBSCRIBE 로 multiplex.
+ *
+ * [확장 — 외부 TR 핸들러 등록]
+ *   체결통보 (H0STCNI0) 처럼 AES 복호화 / 별도 dispatch 가 필요한 TR 은
+ *   registerSystemHandler / registerDataHandler 로 외부 처리기를 주입.
+ *   기본 시세 (H0STCNT0 / H0STASP0) 는 본 클래스 내부 파서 + broadcast + 캐시.
  *
  * [재연결]
- *  - 세션 끊김 + 활성 구독 존재 시 가상 스레드로 비동기 재연결
- *  - 재연결 후 기존 구독 종목 자동 복원
- *
- * [구독 한도]
- *  - KIS 플랫폼 계정 1개 기준 동시 구독 종목 수 한계 존재 (약 41건, KIS 정책)
- *  - "프론트가 화면 띄운 종목" 만 구독되는 구조 — Position Monitor 등 화면 무관 구독 필요 시 별도 트리거 필요
+ *   세션 끊김 + 활성 구독 존재 시 가상 스레드 비동기 재연결.
+ *   재연결 후 시세 종목 구독 + 외부 핸들러 재구독 (registerReconnectListener) 자동 복원.
  */
 @Slf4j
 @Component
 public class KisRealtimeUpstreamClient {
 
-    /** KIS WebSocket tr_type — "1" = 구독 시작 */
     private static final String SUBSCRIBE = "1";
-    /** KIS WebSocket tr_type — "2" = 구독 해제 */
     private static final String UNSUBSCRIBE = "2";
+    private static final long RECOVERY_COOLDOWN_MS = 30_000L;
 
     private final ObjectMapper objectMapper;
     private final KisPlatformWebSocketKeyService webSocketKeyService;
@@ -57,16 +57,22 @@ public class KisRealtimeUpstreamClient {
     private final KisRealtimeMessageParser parser;
     private final RealtimePriceCacheService realtimePriceCacheService;
 
-    /** TR 종류별 활성 WebSocket 세션 */
-    private final Map<KisRealtimeStreamType, WebSocketSession> sessions = new ConcurrentHashMap<>();
-    /** TR 종류별 현재 구독 중인 종목 코드 집합 — 재연결 시 복원 기준 */
+    /** 단일 WebSocket 세션 — 모든 TR 공유 */
+    private volatile WebSocketSession session;
+    /** TR 종류별 현재 구독 종목 코드 — 재연결 시 복원 */
     private final Map<KisRealtimeStreamType, Set<String>> subscriptions = new ConcurrentHashMap<>();
-    /** TR 종류별 마지막 approval_key 복구 시각 — 거부 응답 폭주 시 중복 복구 방지 */
-    private final Map<KisRealtimeStreamType, AtomicLong> lastRecoveryAt = new ConcurrentHashMap<>();
-    /** approval_key 복구 cooldown — 같은 type 에 대해 이 시간 안에는 1회만 복구 시도 */
-    private static final long RECOVERY_COOLDOWN_MS = 30_000L;
-    /** 메시지 수신 시 프론트 broadcast 위임 대상. 순환 참조 회피용으로 setter 주입 */
+    /** approval_key 복구 cooldown */
+    private final AtomicLong lastRecoveryAt = new AtomicLong(0L);
+
+    /** SubscriptionManager 주입 (순환 참조 회피용 setter) */
     private KisRealtimeSubscriptionManager subscriptionManager;
+
+    /** 외부 TR 핸들러 — 키: TR_ID, 값: 시스템 메시지 콜백 */
+    private final Map<String, BiConsumer<JsonNode, WebSocketSession>> systemHandlers = new ConcurrentHashMap<>();
+    /** 외부 TR 핸들러 — 키: TR_ID, 값: 데이터 메시지 콜백 (암호화 포함 raw 페이로드) */
+    private final Map<String, Consumer<String>> dataHandlers = new ConcurrentHashMap<>();
+    /** 재연결 직후 호출 — 외부 핸들러가 자신의 구독을 복원할 기회 */
+    private final Set<Runnable> reconnectListeners = ConcurrentHashMap.newKeySet();
 
     public KisRealtimeUpstreamClient(
             ObjectMapper objectMapper,
@@ -82,100 +88,110 @@ public class KisRealtimeUpstreamClient {
         this.realtimePriceCacheService = realtimePriceCacheService;
     }
 
-    /**
-     * SubscriptionManager 주입 (순환 참조 회피)
-     * SubscriptionManager 생성자에서 setSubscriptionManager(this) 호출
-     */
     void setSubscriptionManager(KisRealtimeSubscriptionManager subscriptionManager) {
         this.subscriptionManager = subscriptionManager;
     }
 
-    /**
-     * KIS 종목 구독 시작
-     * 같은 TR 종류의 첫 종목이면 WebSocket 세션 생성 후 SUBSCRIBE 메시지 발신
-     */
+    // ───────────────────────────────────────────────────────────────────
+    // 시세 — 종목 단위 SUBSCRIBE
+    // ───────────────────────────────────────────────────────────────────
+
     public void subscribe(KisRealtimeStreamKey key) {
         subscriptions.computeIfAbsent(key.type(), ignored -> ConcurrentHashMap.newKeySet()).add(key.stockCode());
-        sendSubscription(key, SUBSCRIBE);
+        sendSubscription(key.type().trId(), key.stockCode(), SUBSCRIBE);
     }
 
-    /**
-     * KIS 종목 구독 해제
-     * 세션 자체는 유지 (같은 TR 의 다른 종목이 사용 가능). 세션 닫기는 외부 호출자 책임.
-     */
     public void unsubscribe(KisRealtimeStreamKey key) {
         Set<String> stockCodes = subscriptions.get(key.type());
         if (stockCodes != null) {
             stockCodes.remove(key.stockCode());
         }
-
-        WebSocketSession session = sessions.get(key.type());
         if (session != null && session.isOpen()) {
-            sendSubscription(key, UNSUBSCRIBE);
+            sendSubscription(key.type().trId(), key.stockCode(), UNSUBSCRIBE);
         }
     }
 
-    /**
-     * SUBSCRIBE/UNSUBSCRIBE 메시지 발신 공통 처리
-     * 세션 준비 → 메시지 직렬화 → 전송. 실패 시 ERROR 로그만 (호출 흐름 차단 X)
-     */
-    private void sendSubscription(KisRealtimeStreamKey key, String trType) {
+    // ───────────────────────────────────────────────────────────────────
+    // 외부 TR — 핸들러 등록 + 메시지 발신 API
+    // ───────────────────────────────────────────────────────────────────
+
+    /** 외부 TR 시스템 메시지 핸들러 등록 (예: H0STCNI0 SUBSCRIBE 응답에서 AES IV/Key 추출) */
+    public void registerSystemHandler(String trId, BiConsumer<JsonNode, WebSocketSession> handler) {
+        systemHandlers.put(trId, handler);
+    }
+
+    /** 외부 TR 데이터 메시지 핸들러 등록 (예: H0STCNI0 암호 페이로드 복호화) */
+    public void registerDataHandler(String trId, Consumer<String> handler) {
+        dataHandlers.put(trId, handler);
+    }
+
+    /** 재연결 직후 콜백 등록 (외부 핸들러가 자신의 구독을 재발신) */
+    public void registerReconnectListener(Runnable listener) {
+        reconnectListeners.add(listener);
+    }
+
+    /** 외부 핸들러가 SUBSCRIBE 메시지를 발신할 때 사용 — 세션 보장 + 직렬화 send */
+    public void send(String payload) throws Exception {
+        WebSocketSession active = ensureSession();
+        synchronized (active) {
+            active.sendMessage(new TextMessage(payload));
+        }
+    }
+
+    /** 외부 핸들러용 — 표준 SUBSCRIBE 메시지 생성 (approval_key 캐시 자동 사용) */
+    public String buildSubscriptionMessage(String trId, String trKey, boolean subscribe) throws Exception {
+        return subscriptionPayload(trId, trKey, subscribe ? SUBSCRIBE : UNSUBSCRIBE);
+    }
+
+    // ───────────────────────────────────────────────────────────────────
+    // 공통 — 세션 보장 / 메시지 직렬화
+    // ───────────────────────────────────────────────────────────────────
+
+    private void sendSubscription(String trId, String trKey, String trType) {
         try {
-            WebSocketSession session = ensureSession(key.type());
-            session.sendMessage(new TextMessage(subscriptionMessage(key, trType)));
+            String payload = subscriptionPayload(trId, trKey, trType);
+            log.warn("[DEBUG-WIRE] SUBSCRIBE send - trId: {}, trKey: {}, trType: {}, payload: {}",
+                    trId, trKey, trType, payload);
+            send(payload);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.error("KIS realtime subscription interrupted - trId: {}, stockCode: {}, error: {}",
-                    key.type().trId(), key.stockCode(), e.getMessage());
+            log.error("KIS realtime subscription interrupted - trId: {}, trKey: {}", trId, trKey);
         } catch (Exception e) {
-            log.error("KIS realtime subscription send failed - trId: {}, stockCode: {}, error: {}",
-                    key.type().trId(), key.stockCode(), e.getMessage());
+            log.error("KIS realtime subscription send failed - trId: {}, trKey: {}, error: {}",
+                    trId, trKey, e.getMessage());
         }
     }
 
-    /**
-     * 해당 TR 종류의 활성 WebSocket 세션 보장 (없거나 닫힌 경우 신규 연결)
-     *
-     * synchronized 블록 안에서 double-checked locking — 동시에 여러 스레드가 같은 type 의
-     * 첫 구독을 요청해도 한 번의 연결만 수립
-     */
-    private WebSocketSession ensureSession(KisRealtimeStreamType type) throws Exception {
-        WebSocketSession session = sessions.get(type);
-        if (session != null && session.isOpen()) {
-            return session;
-        }
+    private WebSocketSession ensureSession() throws Exception {
+        WebSocketSession current = session;
+        if (current != null && current.isOpen()) return current;
 
-        synchronized (sessions) {
-            session = sessions.get(type);
-            if (session != null && session.isOpen()) {
-                return session;
-            }
+        synchronized (this) {
+            current = session;
+            if (current != null && current.isOpen()) return current;
 
+            // Origin 헤더 미설정 시 KIS 가 즉시 close(1006) 거부
+            WebSocketHttpHeaders headers = new WebSocketHttpHeaders();
+            headers.setOrigin("http://localhost");
             CompletableFuture<WebSocketSession> future = new StandardWebSocketClient()
-                    .execute(new UpstreamHandler(type), properties.getUrl());
-            WebSocketSession connectedSession;
+                    .execute(new UpstreamHandler(), headers, URI.create(properties.getUrl()));
+            WebSocketSession connected;
             try {
-                connectedSession = future.get(properties.getConnectionTimeoutMs(), TimeUnit.MILLISECONDS);
+                connected = future.get(properties.getConnectionTimeoutMs(), TimeUnit.MILLISECONDS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw e;
             } catch (TimeoutException e) {
-                // 연결 대기 timeout 시 future 강제 취소 — 좀비 연결 방지
                 future.cancel(true);
-                throw new Exception("KIS WebSocket connection timeout - trId: " + type.trId()
-                        + ", timeout: " + properties.getConnectionTimeoutMs() + "ms", e);
+                throw new Exception("KIS WebSocket connection timeout - timeout: "
+                        + properties.getConnectionTimeoutMs() + "ms", e);
             }
-
-            sessions.put(type, connectedSession);
-            return connectedSession;
+            session = connected;
+            return connected;
         }
     }
 
-    /**
-     * KIS WebSocket 구독 메시지 JSON 직렬화
-     * header.approval_key 는 플랫폼 KIS 계정의 WebSocket 승인키 (캐시됨, 23h TTL)
-     */
-    private String subscriptionMessage(KisRealtimeStreamKey key, String trType) throws Exception {
+    private String subscriptionPayload(String trId, String trKey, String trType) throws Exception {
         Map<String, Object> message = Map.of(
                 "header", Map.of(
                         "approval_key", webSocketKeyService.getApprovalKey(),
@@ -185,100 +201,70 @@ public class KisRealtimeUpstreamClient {
                 ),
                 "body", Map.of(
                         "input", Map.of(
-                                "tr_id", key.type().trId(),
-                                "tr_key", key.stockCode()
+                                "tr_id", trId,
+                                "tr_key", trKey
                         )
                 )
         );
         return objectMapper.writeValueAsString(message);
     }
 
-    /**
-     * 재연결 직후 기존 구독 종목 일괄 복원
-     * subscriptions 맵의 종목 코드들을 모두 다시 SUBSCRIBE 메시지로 전송
-     */
-    private void restoreSubscriptions(KisRealtimeStreamType type) {
-        Set<String> stockCodes = subscriptions.getOrDefault(type, Set.of());
-        for (String stockCode : stockCodes) {
-            sendSubscription(new KisRealtimeStreamKey(type, stockCode), SUBSCRIBE);
+    private void restoreAllSubscriptions() {
+        // 시세 구독 복원
+        subscriptions.forEach((type, stockCodes) -> {
+            for (String code : stockCodes) {
+                sendSubscription(type.trId(), code, SUBSCRIBE);
+            }
+        });
+        // 외부 핸들러 재구독 (예: 체결통보 CANO 들)
+        for (Runnable listener : reconnectListeners) {
+            try {
+                listener.run();
+            } catch (Exception e) {
+                log.error("KIS realtime reconnect listener failed", e);
+            }
         }
     }
 
-    /**
-     * KIS WebSocket Upstream 핸들러 (TR 종류별 1 인스턴스)
-     *
-     * KIS 가 보내는 메시지 형식:
-     *  - 시세 데이터 메시지: 파이프(|) 구분 텍스트 — parser 가 RealtimePriceResponse 등으로 변환
-     *  - 시스템 메시지 (PINGPONG / 구독 응답): JSON — handleSystemMessage 가 처리
-     */
+    // ───────────────────────────────────────────────────────────────────
+    // WebSocket 핸들러
+    // ───────────────────────────────────────────────────────────────────
+
     private final class UpstreamHandler extends TextWebSocketHandler {
 
-        private final KisRealtimeStreamType type;
-
-        private UpstreamHandler(KisRealtimeStreamType type) {
-            this.type = type;
-        }
-
-        /**
-         * KIS WebSocket 수신 메시지 처리
-         *
-         * 흐름:
-         *  1. JSON 시작 ('{') → 시스템 메시지 (PINGPONG / 구독 응답) 처리
-         *  2. 외 → 시세 데이터로 parsing 후 broadcast + Redis 캐시
-         */
         @Override
-        public void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
+        public void handleTextMessage(WebSocketSession s, TextMessage message) throws Exception {
             String payload = message.getPayload();
             if (payload.startsWith("{")) {
-                handleSystemMessage(session, payload);
+                handleSystemMessage(s, payload);
                 return;
             }
-
-            parser.parse(payload).ifPresent(parsed -> {
-                // (1) 프론트 broadcast — subscriptionManager 미초기화(부팅 race 등) 시 skip
-                if (subscriptionManager != null) {
-                    subscriptionManager.broadcast(parsed.key(), parsed.payload());
-                } else {
-                    log.warn("KIS realtime subscription manager is not initialized, skipping broadcast");
-                }
-                // (2) Redis 캐시 (체결가 메시지만) — broadcast 와 독립 실행, Position Monitor / AI polling 용
-                if (parsed.payload() instanceof RealtimePriceResponse price) {
-                    realtimePriceCacheService.cache(price);
-                }
-            });
+            handleDataMessage(payload);
         }
 
-        /**
-         * WebSocket 연결 종료 시 처리
-         * 활성 구독 종목이 남아있으면 가상 스레드로 비동기 재연결 시도
-         */
         @Override
-        public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-            sessions.remove(type, session);
-            if (hasActiveSubscriptions(type)) {
-                Thread.ofVirtual().start(() -> reconnect(type));
+        public void afterConnectionClosed(WebSocketSession s, CloseStatus status) {
+            log.warn("KIS realtime websocket closed - status: {}", status);
+            if (session == s) session = null;
+            if (hasActiveSubscriptions()) {
+                Thread.ofVirtual().start(KisRealtimeUpstreamClient.this::reconnect);
             }
         }
 
-        /**
-         * Transport 오류 — ERROR 로그만, 후속 처리는 afterConnectionClosed 에 위임
-         */
         @Override
-        public void handleTransportError(WebSocketSession session, Throwable exception) {
-            log.error("KIS realtime websocket error - trId: {}, error: {}", type.trId(), exception.getMessage());
+        public void handleTransportError(WebSocketSession s, Throwable exception) {
+            log.error("KIS realtime websocket error - {}", exception.getMessage());
         }
 
-        /**
-         * KIS 시스템 메시지 (JSON) 처리
-         *  - PINGPONG: 동일 페이로드로 즉시 응답 (keepalive)
-         *  - 구독 응답 (rt_cd=1): 거부됨 → 경고 로그 + "invalid approval" 이면 자가복구 트리거
-         *  - rt_cd=0: 정상 응답 (별도 처리 없음)
-         */
-        private void handleSystemMessage(WebSocketSession session, String payload) throws Exception {
+        private void handleSystemMessage(WebSocketSession s, String payload) throws Exception {
+            log.warn("[DEBUG-WIRE] system message recv - payload: {}", payload);
             JsonNode root = objectMapper.readTree(payload);
             String trId = root.path("header").path("tr_id").asText();
+
             if ("PINGPONG".equals(trId)) {
-                session.sendMessage(new TextMessage(payload));
+                synchronized (s) {
+                    s.sendMessage(new TextMessage(payload));
+                }
                 return;
             }
 
@@ -286,70 +272,95 @@ public class KisRealtimeUpstreamClient {
             if ("1".equals(resultCode)) {
                 String msg = root.path("body").path("msg1").asText();
                 log.warn("KIS realtime subscription rejected - trId: {}, message: {}", trId, msg);
-                if (msg.contains("invalid approval") && tryAcquireRecovery(type)) {
-                    recoverInvalidApproval(type);
+                if (msg.contains("invalid approval") && tryAcquireRecovery()) {
+                    recoverInvalidApproval();
+                }
+                return;
+            }
+
+            // 등록된 외부 핸들러 우선 (예: H0STCNI0 → cipher 초기화)
+            BiConsumer<JsonNode, WebSocketSession> external = systemHandlers.get(trId);
+            if (external != null) {
+                try {
+                    external.accept(root, s);
+                } catch (Exception e) {
+                    log.error("KIS realtime external system handler failed - trId: {}", trId, e);
                 }
             }
         }
+
+        private void handleDataMessage(String raw) {
+            // 페이로드 형식: "0|TR_ID|cnt|data..." — TR_ID 추출
+            int firstPipe = raw.indexOf('|');
+            int secondPipe = firstPipe < 0 ? -1 : raw.indexOf('|', firstPipe + 1);
+            if (secondPipe < 0) {
+                log.warn("KIS realtime data message format invalid - drop");
+                return;
+            }
+            String trId = raw.substring(firstPipe + 1, secondPipe);
+
+            Consumer<String> external = dataHandlers.get(trId);
+            if (external != null) {
+                try {
+                    external.accept(raw);
+                } catch (Exception e) {
+                    log.error("KIS realtime external data handler failed - trId: {}", trId, e);
+                }
+                return;
+            }
+
+            // 기본 시세 처리 — broadcast + 캐시
+            parser.parse(raw).ifPresent(parsed -> {
+                if (subscriptionManager != null) {
+                    subscriptionManager.broadcast(parsed.key(), parsed.payload());
+                } else {
+                    log.warn("KIS realtime subscription manager is not initialized, skipping broadcast");
+                }
+                if (parsed.payload() instanceof RealtimePriceResponse price) {
+                    realtimePriceCacheService.cache(price);
+                }
+            });
+        }
     }
 
-    /**
-     * 비동기 재연결 (가상 스레드)
-     *
-     * 정책:
-     *  - 최대 시도 횟수 / 시도 간격 = KisWebSocketProperties
-     *  - 연결 성공 시 기존 구독 종목 복원 후 즉시 return
-     *  - 모든 시도 실패 시 종료 (다음 외부 구독 요청이 다시 트리거)
-     */
-    private void reconnect(KisRealtimeStreamType type) {
+    // ───────────────────────────────────────────────────────────────────
+    // 재연결 / approval_key 복구
+    // ───────────────────────────────────────────────────────────────────
+
+    private void reconnect() {
         for (int attempt = 1; attempt <= properties.getReconnectMaxAttempts(); attempt++) {
             try {
                 Thread.sleep(properties.getReconnectDelayMs());
-                ensureSession(type);
-                restoreSubscriptions(type);
+                ensureSession();
+                restoreAllSubscriptions();
                 return;
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return;
             } catch (Exception e) {
-                log.warn("KIS realtime reconnect failed - trId: {}, attempt: {}, error: {}",
-                        type.trId(), attempt, e.getMessage());
+                log.warn("KIS realtime reconnect failed - attempt: {}, error: {}",
+                        attempt, e.getMessage());
             }
         }
     }
 
-    /**
-     * 해당 TR 종류에 활성 구독 종목이 남아있는지 확인 (재연결 트리거 조건)
-     */
-    private boolean hasActiveSubscriptions(KisRealtimeStreamType type) {
-        Set<String> stockCodes = subscriptions.get(type);
-        return stockCodes != null && !stockCodes.isEmpty();
+    private boolean hasActiveSubscriptions() {
+        for (Set<String> stockCodes : subscriptions.values()) {
+            if (stockCodes != null && !stockCodes.isEmpty()) return true;
+        }
+        return !reconnectListeners.isEmpty();
     }
 
-    /**
-     * approval_key 복구 시도 권한 획득 — RECOVERY_COOLDOWN_MS 안에 같은 type 은 1회만 통과.
-     *
-     * 거부 응답이 종목 수만큼 한꺼번에 쏟아져도 복구는 한 번만 실행되도록 직렬화.
-     * 새로 발급한 키도 거부되면 cooldown 경과 후 다시 시도 — 무한 폭주 차단 + 자가복구 균형.
-     */
-    private boolean tryAcquireRecovery(KisRealtimeStreamType type) {
+    private boolean tryAcquireRecovery() {
         long now = System.currentTimeMillis();
-        AtomicLong last = lastRecoveryAt.computeIfAbsent(type, t -> new AtomicLong(0L));
-        long prev = last.get();
+        long prev = lastRecoveryAt.get();
         if (now - prev < RECOVERY_COOLDOWN_MS) return false;
-        return last.compareAndSet(prev, now);
+        return lastRecoveryAt.compareAndSet(prev, now);
     }
 
-    /**
-     * approval_key 무효화 복구 — Redis 캐시 evict 후 활성 구독 일괄 재전송.
-     *
-     * KIS WS 핸드셰이크 자체엔 approval 이 들어가지 않고 SUBSCRIBE 메시지마다 헤더에 실리므로,
-     * 세션은 유지하고 캐시만 비운 뒤 재구독하면 subscriptionMessage() 가 자동으로 신규 키를 사용한다.
-     * KIS 이벤트 루프 스레드(handleTextMessage 호출 스레드)를 막지 않도록 가상 스레드로 분리.
-     */
-    private void recoverInvalidApproval(KisRealtimeStreamType type) {
-        log.warn("KIS approval key 복구 시작 - trId: {}", type.trId());
+    private void recoverInvalidApproval() {
+        log.warn("KIS realtime approval key 복구 시작");
         webSocketKeyService.evictApprovalKey();
-        Thread.ofVirtual().start(() -> restoreSubscriptions(type));
+        Thread.ofVirtual().start(this::restoreAllSubscriptions);
     }
 }
