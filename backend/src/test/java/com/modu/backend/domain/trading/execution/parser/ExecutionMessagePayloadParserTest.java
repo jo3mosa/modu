@@ -140,4 +140,47 @@ class ExecutionMessagePayloadParserTest {
         assertThat(parser.extractDataPart("1|H0STCNI0|001")).isEmpty();
         assertThat(parser.extractDataPart(null)).isEmpty();
     }
+
+    // ──────────────────────────────────────────────────────────
+    // PR 리뷰 반영 — 공백 / 비숫자 CNTG_QTY/UNPR 폐기
+    // ──────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("CNTG_QTY 공백 → 레코드 폐기 (잘못된 0 체결 차단)")
+    void blankCntgQtyDiscarded() {
+        String payload = buildRecord("2", "0000002891", "02",
+                "005930", "", "70000", "094941");
+
+        assertThat(parser.parseFilledOnly(payload)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("CNTG_UNPR 공백 → 레코드 폐기 (잘못된 0 단가 차단)")
+    void blankCntgUnprDiscarded() {
+        String payload = buildRecord("2", "0000002891", "02",
+                "005930", "10", "", "094941");
+
+        assertThat(parser.parseFilledOnly(payload)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("CNTG_QTY 비숫자 → 레코드 폐기")
+    void nonNumericCntgQtyDiscarded() {
+        String payload = buildRecord("2", "0000002891", "02",
+                "005930", "abc", "70000", "094941");
+
+        assertThat(parser.parseFilledOnly(payload)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("정상 체결 + 공백 체결 혼합 → 정상만 통과")
+    void mixedValidAndBlankRecords() {
+        String payload = buildRecord("2") + "^"
+                + buildRecord("2", "0000002893", "02", "005930", "", "70000", "094941");
+
+        List<ExecutionPayload> result = parser.parseFilledOnly(payload);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).kisOrderNo()).isEqualTo("0000002891");
+    }
 }
