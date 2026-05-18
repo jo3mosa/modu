@@ -5,6 +5,7 @@ import com.modu.backend.domain.trading.entity.OrderExecution;
 import com.modu.backend.domain.trading.entity.OrderSide;
 import com.modu.backend.domain.trading.entity.OrderStatus;
 import com.modu.backend.domain.trading.entity.TradePnlRecord;
+import com.modu.backend.domain.trading.execution.event.OrderExecutedEvent;
 import com.modu.backend.domain.trading.repository.OrderExecutionRepository;
 import com.modu.backend.domain.trading.repository.OrderRepository;
 import com.modu.backend.domain.trading.repository.TradePnlRecordRepository;
@@ -13,9 +14,9 @@ import com.modu.backend.domain.trading.sse.OrderSseEvent;
 import com.modu.backend.global.kafka.constant.KafkaConsumerGroup;
 import com.modu.backend.global.kafka.constant.KafkaTopic;
 import com.modu.backend.global.kafka.dto.TradeOrderExecutedMessage;
-import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
@@ -54,6 +55,7 @@ public class PortfolioUpdateConsumer {
     private final OrderExecutionRepository orderExecutionRepository;
     private final TradePnlRecordRepository tradePnlRecordRepository;
     private final OrderSseEmitterManager sseEmitterManager;
+    private final ApplicationEventPublisher eventPublisher;
 
     @KafkaListener(
             topics = KafkaTopic.TRADE_ORDER_EXECUTED,
@@ -130,6 +132,11 @@ public class PortfolioUpdateConsumer {
         sseEmitterManager.send(order.getUserId(),
                 OrderSseEvent.executed(String.valueOf(order.getId()), order.getStockCode(),
                         order.getKisOrderNo()));
+
+        // 9) Redis 동기화 이벤트 publish — AFTER_COMMIT listener 가 처리
+        eventPublisher.publishEvent(new OrderExecutedEvent(
+                order.getId(), order.getUserId(), order.getStockCode(),
+                order.getSide(), isFinalFill));
 
         log.info("[PortfolioUpdateConsumer] 체결 반영 완료 - orderId: {}, side: {}, executedQty: {}, isFinal: {}",
                 order.getId(), order.getSide(), executedQty, isFinalFill);
