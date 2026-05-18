@@ -199,3 +199,48 @@ export async function rejectDecision(judgmentId) {
   });
   return data.data;
 }
+
+/**
+ * AI 에이전트 메시지 조회 (복합 커서 페이지네이션)
+ * GET /api/v1/ai-agent/messages
+ *
+ * BE 가 에이전트별로 발화 1건씩 영속화하므로, 채널 진입 시 본 함수로 과거 대화를 불러오고
+ * 이후 메시지는 SSE 'agent-message' 이벤트로 실시간 수신한다.
+ *
+ * 페이지네이션:
+ *   - 첫 페이지: { stockCode, size } — before/beforeId 미전달
+ *   - 다음 페이지: 응답의 nextCursor/nextCursorId 를 그대로 before/beforeId 로 전달
+ *   - nextCursor 가 null 이면 마지막 페이지
+ *   - before 와 beforeId 는 항상 쌍으로 전달 (하나만 보내면 400)
+ *
+ * 정렬: created_at DESC, id DESC (최신 → 과거)
+ *
+ * @param {{ stockCode: string, before?: string, beforeId?: number, size?: number }} params
+ * @returns {Promise<{
+ *   content: Array<{
+ *     messageId: number,
+ *     stockCode: string,
+ *     judgmentId: number | null,
+ *     agent: 'BULL' | 'BEAR' | 'STRATEGY' | 'DECIDE',
+ *     seq: number,
+ *     text: string,
+ *     createdAt: string
+ *   }>,
+ *   nextCursor: string | null,
+ *   nextCursorId: number | null,
+ *   hasMore: boolean
+ * }>}
+ */
+export async function getAgentMessages({ stockCode, before, beforeId, size } = {}) {
+  if (!stockCode) throw new Error('stockCode 는 필수입니다.');
+  if ((before == null) !== (beforeId == null)) {
+    throw new Error('before 와 beforeId 는 함께 전달해야 합니다.');
+  }
+  const search = new URLSearchParams();
+  search.set('stockCode', stockCode);
+  if (before) search.set('before', before);
+  if (beforeId != null) search.set('beforeId', String(beforeId));
+  if (size != null) search.set('size', String(size));
+  const data = await apiClient(`/ai-agent/messages?${search.toString()}`);
+  return data.data ?? { content: [], nextCursor: null, nextCursorId: null, hasMore: false };
+}
