@@ -159,16 +159,42 @@ function buildMarkerTime(period, isoTimestamp) {
   return Math.floor(new Date(isoTimestamp).getTime() / 1000);
 }
 
+// 분봉 등에서 주문 체결 시각을 차트의 해당 캔들 시각에 정확히 매칭하기 위한 함수
+function findCandleTimeForOrder(period, isoTimestamp, candles = []) {
+  if (DAILY_PERIODS.has(period)) {
+    return isoTimestamp.split('T')[0];
+  }
+
+  const orderTimeSec = Math.floor(new Date(isoTimestamp).getTime() / 1000);
+  if (candles.length === 0) return orderTimeSec;
+
+  let matchedTime = null;
+  for (let i = 0; i < candles.length; i++) {
+    const cTime = typeof candles[i].time === 'number'
+      ? candles[i].time
+      : Math.floor(new Date(candles[i].time).getTime() / 1000);
+
+    if (cTime <= orderTimeSec) {
+      matchedTime = candles[i].time;
+    } else {
+      break;
+    }
+  }
+
+  return matchedTime ?? candles[0].time;
+}
+
 // 한 마커의 정렬용 epoch(ms) — setMarkers는 time 오름차순이 필수
 function markerEpoch(marker) {
+  if (marker.createdAt) {
+    return new Date(marker.createdAt).getTime();
+  }
   return typeof marker.time === 'string'
     ? new Date(marker.time).getTime()
     : marker.time * 1000;
 }
 
 // AI 자동매매 주문 → 차트 마커 변환
-// 백엔드 AI 판단 응답에는 매수/매도 정보가 없어 주문 이력의 side를 사용한다.
-// AI 자동매매 주문 → 차트 마커 변환 (테스트용 모의 데이터 오버라이드 버전)
 async function fetchAiMarkers(stockCode, period, candles = []) {
   let aiOrders = [];
   let userOrders = [];
@@ -188,38 +214,52 @@ async function fetchAiMarkers(stockCode, period, candles = []) {
   }
 
   const formattedAi = aiOrders
-    .filter((o) => o.stockCode === stockCode && (o.side === 'BUY' || o.side === 'SELL'))
+    .filter((o) => o.stockCode === stockCode && (o.side === 'BUY' || o.side === 'SELL') && o.status === 'FILLED')
     .map((o) => {
       const isBuy = o.side === 'BUY';
       return {
-        time: buildMarkerTime(period, o.createdAt),
+        time: findCandleTimeForOrder(period, o.createdAt, candles),
         position: isBuy ? 'belowBar' : 'aboveBar',
         color: isBuy ? '#ef4444' : '#3b82f6',
         shape: isBuy ? 'arrowUp' : 'arrowDown',
         text: isBuy ? 'AI 매수' : 'AI 매도',
         orderId: o.id,
         isAi: true,
+        createdAt: o.createdAt,
       };
     });
 
   const formattedUser = userOrders
-    .filter((o) => o.stockCode === stockCode && (o.side === 'BUY' || o.side === 'SELL'))
+    .filter((o) => o.stockCode === stockCode && (o.side === 'BUY' || o.side === 'SELL') && o.status === 'FILLED')
     .map((o) => {
       const isBuy = o.side === 'BUY';
       return {
-        time: buildMarkerTime(period, o.createdAt),
+        time: findCandleTimeForOrder(period, o.createdAt, candles),
         position: isBuy ? 'belowBar' : 'aboveBar',
         color: isBuy ? '#10b981' : '#f59e0b',
         shape: isBuy ? 'arrowUp' : 'arrowDown',
         text: isBuy ? '내 매수' : '내 매도',
         orderId: o.id,
         isAi: false,
+        createdAt: o.createdAt,
       };
     });
 
   const combined = [...formattedAi, ...formattedUser];
+  let sorted = combined.sort((a, b) => markerEpoch(a) - markerEpoch(b));
 
-  return combined.sort((a, b) => markerEpoch(a) - markerEpoch(b));
+  if (DAILY_PERIODS.has(period)) {
+    // 일/주/월봉에서는 매매가 여러 번 발생했어도 하루(unique time) + 유형(text)당 마커 하나만 표시하여 매수/매도가 서로 가리지 않게 함
+    const seenKeys = new Set();
+    sorted = sorted.filter((m) => {
+      const key = `${m.time}_${m.text}`;
+      if (seenKeys.has(key)) return false;
+      seenKeys.add(key);
+      return true;
+    });
+  }
+
+  return sorted;
 }
 
 function adaptCandle(period, c) {
@@ -414,7 +454,7 @@ export default function TradingChart({ stockCode }) {
           if (avgBuyPrice > 0) {
             const priceLine = candlestickSeriesRef.current.createPriceLine({
               price: avgBuyPrice,
-              color: '#10b981', // Toss Green
+              color: '#9ca3af', // Grey
               lineWidth: 2,
               lineStyle: 2, // Dashed = 2
               axisLabelVisible: true,
