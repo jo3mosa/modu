@@ -62,7 +62,10 @@ def _to_technical(ind_row: dict, ohlc_row: Optional[dict]) -> Optional[dict]:
             "close":        ohlc_row.get("close") if ohlc_row else None,
             "volume":       ohlc_row.get("volume") if ohlc_row else None,
             "change_pct":   _maybe_pct(ind_row.get("return_1d")),
-            "volume_spike": None,   # daily_indicators 에 없음 — VOL-001 미발화 (보수적)
+            # volume_spike = (today volume) > 2.0 × (직전 20일 평균 volume).
+            # compute_volume_spike 가 daily_indicators 에 사전 계산.
+            # VOL-001 / TPL-001 / TPL-002 / TPL-003 평가에 사용.
+            "volume_spike": ind_row.get("volume_spike"),
         },
         "trend": {
             "sma_5":         ind_row.get("sma_5"),
@@ -112,8 +115,11 @@ def _to_fundamental(fund_row: Optional[dict]) -> Optional[dict]:
             "status": fund_row.get("valuation_status"),
         },
         "profitability": {
-            "roe":    fund_row.get("roe"),
-            "status": fund_row.get("profitability_status"),
+            "roe":          fund_row.get("roe"),
+            # cross-sectional ROE percentile rank (0=최상위, 1=최하위).
+            # compute_fundamental_ranks 가 사전 계산. QUAL-001 평가에 사용.
+            "roe_rank_pct": fund_row.get("roe_rank_pct"),
+            "status":       fund_row.get("profitability_status"),
         },
         "growth": {
             "revenue_growth":   fund_row.get("revenue_growth"),

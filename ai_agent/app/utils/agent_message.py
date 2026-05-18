@@ -1,4 +1,5 @@
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 
 from app.config.kafka import KafkaTopic, get_kafka_producer
@@ -21,7 +22,13 @@ def publish_agent_message(
     stock_code: 판단 종목 코드. 전달하지 않으면 candidate_assets[0]에서 추론한다.
                 verdict/decision이 확정된 노드는 실제 판단 종목을 직접 전달해야 한다.
     실패해도 에이전트 파이프라인에 영향을 주지 않는다.
+
+    환경변수 DISABLE_AGENT_MESSAGE=1 이면 즉시 return (backtest에서 Kafka 없는 환경
+    회피용 — DNS lookup retry로 호출당 10초+ 낭비 방지).
     """
+    if os.getenv("DISABLE_AGENT_MESSAGE", "").lower() in ("1", "true", "yes"):
+        return
+
     if not stock_code:
         candidate_assets = state.candidate_assets or []
         if not candidate_assets:

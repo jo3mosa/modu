@@ -390,6 +390,56 @@ class SimplePortfolio:
         self.equity_curve.append(snap)
         return snap
 
+    # ── 직렬화 / 복원 (resume 기능용) ─────────────────────────────────────
+    # 영업일 EOD에 to_dict로 dump → JSON → 다음 run에서 from_dict로 복원.
+    # date 객체(entry_date, fill_date)는 ISO string으로 변환.
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON-serializable dict로 portfolio 전체 상태 export. resume에 사용."""
+        return {
+            "user_id": self.user_id,
+            "initial_cash_krw": self.initial_cash_krw,
+            "initial_holdings": dict(self.initial_holdings or {}),
+            "fee_ratio": self.fee_ratio,
+            "sell_tax_ratio": self.sell_tax_ratio,
+            "cash": self.cash,
+            "holdings": dict(self.holdings),
+            "open_positions": {
+                code: _serialize_position(pos)
+                for code, pos in self.open_positions.items()
+            },
+            "pending_orders": [_serialize_order(o) for o in self.pending_orders],
+            # equity_curve는 이미 mark_to_market에서 date를 string으로 저장하므로 그대로.
+            "equity_curve": list(self.equity_curve),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "SimplePortfolio":
+        """to_dict 결과에서 portfolio 인스턴스 복원.
+
+        __post_init__이 cash=initial_cash_krw로 set한 직후 dump 시점 cash/holdings로
+        덮어쓴다. open_positions / pending_orders의 date 필드는 ISO string에서 date로
+        역변환.
+        """
+        p = cls(
+            user_id=data["user_id"],
+            initial_cash_krw=float(data["initial_cash_krw"]),
+            initial_holdings=dict(data.get("initial_holdings") or {}) or None,
+            fee_ratio=float(data.get("fee_ratio", 0.00015)),
+            sell_tax_ratio=float(data.get("sell_tax_ratio", 0.0020)),
+        )
+        p.cash = float(data["cash"])
+        p.holdings = {str(k): int(v) for k, v in (data.get("holdings") or {}).items()}
+        p.open_positions = {
+            str(code): _deserialize_position(pos)
+            for code, pos in (data.get("open_positions") or {}).items()
+        }
+        p.pending_orders = [
+            _deserialize_order(o) for o in (data.get("pending_orders") or [])
+        ]
+        p.equity_curve = list(data.get("equity_curve") or [])
+        return p
+
 
 def _to_float(value: Any) -> Optional[float]:
     if value is None:
@@ -398,6 +448,48 @@ def _to_float(value: Any) -> Optional[float]:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _serialize_position(pos: dict) -> dict:
+    """open_positions 항목 직렬화 — entry_date(date)를 ISO string으로."""
+    out = dict(pos)
+    ed = out.get("entry_date")
+    if isinstance(ed, date):
+        out["entry_date"] = ed.isoformat()
+    return out
+
+
+def _deserialize_position(pos: dict) -> dict:
+    """직렬화 역변환 — entry_date(ISO string)를 date로."""
+    out = dict(pos)
+    ed = out.get("entry_date")
+    if isinstance(ed, str):
+        try:
+            out["entry_date"] = date.fromisoformat(ed)
+        except ValueError:
+            pass
+    return out
+
+
+def _serialize_order(order: dict) -> dict:
+    """pending_orders 항목 직렬화 — fill_date(date)를 ISO string으로."""
+    out = dict(order)
+    fd = out.get("fill_date")
+    if isinstance(fd, date):
+        out["fill_date"] = fd.isoformat()
+    return out
+
+
+def _deserialize_order(order: dict) -> dict:
+    """직렬화 역변환 — fill_date(ISO string)를 date로."""
+    out = dict(order)
+    fd = out.get("fill_date")
+    if isinstance(fd, str):
+        try:
+            out["fill_date"] = date.fromisoformat(fd)
+        except ValueError:
+            pass
+    return out
 
 
 # ─── 편의: 의사결정/사용자/포트폴리오 기본 묶음 ────────────────────────────
