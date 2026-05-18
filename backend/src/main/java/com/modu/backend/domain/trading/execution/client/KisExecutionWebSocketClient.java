@@ -2,138 +2,165 @@ package com.modu.backend.domain.trading.execution.client;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.modu.backend.domain.market.service.KisPlatformWebSocketKeyService;
 import com.modu.backend.domain.market.websocket.KisRealtimeStreamType;
 import com.modu.backend.domain.trading.execution.cipher.KisExecutionCipher;
 import com.modu.backend.domain.trading.execution.parser.ExecutionMessagePayloadParser;
 import com.modu.backend.domain.trading.execution.parser.ExecutionPayload;
 import com.modu.backend.domain.trading.execution.service.ExecutionDispatchService;
+import com.modu.backend.domain.user.entity.KisCredential;
+import com.modu.backend.domain.user.repository.KisCredentialRepository;
+import com.modu.backend.domain.user.service.KisTokenService;
 import com.modu.backend.global.config.KisWebSocketProperties;
+import com.modu.backend.global.util.AesGcmEncryptor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
+import org.springframework.web.socket.WebSocketHttpHeaders;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
+import java.net.URI;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * KIS 실시간 체결통보 (H0STCNI0) WebSocket 클라이언트 — S14P31B106-291
  *
- * [모델 — 304 시세 클라이언트와 차이]
- *   시세 (KisRealtimeUpstreamClient): TR 종류별 1 세션 + 종목코드 단위 SUBSCRIBE
- *   체결통보 (본 클래스): 단일 세션 + CANO 단위 SUBSCRIBE + AES-256 CBC 복호화 + 우리만 dispatch
+ * [세션 모델 — 사용자별]
+ *   KIS 정책: appkey 당 동시 WS 세션 1개. 체결통보는 SUBSCRIBE 의 tr_key 로
+ *   해당 계정 소유자의 HTS ID 를 요구하며, approval_key 도 그 계정 appkey 로 발급해야 한다.
+ *   따라서 사용자별로 자신의 자격증명으로 1 세션을 따로 연다.
+ *   (시세 PRICE/ORDERBOOK 은 공용 platform 키 + 단일 세션 multiplex 로 KisRealtimeUpstreamClient 가 담당)
  *
- * [SUBSCRIBE 응답에서 IV/Key 수신]
- *   body.output.iv / body.output.key 가 한 세션 내 모든 사용자 (CANO) 의 메시지 복호화에 동일 사용.
- *   여러 사용자 구독해도 cipher 는 세션 단위 1 인스턴스로 충분.
- *   재구독 응답에서 IV/Key 가 갱신되면 최신 값으로 덮어씀.
+ * [부팅 자동 구독]
+ *   ApplicationReadyEvent 시점에 HTS ID 가 등록된 모든 사용자 → 자동 SUBSCRIBE.
  *
- * [재연결]
- *   세션 끊김 시 가상 스레드 비동기 재연결 + 기존 CANO 구독 자동 복원.
+ * [SUBSCRIBE 응답 → cipher 초기화]
+ *   사용자별 세션에서 받은 SUBSCRIBE 응답의 output.iv / output.key 로 그 사용자 전용 cipher 구성.
  *
  * [모의계좌 미지원]
- *   본 시스템은 실 계좌만 제공 → H0STCNI9 SUBSCRIBE 안 함.
+ *   본 시스템은 실 계좌만 제공 → H0STCNI9 미지원.
  */
 @Slf4j
 @Component
 public class KisExecutionWebSocketClient {
 
-    private static final String SUBSCRIBE   = "1";
+    private static final String SUBSCRIBE = "1";
     private static final String UNSUBSCRIBE = "2";
-    private static final long RECOVERY_COOLDOWN_MS = 30_000L;
 
-    private final ObjectMapper objectMapper;
-    private final KisPlatformWebSocketKeyService webSocketKeyService;
+    private final KisCredentialRepository credentialRepository;
+    private final KisTokenService kisTokenService;
+    private final AesGcmEncryptor encryptor;
     private final KisWebSocketProperties properties;
+    private final ObjectMapper objectMapper;
     private final ExecutionMessagePayloadParser parser;
     private final ExecutionDispatchService dispatchService;
 
-    /** 단일 세션 — 모든 사용자 (CANO) 의 체결통보가 한 세션을 공유 */
-    private volatile WebSocketSession session;
-    /** 현재 구독 중인 CANO 집합 — 재연결 시 복원 기준 */
-    private final Set<String> subscribedCanos = ConcurrentHashMap.newKeySet();
-    /** 세션 단위 AES 복호화기 — SUBSCRIBE 응답 시점 초기화 */
-    private volatile KisExecutionCipher cipher;
-    /** approval_key 복구 cooldown */
-    private final AtomicLong lastRecoveryAt = new AtomicLong(0L);
+    /** 사용자별 WebSocket 세션 */
+    private final Map<Long, WebSocketSession> sessions = new ConcurrentHashMap<>();
+    /** 사용자별 AES 복호화기 — SUBSCRIBE 응답 시점 초기화 */
+    private final Map<Long, KisExecutionCipher> ciphers = new ConcurrentHashMap<>();
 
     public KisExecutionWebSocketClient(
-            ObjectMapper objectMapper,
-            KisPlatformWebSocketKeyService webSocketKeyService,
+            KisCredentialRepository credentialRepository,
+            KisTokenService kisTokenService,
+            AesGcmEncryptor encryptor,
             KisWebSocketProperties properties,
+            ObjectMapper objectMapper,
             ExecutionMessagePayloadParser parser,
             ExecutionDispatchService dispatchService
     ) {
-        this.objectMapper = objectMapper;
-        this.webSocketKeyService = webSocketKeyService;
+        this.credentialRepository = credentialRepository;
+        this.kisTokenService = kisTokenService;
+        this.encryptor = encryptor;
         this.properties = properties;
+        this.objectMapper = objectMapper;
         this.parser = parser;
         this.dispatchService = dispatchService;
     }
 
     // ───────────────────────────────────────────────────────────────────
-    // 외부 API
+    // 부팅 자동 구독 + 외부 API
     // ───────────────────────────────────────────────────────────────────
 
-    /**
-     * 사용자 계좌 (CANO 8자리) 체결통보 구독 시작.
-     * 본 시스템의 사용자 등록 흐름 후 호출 — 부팅 시 일괄 또는 신규 등록 시 단건.
-     */
-    public void subscribe(String cano) {
-        subscribedCanos.add(cano);
-        sendSubscription(cano, SUBSCRIBE);
-    }
-
-    /**
-     * 구독 해제 (사용자 KIS 자격증명 폐기 등 케이스).
-     */
-    public void unsubscribe(String cano) {
-        subscribedCanos.remove(cano);
-        if (session != null && session.isOpen()) {
-            sendSubscription(cano, UNSUBSCRIBE);
+    @EventListener(ApplicationReadyEvent.class)
+    void subscribeAllOnStartup() {
+        List<KisCredential> credentials = credentialRepository.findByHtsIdEncIsNotNull();
+        if (credentials.isEmpty()) {
+            log.info("[ExecutionWS] 부팅 자동 구독 대상 없음 (HTS ID 등록 사용자 0명)");
+            return;
         }
-    }
-
-    // ───────────────────────────────────────────────────────────────────
-    // 내부 — SUBSCRIBE 메시지 발신 + 세션 보장
-    // ───────────────────────────────────────────────────────────────────
-
-    private void sendSubscription(String cano, String trType) {
-        try {
-            WebSocketSession active = ensureSession();
-            active.sendMessage(new TextMessage(subscriptionMessage(cano, trType)));
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.error("[ExecutionWS] subscribe interrupted - cano: {}", maskCano(cano));
-        } catch (Exception e) {
-            log.error("[ExecutionWS] subscribe send failed - cano: {}, error: {}",
-                    maskCano(cano), e.getMessage());
-        }
-    }
-
-    private WebSocketSession ensureSession() throws Exception {
-        WebSocketSession current = session;
-        if (current != null && current.isOpen()) {
-            return current;
-        }
-        synchronized (this) {
-            current = session;
-            if (current != null && current.isOpen()) {
-                return current;
+        log.info("[ExecutionWS] 부팅 자동 구독 시작 - 사용자 수: {}", credentials.size());
+        for (KisCredential cred : credentials) {
+            try {
+                subscribe(cred.getUserId());
+            } catch (Exception e) {
+                log.warn("[ExecutionWS] 부팅 구독 실패 - userId: {}, error: {}", cred.getUserId(), e.getMessage());
             }
+        }
+    }
 
+    public void subscribe(Long userId) {
+        sendSubscription(userId, SUBSCRIBE);
+    }
+
+    public void unsubscribe(Long userId) {
+        sendSubscription(userId, UNSUBSCRIBE);
+        WebSocketSession s = sessions.remove(userId);
+        if (s != null) {
+            try { s.close(); } catch (Exception ignored) {}
+        }
+        ciphers.remove(userId);
+    }
+
+    // ───────────────────────────────────────────────────────────────────
+    // 내부 — 사용자별 SUBSCRIBE
+    // ───────────────────────────────────────────────────────────────────
+
+    private void sendSubscription(Long userId, String trType) {
+        try {
+            KisCredential cred = credentialRepository.findByUserId(userId).orElse(null);
+            if (cred == null || cred.getHtsIdEnc() == null) {
+                log.warn("[ExecutionWS] subscribe skip - userId: {} (자격증명 또는 HTS ID 없음)", userId);
+                return;
+            }
+            String appKey = encryptor.decrypt(cred.getAppKeyEnc());
+            String appSecret = encryptor.decrypt(cred.getAppSecretEnc());
+            String htsId = encryptor.decrypt(cred.getHtsIdEnc());
+            String approvalKey = kisTokenService.getOrIssueWebSocketKey(userId, appKey, appSecret);
+
+            WebSocketSession session = ensureSession(userId);
+            String payload = buildPayload(approvalKey, htsId, trType);
+            log.warn("[DEBUG-WIRE] EXEC SUBSCRIBE send - userId: {}, htsId: {}, payload: {}",
+                    userId, maskHts(htsId), payload);
+            synchronized (session) {
+                session.sendMessage(new TextMessage(payload));
+            }
+        } catch (Exception e) {
+            log.error("[ExecutionWS] subscribe send failed - userId: {}, error: {}", userId, e.getMessage());
+        }
+    }
+
+    private WebSocketSession ensureSession(Long userId) throws Exception {
+        WebSocketSession current = sessions.get(userId);
+        if (current != null && current.isOpen()) return current;
+        synchronized (this) {
+            current = sessions.get(userId);
+            if (current != null && current.isOpen()) return current;
+
+            WebSocketHttpHeaders headers = new WebSocketHttpHeaders();
+            headers.setOrigin("http://localhost");
             CompletableFuture<WebSocketSession> future = new StandardWebSocketClient()
-                    .execute(new UpstreamHandler(), properties.getUrl());
+                    .execute(new UpstreamHandler(userId), headers, URI.create(properties.getUrl()));
             WebSocketSession connected;
             try {
                 connected = future.get(properties.getConnectionTimeoutMs(), TimeUnit.MILLISECONDS);
@@ -142,18 +169,17 @@ public class KisExecutionWebSocketClient {
                 throw e;
             } catch (TimeoutException e) {
                 future.cancel(true);
-                throw new Exception("KIS execution WebSocket connection timeout - timeout: "
-                        + properties.getConnectionTimeoutMs() + "ms", e);
+                throw new Exception("KIS execution WebSocket connection timeout - userId: " + userId, e);
             }
-            session = connected;
+            sessions.put(userId, connected);
             return connected;
         }
     }
 
-    private String subscriptionMessage(String cano, String trType) throws Exception {
+    private String buildPayload(String approvalKey, String htsId, String trType) throws Exception {
         Map<String, Object> message = Map.of(
                 "header", Map.of(
-                        "approval_key", webSocketKeyService.getApprovalKey(),
+                        "approval_key", approvalKey,
                         "custtype", "P",
                         "tr_type", trType,
                         "content-type", "utf-8"
@@ -161,30 +187,29 @@ public class KisExecutionWebSocketClient {
                 "body", Map.of(
                         "input", Map.of(
                                 "tr_id", KisRealtimeStreamType.EXECUTION.trId(),
-                                "tr_key", cano
+                                "tr_key", htsId
                         )
                 )
         );
         return objectMapper.writeValueAsString(message);
     }
 
-    private void restoreSubscriptions() {
-        for (String cano : subscribedCanos) {
-            sendSubscription(cano, SUBSCRIBE);
-        }
-    }
-
-    /** 계좌번호 마스킹 — 운영 로그용 (앞 2자리만 유지) */
-    private static String maskCano(String cano) {
-        if (cano == null || cano.length() <= 2) return "******";
-        return cano.substring(0, 2) + "*".repeat(cano.length() - 2);
+    private static String maskHts(String htsId) {
+        if (htsId == null || htsId.length() <= 2) return "***";
+        return htsId.substring(0, 2) + "*".repeat(htsId.length() - 2);
     }
 
     // ───────────────────────────────────────────────────────────────────
-    // WebSocket 핸들러
+    // WebSocket 핸들러 (사용자별)
     // ───────────────────────────────────────────────────────────────────
 
     private final class UpstreamHandler extends TextWebSocketHandler {
+
+        private final Long userId;
+
+        private UpstreamHandler(Long userId) {
+            this.userId = userId;
+        }
 
         @Override
         public void handleTextMessage(WebSocketSession s, TextMessage message) throws Exception {
@@ -198,39 +223,32 @@ public class KisExecutionWebSocketClient {
 
         @Override
         public void afterConnectionClosed(WebSocketSession s, CloseStatus status) {
-            log.warn("[ExecutionWS] connection closed - status: {}", status);
-            if (session == s) {
-                session = null;
-            }
-            // 활성 구독이 있으면 가상 스레드로 비동기 재연결
-            if (!subscribedCanos.isEmpty()) {
-                Thread.ofVirtual().start(KisExecutionWebSocketClient.this::reconnect);
-            }
+            log.warn("[ExecutionWS] connection closed - userId: {}, status: {}", userId, status);
+            sessions.remove(userId, s);
+            // 재연결 — 가상 스레드로 SUBSCRIBE 재발신 (세션 자동 생성)
+            Thread.ofVirtual().start(() -> reconnect(userId));
         }
 
         @Override
         public void handleTransportError(WebSocketSession s, Throwable exception) {
-            log.error("[ExecutionWS] transport error", exception);
+            log.error("[ExecutionWS] transport error - userId: {}", userId, exception);
         }
 
-        /**
-         * 시스템 메시지 (JSON) — PINGPONG / SUBSCRIBE 응답 (IV/Key 수신).
-         */
         private void handleSystemMessage(WebSocketSession s, String payload) throws Exception {
+            log.warn("[DEBUG-WIRE] EXEC system message recv - userId: {}, payload: {}", userId, payload);
             JsonNode root = objectMapper.readTree(payload);
             String trId = root.path("header").path("tr_id").asText();
             if ("PINGPONG".equals(trId)) {
-                s.sendMessage(new TextMessage(payload));
+                synchronized (s) {
+                    s.sendMessage(new TextMessage(payload));
+                }
                 return;
             }
 
             String rtCd = root.path("body").path("rt_cd").asText();
-            if ("1".equals(rtCd)) {
-                String msg = root.path("body").path("msg1").asText();
-                log.warn("[ExecutionWS] subscribe rejected - trId: {}, message: {}", trId, msg);
-                if (msg.contains("invalid approval") && tryAcquireRecovery()) {
-                    recoverInvalidApproval();
-                }
+            if ("1".equals(rtCd) || "9".equals(rtCd)) {
+                log.warn("[ExecutionWS] subscribe rejected - userId: {}, message: {}",
+                        userId, root.path("body").path("msg1").asText());
                 return;
             }
 
@@ -239,30 +257,27 @@ public class KisExecutionWebSocketClient {
             String iv  = output.path("iv").asText(null);
             String key = output.path("key").asText(null);
             if (iv != null && key != null && !iv.isBlank() && !key.isBlank()) {
-                cipher = new KisExecutionCipher(key, iv);
-                log.info("[ExecutionWS] cipher initialized from SUBSCRIBE response - trId: {}", trId);
+                ciphers.put(userId, new KisExecutionCipher(key, iv));
+                log.info("[ExecutionWS] cipher initialized - userId: {}", userId);
             }
         }
 
-        /**
-         * 데이터 메시지 — `|` 4분할 → 암호화 페이로드 추출 → 복호화 → 파서 → dispatch.
-         */
         private void handleDataMessage(String raw) {
-            KisExecutionCipher activeCipher = cipher;
-            if (activeCipher == null) {
-                log.warn("[ExecutionWS] cipher 미초기화 — 메시지 무시. SUBSCRIBE 응답 누락 가능");
+            KisExecutionCipher cipher = ciphers.get(userId);
+            if (cipher == null) {
+                log.warn("[ExecutionWS] cipher 미초기화 - userId: {} — 메시지 무시", userId);
                 return;
             }
             Optional<String> encPayload = parser.extractDataPart(raw);
             if (encPayload.isEmpty()) {
-                log.warn("[ExecutionWS] 메시지 형식 오류 — 무시");
+                log.warn("[ExecutionWS] 메시지 형식 오류 - userId: {}", userId);
                 return;
             }
             String plaintext;
             try {
-                plaintext = activeCipher.decrypt(encPayload.get());
+                plaintext = cipher.decrypt(encPayload.get());
             } catch (Exception e) {
-                log.error("[ExecutionWS] 복호화 실패 — 메시지 무시", e);
+                log.error("[ExecutionWS] 복호화 실패 - userId: {}", userId, e);
                 return;
             }
             for (ExecutionPayload payload : parser.parseFilledOnly(plaintext)) {
@@ -275,37 +290,19 @@ public class KisExecutionWebSocketClient {
         }
     }
 
-    // ───────────────────────────────────────────────────────────────────
-    // 재연결 / approval_key 복구
-    // ───────────────────────────────────────────────────────────────────
-
-    private void reconnect() {
+    private void reconnect(Long userId) {
         for (int attempt = 1; attempt <= properties.getReconnectMaxAttempts(); attempt++) {
             try {
                 Thread.sleep(properties.getReconnectDelayMs());
-                ensureSession();
-                restoreSubscriptions();
+                sendSubscription(userId, SUBSCRIBE);
                 return;
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return;
             } catch (Exception e) {
-                log.warn("[ExecutionWS] reconnect failed - attempt: {}, error: {}",
-                        attempt, e.getMessage());
+                log.warn("[ExecutionWS] reconnect failed - userId: {}, attempt: {}, error: {}",
+                        userId, attempt, e.getMessage());
             }
         }
-    }
-
-    private boolean tryAcquireRecovery() {
-        long now = System.currentTimeMillis();
-        long prev = lastRecoveryAt.get();
-        if (now - prev < RECOVERY_COOLDOWN_MS) return false;
-        return lastRecoveryAt.compareAndSet(prev, now);
-    }
-
-    private void recoverInvalidApproval() {
-        log.warn("[ExecutionWS] approval_key 복구 시작");
-        webSocketKeyService.evictApprovalKey();
-        Thread.ofVirtual().start(this::restoreSubscriptions);
     }
 }
