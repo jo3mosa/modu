@@ -217,44 +217,7 @@ async function fetchAiMarkers(stockCode, period, candles = []) {
       };
     });
 
-  let combined = [...formattedAi, ...formattedUser];
-
-  // [개발용 모의 데이터 자동 생성] 실체 주문 내역이 하나도 없는 경우 시연 및 수동 테스트를 위한 가상 마커 삽입
-  if (combined.length === 0 && candles.length > 10) {
-    const buyTime = candles[candles.length - 10].time;
-    const sellTime = candles[candles.length - 2].time;
-    const userBuyTime = candles[candles.length - 6].time;
-
-    combined = [
-      {
-        time: buyTime,
-        position: 'belowBar',
-        color: '#ef4444',
-        shape: 'arrowUp',
-        text: 'AI 매수',
-        orderId: 'demo-ai-buy',
-        isAi: true,
-      },
-      {
-        time: userBuyTime,
-        position: 'belowBar',
-        color: '#10b981',
-        shape: 'arrowUp',
-        text: '내 매수',
-        orderId: 'demo-my-buy',
-        isAi: false,
-      },
-      {
-        time: sellTime,
-        position: 'aboveBar',
-        color: '#3b82f6',
-        shape: 'arrowDown',
-        text: 'AI 매도',
-        orderId: 'demo-ai-sell',
-        isAi: true,
-      },
-    ];
-  }
+  const combined = [...formattedAi, ...formattedUser];
 
   return combined.sort((a, b) => markerEpoch(a) - markerEpoch(b));
 }
@@ -389,30 +352,14 @@ export default function TradingChart({ stockCode }) {
     }
 
     try {
-      let decisionData;
-      // [테스트용 Fallback 모의 데이터 분기]
-      if (String(marker.orderId).startsWith('demo-')) {
-        await new Promise((resolve) => setTimeout(resolve, 350)); // 로딩감 부여
-        decisionData = {
-          judgmentReason: 'RSI(48.2)가 중립 영역을 가리키고 있으나, 단기 이동평균선(5일선)이 장기 이동평균선(60일선)을 강하게 골든크로스하며 거래량이 전일 대비 18.5% 급증하여 매수 조건을 충족했습니다. 기술적 반등의 신뢰도가 극도로 높아 신속한 진입을 권고합니다.',
-          confidenceScore: 82,
-          indicatorsSnapshot: {
-            rsi: 48.2,
-            macd: 'Golden Cross',
-            volumeChangeRate: 18.5,
-          },
-          judgedAt: new Date().toISOString(),
-        };
-      } else {
-        // 백엔드 실데이터 조회
-        const data = await getAiDecisionByOrder(marker.orderId);
-        decisionData = {
-          judgmentReason: data.reason,
-          confidenceScore: data.confidence,
-          indicatorsSnapshot: data.indicatorsSnapshot,
-          judgedAt: data.decidedAt,
-        };
-      }
+      // 백엔드 실데이터 조회
+      const data = await getAiDecisionByOrder(marker.orderId);
+      const decisionData = {
+        judgmentReason: data.reason,
+        confidenceScore: data.confidence,
+        indicatorsSnapshot: data.indicatorsSnapshot,
+        judgedAt: data.decidedAt,
+      };
 
       setSelectedDecision({
         loading: false,
