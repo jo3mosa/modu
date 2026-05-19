@@ -8,6 +8,11 @@
   padding-bottom: 2rem;
 }
 
+/* 컨테이너 gap 1.5rem 이 글로벌 margin-bottom 2rem 과 누적되어 헤더 아래 여백이 과해지는 것 보정 — 대시보드(2rem)와 통일 */
+.mypage-container > .page-header-container {
+  margin-bottom: 0.5rem;
+}
+
 .mypage-panel {
   background: rgba(0, 0, 0, 0.2);
   border: 1px solid rgba(255, 255, 255, 0.05);

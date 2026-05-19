@@ -1,8 +1,17 @@
 .agent-meeting-container {
   display: flex;
+  flex-direction: column;
   height: 100%;
   color: #fff;
+}
+
+/* 페이지 헤더 아래 본문 영역 — 좌측 채널 사이드바 + 우측 채팅 패널 좌우 분할.
+   flex:1 로 헤더가 차지하고 남은 세로 공간을 모두 사용하고, min-height:0 으로 채팅 피드 내부 overflow 가 정상 동작하도록 보장. */
+.agent-meeting-body {
+  display: flex;
+  flex: 1;
   gap: 1.5rem;
+  min-height: 0;
 }
 
 /* 좌측 채널 리스트 */

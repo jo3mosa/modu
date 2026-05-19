@@ -9,7 +9,7 @@ import Skeleton from '../components/Skeleton';
 import InlineError from '../components/InlineError';
 import { getAccountSummary, getPortfolio } from '../api/account';
 import { getAiDecisions } from '../api/aiAgent';
-import { getOrderHistory, getBuyingPower, ORDER_STATUS_DISPLAY } from '../api/order';
+import { getOrderHistory, getBuyingPower, getPendingOrders, ORDER_STATUS_DISPLAY } from '../api/order';
 import { getProfile, updateAutoTradeStatus } from '../api/strategy';
 import { toast } from 'sonner';
 import { useOrderSSE } from '../hooks/useOrderSSE';
@@ -91,6 +91,8 @@ export default function DashboardPage() {
   // 한투 앱 "주문가능원화"와 일치하는 max_buy_amt를 받기 위해 별도 호출
   // (summary.availableCash는 KIS dncl_amt로 미체결 매도 결제 대기분이 빠져있어 사용자 기대값과 어긋남)
   const [buyingPower, setBuyingPower] = useState(null);
+  // 미체결 주문 — KIS 가용현금 필드가 미체결 매수 잠금분을 차감해 보내므로, 그 만큼을 예수금에 도로 더해 한투 앱과 일치시킨다.
+  const [pendingOrders, setPendingOrders] = useState([]);
 
   // 영역별 로딩/에러 상태 — 한 영역 실패가 다른 영역 로드를 막지 않도록 분리
   const [summaryState, setSummaryState] = useState({ loading: true, error: null });
@@ -155,6 +157,19 @@ export default function DashboardPage() {
     }
   }, []);
 
+  // 미체결 주문 fetch — 좀비 위험 없는 백엔드 미체결 전용 API 사용 (orderHistory 의 PENDING 필터링 X)
+  const fetchPendingOrders = useCallback(async () => {
+    try {
+      const list = await getPendingOrders();
+      setPendingOrders(Array.isArray(list) ? list : []);
+    } catch (error) {
+      if (error?.status !== 404) {
+        console.warn('미체결 주문 조회 실패:', error);
+      }
+      setPendingOrders([]);
+    }
+  }, []);
+
   // 주문 가능 금액 — getBuyingPower 응답의 maxBuyAmount(KIS nrcvb_buy_amt)가 한투 "주문가능원화"와 일치.
   // summary.availableCash(KIS dncl_amt)는 매도 결제 대기 자금이 빠져있어 부정확하므로 보조용으로만 사용.
   // 종목 코드 없이 BUY로 호출하면 계좌 단위 최대 매수 가능 금액을 받음.
@@ -195,7 +210,8 @@ export default function DashboardPage() {
     fetchOrders();
     fetchProfile();
     fetchBuyingPower();
-  }, [fetchSummary, fetchPortfolio, fetchAi, fetchOrders, fetchProfile, fetchBuyingPower]);
+    fetchPendingOrders();
+  }, [fetchSummary, fetchPortfolio, fetchAi, fetchOrders, fetchProfile, fetchBuyingPower, fetchPendingOrders]);
 
   // SSE ORDER_EXECUTED 수신 시 자산/포트폴리오/매매 로그를 즉시 재조회.
   // (자동매매 손절·익절 또는 수동 주문 체결 직후 60초 폴링을 기다리지 않고 화면을 갱신)
@@ -207,7 +223,8 @@ export default function DashboardPage() {
     fetchAi({ silent: true });
     fetchOrders({ silent: true });
     fetchBuyingPower();
-  }, [fetchSummary, fetchPortfolio, fetchAi, fetchOrders, fetchBuyingPower]);
+    fetchPendingOrders();
+  }, [fetchSummary, fetchPortfolio, fetchAi, fetchOrders, fetchBuyingPower, fetchPendingOrders]);
 
   const { latestEvent } = useOrderSSE();
   useEffect(() => {
@@ -347,11 +364,17 @@ export default function DashboardPage() {
     );
     const totalPnl = holdings.reduce((sum, h) => sum + (h.pnl ?? 0), 0);
     
-    // 주문 가능 금액 우선순위: 실제로 신규 매수 주문을 넣을 수 있는 자금 (미체결 매수 주문 시 차감됨)
-    const availableCash = buyingPower?.maxBuyAmount ?? summary.availableCash ?? 0;
+    // KIS dncl_amt / maxBuyAmount 모두 미체결 매수 잠금분이 차감된 상태로 내려온다.
+    // 한투 앱의 "예수금"(=잠금 매수 포함된 진짜 현금)과 맞추기 위해 미체결 매수 합산을 도로 더한다.
+    // 데이터 출처: getPendingOrders (백엔드 미체결 전용 API — orderHistory PENDING 좀비 위험 없음)
+    const pendingBuyAmount = pendingOrders
+      .filter((o) => o.side === 'BUY')
+      .reduce((sum, o) => sum + (o.price ?? 0) * (o.remainQuantity ?? o.quantity ?? 0), 0);
 
-    // 총 자산 = 주문 가능 금액 + 실시간 주식 평가금액
-    // (미체결 매수 보정 로직은 orderHistory PENDING 상태 좀비 데이터로 인해 자산을 과대계상하는 버그가 있어 제거)
+    const kisAvailableCash = buyingPower?.maxBuyAmount ?? summary.availableCash ?? 0;
+    const availableCash = kisAvailableCash + pendingBuyAmount;
+
+    // 총 자산 = 예수금(잠금 매수 포함) + 실시간 주식 평가금액 — 한투 앱 표기와 일치, 화면 합산도 어긋나지 않음
     const totalAsset = availableCash + totalEvalAmount;
     
     // 총 자산 대비 실시간 수익률 계산 (투자 직전 총 자산 대비 현재 손익금액의 비율로 구하여 시각적 직관성을 100% 만족시킴!)
@@ -366,7 +389,7 @@ export default function DashboardPage() {
       totalPnlPct,
       totalAsset,
     };
-  }, [summary, holdings, buyingPower]);
+  }, [summary, holdings, buyingPower, pendingOrders]);
 
   const handleCloseTutorial = () => {
     localStorage.setItem('hasSeenDashboardTutorial', 'true');
@@ -565,7 +588,7 @@ export default function DashboardPage() {
                   )}
                 </div>
                 <div className="detail-item">
-                  <span className="detail-label">주문 가능 금액</span>
+                  <span className="detail-label">예수금</span>
                   {summaryLoading ? (
                     <Skeleton width={100} height={18} />
                   ) : (

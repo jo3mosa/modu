@@ -270,8 +270,18 @@ export default function AgentMeetingPage() {
   // ── 6. 렌더 ───────────────────────────────────────────────────────────
   return (
     <div className="agent-meeting-container">
-      {/* 좌측 채널 사이드바 */}
-      <div className="channel-sidebar">
+      {/* 다른 페이지와 동일한 글로벌 페이지 헤더 */}
+      <div className="page-header-container">
+        <div className="page-title-group">
+          <h1>에이전트 회의실</h1>
+          <p>AI 에이전트들이 종목별로 분석·토론하는 과정을 실시간으로 확인하세요.</p>
+        </div>
+      </div>
+
+      {/* 좌우 분할 본문 — 헤더 아래 남은 공간을 모두 차지 */}
+      <div className="agent-meeting-body">
+        {/* 좌측 채널 사이드바 */}
+        <div className="channel-sidebar">
         <div className="channel-sidebar-header">
           <h2>종목 채널</h2>
           <div className="channel-search">
@@ -440,6 +450,7 @@ export default function AgentMeetingPage() {
           </button>
         )}
       </div>
+      </div> {/* .agent-meeting-body */}
 
       {/* 에이전트 프로필 모달 — roster 아바타 클릭 시 캐릭터 소개 노출 */}
       {profileAgentKey && BOT_PROFILES[profileAgentKey] && (

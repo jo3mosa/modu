@@ -5,11 +5,10 @@
   color: #fff;
 }
 
-/* 글로벌 .page-header-container 의 padding-bottom 1rem + margin-bottom 2rem 가 trading-container 의 gap 1.5rem 과 겹쳐
-   페이지 헤더와 종목 스트립 사이 여백이 과하게 벌어진다. 트레이딩 룸에서만 거의 붙도록 압축한다. */
-.trading-container .page-header-container {
-  padding-bottom: 0.3rem;
-  margin-bottom: -1.2rem; /* gap 1.5rem 을 상쇄해 실제 간격을 ~0.6rem 로 만듦 */
+/* trading-container 의 gap 1.5rem 이 글로벌 margin-bottom 2rem 과 누적되어 헤더 아래가 과하게 벌어지는 것 보정.
+   대시보드(gap 0, margin 2rem)와 동일한 ~2rem 여백을 맞춤. */
+.trading-container > .page-header-container {
+  margin-bottom: 0.5rem; /* + gap 1.5rem = 2rem */
 }
 
 /* 종목 정보 스트립 */
