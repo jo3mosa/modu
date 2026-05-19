@@ -1,15 +1,12 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Highcharts from 'highcharts';
-import HighchartsReactPkg from 'highcharts-react-official';
-const HighchartsReact = HighchartsReactPkg.default || HighchartsReactPkg;
-import highcharts3d from 'highcharts/highcharts-3d';
+import { ResponsivePie, Pie } from '@nivo/pie';
 import TutorialOverlay from '../components/TutorialOverlay';
 import Skeleton from '../components/Skeleton';
 import InlineError from '../components/InlineError';
 import { getAccountSummary, getPortfolio } from '../api/account';
 import { getAiDecisions } from '../api/aiAgent';
-import { getOrderHistory, getBuyingPower, ORDER_STATUS_DISPLAY } from '../api/order';
+import { getOrderHistory, getBuyingPower, getPendingOrders, ORDER_STATUS_DISPLAY } from '../api/order';
 import { getProfile, updateAutoTradeStatus } from '../api/strategy';
 import { buildStockWsUrl } from '../api/wsUrl';
 import { toast } from 'sonner';
@@ -17,13 +14,6 @@ import { useOrderSSE } from '../hooks/useOrderSSE';
 import { useNotifications } from '../hooks/useNotifications';
 import './DashboardPage.css';
 
-if (typeof Highcharts === 'object') {
-  if (typeof highcharts3d === 'function') {
-    highcharts3d(Highcharts);
-  } else if (highcharts3d && typeof highcharts3d.default === 'function') {
-    highcharts3d.default(Highcharts);
-  }
-}
 
 
 // ── MOCK 데이터 ──────────────────────────────────
@@ -92,6 +82,8 @@ export default function DashboardPage() {
   // 한투 앱 "주문가능원화"와 일치하는 max_buy_amt를 받기 위해 별도 호출
   // (summary.availableCash는 KIS dncl_amt로 미체결 매도 결제 대기분이 빠져있어 사용자 기대값과 어긋남)
   const [buyingPower, setBuyingPower] = useState(null);
+  // 미체결 주문 — KIS 가용현금 필드가 미체결 매수 잠금분을 차감해 보내므로, 그 만큼을 예수금에 도로 더해 한투 앱과 일치시킨다.
+  const [pendingOrders, setPendingOrders] = useState([]);
 
   // 영역별 로딩/에러 상태 — 한 영역 실패가 다른 영역 로드를 막지 않도록 분리
   const [summaryState, setSummaryState] = useState({ loading: true, error: null });
@@ -156,6 +148,19 @@ export default function DashboardPage() {
     }
   }, []);
 
+  // 미체결 주문 fetch — 좀비 위험 없는 백엔드 미체결 전용 API 사용 (orderHistory 의 PENDING 필터링 X)
+  const fetchPendingOrders = useCallback(async () => {
+    try {
+      const list = await getPendingOrders();
+      setPendingOrders(Array.isArray(list) ? list : []);
+    } catch (error) {
+      if (error?.status !== 404) {
+        console.warn('미체결 주문 조회 실패:', error);
+      }
+      setPendingOrders([]);
+    }
+  }, []);
+
   // 주문 가능 금액 — getBuyingPower 응답의 maxBuyAmount(KIS nrcvb_buy_amt)가 한투 "주문가능원화"와 일치.
   // summary.availableCash(KIS dncl_amt)는 매도 결제 대기 자금이 빠져있어 부정확하므로 보조용으로만 사용.
   // 종목 코드 없이 BUY로 호출하면 계좌 단위 최대 매수 가능 금액을 받음.
@@ -196,7 +201,8 @@ export default function DashboardPage() {
     fetchOrders();
     fetchProfile();
     fetchBuyingPower();
-  }, [fetchSummary, fetchPortfolio, fetchAi, fetchOrders, fetchProfile, fetchBuyingPower]);
+    fetchPendingOrders();
+  }, [fetchSummary, fetchPortfolio, fetchAi, fetchOrders, fetchProfile, fetchBuyingPower, fetchPendingOrders]);
 
   // SSE ORDER_EXECUTED 수신 시 자산/포트폴리오/매매 로그를 즉시 재조회.
   // (자동매매 손절·익절 또는 수동 주문 체결 직후 60초 폴링을 기다리지 않고 화면을 갱신)
@@ -208,7 +214,8 @@ export default function DashboardPage() {
     fetchAi({ silent: true });
     fetchOrders({ silent: true });
     fetchBuyingPower();
-  }, [fetchSummary, fetchPortfolio, fetchAi, fetchOrders, fetchBuyingPower]);
+    fetchPendingOrders();
+  }, [fetchSummary, fetchPortfolio, fetchAi, fetchOrders, fetchBuyingPower, fetchPendingOrders]);
 
   const { latestEvent } = useOrderSSE();
   useEffect(() => {
@@ -347,24 +354,18 @@ export default function DashboardPage() {
     );
     const totalPnl = holdings.reduce((sum, h) => sum + (h.pnl ?? 0), 0);
     
-    // 주문 가능 금액 우선순위: 실제로 신규 매수 주문을 넣을 수 있는 자금 (미체결 매수 주문 시 차감됨)
-    const availableCash = buyingPower?.maxBuyAmount ?? summary.availableCash ?? 0;
-    
-    // 미체결 매수 주문 금액 합산: 미체결 매수 주문이 대기 중일 때 총자산이 깎여 보이는 현상을 방지하기 위함
-    const pendingBuyAmount = orderHistory
-      .filter((o) => o.side === 'BUY' && o.status === 'PENDING')
-      .reduce((sum, o) => sum + (o.price ?? 0) * (o.quantity ?? 0), 0);
-    
-    // KIS가 가용현금(buyingPower.availableCash)에서 미체결 매수 금액을 이미 차감했는지 판별
-    // KIS 주문가능현금(ord_psbl_cash)이 계좌 예수금(summary.availableCash)보다 작다면 이미 KIS 측에서 차감한 상태입니다.
-    const isPendingSubtracted =
-      buyingPower &&
-      summary.availableCash &&
-      buyingPower.availableCash < summary.availableCash;
-    
-    // 총 자산 = 주문 가능 금액 + 실시간 주식 평가금액 + (KIS가 차감했을 때만 미체결 매수 대금 추가)
-    // (이렇게 하면 실시간/장외/예약 주문 등 KIS의 차감 여부에 상관없이 이중합산(더블 카운팅)이 원천 봉쇄되어 항상 자산이 완벽하게 고정됩니다!)
-    const totalAsset = availableCash + totalEvalAmount + (isPendingSubtracted ? pendingBuyAmount : 0);
+    // KIS dncl_amt / maxBuyAmount 모두 미체결 매수 잠금분이 차감된 상태로 내려온다.
+    // 한투 앱의 "예수금"(=잠금 매수 포함된 진짜 현금)과 맞추기 위해 미체결 매수 합산을 도로 더한다.
+    // 데이터 출처: getPendingOrders (백엔드 미체결 전용 API — orderHistory PENDING 좀비 위험 없음)
+    const pendingBuyAmount = pendingOrders
+      .filter((o) => o.side === 'BUY')
+      .reduce((sum, o) => sum + (o.price ?? 0) * (o.remainQuantity ?? o.quantity ?? 0), 0);
+
+    const kisAvailableCash = buyingPower?.maxBuyAmount ?? summary.availableCash ?? 0;
+    const availableCash = kisAvailableCash + pendingBuyAmount;
+
+    // 총 자산 = 예수금(잠금 매수 포함) + 실시간 주식 평가금액 — 한투 앱 표기와 일치, 화면 합산도 어긋나지 않음
+    const totalAsset = availableCash + totalEvalAmount;
     
     // 총 자산 대비 실시간 수익률 계산 (투자 직전 총 자산 대비 현재 손익금액의 비율로 구하여 시각적 직관성을 100% 만족시킴!)
     const initialAsset = totalAsset - totalPnl;
@@ -378,7 +379,7 @@ export default function DashboardPage() {
       totalPnlPct,
       totalAsset,
     };
-  }, [summary, holdings, buyingPower]);
+  }, [summary, holdings, buyingPower, pendingOrders]);
 
   const handleCloseTutorial = () => {
     localStorage.setItem('hasSeenDashboardTutorial', 'true');
@@ -428,79 +429,28 @@ export default function DashboardPage() {
     return '';
   };
 
-  // 도넛 차트 데이터 포맷팅 (실시간 currentPrice 기반)
-  const chartData = holdings.map((h, i) => ({
-    name: h.stockName,
-    y: (h.quantity ?? 0) * (h.currentPrice ?? 0),
-    color: CHART_COLORS[i % CHART_COLORS.length],
-    quantity: h.quantity
-  }));
-  chartData.push({ name: '주문 가능 금액', y: derivedSummary?.availableCash ?? 0, color: '#84cc16', quantity: null });
-
-  // 비중 내림차순 정렬
-  chartData.sort((a, b) => b.y - a.y);
-
-  // Highcharts 3D 옵션
-  const chartOptions = {
-    chart: {
-      type: 'pie',
-      options3d: {
-        enabled: true,
-        alpha: 30,
-        beta: 0
-      },
-      backgroundColor: 'transparent',
-      style: { fontFamily: "'Pretendard', sans-serif" },
-      margin: [0, 0, 0, 0]
-    },
-    title: { text: null },
-    credits: { enabled: false },
-    tooltip: {
-      useHTML: true,
-      backgroundColor: 'transparent',
-      borderColor: 'transparent',
-      borderWidth: 0,
-      shadow: false,
-      padding: 0,
-      style: { pointerEvents: 'none', zIndex: 1000 },
-      formatter: function () {
-        const data = this.point;
-        const quantityHtml = data.quantity !== null
-          ? `<span style="font-weight:600;">${data.quantity.toLocaleString()}주</span> · `
-          : '';
-        const valueHtml = `${data.y.toLocaleString()}원`;
-
-        return `
-          <div style="background: rgba(0,0,0,0.85); border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 4px 12px rgba(0,0,0,0.3); padding: 10px 15px; border-radius: 8px;">
-            <div style="color:${data.color}; font-weight:700; margin-bottom:6px; font-size:1.05rem;">
-              ${data.name}
-            </div>
-            <div style="color:#fff; font-size:0.95rem; font-weight:600;">
-              ${quantityHtml}${valueHtml}
-            </div>
-          </div>
-        `;
-      }
-    },
-    plotOptions: {
-      pie: {
-        innerSize: 130,
-        depth: 45,
-        size: '80%',
-        center: ['50%', '35%'],
-        dataLabels: { enabled: false },
-        borderWidth: 0,
-        showInLegend: false,
-        states: {
-          hover: { halo: { size: 0 }, brightness: 0.1 }
-        }
-      }
-    },
-    series: [{
-      name: '자산 비중',
-      data: chartData
-    }]
-  };
+  // 도넛 차트 데이터 (nivo Pie 포맷)
+  // - 보유 종목별 평가금액 + 예수금(잠금 매수 포함) 비중 표시
+  // - value 가 0 인 항목은 비중 0% 라 시각적 의미 없으므로 제외
+  const pieData = useMemo(() => {
+    const items = holdings.map((h, i) => ({
+      id: h.stockName,
+      label: h.stockName,
+      value: Math.max(0, Math.round((h.quantity ?? 0) * (h.currentPrice ?? 0))),
+      color: CHART_COLORS[i % CHART_COLORS.length],
+      quantity: h.quantity ?? 0,
+    }));
+    items.push({
+      id: '예수금',
+      label: '예수금',
+      value: Math.max(0, Math.round(derivedSummary?.availableCash ?? 0)),
+      color: '#84cc16',
+      quantity: null,
+    });
+    return items
+      .filter((d) => d.value > 0)
+      .sort((a, b) => b.value - a.value);
+  }, [holdings, derivedSummary]);
 
   // KIS 미연결만 페이지 전체 차단. 그 외엔 페이지 레이아웃 유지하면서
   // 각 영역에서 자체적으로 로딩/에러를 표시한다.
@@ -577,7 +527,7 @@ export default function DashboardPage() {
                   )}
                 </div>
                 <div className="detail-item">
-                  <span className="detail-label">주문 가능 금액</span>
+                  <span className="detail-label">예수금</span>
                   {summaryLoading ? (
                     <Skeleton width={100} height={18} />
                   ) : (
@@ -587,18 +537,57 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <div className="overview-chart">
-              {summaryLoading ? (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}>
-                  <Skeleton width={220} height={220} borderRadius="50%" />
-                </div>
-              ) : (
-                <HighchartsReact
-                  highcharts={Highcharts}
-                  options={chartOptions}
-                  containerProps={{ style: { width: '100%', height: '100%' } }}
-                />
-              )}
+            <div className="overview-chart-area">
+              <div className="overview-chart">
+                {summaryLoading ? (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}>
+                    <Skeleton width={220} height={220} borderRadius="50%" />
+                  </div>
+                ) : pieData.length === 0 ? (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', color: '#666' }}>
+                    표시할 자산이 없습니다.
+                  </div>
+                ) : (
+                  <Pie
+                    data={pieData}
+                    width={280}
+                    height={280}
+                    margin={{ top: 18, right: 18, bottom: 18, left: 18 }}
+                    innerRadius={0.62}
+                    padAngle={1.2}
+                    cornerRadius={4}
+                    activeOuterRadiusOffset={10}
+                    activeInnerRadiusOffset={4}
+                    colors={{ datum: 'data.color' }}
+                    borderWidth={0}
+                    enableArcLinkLabels={false}
+                    enableArcLabels={false}
+                    isInteractive={true}
+                    motionConfig="gentle"
+                    theme={{
+                      tooltip: { container: { background: 'transparent', boxShadow: 'none', padding: 0 } },
+                    }}
+                    tooltip={({ datum }) => (
+                      <div style={{
+                        background: 'rgba(0, 0, 0, 0.88)',
+                        border: '1px solid rgba(255, 255, 255, 0.15)',
+                        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
+                        padding: '10px 14px',
+                        borderRadius: 8,
+                        fontFamily: "'Pretendard', sans-serif",
+                      }}>
+                        <div style={{ color: datum.data.color, fontWeight: 700, marginBottom: 6, fontSize: '1.0rem' }}>
+                          {datum.id}
+                        </div>
+                        <div style={{ color: '#fff', fontSize: '0.9rem', fontWeight: 600 }}>
+                          {datum.data.quantity != null ? `${datum.data.quantity.toLocaleString()}주 · ` : ''}
+                          {datum.value.toLocaleString()}원
+                        </div>
+                      </div>
+                    )}
+                  />
+                )}
+              </div>
             </div>
             </>)}
           </div>

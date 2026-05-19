@@ -1,12 +1,25 @@
 import { useState, useEffect, useRef } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Search, Bell } from 'lucide-react';
+import {
+  Search,
+  Bell,
+  LayoutDashboard,
+  TrendingUp,
+  Bot,
+  FileText,
+  ShieldCheck,
+  User,
+  Menu
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { getStocks } from '../api/market';
+import { logout } from '../api/auth';
+import { deleteKisKey } from '../api/user';
 import { useOrderSSE } from '../hooks/useOrderSSE';
 import { useNotifications, NOTIFICATION_TYPE_META } from '../hooks/useNotifications';
 import { usePendingDecisions } from '../hooks/usePendingDecisions';
 import PendingDecisionsModal from '../components/PendingDecisionsModal';
+import ConfirmDialog from '../components/ConfirmDialog';
 import './MainLayout.css';
 
 export default function MainLayout() {
@@ -22,7 +35,10 @@ export default function MainLayout() {
   // 알림 팝업 / 승인 모달 토글
   const [isAlarmOpen, setIsAlarmOpen] = useState(false);
   const [isPendingModalOpen, setIsPendingModalOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [confirmState, setConfirmState] = useState(null);
   const alarmRef = useRef(null);
+  const profileDropdownRef = useRef(null);
 
   // 전역 알림 + 승인 대기 — Provider에서 제공
   const { notifications, unreadCount, addNotification, markAllAsRead } = useNotifications();
@@ -31,13 +47,38 @@ export default function MainLayout() {
   // Bell 뱃지 — 안 읽은 알림 + 승인 대기 합산 (사용자 인지 영역 통합)
   const bellBadgeCount = unreadCount + pendingCount;
 
+  // 사이드바 축소/최소화 상태 관리 (새로고침 시에도 유지)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    return localStorage.getItem('modu.sidebarCollapsed') === 'true';
+  });
+
+  const toggleSidebar = () => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem('modu.sidebarCollapsed', String(next));
+      return next;
+    });
+
+    // 300ms 트랜지션 동안 실시간으로 window resize 이벤트를 발생시켜 차트가 실시간으로 유동적으로 리사이징되도록 함!
+    const startTime = performance.now();
+    const duration = 350; // 트랜지션 지속 시간(300ms)보다 약간 여유 있게 설정
+
+    function animateResize(time) {
+      window.dispatchEvent(new Event('resize'));
+      if (time - startTime < duration) {
+        requestAnimationFrame(animateResize);
+      }
+    }
+    requestAnimationFrame(animateResize);
+  };
+
   const menuItems = [
-    { path: '/home', label: '대시보드' },
-    { path: '/trading', label: '트레이딩 룸' },
-    { path: '/agent-meeting', label: '에이전트 회의실' },
-    { path: '/report', label: '리포트' },
-    { path: '/risk-manage', label: '리스크 관리' },
-    { path: '/mypage', label: '마이페이지' },
+    { path: '/home', label: '대시보드', icon: <LayoutDashboard size={20} /> },
+    { path: '/trading', label: '트레이딩 룸', icon: <TrendingUp size={20} /> },
+    { path: '/agent-meeting', label: '에이전트 회의실', icon: <Bot size={20} /> },
+    { path: '/report', label: '리포트', icon: <FileText size={20} /> },
+    { path: '/risk-manage', label: '리스크 관리', icon: <ShieldCheck size={20} /> },
+    { path: '/mypage', label: '마이페이지', icon: <User size={20} /> },
   ];
 
   const { latestEvent } = useOrderSSE();
@@ -102,6 +143,70 @@ export default function MainLayout() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isAlarmOpen]);
 
+  // 프로필 드롭다운 외부 클릭 시 닫기
+  useEffect(() => {
+    if (!isProfileOpen) return;
+    function handleClickOutside(e) {
+      if (profileDropdownRef.current && !profileDropdownRef.current.contains(e.target)) {
+        setIsProfileOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isProfileOpen]);
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (e) {
+      console.error('로그아웃 실패:', e);
+    } finally {
+      localStorage.removeItem('modu.token');
+      localStorage.removeItem('modu.user');
+      toast.success('로그아웃되었습니다');
+      navigate('/login');
+    }
+  };
+
+  const handleDisconnectKis = async () => {
+    try {
+      await deleteKisKey();
+      toast.success('한국투자증권 연동이 해제되었습니다');
+      setIsProfileOpen(false);
+      if (location.pathname === '/mypage') {
+        window.location.reload();
+      }
+    } catch (e) {
+      console.error('연동 해제 실패:', e);
+      toast.error(e.message || '연동 해제에 실패했습니다.');
+    }
+  };
+
+  const triggerLogoutConfirm = () => {
+    setIsProfileOpen(false);
+    setConfirmState({
+      title: '로그아웃',
+      message: '정말 로그아웃하시겠습니까?',
+      confirmLabel: '로그아웃',
+      cancelLabel: '취소',
+      variant: 'danger',
+      onConfirm: handleLogout,
+    });
+  };
+
+  const triggerDisconnectConfirm = () => {
+    setIsProfileOpen(false);
+    setConfirmState({
+      title: '연동 해제',
+      message: '한국투자증권 연동을 해제하시겠습니까?',
+      description: '자동매매가 중단되며 자산/주문 조회도 불가능해집니다.',
+      confirmLabel: '연동 해제',
+      cancelLabel: '닫기',
+      variant: 'danger',
+      onConfirm: handleDisconnectKis,
+    });
+  };
+
   const handleReadAll = () => markAllAsRead();
 
   const handleOpenPendingModal = () => {
@@ -128,13 +233,18 @@ export default function MainLayout() {
   };
 
   return (
-    <div className="main-layout">
+    <div className={`main-layout ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       {/* 1. 사이드바 */}
       <aside className="sidebar">
         <div className="sidebar-logo">
-          <Link to="/home" style={{ textDecoration: 'none', color: 'inherit' }}>
-            <h2>MODU</h2>
-          </Link>
+          <button className="sidebar-menu-btn" onClick={toggleSidebar} aria-label="사이드바 토글">
+            <Menu size={22} />
+          </button>
+          {!isSidebarCollapsed && (
+            <Link to="/home" style={{ textDecoration: 'none', color: 'inherit' }} className="sidebar-logo-text">
+              <h2>MODU</h2>
+            </Link>
+          )}
         </div>
         <nav className="sidebar-nav">
           {menuItems.map((item) => (
@@ -142,9 +252,10 @@ export default function MainLayout() {
               key={item.path}
               to={item.path}
               className={`nav-item ${location.pathname.startsWith(item.path) ? 'active' : ''}`}
+              title={isSidebarCollapsed ? item.label : undefined}
             >
               {item.icon}
-              <span>{item.label}</span>
+              <span className="nav-label">{item.label}</span>
               {item.isNew && <span className="nav-new-badge">NEW</span>}
             </Link>
           ))}
@@ -179,68 +290,111 @@ export default function MainLayout() {
             )}
           </div>
 
-          <div className="alarm-controls" ref={alarmRef}>
-            <button
-              className="global-notification-btn"
-              aria-label="알림"
-              onClick={() => setIsAlarmOpen(prev => !prev)}
-            >
-              <Bell size={20} />
-              {bellBadgeCount > 0 && (
-                <span className="alarm-badge">{bellBadgeCount > 99 ? '99+' : bellBadgeCount}</span>
-              )}
-            </button>
-
-            {isAlarmOpen && (
-              <div className="alarm-popup">
-                <div className="alarm-popup-header">
-                  <span>알림 목록</span>
-                  {unreadCount > 0 && (
-                    <button className="alarm-read-all" onClick={handleReadAll}>모두 읽음</button>
-                  )}
-                </div>
-
-                {/* AI 승인 대기가 있을 때만 상단 강조 영역 */}
-                {pendingCount > 0 && (
-                  <button
-                    type="button"
-                    className="alarm-pending-banner"
-                    onClick={handleOpenPendingModal}
-                  >
-                    <span className="alarm-pending-banner-text">
-                      AI 승인 대기 <strong>{pendingCount}건</strong>
-                    </span>
-                    <span className="alarm-pending-banner-cta">확인 →</span>
-                  </button>
+          <div className="header-right-actions">
+            <div className="alarm-controls" ref={alarmRef}>
+              <button
+                className="global-notification-btn"
+                aria-label="알림"
+                onClick={() => setIsAlarmOpen(prev => !prev)}
+              >
+                <Bell size={20} />
+                {bellBadgeCount > 0 && (
+                  <span className="alarm-badge">{bellBadgeCount > 99 ? '99+' : bellBadgeCount}</span>
                 )}
+              </button>
 
-                <div className="alarm-popup-list">
-                  {notifications.length === 0 ? (
-                    <div className="alarm-empty">알림이 없습니다.</div>
-                  ) : (
-                    notifications.map(n => {
-                      const meta = NOTIFICATION_TYPE_META[n.type] ?? { label: '', color: '#888' };
-                      return (
-                        <div key={n.id} className={`alarm-item${n.isRead ? '' : ' unread'}`}>
-                          <div className="alarm-item-content">
-                            <span className="alarm-item-type-tag" style={{ color: meta.color, borderColor: meta.color }}>
-                              {meta.label}
-                            </span>
-                            <div className="alarm-item-text">
-                              <div className="alarm-item-message">{n.message}</div>
-                              {n.description && (
-                                <div className="alarm-item-description">{n.description}</div>
-                              )}
-                            </div>
-                          </div>
-                          <div className="alarm-item-time">{formatNotiTime(n.timestamp)}</div>
-                        </div>
-                      );
-                    })
+              {isAlarmOpen && (
+                <div className="alarm-popup">
+                  <div className="alarm-popup-header">
+                    <span>알림 목록</span>
+                    {unreadCount > 0 && (
+                      <button className="alarm-read-all" onClick={handleReadAll}>모두 읽음</button>
+                    )}
+                  </div>
+
+                  {/* AI 승인 대기가 있을 때만 상단 강조 영역 */}
+                  {pendingCount > 0 && (
+                    <button
+                      type="button"
+                      className="alarm-pending-banner"
+                      onClick={handleOpenPendingModal}
+                    >
+                      <span className="alarm-pending-banner-text">
+                        AI 승인 대기 <strong>{pendingCount}건</strong>
+                      </span>
+                      <span className="alarm-pending-banner-cta">확인 →</span>
+                    </button>
                   )}
+
+                  <div className="alarm-popup-list">
+                    {notifications.length === 0 ? (
+                      <div className="alarm-empty">알림이 없습니다.</div>
+                    ) : (
+                      notifications.map(n => {
+                        const meta = NOTIFICATION_TYPE_META[n.type] ?? { label: '', color: '#888' };
+                        return (
+                          <div key={n.id} className={`alarm-item${n.isRead ? '' : ' unread'}`}>
+                            <div className="alarm-item-content">
+                              <span className="alarm-item-type-tag" style={{ color: meta.color, borderColor: meta.color }}>
+                                {meta.label}
+                              </span>
+                              <div className="alarm-item-text">
+                                <div className="alarm-item-message">{n.message}</div>
+                                {n.description && (
+                                  <div className="alarm-item-description">{n.description}</div>
+                                )}
+                              </div>
+                            </div>
+                            <div className="alarm-item-time">{formatNotiTime(n.timestamp)}</div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
+
+            <div className="profile-controls" ref={profileDropdownRef}>
+              <button
+                className="global-profile-btn"
+                aria-label="마이페이지"
+                onClick={() => setIsProfileOpen(prev => !prev)}
+              >
+                <User size={20} />
+              </button>
+
+              {isProfileOpen && (
+                <div className="profile-popup">
+                  <div className="profile-popup-header">
+                    <span>내 계정</span>
+                  </div>
+                  <div className="profile-popup-list">
+                    <button
+                      className="profile-popup-item"
+                      onClick={() => {
+                        navigate('/mypage');
+                        setIsProfileOpen(false);
+                      }}
+                    >
+                      마이페이지
+                    </button>
+                    <button
+                      className="profile-popup-item disconnect"
+                      onClick={triggerDisconnectConfirm}
+                    >
+                      연동 해제
+                    </button>
+                    <button
+                      className="profile-popup-item logout"
+                      onClick={triggerLogoutConfirm}
+                    >
+                      로그아웃
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
@@ -253,6 +407,13 @@ export default function MainLayout() {
       {isPendingModalOpen && (
         <PendingDecisionsModal onClose={() => setIsPendingModalOpen(false)} />
       )}
+
+      {/* 커스텀 확인 다이얼로그 */}
+      <ConfirmDialog
+        open={!!confirmState}
+        {...(confirmState ?? {})}
+        onClose={() => setConfirmState(null)}
+      />
     </div>
   );
 }
