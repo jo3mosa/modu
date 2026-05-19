@@ -43,7 +43,16 @@ class RedisBuyCandidateRepository:
             logger.info("stock:risk_tier 미설정 (DA 배치 미실행) - 비보유자 매칭 생략: stock_code=%s", stock_code)
             return []
 
-        tier = int(tier_raw)
+        try:
+            tier = int(tier_raw)
+        except (ValueError, TypeError):
+            logger.warning("stock:risk_tier 파싱 실패 - 비보유자 매칭 생략: stock_code=%s, value=%r", stock_code, tier_raw)
+            return []
+
+        if not (1 <= tier <= 5):
+            logger.warning("stock:risk_tier 범위 초과 - 비보유자 매칭 생략: stock_code=%s, tier=%s", stock_code, tier)
+            return []
+
         grade_keys = [f"{_KEY_USERS_BY_GRADE}:{t}" for t in range(tier, 6)]
 
         try:
@@ -52,7 +61,13 @@ class RedisBuyCandidateRepository:
             logger.exception("users:by_grade SUNION 실패: stock_code=%s, tier=%s", stock_code, tier)
             return []
 
-        return sorted(int(uid) for uid in raw_ids)
+        result = []
+        for uid in raw_ids:
+            try:
+                result.append(int(uid))
+            except (ValueError, TypeError):
+                logger.warning("users:by_grade 유저 ID 파싱 실패 - 건너뜀: stock_code=%s, value=%r", stock_code, uid)
+        return sorted(result)
 
 
 class MockBuyCandidateRepository:
