@@ -57,4 +57,16 @@ class UsersByGradeChangedEventListenerTest {
         listener.handle(new UsersByGradeChangedEvent(1L, null, 3));
         // 통과하면 성공
     }
+
+    @Test
+    @DisplayName("removeUser 예외 발생해도 addUser 는 best-effort 로 시도")
+    void removeUserException_stillCallsAddUser() {
+        doThrow(new RuntimeException("SREM down"))
+                .when(repository).removeUser(1L, 2);
+
+        listener.handle(new UsersByGradeChangedEvent(1L, 2, 4));
+
+        verify(repository).removeUser(1L, 2);
+        verify(repository).addUser(1L, 4);
+    }
 }

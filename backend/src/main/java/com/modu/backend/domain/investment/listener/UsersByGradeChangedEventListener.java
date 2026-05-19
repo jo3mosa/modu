@@ -32,17 +32,24 @@ public class UsersByGradeChangedEventListener {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handle(UsersByGradeChangedEvent event) {
-        try {
-            if (event.prevGradeInt() != null && event.prevGradeInt() == event.newGradeInt()) {
-                return;
-            }
-            if (event.prevGradeInt() != null) {
+        if (event.prevGradeInt() != null && event.prevGradeInt() == event.newGradeInt()) {
+            return;
+        }
+
+        // remove 와 add 를 독립 try-catch 로 분리 — 한쪽 실패가 다른 쪽 시도를 막지 않도록 (best-effort).
+        if (event.prevGradeInt() != null) {
+            try {
                 usersByGradeRedisRepository.removeUser(event.userId(), event.prevGradeInt());
+            } catch (Exception e) {
+                log.error("[UsersByGradeChanged] SREM 실패 - userId: {}, prev: {}",
+                        event.userId(), event.prevGradeInt(), e);
             }
+        }
+        try {
             usersByGradeRedisRepository.addUser(event.userId(), event.newGradeInt());
         } catch (Exception e) {
-            log.error("[UsersByGradeChanged] Redis 갱신 실패 - userId: {}, prev: {}, new: {}",
-                    event.userId(), event.prevGradeInt(), event.newGradeInt(), e);
+            log.error("[UsersByGradeChanged] SADD 실패 - userId: {}, new: {}",
+                    event.userId(), event.newGradeInt(), e);
         }
     }
 }

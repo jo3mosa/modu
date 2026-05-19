@@ -11,8 +11,11 @@ import com.modu.backend.domain.investment.repository.UsersByGradeRedisRepository
 import com.modu.backend.domain.strategy.dto.InvestmentRiskLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * investment_profiles → Redis users:by_grade:{1~5} 동기화 — S14P31B106-357
@@ -29,15 +32,20 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class UsersByGradeBackfillService {
 
+    private static final int PAGE_SIZE = 1000;
+
     private final InvestmentProfileRepository investmentProfileRepository;
     private final UsersByGradeRedisRepository usersByGradeRedisRepository;
 
-    @Transactional(readOnly = true)
+    /**
+     * DB 트랜잭션은 Spring Data JPA 의 page-level findAll 내부에서만 짧게 유지된다.
+     * (method-level @Transactional 없음 → Redis I/O 동안 connection 점유 X)
+     */
     public BackfillResult backfillAll() {
         long startMs = System.currentTimeMillis();
         Map<Integer, List<Long>> gradeToUsers;
         try {
-            gradeToUsers = loadAndGroup();
+            gradeToUsers = loadAndGroupPaged();
         } catch (Exception e) {
             log.error("[UsersByGradeBackfill] investment_profiles 조회 실패", e);
             return BackfillResult.failed(e.getMessage());
@@ -61,16 +69,27 @@ public class UsersByGradeBackfillService {
         return BackfillResult.success(totalUsers, elapsed);
     }
 
-    private Map<Integer, List<Long>> loadAndGroup() {
+    /**
+     * 페이지 단위 조회 — 전체 적재로 인한 OOM/GC 압박 방지.
+     * 각 page 별로 짧은 read 트랜잭션이 발생하고 즉시 종료됨.
+     * 결과 Map 만 메모리에 누적 (userId Long + grade 분류 — 사용자 수 비례).
+     */
+    private Map<Integer, List<Long>> loadAndGroupPaged() {
         Map<Integer, List<Long>> result = new HashMap<>();
-        for (InvestmentProfile profile : investmentProfileRepository.findAll()) {
-            Integer gradeInt = toGradeInt(profile.getRiskGrade());
-            if (gradeInt == null) {
-                log.warn("[UsersByGradeBackfill] 알 수 없는 riskGrade - userId: {}, value: {}",
-                        profile.getUserId(), profile.getRiskGrade());
-                continue;
+        Pageable pageable = PageRequest.of(0, PAGE_SIZE, Sort.by("userId").ascending());
+        while (true) {
+            Page<InvestmentProfile> page = investmentProfileRepository.findAll(pageable);
+            for (InvestmentProfile profile : page.getContent()) {
+                Integer gradeInt = toGradeInt(profile.getRiskGrade());
+                if (gradeInt == null) {
+                    log.warn("[UsersByGradeBackfill] 알 수 없는 riskGrade - userId: {}, value: {}",
+                            profile.getUserId(), profile.getRiskGrade());
+                    continue;
+                }
+                result.computeIfAbsent(gradeInt, k -> new ArrayList<>()).add(profile.getUserId());
             }
-            result.computeIfAbsent(gradeInt, k -> new ArrayList<>()).add(profile.getUserId());
+            if (!page.hasNext()) break;
+            pageable = page.nextPageable();
         }
         return result;
     }

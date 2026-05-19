@@ -11,6 +11,9 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 
 import java.util.Collection;
 import java.util.List;
@@ -33,7 +36,7 @@ class UsersByGradeBackfillServiceTest {
     @Test
     @DisplayName("backfillAll - 등급별 그룹화 후 addUsersBatch 호출 + success")
     void backfillAll_success() {
-        when(investmentProfileRepository.findAll()).thenReturn(List.of(
+        givenSinglePage(List.of(
                 profile(1L, "STABLE"),         // 1
                 profile(2L, "ACTIVE"),         // 4
                 profile(3L, "ACTIVE"),         // 4
@@ -57,7 +60,7 @@ class UsersByGradeBackfillServiceTest {
     @Test
     @DisplayName("backfillAll - profile 0건이면 addUsersBatch 호출 X + empty result")
     void backfillAll_empty() {
-        when(investmentProfileRepository.findAll()).thenReturn(List.of());
+        givenSinglePage(List.of());
 
         BackfillResult result = service.backfillAll();
 
@@ -69,7 +72,7 @@ class UsersByGradeBackfillServiceTest {
     @Test
     @DisplayName("backfillAll - 알 수 없는 riskGrade 는 skip + WARN")
     void backfillAll_unknownGrade_skipped() {
-        when(investmentProfileRepository.findAll()).thenReturn(List.of(
+        givenSinglePage(List.of(
                 profile(1L, "STABLE"),
                 profile(2L, "UNKNOWN_VALUE"),
                 profile(3L, null)
@@ -83,7 +86,8 @@ class UsersByGradeBackfillServiceTest {
     @Test
     @DisplayName("backfillAll - DB 조회 예외 시 failed result")
     void backfillAll_dbException() {
-        when(investmentProfileRepository.findAll()).thenThrow(new RuntimeException("db down"));
+        when(investmentProfileRepository.findAll(any(Pageable.class)))
+                .thenThrow(new RuntimeException("db down"));
 
         BackfillResult result = service.backfillAll();
 
@@ -95,7 +99,7 @@ class UsersByGradeBackfillServiceTest {
     @Test
     @DisplayName("backfillAll - Redis 적재 예외 시 failed result (DB 실패와 대칭)")
     void backfillAll_redisException() {
-        when(investmentProfileRepository.findAll()).thenReturn(List.of(profile(1L, "STABLE")));
+        givenSinglePage(List.of(profile(1L, "STABLE")));
         doThrow(new RuntimeException("redis down"))
                 .when(usersByGradeRedisRepository).addUsersBatch(any());
 
@@ -103,6 +107,12 @@ class UsersByGradeBackfillServiceTest {
 
         assertThat(result.success()).isFalse();
         assertThat(result.errorMessage()).contains("redis down");
+    }
+
+    /** 첫 페이지에 모든 데이터, 다음 페이지 없음을 mock — paging loop 1회만 돌고 종료. */
+    private void givenSinglePage(List<InvestmentProfile> profiles) {
+        Page<InvestmentProfile> page = new PageImpl<>(profiles);
+        when(investmentProfileRepository.findAll(any(Pageable.class))).thenReturn(page);
     }
 
     private static InvestmentProfile profile(Long userId, String riskGrade) {
