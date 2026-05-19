@@ -58,8 +58,9 @@ public class OrderSseRedisSubscriber implements MessageListener {
             OrderSseEnvelope envelope = objectMapper.readValue(body, OrderSseEnvelope.class);
             emitterManager.deliverLocal(userId, envelope.eventName(), envelope.payload());
         } catch (Exception e) {
-            log.error("[OrderSseRedisSubscriber] envelope handling failed - channel: {}, body: {}",
-                    channel, body, e);
+            // body 원문은 주문/에이전트 데이터 유출 위험 → 길이만 기록 (e 의 메시지로 원인 추적)
+            log.error("[OrderSseRedisSubscriber] envelope handling failed - channel: {}, bodyLength: {}",
+                    channel, body.length(), e);
         }
     }
 }
