@@ -4,6 +4,7 @@ import TradingChart from '../components/TradingChart';
 import TradingNews from '../components/TradingNews';
 import OrderBook from '../components/OrderBook';
 import { getStockDetail } from '../api/market';
+import { buildStockWsUrl } from '../api/wsUrl';
 import './TradingPage.css';
 
 const DEFAULT_STOCK_CODE = '005930';
@@ -52,8 +53,7 @@ export default function TradingPage() {
   useEffect(() => {
     if (!stockCode) return;
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/stocks/${stockCode}/price`);
+    const ws = new WebSocket(buildStockWsUrl(stockCode, 'price'));
 
     ws.onmessage = (event) => {
       try {

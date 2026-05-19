@@ -7,10 +7,10 @@ metadata:
   labels:
     app: backend
 spec:
-  # [S14P31B106-345] KIS 단일세션 제약 회피용 응급조치 — 마이그레이션 동안 1로 축소.
-  # market.feed.client-mode=REMOTE 로 전환 완료 후 다시 2 이상으로 복원 (Phase 7 follow-up).
-  # 이전: replicas: 2 (두 pod 가 같은 공용 appkey 로 KIS WS 동시 접속 → 무한 재연결 루프)
-  replicas: 1
+  # [S14P31B106-345] REMOTE 모드 (market.feed.client-mode=REMOTE) 적용 후 replicas 복원.
+  # Gateway 가 KIS 단일세션을 단독 보유하므로 backend 는 자유롭게 수평 확장 가능.
+  # 응급조치(replicas=1) 기간 종료 — REMOTE 모드에서 다중 pod 정상 동작 검증 완료.
+  replicas: 2
   selector:
     matchLabels:
       app: backend
