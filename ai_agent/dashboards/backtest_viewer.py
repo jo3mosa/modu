@@ -116,6 +116,10 @@ def _run_dir_label(run_dir: Path) -> str:
     n_files = len(files)
     folder = run_dir.name
 
+    # llmModel_gpt 실험처럼 부모 폴더가 comparison_summary.json을 가지면 "parent/folder" 표시
+    if (run_dir.parent / "comparison_summary.json").exists():
+        folder = f"{run_dir.parent.name}/{folder}"
+
     # summary 파일에서 추출 시도
     for s in run_dir.glob("summary_*.json"):
         # 형식: summary_<YYYY-MM-DD>_<YYYY-MM-DD>_<user>_<hash>.json
@@ -1883,6 +1887,7 @@ def _build_experiment_command(
     output_dir: Path,
     score_after: bool,
     pm_mock: bool,
+    initial_holdings: str | None = None,
 ) -> list[str]:
     """run_model_experiment.py CLI 인자 리스트."""
     cmd = [
@@ -1899,6 +1904,8 @@ def _build_experiment_command(
         cmd.append("--score-after")
     if pm_mock:
         cmd.append("--pm-mock")
+    if initial_holdings:
+        cmd += ["--initial-holdings", initial_holdings]
     return cmd
 
 
@@ -2373,6 +2380,7 @@ def tab_run() -> None:
                 output_dir=output_dir,
                 score_after=score_after,
                 pm_mock=pm_mock,
+                initial_holdings=initial_holdings or None,
             )
         else:
             cmd = _build_run_command(args, output_dir)
