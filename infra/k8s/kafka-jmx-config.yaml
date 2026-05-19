@@ -1,0 +1,107 @@
+# [S14P31B106-348] Kafka JMX Exporter 설정
+#
+# Kafka 브로커가 노출하는 JMX MBean 을 Prometheus 메트릭으로 변환하기 위한 룰셋.
+# kafka.yaml 의 javaagent 가 이 ConfigMap 을 마운트해서 사용한다.
+#
+# 동작 흐름:
+#   kafka pod 내부 JMX MBean
+#     -> jmx_prometheus_javaagent (이 파일의 rule 로 변환)
+#     -> :9404/metrics (Prometheus text format)
+#     -> ServiceMonitor (kafka-servicemonitor.yaml) -> kube-prom Prometheus
+#
+# 룰셋 출처: prometheus/jmx_exporter 공식 kafka 예시를 우리 운영에 필요한 항목만 추려서 정리.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-jmx-config
+  namespace: modu-apps
+data:
+  kafka-jmx-exporter.yml: |
+    # 메트릭 이름을 소문자/스네이크케이스로 통일 (Prometheus 컨벤션).
+    lowercaseOutputName: true
+    # 라벨 이름도 동일하게 통일.
+    lowercaseOutputLabelNames: true
+
+    rules:
+      # ───────────────────────────────────────────────────────────
+      # 1. 브로커 토픽 처리량 (MessagesIn, BytesIn/Out, FailedFetch 등)
+      #    UnderReplicatedPartitions 와 함께 가장 자주 보는 지표.
+      # ───────────────────────────────────────────────────────────
+      - pattern: kafka.server<type=BrokerTopicMetrics, name=(.+), topic=(.+)><>Count
+        name: kafka_server_brokertopicmetrics_$1_total
+        type: COUNTER
+        labels:
+          topic: "$2"
+      - pattern: kafka.server<type=BrokerTopicMetrics, name=(.+)><>Count
+        name: kafka_server_brokertopicmetrics_$1_total
+        type: COUNTER
+
+      # ───────────────────────────────────────────────────────────
+      # 2. 컨트롤러 상태 — ActiveController 가 정확히 1 이어야 정상.
+      #    OfflinePartitionsCount > 0 이면 즉시 알람.
+      # ───────────────────────────────────────────────────────────
+      - pattern: kafka.controller<type=KafkaController, name=(.+)><>Value
+        name: kafka_controller_$1
+        type: GAUGE
+
+      # ───────────────────────────────────────────────────────────
+      # 3. ReplicaManager — UnderReplicatedPartitions, ISR shrink/expand.
+      #    클러스터 헬스의 핵심 지표.
+      # ───────────────────────────────────────────────────────────
+      - pattern: kafka.server<type=ReplicaManager, name=(.+)><>Value
+        name: kafka_server_replicamanager_$1
+        type: GAUGE
+      - pattern: kafka.server<type=ReplicaManager, name=(.+)><>(Count|OneMinuteRate)
+        name: kafka_server_replicamanager_$1
+        type: GAUGE
+
+      # ───────────────────────────────────────────────────────────
+      # 4. 요청 처리 성능 — RequestHandlerAvgIdlePercent < 20% 면 broker 한계 근접.
+      # ───────────────────────────────────────────────────────────
+      - pattern: kafka.server<type=KafkaRequestHandlerPool, name=RequestHandlerAvgIdlePercent><>OneMinuteRate
+        name: kafka_request_handler_avg_idle_percent
+        type: GAUGE
+      - pattern: kafka.network<type=RequestMetrics, name=RequestsPerSec, request=(.+)><>OneMinuteRate
+        name: kafka_network_requests_per_sec
+        type: GAUGE
+        labels:
+          request: "$1"
+      - pattern: kafka.network<type=RequestMetrics, name=(.+), request=(.+)><>Mean
+        name: kafka_network_request_$1_mean_ms
+        type: GAUGE
+        labels:
+          request: "$2"
+
+      # ───────────────────────────────────────────────────────────
+      # 5. 로그(파티션) — LogStartOffset, LogEndOffset, Size.
+      #    Disk 사용량 추정에 사용.
+      # ───────────────────────────────────────────────────────────
+      - pattern: kafka.log<type=Log, name=(.+), topic=(.+), partition=(.+)><>Value
+        name: kafka_log_$1
+        type: GAUGE
+        labels:
+          topic: "$2"
+          partition: "$3"
+
+      # ───────────────────────────────────────────────────────────
+      # 6. JVM 표준 메트릭 — heap, GC, threads.
+      # ───────────────────────────────────────────────────────────
+      - pattern: java.lang<type=Memory><HeapMemoryUsage>(\w+)
+        name: jvm_memory_heap_$1_bytes
+        type: GAUGE
+      - pattern: java.lang<type=Memory><NonHeapMemoryUsage>(\w+)
+        name: jvm_memory_nonheap_$1_bytes
+        type: GAUGE
+      - pattern: java.lang<type=GarbageCollector, name=(.+)><>CollectionCount
+        name: jvm_gc_collection_count_total
+        type: COUNTER
+        labels:
+          gc: "$1"
+      - pattern: java.lang<type=GarbageCollector, name=(.+)><>CollectionTime
+        name: jvm_gc_collection_time_ms_total
+        type: COUNTER
+        labels:
+          gc: "$1"
+      - pattern: java.lang<type=Threading><>ThreadCount
+        name: jvm_threads_count
+        type: GAUGE

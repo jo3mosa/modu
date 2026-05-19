@@ -4,6 +4,10 @@ kind: Service
 metadata:
   name: kafka-headless
   namespace: modu-apps
+  # [S14P31B106-348] ServiceMonitor(kafka-monitor) 가 이 라벨로 Service 를 발견.
+  # kafka-service 에는 의도적으로 라벨을 두지 않아 JMX 메트릭이 중복 수집되지 않게 함.
+  labels:
+    app: kafka
 spec:
   clusterIP: None
   # Ready 가 아닌 Pod 도 DNS 에 등록 — KRaft quorum 형성 시
@@ -18,6 +22,11 @@ spec:
   - name: controller
     port: 9093
     targetPort: 9093
+  # [S14P31B106-348] JMX Exporter 가 노출하는 Prometheus 메트릭 포트.
+  # ServiceMonitor (kafka-servicemonitor.yaml) 가 이 포트 이름으로 scrape.
+  - name: jmx-metrics
+    port: 9404
+    targetPort: 9404
 
 ---
 
@@ -73,6 +82,32 @@ spec:
         app: kafka
     spec:
       automountServiceAccountToken: false
+      # [S14P31B106-348] JMX Exporter javaagent 다운로드.
+      # Kafka 컨테이너 시작 전에 emptyDir 볼륨에 jar 를 받아두면,
+      # kafka 컨테이너의 KAFKA_OPTS 가 이 jar 를 javaagent 로 로드한다.
+      # 폐쇄망 환경이라면 이 단계를 사내 미러 또는 사전 빌드 이미지로 대체할 것.
+      initContainers:
+      - name: jmx-exporter-downloader
+        image: curlimages/curl:8.5.0
+        command:
+          - sh
+          - -c
+          - |
+            set -e
+            if [ ! -f /opt/jmx/jmx_prometheus_javaagent.jar ]; then
+              curl -fsSL -o /opt/jmx/jmx_prometheus_javaagent.jar \
+                https://repo1.maven.org/maven2/io/prometheus/jmx/jmx_prometheus_javaagent/1.0.1/jmx_prometheus_javaagent-1.0.1.jar
+            fi
+        volumeMounts:
+          - name: jmx-agent
+            mountPath: /opt/jmx
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+              - ALL
       containers:
       - name: kafka
         image: apache/kafka:3.9.0
@@ -88,6 +123,9 @@ spec:
           name: broker
         - containerPort: 9093
           name: controller
+        # [S14P31B106-348] JMX Exporter 가 Prometheus 메트릭을 노출하는 포트.
+        - containerPort: 9404
+          name: jmx-metrics
         env:
         # PVC 마운트 경로를 명시 — 미설정 시 기본값 /tmp/kafka-logs 로 떨어져
         # Pod 재시작마다 데이터 소실 + 매번 새 cluster id 로 시작 → quorum 형성 불가.
@@ -113,6 +151,11 @@ spec:
           value: "3"
         - name: KAFKA_MIN_INSYNC_REPLICAS
           value: "2"
+        # [S14P31B106-348] JMX Exporter 를 javaagent 로 로드.
+        # 포맷: -javaagent:<jar 경로>=<포트>:<설정 yaml 경로>
+        # 9404 포트로 /metrics 노출, 룰은 ConfigMap(kafka-jmx-config) 마운트본 사용.
+        - name: KAFKA_OPTS
+          value: "-javaagent:/opt/jmx/jmx_prometheus_javaagent.jar=9404:/etc/jmx-config/kafka-jmx-exporter.yml"
         securityContext:
           allowPrivilegeEscalation: false
           runAsNonRoot: true
@@ -158,6 +201,21 @@ spec:
         volumeMounts:
         - name: kafka-storage
           mountPath: /var/lib/kafka/data
+        # [S14P31B106-348] JMX Exporter javaagent jar 위치 (initContainer 가 받아둠).
+        - name: jmx-agent
+          mountPath: /opt/jmx
+        # [S14P31B106-348] JMX Exporter 룰셋 (kafka-jmx-config ConfigMap).
+        - name: jmx-config
+          mountPath: /etc/jmx-config
+      # [S14P31B106-348] JMX Exporter 관련 볼륨 정의.
+      # jmx-agent: initContainer 가 jar 를 받아두는 임시 공간 (Pod 수명과 동일).
+      # jmx-config: ConfigMap 으로부터 룰셋 yaml 을 마운트.
+      volumes:
+      - name: jmx-agent
+        emptyDir: {}
+      - name: jmx-config
+        configMap:
+          name: kafka-jmx-config
   volumeClaimTemplates:
   - metadata:
       name: kafka-storage
