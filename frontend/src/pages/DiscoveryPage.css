@@ -1,0 +1,612 @@
+/* ============================================================
+   Discovery Page — 발굴
+   ============================================================ */
+
+.discovery-container {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  color: #fff;
+  font-family: 'Pretendard', sans-serif;
+  animation: fadeInPage 0.4s ease-out;
+  padding-bottom: 3rem;
+}
+
+/* 컨테이너 gap 2rem + 글로벌 margin-bottom 2rem 누적 보정 — 마이페이지와 동일 패턴 */
+.discovery-container > .page-header-container {
+  margin-bottom: 0.5rem;
+}
+
+/* ============================================================
+   1) Hero — YOUR PROFILE 카드
+   ============================================================ */
+.discovery-hero {
+  display: grid;
+  grid-template-columns: 1.1fr 1.4fr;
+  gap: 2.5rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 20px;
+  padding: 2.2rem 2.4rem;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+}
+
+.discovery-hero-left {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  justify-content: center;
+}
+
+.discovery-hero-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: #888;
+  text-transform: uppercase;
+}
+
+.discovery-hero-dot {
+  color: #555;
+}
+
+.discovery-hero-grade {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.discovery-hero-grade-tier {
+  font-family: 'Noto Serif KR', 'Pretendard', serif;
+  font-weight: 900;
+  font-size: 5.5rem;
+  line-height: 1;
+  color: var(--tier-4);
+  letter-spacing: -2px;
+  text-shadow: 0 0 32px rgba(251, 146, 60, 0.25);
+}
+
+.discovery-hero-grade-label {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.discovery-hero-desc {
+  color: #aaa;
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.discovery-hero-note {
+  color: #888;
+  font-size: 0.85rem;
+  margin: 0;
+  line-height: 1.6;
+}
+
+.discovery-hero-note strong {
+  color: var(--tier-4);
+  font-weight: 700;
+}
+
+.discovery-hero-link {
+  color: var(--secondary);
+  font-weight: 700;
+  text-decoration: none;
+  margin-left: 0.5rem;
+}
+
+.discovery-hero-link:hover {
+  text-decoration: underline;
+}
+
+/* ============================================================
+   2) Hero 우측 — Tier 막대 시각화
+   ============================================================ */
+.discovery-hero-right {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.tier-bar-col {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: center;
+  padding-top: 0.5rem;
+}
+
+.tier-bar-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  height: 38px;
+}
+
+.tier-bar-tier {
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: #888;
+  letter-spacing: 0.5px;
+}
+
+.tier-bar-label {
+  font-size: 0.72rem;
+  color: #666;
+  font-weight: 500;
+}
+
+.tier-bar-col.is-mine .tier-bar-tier {
+  color: var(--tier-4);
+}
+
+.tier-bar-col.is-mine .tier-bar-label {
+  color: #fff;
+  font-weight: 700;
+}
+
+.tier-bar-you {
+  position: absolute;
+  top: 50px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--tier-4);
+  color: #1a1a1a;
+  font-size: 0.62rem;
+  font-weight: 900;
+  padding: 2px 7px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+  z-index: 2;
+}
+
+.tier-bar-fill {
+  width: 100%;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.tier-bar-fill-T1 { height: 56px;  background: var(--tier-1); box-shadow: 0 0 24px var(--tier-1-soft); }
+.tier-bar-fill-T2 { height: 78px;  background: var(--tier-2); box-shadow: 0 0 24px var(--tier-2-soft); }
+.tier-bar-fill-T3 { height: 100px; background: var(--tier-3); box-shadow: 0 0 24px var(--tier-3-soft); }
+.tier-bar-fill-T4 { height: 122px; background: var(--tier-4); box-shadow: 0 0 28px var(--tier-4-soft); }
+.tier-bar-fill-T5 { height: 144px; background: var(--tier-5); box-shadow: 0 0 24px var(--tier-5-soft); }
+
+.tier-bar-col.is-locked .tier-bar-fill {
+  background: rgba(244, 63, 94, 0.18);
+  box-shadow: none;
+  opacity: 0.45;
+}
+
+.tier-bar-col.is-locked .tier-bar-tier,
+.tier-bar-col.is-locked .tier-bar-label,
+.tier-bar-col.is-locked .tier-bar-count strong,
+.tier-bar-col.is-locked .tier-bar-count span {
+  opacity: 0.4;
+}
+
+.tier-bar-count {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.tier-bar-count strong {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #fff;
+}
+
+.tier-bar-count span {
+  font-size: 0.72rem;
+  color: #888;
+}
+
+/* ============================================================
+   3) 추천 헤더 — "당신을 위한 12개 종목"
+   ============================================================ */
+.discovery-recommend-header {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+
+.discovery-recommend-eyebrow {
+  font-size: 0.78rem;
+  letter-spacing: 0.18em;
+  color: #888;
+  margin: 0;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.discovery-recommend-title {
+  font-family: 'Noto Serif KR', 'Pretendard', serif;
+  font-weight: 700;
+  font-size: 3rem;
+  line-height: 1.15;
+  margin: 0;
+  letter-spacing: -1.5px;
+  color: #fff;
+}
+
+.discovery-recommend-title em {
+  font-style: normal;
+  color: var(--tier-4);
+}
+
+.discovery-recommend-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.discovery-recommend-desc {
+  color: #888;
+  font-size: 0.92rem;
+  margin: 0;
+}
+
+/* 필터 칩 */
+.discovery-filters {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.discovery-filter-chip {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #aaa;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.45rem 1rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.discovery-filter-chip:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.discovery-filter-chip.is-active {
+  background: rgba(132, 204, 22, 0.15);
+  border-color: rgba(132, 204, 22, 0.4);
+  color: var(--secondary);
+}
+
+/* ============================================================
+   4) Tier 섹션 — 헤더 + 카드 그리드
+   ============================================================ */
+.discovery-tier-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2.5rem;
+}
+
+.tier-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  position: relative;
+}
+
+.tier-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 0.5rem;
+}
+
+.tier-section-title-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.tier-section-badge {
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 3px 9px;
+  border-radius: 6px;
+  letter-spacing: 0.5px;
+  border: 1px solid currentColor;
+}
+
+.tier-section-badge-T1 { color: var(--tier-1); background: var(--tier-1-soft); }
+.tier-section-badge-T2 { color: var(--tier-2); background: var(--tier-2-soft); }
+.tier-section-badge-T3 { color: var(--tier-3); background: var(--tier-3-soft); }
+.tier-section-badge-T4 { color: var(--tier-4); background: var(--tier-4-soft); }
+.tier-section-badge-T5 { color: var(--tier-5); background: var(--tier-5-soft); }
+
+.tier-section-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0;
+  color: #fff;
+}
+
+.tier-section-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.tier-section-count {
+  color: #888;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.tier-section-more {
+  background: transparent;
+  border: none;
+  color: #aaa;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  padding: 0;
+  transition: color 0.15s;
+}
+
+.tier-section-more:hover {
+  color: #fff;
+}
+
+.tier-section-description {
+  color: #777;
+  font-size: 0.88rem;
+  margin: 0;
+}
+
+.tier-section-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+@media (max-width: 1280px) {
+  .tier-section-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 820px) {
+  .tier-section-grid {
+    grid-template-columns: 1fr;
+  }
+  .discovery-hero {
+    grid-template-columns: 1fr;
+  }
+  .discovery-recommend-controls {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+/* ============================================================
+   5) Stock Card
+   ============================================================ */
+.stock-card {
+  position: relative;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  padding: 1.3rem 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  transition: all 0.2s ease;
+  overflow: hidden;
+}
+
+.stock-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: currentColor;
+  opacity: 0.6;
+}
+
+.stock-card-T1 { color: var(--tier-1); }
+.stock-card-T2 { color: var(--tier-2); }
+.stock-card-T3 { color: var(--tier-3); }
+.stock-card-T4 { color: var(--tier-4); }
+.stock-card-T5 { color: var(--tier-5); }
+
+.stock-card:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.1);
+  transform: translateY(-2px);
+}
+
+.stock-card-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.stock-card-name {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #fff;
+  margin: 0;
+  letter-spacing: -0.3px;
+}
+
+.stock-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.74rem;
+  color: #666;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
+
+.stock-card-meta > span:first-child {
+  font-family: monospace;
+}
+
+.stock-card-dot {
+  opacity: 0.5;
+}
+
+.stock-card-price-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.stock-card-price {
+  font-size: 1.7rem;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -0.5px;
+}
+
+.stock-card-change {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #888;
+}
+
+.stock-card-change.up { color: #ef4444; }
+.stock-card-change.down { color: #3b82f6; }
+
+.stock-card-reason {
+  font-size: 0.85rem;
+  color: #b8b8b8;
+  line-height: 1.55;
+  margin: 0;
+}
+
+.stock-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.stock-card-tag {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: currentColor;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid currentColor;
+  padding: 3px 8px;
+  border-radius: 6px;
+  letter-spacing: 0.2px;
+}
+
+.stock-card-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.05);
+  margin: 0.15rem 0;
+}
+
+.stock-card-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.stock-card-metrics > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.stock-card-metrics dt {
+  font-size: 0.68rem;
+  color: #666;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.stock-card-metrics dd {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+}
+
+.stock-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.72rem;
+  color: #666;
+  margin-top: 0.15rem;
+}
+
+.stock-card-pulse {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--secondary);
+  box-shadow: 0 0 6px var(--secondary);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* ============================================================
+   6) Empty state
+   ============================================================ */
+.discovery-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 4rem 1rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+}
+
+.discovery-empty p {
+  color: #888;
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.discovery-empty-reset {
+  background: rgba(132, 204, 22, 0.12);
+  border: 1px solid rgba(132, 204, 22, 0.3);
+  color: var(--secondary);
+  font-weight: 700;
+  font-size: 0.85rem;
+  padding: 0.5rem 1.2rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+.discovery-empty-reset:hover {
+  background: rgba(132, 204, 22, 0.2);
+}
