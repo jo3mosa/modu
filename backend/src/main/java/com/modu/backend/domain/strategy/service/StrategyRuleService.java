@@ -39,6 +39,7 @@ public class StrategyRuleService {
                 rule.getTakeProfitPct().intValue(),
                 rule.getMaxDailyOrderCount(),
                 rule.getDailyLossLimitAmount(),
+                rule.getAiBudgetAmount(),
                 rule.getUpdatedAt(),
                 rule.getVersion()
         );
@@ -69,6 +70,7 @@ public class StrategyRuleService {
                 rule.getTakeProfitPct().intValue(),
                 rule.getMaxDailyOrderCount(),
                 rule.getDailyLossLimitAmount(),
+                rule.getAiBudgetAmount(),
                 rule.getUpdatedAt(),
                 historyVersionNo
         );
@@ -85,6 +87,7 @@ public class StrategyRuleService {
                 request.takeProfitRate().longValue(),
                 request.maxDailyOrderCount(),
                 request.maxDailyLossAmount(),
+                request.aiBudgetAmount(),
                 now
         );
     }
@@ -156,6 +159,7 @@ public class StrategyRuleService {
                 .takeProfitPct(request.takeProfitRate().longValue())
                 .maxDailyOrderCount(request.maxDailyOrderCount())
                 .dailyLossLimitAmount(request.maxDailyLossAmount())
+                .aiBudgetAmount(request.aiBudgetAmount())
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
@@ -168,6 +172,7 @@ public class StrategyRuleService {
                 .takeProfitPct(rule.getTakeProfitPct())
                 .maxDailyOrderCount(rule.getMaxDailyOrderCount())
                 .dailyLossLimitAmount(rule.getDailyLossLimitAmount())
+                .aiBudgetAmount(rule.getAiBudgetAmount())
                 .naturalLanguageRule(rule.getNaturalLanguageRule())
                 .parsedRuleJson(rule.getParsedRuleJson())
                 .versionNo(versionNo)

@@ -37,6 +37,7 @@ export default function RiskManagePage() {
     stopLoss: -3,
     maxDailyOrders: 10,
     maxLossLimit: 500000,
+    aiBudget: 10000,
   });
 
   // 페이지 진입 시 GET /me/rules로 초기화
@@ -63,6 +64,7 @@ export default function RiskManagePage() {
           stopLoss: -(data.stopLossRate ?? 3),
           maxDailyOrders: data.maxDailyOrderCount ?? 10,
           maxLossLimit: data.maxDailyLossAmount ?? 500000,
+          aiBudget: data.aiBudgetAmount && data.aiBudgetAmount > 0 ? data.aiBudgetAmount : 10000,
         });
         setRuleVersion(data.version ?? 0);
       })
@@ -207,12 +209,14 @@ export default function RiskManagePage() {
     const takeProfitRate = Number(rules.takeProfit);
     const maxDailyOrderCount = Number(rules.maxDailyOrders);
     const maxDailyLossAmount = Number(rules.maxLossLimit);
+    const aiBudgetAmount = Number(rules.aiBudget);
 
     if (
       !Number.isFinite(stopLossRate) || stopLossRate < 1 ||
       !Number.isFinite(takeProfitRate) || takeProfitRate < 1 ||
       !Number.isFinite(maxDailyOrderCount) || maxDailyOrderCount < 1 ||
-      !Number.isFinite(maxDailyLossAmount) || maxDailyLossAmount < 1
+      !Number.isFinite(maxDailyLossAmount) || maxDailyLossAmount < 1 ||
+      !Number.isFinite(aiBudgetAmount) || aiBudgetAmount < 1
     ) {
       toast.error('모든 룰셋 값은 1 이상의 숫자여야 합니다.');
       return;
@@ -225,6 +229,7 @@ export default function RiskManagePage() {
         takeProfitRate,
         maxDailyOrderCount,
         maxDailyLossAmount,
+        aiBudgetAmount,
         version: ruleVersion,
       });
       // 응답으로 받은 값으로 화면 동기화. 손절은 음수 표기로 유지.
@@ -233,6 +238,7 @@ export default function RiskManagePage() {
         stopLoss: -(result?.stopLossRate ?? stopLossRate),
         maxDailyOrders: result?.maxDailyOrderCount ?? maxDailyOrderCount,
         maxLossLimit: result?.maxDailyLossAmount ?? maxDailyLossAmount,
+        aiBudget: result?.aiBudgetAmount ?? aiBudgetAmount,
       });
       setRuleVersion(result?.version ?? ruleVersion + 1);
       toast.success('변경사항이 성공적으로 저장되었습니다');
@@ -324,8 +330,8 @@ export default function RiskManagePage() {
             <div className="input-with-unit">
               <input
                 type="number"
-                value={rules.maxLossLimit}
-                onChange={(e) => handleRuleChange('maxLossLimit', e.target.value)}
+                value={rules.aiBudget}
+                onChange={(e) => handleRuleChange('aiBudget', e.target.value)}
               />
               <span className="unit">원</span>
             </div>
