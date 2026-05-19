@@ -4,7 +4,7 @@ from app.repositories.market_price_repository import (
 )
 from app.repositories.portfolio_snapshot_repository import (
     PortfolioSnapshotRepository,
-    PostgresPortfolioSnapshotRepository,
+    RedisPortfolioSnapshotRepository,
 )
 from app.repositories.position_index_repository import (
     PositionIndexRepository,
@@ -13,7 +13,7 @@ from app.repositories.position_index_repository import (
 from app.triggers.schemas import MarketTriggerEvent, TriggerType, UserTriggerEvent
 
 _POSITION_INDEX_REPOSITORY: PositionIndexRepository = RedisPositionIndexRepository()
-_PORTFOLIO_SNAPSHOT_REPOSITORY: PortfolioSnapshotRepository = PostgresPortfolioSnapshotRepository()
+_PORTFOLIO_SNAPSHOT_REPOSITORY: PortfolioSnapshotRepository = RedisPortfolioSnapshotRepository()
 _MARKET_PRICE_REPOSITORY: MarketPriceRepository = RedisMarketPriceRepository()
 
 
