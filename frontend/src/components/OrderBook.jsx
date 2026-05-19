@@ -8,6 +8,7 @@ import { useOrderSSE } from '../hooks/useOrderSSE';
 import { useNotifications } from '../hooks/useNotifications';
 import ConfirmDialog from './ConfirmDialog';
 import './OrderBook.css';
+import { getPortfolio } from '../api/account';
 
 export default function OrderBook({ stockCode }) {
   const [activeTab, setActiveTab] = useState('ORDER'); // 'ORDER' | 'PENDING' | 'HOLDING'
@@ -771,7 +772,7 @@ export default function OrderBook({ stockCode }) {
                         {pnlSign}{currentHolding.pnlPct?.toFixed(2) ?? '0.00'}%
                       </span>
                     </div>
-                    
+
                     <div className="card-body-grid">
                       <div className="card-field">
                         <span className="field-lbl">보유 수량</span>
@@ -806,7 +807,7 @@ export default function OrderBook({ stockCode }) {
                   const isProfit = (h.pnl ?? 0) >= 0;
                   const pnlSign = isProfit ? '+' : '';
                   const pnlColorClass = isProfit ? 'up' : 'down';
-                  
+
                   return (
                     <div
                       key={h.stockCode}
