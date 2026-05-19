@@ -109,7 +109,8 @@ def extract_sectors(candidate_assets: list[dict[str, Any]]) -> list[str]:
 
 def extract_key_signals(analysis_snapshot: dict[str, Any]) -> list[str]:
     """
-    analysis_snapshot.signals에서 활성화된 신호 종류를 문자열 리스트로 반환한다.
+    analysis_snapshot에서 활성화된 신호 종류를 문자열 리스트로 반환한다.
+    analysis_snapshot 구조: {"technical": {...}, "fundamental": {...}, "event": {...}, "sentiment": {...}}
 
     TODO: 신호 문자열 값은 Analysis Layer codebook enum으로 교체 필요
     """

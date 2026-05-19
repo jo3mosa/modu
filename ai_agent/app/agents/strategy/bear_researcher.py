@@ -45,6 +45,7 @@ def bear_researcher(state: InvestmentAgentState) -> dict[str, Any]:
         "signals_technical": to_json(snapshot.get("technical", {})),
         "signals_fundamental": to_json(snapshot.get("fundamental", {})),
         "signals_event": to_json(snapshot.get("event", {})),
+        "signals_news_summary": to_json(snapshot.get("news_summary") or {}),
         "signals_sentiment": to_json(snapshot.get("sentiment", {})),
         "portfolio_snapshot": to_json(state.portfolio_snapshot),
         "user_context": to_json(state.user_context),
