@@ -39,8 +39,9 @@ DEFAULT_SUMMARY_MODEL = "gpt-4o-mini"
 # 맥락 손실 — 500 tokens ≈ 350~400 한국어 단어 정도.
 DEFAULT_MAX_TOKENS = 500
 
-# API 호출 timeout — 트리거 발화 latency 예산이 ~15초라 그 안쪽으로.
-REQUEST_TIMEOUT_SEC = 12.0
+# 실서비스: 트리거 발행 latency 예산 안쪽으로 유지 (기본 30초).
+# 백테스트: NEWS_SUMMARY_TIMEOUT 환경변수로 override 가능 (레이턴시 제약 없음).
+REQUEST_TIMEOUT_SEC = float(os.getenv("NEWS_SUMMARY_TIMEOUT", "30.0"))
 
 
 @lru_cache(maxsize=1)
