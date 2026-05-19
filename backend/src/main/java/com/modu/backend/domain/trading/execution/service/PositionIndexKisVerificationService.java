@@ -4,6 +4,8 @@ import com.modu.backend.domain.account.client.KisBalanceClient;
 import com.modu.backend.domain.account.dto.HoldingResponse;
 import com.modu.backend.domain.account.dto.PortfolioResponse;
 import com.modu.backend.domain.trading.execution.repository.PortfolioSnapshotRedisRepository;
+import com.modu.backend.domain.trading.execution.repository.PositionDriftCacheRepository;
+import com.modu.backend.domain.trading.execution.repository.PositionDriftDirection;
 import com.modu.backend.domain.trading.execution.repository.PositionIndexRedisRepository;
 import com.modu.backend.domain.trading.position.repository.PositionThresholdRepository;
 import com.modu.backend.domain.user.entity.KisCredential;
@@ -54,6 +56,7 @@ public class PositionIndexKisVerificationService {
     private final PositionThresholdRepository positionThresholdRepository;
     private final PositionIndexRedisRepository positionIndexRedisRepository;
     private final PortfolioSnapshotRedisRepository portfolioSnapshotRedisRepository;
+    private final PositionDriftCacheRepository positionDriftCacheRepository;
     private final KisBalanceClient kisBalanceClient;
     private final KisApiCallTemplate kisApiCallTemplate;
     private final AesGcmEncryptor encryptor;
@@ -135,7 +138,12 @@ public class PositionIndexKisVerificationService {
     }
 
     /**
-     * Redis position:index 를 KIS 잔고 기준으로 정정 (Redis 만 손댐 — DB drift 는 로그만).
+     * Redis position:index 를 KIS 잔고 기준으로 정정 (Redis 만 손댐 — DB drift 는 알림만).
+     *
+     * S14P31B106-361 (followups 2.10 A-1) — drift 알림 dedup:
+     *  - 첫 발견: WARN 로그 + 캐시 mark (25h TTL)
+     *  - 재발견 (캐시 hit): DEBUG (운영 로그 노이즈 제거)
+     *  - 정상 (양쪽 일치): 이전에 mark 됐던 drift 면 INFO "회복" 로그 + 캐시 clear
      */
     private void reconcilePositionIndex(Long userId, Set<String> kisStocks) {
         Set<String> dbStocks = positionThresholdRepository.findActiveStockCodesByUserId(userId);
@@ -150,16 +158,48 @@ public class PositionIndexKisVerificationService {
                 // 멱등 SADD — Redis 휘발 / Listener 실패 갭 메움
                 positionIndexRedisRepository.addUser(stockCode, userId);
                 if (!inDb) {
-                    log.error("[KisVerification] DB drift — KIS 에 보유 / DB 비활성. userId: {}, stockCode: {} (2.10 reconcile 대상)",
-                            userId, stockCode);
+                    notifyDrift(userId, stockCode, PositionDriftDirection.KIS_HOLDING_DB_INACTIVE,
+                            "KIS 에 보유 / DB 비활성");
+                } else {
+                    notifyDriftResolvedIfAny(userId, stockCode);
                 }
             } else {
                 // KIS 에 없음 → Redis 에서 제거 (전량 매도 누락 / HTS 직접 매도 흔적)
                 positionIndexRedisRepository.removeUser(stockCode, userId);
                 if (inDb) {
-                    log.error("[KisVerification] DB drift — DB 활성 / KIS 미보유. userId: {}, stockCode: {} (2.10 reconcile 대상)",
-                            userId, stockCode);
+                    notifyDrift(userId, stockCode, PositionDriftDirection.KIS_MISSING_DB_ACTIVE,
+                            "DB 활성 / KIS 미보유");
+                } else {
+                    notifyDriftResolvedIfAny(userId, stockCode);
                 }
+            }
+        }
+    }
+
+    /**
+     * drift 발견 알림 — dedup 캐시 확인 후 첫 발견만 WARN.
+     * 재발견은 DEBUG 로 강도 ↓ (외부 거래는 인지된 사용자 행동이라 운영 ERROR 가 아님).
+     */
+    private void notifyDrift(Long userId, String stockCode, PositionDriftDirection direction, String reason) {
+        if (positionDriftCacheRepository.isAlreadyDetected(userId, stockCode, direction)) {
+            log.debug("[KisVerification] drift 재발견 (dedup) - userId: {}, stockCode: {}, direction: {}",
+                    userId, stockCode, direction);
+            return;
+        }
+        log.warn("[KisVerification] DB drift 첫 발견 - userId: {}, stockCode: {}, 사유: {} (followups 2.10 A-1)",
+                userId, stockCode, reason);
+        positionDriftCacheRepository.markDetected(userId, stockCode, direction);
+    }
+
+    /**
+     * 양쪽 일치 시 호출 — 이전에 mark 됐던 drift 가 해소된 경우 INFO 로그.
+     * 어느 방향이었는지 모르므로 양쪽 모두 clear 시도 (실제 mark 된 쪽만 true 반환).
+     */
+    private void notifyDriftResolvedIfAny(Long userId, String stockCode) {
+        for (PositionDriftDirection direction : PositionDriftDirection.values()) {
+            if (positionDriftCacheRepository.clearDetected(userId, stockCode, direction)) {
+                log.info("[KisVerification] drift 해소 - userId: {}, stockCode: {}, direction: {}",
+                        userId, stockCode, direction);
             }
         }
     }
