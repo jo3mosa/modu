@@ -25,10 +25,10 @@ import { useOrderSSE } from './useOrderSSE';
  *  - 영속화는 서버 책임 — 본 훅은 메모리 버퍼만 유지 (localStorage 사용 X)
  */
 
-import bullImg from '../assets/12.webp';
-import bearImg from '../assets/123.jpg';
-import strategyImg from '../assets/1234.jpg';
-import decideImg from '../assets/12345.webp';
+import bullImg from '../assets/bull.png';
+import bearImg from '../assets/bear.png';
+import strategyImg from '../assets/strategy.png';
+import decideImg from '../assets/decision.png';
 
 // BE 의 AgentType enum 과 동일 키 (대문자)
 // useAiChat 의 소문자 키(bull/bear/strategy/decide) 와는 별개
@@ -96,7 +96,7 @@ function getStockNameByCode(code) {
 function generateMockMessages(stockCode) {
   const stockName = getStockNameByCode(stockCode);
   const now = new Date();
-  
+
   return [
     {
       messageId: 99004,
@@ -150,9 +150,9 @@ function emptyChannel() {
 const AgentChatContext = createContext({
   byStock: {},
   unreadByStock: {},
-  loadHistory: async () => {},
-  loadMore: async () => {},
-  markRead: () => {},
+  loadHistory: async () => { },
+  loadMore: async () => { },
+  markRead: () => { },
 });
 
 export function AgentChatProvider({ children }) {
@@ -218,7 +218,7 @@ export function AgentChatProvider({ children }) {
       let hasMore = res.hasMore;
       let nextCursor = res.nextCursor;
       let nextCursorId = res.nextCursorId;
-      
+
       // 만약 백엔드 DB에 에이전트 대화 데이터가 없으면, 고품질 종목 맞춤형 실시간 모의 대화 시나리오를 로드하여 채워줌!
       if (content.length === 0) {
         content = generateMockMessages(stockCode);
@@ -226,9 +226,9 @@ export function AgentChatProvider({ children }) {
         nextCursor = null;
         nextCursorId = null;
       }
-      
+
       content.forEach((m) => seenIdsRef.current.add(m.messageId));
-      
+
       setByStock((prev) => ({
         ...prev,
         [stockCode]: {

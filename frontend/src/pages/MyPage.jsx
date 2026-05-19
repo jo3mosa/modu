@@ -20,6 +20,7 @@ export default function MyPage() {
   const [apiKeys, setApiKeys] = useState({
     appKey: '',
     appSecret: '',
+    htsId: '',
     accountNo: ''
   });
   const [isConnected, setIsConnected] = useState(false);
@@ -66,6 +67,7 @@ export default function MyPage() {
         const payload = {};
         if (apiKeys.appKey) payload.appKey = apiKeys.appKey;
         if (apiKeys.appSecret) payload.appSecret = apiKeys.appSecret;
+        if (apiKeys.htsId) payload.htsId = apiKeys.htsId;
         if (apiKeys.accountNo) payload.accountNo = apiKeys.accountNo;
 
         if (Object.keys(payload).length === 0) {
@@ -79,6 +81,7 @@ export default function MyPage() {
         await registerKisKey({
           appKey: apiKeys.appKey,
           appSecret: apiKeys.appSecret,
+          htsId: apiKeys.htsId,
           accountNo: apiKeys.accountNo,
           isRealAccount: true // 실전투자 고정
         });
@@ -113,7 +116,7 @@ export default function MyPage() {
       await deleteKisKey();
       toast.success('한국투자증권 연동이 해제되었습니다');
       setIsConnected(false);
-      setApiKeys({ appKey: '', appSecret: '', accountNo: '' });
+      setApiKeys({ appKey: '', appSecret: '', htsId: '', accountNo: '' });
     } catch (e) {
       console.error('연동 해제 실패', e);
       toast.error(e.message || '연동 해제에 실패했습니다.');
@@ -182,6 +185,15 @@ export default function MyPage() {
                   {showSecret ? <EyeOff size={20} /> : <Eye size={20} />}
                 </button>
               </div>
+            </div>
+            <div className="input-group">
+              <label>HTS ID</label>
+              <input
+                type="text"
+                value={apiKeys.htsId}
+                onChange={(e) => setApiKeys({ ...apiKeys, htsId: e.target.value })}
+                placeholder="한국투자증권 HTS/MTS 로그인 ID (예: myhts01)"
+              />
             </div>
             <div className="input-group">
               <label>종합계좌번호</label>

@@ -68,8 +68,8 @@
 
 .api-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 2rem;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
 }
 
 .input-group {
@@ -89,11 +89,12 @@
   background: rgba(0, 0, 0, 0.3);
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: #fff;
-  padding: 1rem;
+  padding: 0.7rem 0.85rem;
   border-radius: 8px;
-  font-size: 1rem;
+  font-size: 0.9rem;
   outline: none;
   transition: border-color 0.2s;
+  min-width: 0; /* 4컬럼 grid에서 input이 컬럼 너비를 넘쳐 흘리지 않도록 */
 }
 
 .input-group input[type="text"]:focus {
@@ -111,12 +112,13 @@
   background: rgba(0, 0, 0, 0.3);
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: #fff;
-  padding: 1rem;
-  padding-right: 3rem;
+  padding: 0.7rem 0.85rem;
+  padding-right: 2.4rem;
   border-radius: 8px;
-  font-size: 1rem;
+  font-size: 0.9rem;
   outline: none;
   transition: border-color 0.2s;
+  min-width: 0;
 }
 
 .password-input-wrapper input:focus {
