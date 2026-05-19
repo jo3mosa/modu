@@ -38,6 +38,15 @@ function loadFromStorage() {
     if (!Array.isArray(items)) return [];
     const now = Date.now();
     return items.filter((n) => {
+      // 로컬 스토리지에 남은 임시 더미 매매 알림(ID 또는 judgmentId가 9999로 시작) 원천 제거
+      if (
+        n.judgmentId === 99991 ||
+        n.judgmentId === 99992 ||
+        String(n.judgmentId).startsWith('9999') ||
+        String(n.id).startsWith('9999')
+      ) {
+        return false;
+      }
       const ts = new Date(n.timestamp).getTime();
       return Number.isFinite(ts) && now - ts < RETENTION_MS;
     });
