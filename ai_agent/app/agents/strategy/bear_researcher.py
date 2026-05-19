@@ -37,15 +37,15 @@ def bear_researcher(state: InvestmentAgentState) -> dict[str, Any]:
 
     add_run_metadata({"node": "bear_researcher", "round": current_round})
 
-    signals = state.analysis_snapshot.get("signals", {}) if state.analysis_snapshot else {}
+    snapshot = state.analysis_snapshot or {}
     mc = state.memory_context or {}
 
     inputs = {
         "candidate_assets": to_json(state.candidate_assets),
-        "signals_technical": to_json(signals.get("technical", {})),
-        "signals_fundamental": to_json(signals.get("fundamental", {})),
-        "signals_event": to_json(signals.get("event", {})),
-        "signals_sentiment": to_json(signals.get("sentiment", {})),
+        "signals_technical": to_json(snapshot.get("technical", {})),
+        "signals_fundamental": to_json(snapshot.get("fundamental", {})),
+        "signals_event": to_json(snapshot.get("event", {})),
+        "signals_sentiment": to_json(snapshot.get("sentiment", {})),
         "portfolio_snapshot": to_json(state.portfolio_snapshot),
         "user_context": to_json(state.user_context),
         "policy_context": to_json(state.policy_context),

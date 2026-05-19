@@ -113,16 +113,15 @@ def extract_key_signals(analysis_snapshot: dict[str, Any]) -> list[str]:
 
     TODO: 신호 문자열 값은 Analysis Layer codebook enum으로 교체 필요
     """
-    signals = analysis_snapshot.get("signals", {})
     key_signals: set[str] = set()
 
-    if signals.get("technical"):
+    if analysis_snapshot.get("technical"):
         key_signals.add("technical_signal")
-    if signals.get("fundamental"):
+    if analysis_snapshot.get("fundamental"):
         key_signals.add("fundamental_signal")
-    if (signals.get("event") or {}).get("has_urgent_issue"):
+    if (analysis_snapshot.get("event") or {}).get("has_urgent_issue"):
         key_signals.add("event_signal")
-    if (signals.get("sentiment") or {}).get("daily_score") is not None:
+    if (analysis_snapshot.get("sentiment") or {}).get("daily_score") is not None:
         key_signals.add("sentiment_signal")
 
     return sorted(key_signals)

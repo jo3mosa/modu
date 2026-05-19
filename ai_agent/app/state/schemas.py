@@ -35,6 +35,8 @@ class ResearchVerdict(BaseModel):
 
     @model_validator(mode="after")
     def validate_trade_params(self) -> "ResearchVerdict":
+        if self.recommended_side != "hold" and not self.asset:
+            raise ValueError("recommended_side가 buy/sell일 때 asset은 필수입니다.")
         if self.recommended_side == "hold":
             if self.order_amount != 0:
                 raise ValueError("recommended_side가 hold일 때 order_amount는 0이어야 합니다.")

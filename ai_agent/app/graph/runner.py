@@ -35,8 +35,7 @@ def _build_decision_payload(event: UserTriggerEvent, result: dict) -> dict:
     final_decision = result.get("final_decision")
     research_verdict = result.get("research_verdict")
     debate_state = result.get("investment_debate_state") or {}
-    analysis_snapshot = result.get("analysis_snapshot") or {}
-    signals = analysis_snapshot.get("signals") or {}
+    analysis_snapshot = event.analysis_snapshot or {}
 
     # BE 매핑표에 없거나 사용처 미합의인 필드는 명시적으로 제외:
     # - asset: top-level stock_code와 중복
@@ -64,7 +63,7 @@ def _build_decision_payload(event: UserTriggerEvent, result: dict) -> dict:
             "key_signals": extract_key_signals(analysis_snapshot),
         },
 
-        "indicators_snapshot": signals,
+        "indicators_snapshot": analysis_snapshot,
 
         "flow_status": result.get("flow_status"),
 
