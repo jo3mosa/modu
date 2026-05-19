@@ -2,18 +2,7 @@ import json
 import logging
 from typing import Protocol
 
-from functools import lru_cache
-
-from sqlalchemy import text
-from sqlalchemy.engine import Engine
-
 from app.config.redis import get_redis_client
-from app.context.user_context import create_engine_from_env
-
-
-@lru_cache(maxsize=1)
-def _get_db_engine() -> Engine:
-    return create_engine_from_env()
 
 logger = logging.getLogger(__name__)
 
@@ -66,72 +55,12 @@ class RedisPortfolioSnapshotRepository:
             )
             return {}
 
+        # BE 적재 키(holdings) → AI 내부 키(positions) 정규화.
+        # BE 스펙: {"cash_balance", "total_assets", "holdings": [...]}
+        if "holdings" in parsed and "positions" not in parsed:
+            parsed["positions"] = parsed.pop("holdings")
+
         return parsed
-
-
-class PostgresPortfolioSnapshotRepository:
-    """
-    position_thresholds + daily_portfolio_snapshots + stock_master 테이블에서
-    사용자 포트폴리오 스냅샷을 조회한다.
-
-    반환 예시:
-        {
-            "cash_balance": 1000000,
-            "positions": [
-                {
-                    "stock_code": "005930",
-                    "stock_name": "삼성전자",
-                    "quantity": 10,
-                    "average_price": 75000,
-                }
-            ],
-        }
-    """
-
-    def get(self, user_id: int) -> dict:
-        try:
-            with _get_db_engine().connect() as conn:
-                cash_row = conn.execute(
-                    text("""
-                        SELECT available_cash
-                        FROM daily_portfolio_snapshots
-                        WHERE user_id = :user_id
-                        ORDER BY snapshot_date DESC
-                        LIMIT 1
-                    """),
-                    {"user_id": user_id},
-                ).fetchone()
-
-                position_rows = conn.execute(
-                    text("""
-                        SELECT pt.stock_code,
-                               sm.stock_name,
-                               pt.quantity,
-                               pt.avg_entry_price
-                        FROM position_thresholds pt
-                        JOIN stock_master sm ON pt.stock_code = sm.stock_code
-                        WHERE pt.user_id = :user_id AND pt.is_active = TRUE
-                    """),
-                    {"user_id": user_id},
-                ).fetchall()
-        except Exception:
-            logger.exception("DB 포트폴리오 스냅샷 조회 실패: user_id=%s", user_id)
-            raise
-
-        positions = [
-            {
-                "stock_code": row.stock_code,
-                "stock_name": row.stock_name,
-                "quantity": row.quantity,
-                "average_price": row.avg_entry_price,
-            }
-            for row in position_rows
-        ]
-
-        return {
-            "cash_balance": cash_row.available_cash if cash_row else 0,
-            "positions": positions,
-        }
 
 
 class MockPortfolioSnapshotRepository:
