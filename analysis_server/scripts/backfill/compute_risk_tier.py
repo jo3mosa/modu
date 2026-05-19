@@ -86,14 +86,17 @@ _COMPUTE_TIER_SQL = text("""
                     THEN 2::SMALLINT
 
                 -- Tier 3: 위험중립형
-                WHEN COALESCE(df.stability_status, '') <> 'risky'
+                -- stability_status IN (...) 으로 명시 — '<> risky' 패턴은 NULL/unknown 까지
+                -- 통과시켜 데이터 부족 종목이 저위험으로 새므로(저위험 유저 오분류 라우팅 위험),
+                -- 안정성이 확인된 stable/moderate 만 허용. NULL/unknown/risky 는 Tier 5 fallback.
+                WHEN df.stability_status IN ('stable', 'moderate')
                  AND di.atr_ratio IS NOT NULL AND di.atr_ratio <= 0.045
                     THEN 3::SMALLINT
 
                 -- Tier 4: 적극투자형
-                -- growth_status COALESCE: SQL IN 은 NULL 을 UNKNOWN 으로 평가해 동작 자체엔 영향 없지만,
-                -- 위 stability_status COALESCE 패턴과 일관성 유지 + 가독성 차원에서 명시.
-                WHEN COALESCE(df.stability_status, '') <> 'risky'
+                -- growth_status COALESCE: SQL IN 은 NULL 을 UNKNOWN 으로 평가하지만,
+                -- stability_status IN 패턴과 일관성 + 가독성 차원에서 명시.
+                WHEN df.stability_status IN ('stable', 'moderate')
                  AND (
                        (di.atr_ratio IS NOT NULL AND di.atr_ratio <= 0.06)
                        OR COALESCE(df.growth_status, '') IN ('high_growth', 'steady_growth')

@@ -3,7 +3,7 @@
 SSAFY GMS 게이트웨이 경유 OpenAI 호환 LLM 호출 래퍼.
 
 ai_agent/app/config/llm.py 와 동일한 게이트웨이 경로 사용 — 모델만 다름.
-요약 태스크엔 gpt-4o-mini 가 가장 비용 효율적 (Haiku 4.5 대비 ~6-8배 저렴).
+요약 태스크엔 gpt-4.1-mini 가 가장 비용 효율적 (Haiku 4.5 대비 큰 폭 저렴).
 
 GMS 엔드포인트:
     POST https://gms.ssafy.io/gmsapi/api.openai.com/v1/chat/completions
@@ -33,17 +33,17 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
-# GMS 가 anthropic.com 으로 프록시. SDK 가 /v1/messages 자동 부착.
-GMS_ANTHROPIC_BASE_URL = "https://gms.ssafy.io/gmsapi/api.anthropic.com"
+# GMS 의 OpenAI 호환 경로 — ai_agent/app/config/llm.py 와 동일.
+GMS_OPENAI_BASE_URL = "https://gms.ssafy.io/gmsapi/api.openai.com/v1"
 
-# 요약 태스크 전용 모델 — context 200k, max output 64k. Haiku 4.5 가 한국어 금융
-# 텍스트 요약에 충분 (Sonnet 으로 올리면 비용 ~3-5배). 운영 튜닝 시 환경변수로 override.
-DEFAULT_SUMMARY_MODEL = "claude-haiku-4-5-20251001"
+# 요약 전용 모델 — gpt-4.1-mini 가 한국어 금융 텍스트 요약에 충분하고 가장 저렴.
+# Haiku 4.5 대비 큰 폭 비용 절감. 환경변수로 override 가능.
+DEFAULT_SUMMARY_MODEL = os.getenv("SUMMARY_MODEL", "gpt-4.1-mini")
 
 # 요약 결과 길이 cap. 한국어 ~350~400 단어 정도.
 DEFAULT_MAX_TOKENS = 500
 
-# API 호출 timeout — 트리거 발화 latency 예산이 ~15초라 그 안쪽으로.
+# API 호출 timeout — 트리거 발화 latency 예산 ~15초 안쪽.
 REQUEST_TIMEOUT_SEC = 12.0
 
 
@@ -63,13 +63,16 @@ def get_openai_client() -> Optional["OpenAI"]:
         return None
 
     try:
-        client = Anthropic(
+        # max_retries=0 — OpenAI SDK 기본값(2)은 408/409/429/5xx + 타임아웃을 자동 재시도해
+        # 요약이 best-effort 인 트리거 발행 경로에서 latency 예산을 초과시킬 수 있음.
+        # 실패하면 None 반환 후 caller 가 요약 없이 진행하므로 재시도 가치 낮음.
+        client = OpenAI(
             api_key=api_key,
             base_url=GMS_OPENAI_BASE_URL,
             timeout=REQUEST_TIMEOUT_SEC,
             max_retries=0,
         )
-        logger.info("✓ OpenAI client 초기화 — GMS proxy / %s", DEFAULT_SUMMARY_MODEL)
+        logger.info("OpenAI client 초기화 완료 — GMS proxy / %s", DEFAULT_SUMMARY_MODEL)
         return client
     except Exception:
         logger.exception("OpenAI client 초기화 실패")
@@ -83,7 +86,7 @@ def summarize(
     model: str = DEFAULT_SUMMARY_MODEL,
     max_tokens: int = DEFAULT_MAX_TOKENS,
 ) -> Optional[str]:
-    """단발성 messages API 호출 → 텍스트 응답.
+    """단발성 chat.completions 호출 → 텍스트 응답.
 
     실패 (client 없음 / API error / 빈 응답) 시 모두 None — caller 는 None 을
     "요약 없음" 으로 처리할 것. 예외를 caller 로 escape 시키지 않는다 (트리거
@@ -94,11 +97,15 @@ def summarize(
         return None
 
     try:
-        resp = client.messages.create(
+        # max_tokens 는 Chat Completions 에서 deprecated, o1 시리즈와 미호환.
+        # SUMMARY_MODEL 환경변수로 모델 교체 가능하므로 미래 호환성 위해 max_completion_tokens 사용.
+        resp = client.chat.completions.create(
             model=model,
-            max_tokens=max_tokens,
-            system=system,
-            messages=[{"role": "user", "content": user}],
+            max_completion_tokens=max_tokens,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user",   "content": user},
+            ],
         )
     except OpenAIAPIError as e:
         logger.warning("OpenAI API error (model=%s): %s", model, e)
@@ -107,11 +114,7 @@ def summarize(
         logger.exception("OpenAI 호출 중 예외")
         return None
 
-    # resp.content 는 list[ContentBlock]. text 블록만 추출 (tool_use 등 미사용).
-    parts = []
-    for block in resp.content or []:
-        text = getattr(block, "text", None)
-        if text:
-            parts.append(text)
-    out = "\n".join(parts).strip()
-    return out or None
+    if not resp.choices:
+        return None
+    text = (resp.choices[0].message.content or "").strip()
+    return text or None
