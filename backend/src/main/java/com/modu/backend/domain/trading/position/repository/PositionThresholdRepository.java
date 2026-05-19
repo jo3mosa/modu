@@ -51,4 +51,27 @@ public interface PositionThresholdRepository extends JpaRepository<PositionThres
           AND p.isActive = true
     """)
     Set<String> findActiveStockCodesByUserId(Long userId);
+
+    /**
+     * 268 backfill — position:index Redis 키 복원용 활성 (user_id, stock_code) 쌍 전체
+     */
+    @Query("""
+        SELECT new com.modu.backend.domain.trading.position.repository.PositionThresholdRepository$UserStockPair(
+            p.userId, p.stockCode)
+        FROM PositionThreshold p
+        WHERE p.isActive = true
+    """)
+    List<UserStockPair> findAllActivePairs();
+
+    /**
+     * 268 단계 4 KIS 검증 — 사용자별 활성 종목 코드 집합 (KIS 잔고와 비교용)
+     */
+    @Query("""
+        SELECT DISTINCT p.stockCode FROM PositionThreshold p
+        WHERE p.userId = :userId AND p.isActive = true
+    """)
+    Set<String> findActiveStockCodesByUserId(Long userId);
+
+    /** (user_id, stock_code) 쌍 projection — 268 backfill 전용 */
+    record UserStockPair(Long userId, String stockCode) {}
 }
