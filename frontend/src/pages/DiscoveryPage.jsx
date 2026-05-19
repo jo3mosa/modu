@@ -189,7 +189,7 @@ export default function DiscoveryPage() {
       <div className="page-header-container">
         <div className="page-title-group">
           <h1>종목 추천</h1>
-          <p>당신의 등급에 맞춰 매일 큐레이션됩니다.</p>
+          <p>당신의 등급에 맞춰 추천합니다.</p>
         </div>
       </div>
 
@@ -206,7 +206,7 @@ export default function DiscoveryPage() {
         </div>
         <div className="discovery-recommend-controls">
           <p className="discovery-recommend-desc">
-            AI가 매일 장 시작 30분 전 발굴합니다. 추천 사유와 핵심 지표를 함께 확인하세요.
+            AI가 발굴한 종목을 추천 사유와 함께 확인하세요.
           </p>
           <FilterChips active={activeFilter} onChange={setActiveFilter} />
         </div>

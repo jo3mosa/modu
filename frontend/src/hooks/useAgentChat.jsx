@@ -77,8 +77,6 @@ export const BOT_PROFILES = {
 
 const DEFAULT_PAGE_SIZE = 50;
 
-
-
 function emptyChannel() {
   return {
     messages: [],          // createdAt DESC 정렬
@@ -160,8 +158,6 @@ export function AgentChatProvider({ children }) {
       let hasMore = res.hasMore;
       let nextCursor = res.nextCursor;
       let nextCursorId = res.nextCursorId;
-
-      // 백엔드에 대화 데이터가 없으면 빈 리스트 상태를 깔끔히 유지합니다.
 
       content.forEach((m) => seenIdsRef.current.add(m.messageId));
 

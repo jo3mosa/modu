@@ -664,3 +664,125 @@
 .new-messages-pill:hover {
   transform: translateX(-50%) translateY(-2px);
 }
+
+/* ────────────────────────────────────────────────────────────
+   말풍선 내부 마크다운 렌더 (react-markdown) 스타일 reset/조정
+   기본 <p>, <ul>, <code> 등의 큰 여백을 말풍선에 맞게 컴팩트하게 다듬는다.
+   ──────────────────────────────────────────────────────────── */
+.message-bubble p {
+  margin: 0;
+}
+
+.message-bubble p + p {
+  margin-top: 0.4em;
+}
+
+.message-bubble ul,
+.message-bubble ol {
+  margin: 0.35em 0;
+  padding-left: 1.3em;
+}
+
+.message-bubble li {
+  margin: 0.1em 0;
+}
+
+.message-bubble li > p {
+  display: inline; /* 리스트 항목 안의 <p> 가 줄바꿈되지 않도록 */
+}
+
+.message-bubble strong {
+  font-weight: 700;
+  color: #fff;
+}
+
+.message-bubble em {
+  font-style: italic;
+  color: #ddd;
+}
+
+.message-bubble blockquote {
+  margin: 0.4em 0;
+  padding: 0.1em 0.8em;
+  border-left: 3px solid rgba(255, 255, 255, 0.2);
+  color: #bbb;
+}
+
+.message-bubble code {
+  background: rgba(0, 0, 0, 0.35);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+  font-family: 'JetBrains Mono', 'Pretendard', monospace;
+  font-size: 0.88em;
+}
+
+.message-bubble pre {
+  background: rgba(0, 0, 0, 0.4);
+  padding: 0.6em 0.8em;
+  border-radius: 6px;
+  margin: 0.4em 0;
+  overflow-x: auto;
+}
+
+.message-bubble pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 0.85em;
+}
+
+.message-bubble h1,
+.message-bubble h2,
+.message-bubble h3,
+.message-bubble h4 {
+  margin: 0.4em 0 0.2em;
+  font-weight: 700;
+  font-size: 1em; /* 말풍선에선 헤더라도 본문 크기 유지해 톤 통일 */
+}
+
+.message-bubble a {
+  color: #84cc16;
+  text-decoration: underline;
+}
+
+/* ────────────────────────────────────────────────────────────
+   더보기/접기 — 임계값 초과 메시지의 collapsed 처리 + 토글 버튼
+   ──────────────────────────────────────────────────────────── */
+.message-bubble.collapsed {
+  max-height: 7.5em; /* 약 5줄 — line-height 1.5 기준 */
+  overflow: hidden;
+  position: relative;
+}
+
+.message-bubble.collapsed::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2.5em;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.55));
+  pointer-events: none;
+  border-radius: 0 0 16px 16px;
+}
+
+.message-toggle-btn {
+  align-self: flex-start;
+  background: transparent;
+  border: none;
+  color: #888;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.25rem 0.5rem;
+  margin-top: 0.3rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.message-toggle-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.06);
+}

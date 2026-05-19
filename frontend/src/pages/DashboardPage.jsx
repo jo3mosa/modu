@@ -5,14 +5,30 @@ import TutorialOverlay from '../components/TutorialOverlay';
 import Skeleton from '../components/Skeleton';
 import InlineError from '../components/InlineError';
 import { getAccountSummary, getPortfolio } from '../api/account';
-import { getAiDecisions } from '../api/aiAgent';
+import { getAiDecisions, ACTION_DISPLAY, EXECUTION_STATUS_DISPLAY } from '../api/aiAgent';
 import { getOrderHistory, getBuyingPower, getPendingOrders, ORDER_STATUS_DISPLAY } from '../api/order';
 import { getProfile, updateAutoTradeStatus } from '../api/strategy';
 import { buildStockWsUrl } from '../api/wsUrl';
 import { toast } from 'sonner';
 import { useOrderSSE } from '../hooks/useOrderSSE';
 import { useNotifications } from '../hooks/useNotifications';
+import { usePendingDecisions } from '../hooks/usePendingDecisions';
+import PendingDecisionsModal from '../components/PendingDecisionsModal';
 import './DashboardPage.css';
+
+/** AI 진행 상황 위젯의 "마지막 분석 시각" 표시용 — 1분 미만 "방금 전", 24시간 이내 "N분/시간 전", 그 외 날짜 */
+function formatRelativeTime(iso) {
+  if (!iso) return '-';
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return '-';
+  const diffMin = Math.floor((Date.now() - t) / 60000);
+  if (diffMin < 1) return '방금 전';
+  if (diffMin < 60) return `${diffMin}분 전`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour}시간 전`;
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
 
 
 
@@ -339,6 +355,33 @@ export default function DashboardPage() {
       .sort((a, b) => new Date(b.decidedAt) - new Date(a.decidedAt))
       .slice(0, 8);
   }, [aiDecisions, orderHistory]);
+
+  // ── AI 진행 상황 위젯 — 헤더 Bell 의 승인 대기와 동일 출처 사용
+  const { pending: pendingDecisions } = usePendingDecisions();
+  const pendingCount = pendingDecisions.length;
+  const [isPendingModalOpen, setIsPendingModalOpen] = useState(false);
+
+  // 최근 AI 판단 3건 (page 0, size 10 으로 이미 받음 — 그중 최신 3건)
+  const recentAiTop3 = useMemo(() => aiDecisions.slice(0, 3), [aiDecisions]);
+
+  // 마지막 분석 시각 — 최신 AI 판단의 decidedAt
+  const lastAiDecidedAt = aiDecisions[0]?.decidedAt ?? null;
+
+  // 오늘 자동매매 통계 — 자정 이후 발생한 주문 중 체결/거절 카운트
+  const todayAutoTradeStats = useMemo(() => {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    let filled = 0;
+    let rejected = 0;
+    for (const o of orderHistory) {
+      if (!o.createdAt) continue;
+      const created = new Date(o.createdAt);
+      if (created < startOfToday) continue;
+      if (o.status === 'FILLED') filled += 1;
+      else if (o.status === 'REJECTED') rejected += 1;
+    }
+    return { filled, rejected };
+  }, [orderHistory]);
 
   const derivedSummary = useMemo(() => {
     if (!summary) return null;
@@ -702,6 +745,64 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          {/* AI 진행 상황 위젯 — 자동매매 흐름을 한눈에: 최근 분석 시각 / 오늘 통계 / 최근 판단 3건 / 승인 대기 */}
+          <div className="panel ai-activity-panel">
+            <div className="ai-activity-header">
+              <h2>AI 진행 상황</h2>
+              {pendingCount > 0 && (
+                <button
+                  type="button"
+                  className="pending-mini-badge"
+                  onClick={() => setIsPendingModalOpen(true)}
+                >
+                  승인 대기 {pendingCount}
+                </button>
+              )}
+            </div>
+
+            <div className="ai-activity-stats">
+              <div className="ai-stat-row">
+                <span className="ai-stat-label">최근 분석</span>
+                <span className="ai-stat-value">{formatRelativeTime(lastAiDecidedAt)}</span>
+              </div>
+              <div className="ai-stat-row">
+                <span className="ai-stat-label">오늘 자동매매</span>
+                <span className="ai-stat-value">
+                  체결 <strong style={{ color: '#84cc16' }}>{todayAutoTradeStats.filled}</strong>
+                  <span style={{ margin: '0 0.4rem', color: '#444' }}>·</span>
+                  거절 <strong style={{ color: '#ef4444' }}>{todayAutoTradeStats.rejected}</strong>
+                </span>
+              </div>
+            </div>
+
+            <div className="ai-activity-recent">
+              <div className="ai-activity-sub-title">최근 판단</div>
+              {recentAiTop3.length === 0 ? (
+                <div className="ai-activity-empty">아직 AI 판단 이력이 없습니다.</div>
+              ) : (
+                recentAiTop3.map((d) => {
+                  const actionMeta = ACTION_DISPLAY[d.action] ?? ACTION_DISPLAY.UNKNOWN;
+                  const statusMeta = EXECUTION_STATUS_DISPLAY[d.executionStatus];
+                  const actionLower = (d.action ?? 'unknown').toLowerCase();
+                  return (
+                    <div key={d.id} className="ai-decision-item">
+                      <span className={`decision-action ${actionLower}`}>{actionMeta.label}</span>
+                      <span className="decision-stock">{d.stockCode}</span>
+                      <span className="decision-confidence">
+                        {d.confidence != null ? `${Math.round(d.confidence)}%` : '-'}
+                      </span>
+                      {statusMeta && (
+                        <span className="decision-status" style={{ color: statusMeta.color }}>
+                          {statusMeta.label}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
           {/* 최근 매매 로그 (AI + 수동 통합, 최근 5개) */}
           <div className="panel logs-panel">
             <h2>최근 매매 로그</h2>
@@ -772,6 +873,11 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* 승인 대기 모달 — AI 진행 상황 위젯의 "승인 대기" 배지 클릭 시 노출 */}
+      {isPendingModalOpen && (
+        <PendingDecisionsModal onClose={() => setIsPendingModalOpen(false)} />
+      )}
     </div>
   );
 }
