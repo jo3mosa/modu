@@ -11,3 +11,13 @@ ALTER TABLE trading_rules
     ALTER COLUMN ai_budget_amount DROP DEFAULT;
 ALTER TABLE trading_rule_histories
     ALTER COLUMN ai_budget_amount DROP DEFAULT;
+
+-- DB 무결성: 애플리케이션 검증(@Min(1))을 우회하는 경로(직접 SQL/배치)에서도
+-- 음수 진입을 차단해 hard rule 판단이 깨지지 않도록 보장.
+-- 0 은 "미설정" 으로 허용(runtime skip 정책과 정합) — 따라서 >= 0.
+ALTER TABLE trading_rules
+    ADD CONSTRAINT trading_rules_ai_budget_amount_nonneg_chk
+    CHECK (ai_budget_amount >= 0);
+ALTER TABLE trading_rule_histories
+    ADD CONSTRAINT trading_rule_histories_ai_budget_amount_nonneg_chk
+    CHECK (ai_budget_amount >= 0);
