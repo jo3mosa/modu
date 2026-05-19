@@ -51,7 +51,7 @@ def strategy_manager(state: InvestmentAgentState) -> dict[str, Any]:
     bear_history: list[str] = debate_state.get("bear_history", [])
     is_debate_empty = not bull_history and not bear_history
 
-    # 토론이 비면 solo 프롬프트로 — bull_arguments/bear_arguments 변수가 없어 inputs에서도 제외.
+    # 토론이 비면 solo 프롬프트로 — debate_history 변수가 없어 inputs에서도 제외.
     prompt_path = _PROMPT_PATH_SOLO if is_debate_empty else _PROMPT_PATH
     chain = load_prompt(str(prompt_path)) | get_structured_llm() | _parser
 
@@ -75,8 +75,12 @@ def strategy_manager(state: InvestmentAgentState) -> dict[str, Any]:
         "format_instructions": _parser.get_format_instructions(),
     }
     if not is_debate_empty:
-        inputs["bull_arguments"] = _format_arguments(bull_history, "Bull")
-        inputs["bear_arguments"] = _format_arguments(bear_history, "Bear")
+        # TradingAgents 패턴 — Bull/Bear 분리 섹션이 아닌 시간순 통합 history를 전달.
+        # strategy_manager가 "각자 진술 묶음"이 아니라 "라운드별 대화 흐름"으로 인식.
+        inputs["debate_history"] = (
+            debate_state.get("history")
+            or "(토론 기록 없음 — bull/bear 발언이 누락되었습니다)"
+        )
 
     try:
         verdict = chain.invoke(inputs)

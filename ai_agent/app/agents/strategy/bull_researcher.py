@@ -29,6 +29,8 @@ def bull_researcher(state: InvestmentAgentState) -> dict[str, Any]:
 
     debate_state = state.investment_debate_state or {}
     bull_history: list[str] = debate_state.get("bull_history", [])
+    bear_history: list[str] = debate_state.get("bear_history", [])
+    debate_history: str = debate_state.get("history", "")
     latest_bear_argument: str | None = debate_state.get("latest_bear_argument")
     round_count: int = debate_state.get("round_count", 0)
     current_round = round_count + 1  # 계산만, 증가는 Bear에서
@@ -52,6 +54,9 @@ def bull_researcher(state: InvestmentAgentState) -> dict[str, Any]:
         "memory_similar_decisions": to_json(mc.get("similar_decisions_table", [])),
         "memory_recent_post_mortems": to_json(mc.get("recent_post_mortems", [])),
         "history_context": to_json(state.history_context),
+        # 시간순 통합 대화 history — 자기 이전 라운드 발언 + Bear 발언 모두 포함.
+        # 자기 일관성 유지 + Bear 주장 인용·반박 가능.
+        "debate_history": debate_history or "(아직 토론 기록 없음 — 첫 발언입니다)",
         "last_bear_argument": latest_bear_argument or "(첫 라운드 — 직전 Bear 주장 없음)",
     }
 
@@ -65,10 +70,14 @@ def bull_researcher(state: InvestmentAgentState) -> dict[str, Any]:
             "Bear의 독립 분석과 Manager 판결로 진행합니다."
         )
 
+    # 발언을 시간순 history에 append — Bull → Bear → Bull → Bear 순서로 누적.
+    new_history = f"{debate_history}\n{argument}" if debate_history else argument
+
     return {
         "investment_debate_state": {
+            "history": new_history,
             "bull_history": bull_history + [argument],
-            "bear_history": debate_state.get("bear_history", []),
+            "bear_history": bear_history,
             "debate_rounds": debate_state.get("debate_rounds", []),
             "latest_bull_argument": argument,
             "latest_bear_argument": latest_bear_argument,
