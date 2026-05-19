@@ -41,4 +41,18 @@ public interface PositionThresholdRepository extends JpaRepository<PositionThres
      * AI 판단 수신 시 ai_*_price 갱신용 (S14P31B106-263)
      */
     Optional<PositionThreshold> findByUserIdAndStockCodeAndIsActiveTrue(Long userId, String stockCode);
+
+    /**
+     * 268 backfill — position:index Redis 키 복원용 활성 (user_id, stock_code) 쌍 전체
+     */
+    @Query("""
+        SELECT new com.modu.backend.domain.trading.position.repository.PositionThresholdRepository$UserStockPair(
+            p.userId, p.stockCode)
+        FROM PositionThreshold p
+        WHERE p.isActive = true
+    """)
+    List<UserStockPair> findAllActivePairs();
+
+    /** (user_id, stock_code) 쌍 projection — 268 backfill 전용 */
+    record UserStockPair(Long userId, String stockCode) {}
 }
