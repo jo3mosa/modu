@@ -9,7 +9,7 @@ from kafka.structs import OffsetAndMetadata
 from app.config.kafka import KafkaTopic, get_kafka_producer, make_kafka_consumer
 from app.graph.runner import run_and_publish
 from app.triggers.schemas import MarketTriggerEvent, UserTriggerEvent
-from app.triggers.user_trigger_matcher import match_market_event_to_users
+from app.triggers.user_trigger_matcher import get_buy_candidate_repository, match_market_event_to_users
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,10 @@ def _consume_market_signals() -> None:
         for message in consumer:
             try:
                 event = MarketTriggerEvent.model_validate(message.value)
-                user_events = match_market_event_to_users(event)
+                user_events = match_market_event_to_users(
+                    event,
+                    buy_candidate_repository=get_buy_candidate_repository(),
+                )
 
                 futures = [
                     producer.send(

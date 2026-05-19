@@ -67,12 +67,38 @@ def _build_decision_payload(event: UserTriggerEvent, result: dict) -> dict:
         "indicators_snapshot": signals,
 
         "flow_status": result.get("flow_status"),
+
+        # 비보유자(False) BUY 결정은 자동매매 실행이 아니라 매수 추천 알림으로 처리해야 한다.
+        # 백엔드는 이 값을 보고 is_holder=False 이면 주문 실행 대신 사용자에게 매수 의향을 묻는다.
+        "is_holder": event.is_holder,
     }
 
 
+def _is_buy_decision(result: dict) -> bool:
+    """에이전트 결과가 BUY 결정인지 판별한다."""
+    final_decision = result.get("final_decision")
+    if final_decision is None:
+        return False
+    return final_decision.action == "trade" and final_decision.side == "buy"
+
+
 def run_and_publish(event: UserTriggerEvent) -> None:
-    """파이프라인 실행 후 결과를 ai.decision.generated 토픽으로 발행한다."""
+    """파이프라인 실행 후 결과를 ai.decision.generated 토픽으로 발행한다.
+
+    비보유자(is_holder=False)의 경우 BUY 결정일 때만 발행한다.
+    SELL/HOLD 결정은 보유하지 않은 종목이므로 발행을 생략한다.
+    """
     result = run_pipeline(event)
+
+    if not event.is_holder and not _is_buy_decision(result):
+        logger.info(
+            "비보유자 SELL/HOLD 결과 발행 생략: user_id=%s, stock_code=%s, flow_status=%s",
+            event.user_id,
+            event.stock_code,
+            result.get("flow_status"),
+        )
+        return
+
     payload = _build_decision_payload(event, result)
 
     producer = get_kafka_producer()
