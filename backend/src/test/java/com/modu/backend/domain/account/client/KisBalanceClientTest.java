@@ -14,7 +14,7 @@ import static org.mockito.Mockito.mock;
  *
  * 핵심 회귀 방지:
  *  - pchs_avg_pric (매입평균가) 가 분할 매수 시 소수점 응답 ('2436.6000') 으로 와도
- *    parsePrice 가 정상 처리해야 함
+ *    parseDouble 가 정상 처리해야 함
  *  - KIS 응답 명세상 모든 필드가 String — BE 측 number 타입 매핑 책임
  */
 class KisBalanceClientTest {
@@ -22,31 +22,31 @@ class KisBalanceClientTest {
     private final KisBalanceClient client = new KisBalanceClient(mock(RestClient.class));
 
     @Test
-    @DisplayName("parsePrice — 소수점 응답 ('2436.6000') 도 정상 파싱 + 둘째자리 반올림")
-    void parsePrice_decimalResponse() {
-        double result = invokeParsePrice("2436.6000");
+    @DisplayName("parseDouble — 소수점 응답 ('2436.6000') 도 정상 파싱 + 둘째자리 반올림")
+    void parseDouble_decimalResponse() {
+        double result = invokeParseDouble("2436.6000");
 
         assertThat(result).isCloseTo(2436.60, within(0.01));
     }
 
     @Test
-    @DisplayName("parsePrice — 정수 응답도 그대로 파싱")
-    void parsePrice_integerResponse() {
-        assertThat(invokeParsePrice("75000")).isEqualTo(75000.0);
+    @DisplayName("parseDouble — 정수 응답도 그대로 파싱")
+    void parseDouble_integerResponse() {
+        assertThat(invokeParseDouble("75000")).isEqualTo(75000.0);
     }
 
     @Test
-    @DisplayName("parsePrice — null / blank 은 0.0")
-    void parsePrice_nullOrBlank() {
-        assertThat(invokeParsePrice(null)).isEqualTo(0.0);
-        assertThat(invokeParsePrice("")).isEqualTo(0.0);
-        assertThat(invokeParsePrice("   ")).isEqualTo(0.0);
+    @DisplayName("parseDouble — null / blank 은 0.0")
+    void parseDouble_nullOrBlank() {
+        assertThat(invokeParseDouble(null)).isEqualTo(0.0);
+        assertThat(invokeParseDouble("")).isEqualTo(0.0);
+        assertThat(invokeParseDouble("   ")).isEqualTo(0.0);
     }
 
     @Test
-    @DisplayName("parsePrice — 형식 오류는 ERROR 로그 후 0.0 (전체 응답 파싱 중단 방지)")
-    void parsePrice_invalidFormat() {
-        assertThat(invokeParsePrice("abc")).isEqualTo(0.0);
+    @DisplayName("parseDouble — 형식 오류는 ERROR 로그 후 0.0 (전체 응답 파싱 중단 방지)")
+    void parseDouble_invalidFormat() {
+        assertThat(invokeParseDouble("abc")).isEqualTo(0.0);
     }
 
     @Test
@@ -60,12 +60,12 @@ class KisBalanceClientTest {
     void parseLong_fallback() {
         assertThat(invokeParseLong(null)).isZero();
         assertThat(invokeParseLong("")).isZero();
-        // pchs_avg_pric 같은 소수점 응답은 parsePrice 로 처리해야 함 — parseLong 폴백 검증
+        // pchs_avg_pric 같은 소수점 응답은 parseDouble 로 처리해야 함 — parseLong 폴백 검증
         assertThat(invokeParseLong("2436.6000")).isZero();
     }
 
-    private double invokeParsePrice(String value) {
-        Object result = ReflectionTestUtils.invokeMethod(client, "parsePrice", value);
+    private double invokeParseDouble(String value) {
+        Object result = ReflectionTestUtils.invokeMethod(client, "parseDouble", value);
         return result == null ? 0.0 : (double) result;
     }
 
