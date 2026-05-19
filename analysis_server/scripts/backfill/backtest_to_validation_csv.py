@@ -38,20 +38,31 @@ logger = logging.getLogger(__name__)
 
 
 def collect_triggers(input_dirs: list[Path]) -> list[dict]:
-    """입력 폴더들에서 triggers_*.jsonl 모두 읽어 raw dict 리스트로."""
+    """입력 폴더들에서 triggers_*.jsonl 모두 읽어 raw dict 리스트로.
+
+    한 줄 파싱 실패는 skip + warning — 손상된 라인 1건이 전체 변환을 중단시키지
+    않도록 내결함성 확보 (대량 백필 안정성).
+    """
     rows: list[dict] = []
+    skipped = 0
     for d in input_dirs:
         abs_d = d if d.is_absolute() else (_MODU_ROOT / d)
         if not abs_d.exists():
             logger.warning("폴더 없음 (skip): %s", abs_d)
             continue
         for p in sorted(abs_d.glob("triggers_*.jsonl")):
-            for line in p.read_text(encoding="utf-8").splitlines():
+            for line_no, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
                 line = line.strip()
                 if not line:
                     continue
-                rows.append(json.loads(line))
+                try:
+                    rows.append(json.loads(line))
+                except json.JSONDecodeError as e:
+                    logger.warning("JSON 파싱 실패 %s:%d (skip): %s", p.name, line_no, e)
+                    skipped += 1
             logger.info("  loaded %s", p.name)
+    if skipped:
+        logger.warning("총 %d 라인 파싱 실패 skip — 데이터 손상 확인 권장", skipped)
     return rows
 
 
@@ -113,6 +124,7 @@ def main() -> None:
         sys.exit(2)
 
     rows = to_csv_rows(samples, args.hour)
+    args.out.parent.mkdir(parents=True, exist_ok=True)   # 상위 디렉터리 자동 생성
     with args.out.open("w", encoding="utf-8", newline="") as f:
         w = csv.writer(f)
         w.writerow(["stock_code", "timestamp", "rule_ids"])

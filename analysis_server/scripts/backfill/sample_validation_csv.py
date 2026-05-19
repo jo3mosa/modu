@@ -57,7 +57,10 @@ RULE_ROTATION = [
 
 
 def _connect_mongo():
-    """MongoDB modu_mongo.news_articles 반환. 실패 시 종료."""
+    """MongoDB modu_mongo.news_articles 반환. 실패 시 종료.
+
+    ping 실패 시 client.close() 명시 호출 — MongoClient 내부 connection pool 정리.
+    """
     load_dotenv()
     uri = os.getenv("MONGO_URI")
     if not uri:
@@ -65,7 +68,11 @@ def _connect_mongo():
         sys.exit(2)
     # SSAFY 원격 (k14b106.p.ssafy.io:30017) 응답 지연 대비 10초.
     client = MongoClient(uri, serverSelectionTimeoutMS=10000)
-    client.admin.command("ping")
+    try:
+        client.admin.command("ping")
+    except Exception:
+        client.close()    # ping 실패 시에도 pool 정리
+        raise
     return client["modu_mongo"]["news_articles"]
 
 
@@ -104,7 +111,8 @@ def pick_active_stock_days(lookback_days: int, top_n: int) -> list[tuple[str, st
         {"$limit": raw_limit},
     ]
 
-    raw = list(coll.aggregate(pipeline))
+    # maxTimeMS=30초 — 대량 데이터/느린 네트워크에서 무기한 블로킹 방지.
+    raw = list(coll.aggregate(pipeline, maxTimeMS=30_000))
     logger.info("aggregation hit: %d 쌍 (raw_limit=%d, top_n=%d)",
                 len(raw), raw_limit, top_n)
 
