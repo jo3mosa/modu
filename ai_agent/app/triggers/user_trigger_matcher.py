@@ -152,7 +152,9 @@ def match_market_event_to_users(
     user_trigger_events: list[UserTriggerEvent] = []
 
     for user_id in target_user_ids:
-        portfolio_snapshot = get_portfolio_snapshot(user_id, portfolio_snapshot_repository)
+        # `or {}` 는 Protocol 계약 방어선 — 현 Redis/Mock 구현은 빈 dict 반환하지만,
+        # 향후 다른 구현체가 None 을 돌려줘도 dict-unpack 에서 TypeError 가 나지 않게 보장.
+        portfolio_snapshot = get_portfolio_snapshot(user_id, portfolio_snapshot_repository) or {}
 
         portfolio_snapshot = {**portfolio_snapshot, "current_price": current_price}
 

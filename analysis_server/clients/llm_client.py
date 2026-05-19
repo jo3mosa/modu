@@ -63,10 +63,14 @@ def get_openai_client() -> Optional["OpenAI"]:
         return None
 
     try:
+        # max_retries=0 — OpenAI SDK 기본값(2)은 408/409/429/5xx + 타임아웃을 자동 재시도해
+        # 요약이 best-effort 인 트리거 발행 경로에서 latency 예산을 초과시킬 수 있음.
+        # 실패하면 None 반환 후 caller 가 요약 없이 진행하므로 재시도 가치 낮음.
         client = OpenAI(
             api_key=api_key,
             base_url=GMS_OPENAI_BASE_URL,
             timeout=REQUEST_TIMEOUT_SEC,
+            max_retries=0,
         )
         logger.info("✓ OpenAI client 초기화 — GMS proxy / %s", DEFAULT_SUMMARY_MODEL)
         return client
@@ -93,9 +97,11 @@ def summarize(
         return None
 
     try:
+        # max_tokens 는 Chat Completions 에서 deprecated, o1 시리즈와 미호환.
+        # SUMMARY_MODEL 환경변수로 모델 교체 가능하므로 미래 호환성 위해 max_completion_tokens 사용.
         resp = client.chat.completions.create(
             model=model,
-            max_tokens=max_tokens,
+            max_completion_tokens=max_tokens,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user",   "content": user},

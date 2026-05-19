@@ -40,6 +40,7 @@ idempotent:
 
 import argparse
 import logging
+import sys
 import time
 
 from sqlalchemy import text
@@ -90,10 +91,12 @@ _COMPUTE_TIER_SQL = text("""
                     THEN 3::SMALLINT
 
                 -- Tier 4: 적극투자형
+                -- growth_status COALESCE: SQL IN 은 NULL 을 UNKNOWN 으로 평가해 동작 자체엔 영향 없지만,
+                -- 위 stability_status COALESCE 패턴과 일관성 유지 + 가독성 차원에서 명시.
                 WHEN COALESCE(df.stability_status, '') <> 'risky'
                  AND (
                        (di.atr_ratio IS NOT NULL AND di.atr_ratio <= 0.06)
-                       OR df.growth_status IN ('high_growth', 'steady_growth')
+                       OR COALESCE(df.growth_status, '') IN ('high_growth', 'steady_growth')
                      )
                     THEN 4::SMALLINT
 
@@ -193,4 +196,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # cron 환경에서 DB/SQL 에러가 stack trace 만 남기고 죽으면 디버깅 어려움.
+    # 최상위에서 logger 로 정리된 에러 로그 + non-zero exit code 보장 (cron 알림 트리거).
+    try:
+        main()
+    except Exception:
+        logger.exception("compute_risk_tier 실행 실패 — DB 연결 / SQL / 데이터 무결성 확인 필요")
+        sys.exit(1)
