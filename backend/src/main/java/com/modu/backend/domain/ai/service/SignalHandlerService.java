@@ -191,11 +191,17 @@ public class SignalHandlerService {
 
     /**
      * 비보유자 분기 (S14P31B106-354):
-     *  - flow_status 가 "completed" 가 아니거나 final_decision 없음 → BLOCKED (방어적)
+     *  - flow_status 가 "completed" 가 아니면 BLOCKED (failed / blocked / hold / running 등)
+     *  - final_decision 없음 / trade 아님 → BLOCKED + 경고
      *  - SELL/HOLD → BLOCKED + 경고 로그 (비보유자에게 발행돼서는 안 되는 케이스)
      *  - BUY → RECOMMENDED (사용자 승인 시 매수 실행)
      */
     private AiExecutionStatus resolveNonHolderStatus(AiDecisionMessage m) {
+        if (!"completed".equalsIgnoreCase(m.flowStatus())) {
+            log.warn("[RECOMMENDED] 비보유자 비완료 flow_status 차단 - userId: {}, stockCode: {}, flowStatus: {}",
+                    m.userId(), m.stockCode(), m.flowStatus());
+            return AiExecutionStatus.BLOCKED;
+        }
         AiDecisionMessage.FinalDecision fd = m.finalDecision();
         if (fd == null || !"trade".equalsIgnoreCase(fd.action())) {
             log.warn("[RECOMMENDED] 비보유자에게 trade 아닌 결정 수신 - userId: {}, stockCode: {}, action: {}",

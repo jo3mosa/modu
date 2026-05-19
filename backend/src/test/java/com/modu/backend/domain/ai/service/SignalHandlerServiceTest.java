@@ -537,6 +537,30 @@ class SignalHandlerServiceTest {
     }
 
     @Test
+    @DisplayName("isHolder=false + flow_status=failed → BLOCKED (비완료 흐름 차단)")
+    void nonHolderFailedFlowBlocked() {
+        AiDecisionMessage msg = nonHolderMessageWithFlow(
+                "failed", "buy", 700_000L, 70_000.0, 65_000.0, "low");
+        service.handle(msg);
+
+        ArgumentCaptor<AiJudgment> captor = ArgumentCaptor.forClass(AiJudgment.class);
+        verify(aiJudgmentRepository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().getExecutionStatus()).isEqualTo(AiExecutionStatus.BLOCKED);
+    }
+
+    @Test
+    @DisplayName("isHolder=false + flow_status=blocked → BLOCKED")
+    void nonHolderBlockedFlowBlocked() {
+        AiDecisionMessage msg = nonHolderMessageWithFlow(
+                "blocked", "buy", 700_000L, 70_000.0, 65_000.0, "low");
+        service.handle(msg);
+
+        ArgumentCaptor<AiJudgment> captor = ArgumentCaptor.forClass(AiJudgment.class);
+        verify(aiJudgmentRepository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().getExecutionStatus()).isEqualTo(AiExecutionStatus.BLOCKED);
+    }
+
+    @Test
     @DisplayName("isHolder=true 는 기존 보유자 흐름 그대로 (READY 진입)")
     void holderTrueFollowsLegacyFlow() {
         AiDecisionMessage msg = holderMessage(true, "buy", 700_000L, 70_000.0, 65_000.0, "low");
@@ -569,11 +593,25 @@ class SignalHandlerServiceTest {
     private AiDecisionMessage nonHolderMessage(
             String side, Long orderAmount, Double targetPrice, Double stopLossPrice, String riskLevel
     ) {
-        return holderMessage(false, side, orderAmount, targetPrice, stopLossPrice, riskLevel);
+        return holderMessage(false, "completed", side, orderAmount, targetPrice, stopLossPrice, riskLevel);
+    }
+
+    private AiDecisionMessage nonHolderMessageWithFlow(
+            String flowStatus, String side, Long orderAmount,
+            Double targetPrice, Double stopLossPrice, String riskLevel
+    ) {
+        return holderMessage(false, flowStatus, side, orderAmount, targetPrice, stopLossPrice, riskLevel);
     }
 
     private AiDecisionMessage holderMessage(
             Boolean isHolder, String side, Long orderAmount,
+            Double targetPrice, Double stopLossPrice, String riskLevel
+    ) {
+        return holderMessage(isHolder, "completed", side, orderAmount, targetPrice, stopLossPrice, riskLevel);
+    }
+
+    private AiDecisionMessage holderMessage(
+            Boolean isHolder, String flowStatus, String side, Long orderAmount,
             Double targetPrice, Double stopLossPrice, String riskLevel
     ) {
         String action = side == null ? "hold" : "trade";
@@ -590,7 +628,7 @@ class SignalHandlerServiceTest {
                 fd,
                 new AiDecisionMessage.Debate("Bull", "Bear", "bull", objectMapper.createArrayNode()),
                 objectMapper.createObjectNode(),
-                "completed",
+                flowStatus,
                 isHolder
         );
     }
