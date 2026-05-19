@@ -65,7 +65,19 @@ class StockRiskTierBackfillStartupRunnerTest {
     }
 
     @Test
-    @DisplayName("run - SCAN 자체 예외 시 backfill 폴백 진행")
+    @DisplayName("run - redisTemplate.execute 자체 예외 시 backfill 폴백 진행")
+    void run_executeException_fallsBackToSync() {
+        when(redisTemplate.execute(any(RedisCallback.class)))
+                .thenThrow(new RuntimeException("execute err"));
+        when(stockRiskTierSyncService.syncAll()).thenReturn(SyncResult.success(5, 50L));
+
+        runner.run(null);
+
+        verify(stockRiskTierSyncService).syncAll();
+    }
+
+    @Test
+    @DisplayName("run - SCAN 콜백 내부 예외 시 backfill 폴백 진행")
     void run_scanException_fallsBackToSync() {
         RedisConnection connection = org.mockito.Mockito.mock(RedisConnection.class);
         RedisKeyCommands keyCommands = org.mockito.Mockito.mock(RedisKeyCommands.class);

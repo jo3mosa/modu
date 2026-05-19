@@ -75,6 +75,26 @@ class StockRiskTierSyncServiceTest {
     }
 
     @Test
+    @DisplayName("syncAll - saveBatch 예외 시 failed result (DB 조회 실패와 대칭)")
+    void syncAll_saveBatchException_returnsFailed() throws SQLException {
+        ResultSet rs = mockResultSet(new String[]{"005930"}, new int[]{3});
+        doAnswer(invocation -> {
+            RowCallbackHandler handler = invocation.getArgument(1);
+            while (rs.next()) {
+                handler.processRow(rs);
+            }
+            return null;
+        }).when(jdbcTemplate).query(anyString(), any(RowCallbackHandler.class));
+        doThrow(new RuntimeException("redis down"))
+                .when(stockRiskTierRedisRepository).saveBatch(any());
+
+        SyncResult result = service.syncAll();
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errorMessage()).contains("redis down");
+    }
+
+    @Test
     @DisplayName("syncAll - JDBC 예외 시 failed result + saveBatch 호출 X")
     void syncAll_jdbcException() {
         doThrow(new DataAccessResourceFailureException("db down"))

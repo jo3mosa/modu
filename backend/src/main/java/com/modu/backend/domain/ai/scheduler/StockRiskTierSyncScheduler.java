@@ -27,11 +27,15 @@ public class StockRiskTierSyncScheduler {
     @Scheduled(cron = "0 0 5 * * *", zone = "Asia/Seoul")
     public void runDailySync() {
         log.info("[StockRiskTierSyncScheduler] 일일 sync 트리거");
-        SyncResult result = stockRiskTierSyncService.syncAll();
-        if (!result.success()) {
-            log.error("[StockRiskTierSyncScheduler] sync 실패 - {}", result.errorMessage());
-            return;
+        try {
+            SyncResult result = stockRiskTierSyncService.syncAll();
+            if (!result.success()) {
+                log.error("[StockRiskTierSyncScheduler] sync 실패 - {}", result.errorMessage());
+                return;
+            }
+            log.info("[StockRiskTierSyncScheduler] sync 종료 - {}", result);
+        } catch (Exception e) {
+            log.error("[StockRiskTierSyncScheduler] 예기치 못한 예외 — 다음 cron 재시도 대기", e);
         }
-        log.info("[StockRiskTierSyncScheduler] sync 종료 - {}", result);
     }
 }

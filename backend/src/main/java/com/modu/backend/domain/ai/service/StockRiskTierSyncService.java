@@ -55,7 +55,12 @@ public class StockRiskTierSyncService {
             return SyncResult.empty();
         }
 
-        stockRiskTierRedisRepository.saveBatch(stockToTier);
+        try {
+            stockRiskTierRedisRepository.saveBatch(stockToTier);
+        } catch (Exception e) {
+            log.error("[StockRiskTierSync] Redis 적재 실패 - 종목 {}건", stockToTier.size(), e);
+            return SyncResult.failed(e.getMessage());
+        }
         long elapsed = System.currentTimeMillis() - startMs;
         log.info("[StockRiskTierSync] 완료 - 종목 {}건, 소요 {}ms", stockToTier.size(), elapsed);
         return SyncResult.success(stockToTier.size(), elapsed);

@@ -47,22 +47,34 @@ public class StockRiskTierBackfillStartupRunner implements ApplicationRunner {
             }
             log.info("[StockRiskTierBackfillStartup] stock:risk_tier 비어있음 — DB → Redis backfill 실행");
             SyncResult result = stockRiskTierSyncService.syncAll();
+            if (!result.success()) {
+                log.error("[StockRiskTierBackfillStartup] backfill 실패 — {}", result);
+                return;
+            }
             log.info("[StockRiskTierBackfillStartup] 완료 — {}", result);
         } catch (Exception e) {
             log.error("[StockRiskTierBackfillStartup] 부팅 backfill 실패 — Scheduler 재시도 대기", e);
         }
     }
 
-    /** SCAN 으로 패턴 매칭 키 1건이라도 존재하는지 확인 (KEYS 사용 금지) */
+    /**
+     * SCAN 으로 패턴 매칭 키 1건이라도 존재하는지 확인 (KEYS 사용 금지).
+     * execute 자체 예외 / 콜백 내부 예외 모두 false 폴백 — backfill 안전한 쪽으로 진행.
+     */
     private boolean anyKeyMatches(String pattern) {
         ScanOptions options = ScanOptions.scanOptions().match(pattern).count(1).build();
-        return Boolean.TRUE.equals(redisTemplate.execute((RedisConnection connection) -> {
-            try (Cursor<byte[]> cursor = connection.keyCommands().scan(options)) {
-                return cursor.hasNext();
-            } catch (Exception e) {
-                log.warn("[StockRiskTierBackfillStartup] SCAN 실패 — backfill 진행으로 폴백", e);
-                return false;
-            }
-        }));
+        try {
+            return Boolean.TRUE.equals(redisTemplate.execute((RedisConnection connection) -> {
+                try (Cursor<byte[]> cursor = connection.keyCommands().scan(options)) {
+                    return cursor.hasNext();
+                } catch (Exception e) {
+                    log.warn("[StockRiskTierBackfillStartup] SCAN 실패 — backfill 진행으로 폴백", e);
+                    return false;
+                }
+            }));
+        } catch (Exception e) {
+            log.warn("[StockRiskTierBackfillStartup] execute 실패 — backfill 진행으로 폴백", e);
+            return false;
+        }
     }
 }
