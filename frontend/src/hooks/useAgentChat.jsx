@@ -77,65 +77,7 @@ export const BOT_PROFILES = {
 
 const DEFAULT_PAGE_SIZE = 50;
 
-function getStockNameByCode(code) {
-  const mapping = {
-    '005930': '삼성전자',
-    '000660': 'SK하이닉스',
-    '035720': '카카오',
-    '035420': 'NAVER',
-    '005380': '현대차',
-    '000270': '기아',
-    '068270': '셀트리온',
-    '005490': 'POSCO홀딩스',
-    '105560': 'KB금융',
-    '051910': 'LG화학',
-  };
-  return mapping[code] || '해당 종목';
-}
 
-function generateMockMessages(stockCode) {
-  const stockName = getStockNameByCode(stockCode);
-  const now = new Date();
-
-  return [
-    {
-      messageId: 99004,
-      stockCode,
-      judgmentId: null,
-      agent: 'DECIDE',
-      seq: 4,
-      text: `최종 결론 조율되었습니다. 매크로 불확실성에도 불구하고 기술적 지지세가 탄탄한 국면입니다. 비중 10% 이내의 1차 분할 매수(BUY) 승인 건을 전략 풀에 대기시키겠습니다. 손절가는 금일 지지선 하단으로 설정하여 극도로 타이트하게 제어하겠습니다.`,
-      createdAt: new Date(now.getTime() - 1000 * 60 * 5).toISOString(),
-    },
-    {
-      messageId: 99003,
-      stockCode,
-      judgmentId: null,
-      agent: 'STRATEGY',
-      seq: 3,
-      text: `두 분의 리서치 근거가 모두 설득력 있습니다. 전략적 절충안으로, 상방 돌파 확률을 62%로 보고 롱 포지션을 구축하되 단기 흔들기에 대비해 한 번에 매수하지 않고 3회에 걸친 철저한 분할 매수 분산 전략을 시행하는 것이 유리해 보입니다.`,
-      createdAt: new Date(now.getTime() - 1000 * 60 * 9).toISOString(),
-    },
-    {
-      messageId: 99002,
-      stockCode,
-      judgmentId: null,
-      agent: 'BEAR',
-      seq: 2,
-      text: `기술적 반등만으로 추세 전환을 확신하긴 이릅니다. 최근 해외 경쟁사의 가이드라인 하향 조정 우려가 남아있어, ${stockName} 역시 상단 저항 매물을 소화하는 과정에서 일시 조정이 올 확률이 55%가 넘습니다. 보수적인 리스크 관리가 절대적으로 선행되어야 할 시점입니다.`,
-      createdAt: new Date(now.getTime() - 1000 * 60 * 13).toISOString(),
-    },
-    {
-      messageId: 99001,
-      stockCode,
-      judgmentId: null,
-      agent: 'BULL',
-      seq: 1,
-      text: `최근 ${stockName}의 기술적 추세를 모니터링한 결과, 120일선에서 강력한 기관 순매수가 유입되며 단기적인 하방 경직성을 확보했습니다. 특히 RSI 지표가 과매도 권역을 성공적으로 돌파하며 강한 상방 에너지를 분출하기 시작했습니다!`,
-      createdAt: new Date(now.getTime() - 1000 * 60 * 17).toISOString(),
-    },
-  ];
-}
 
 function emptyChannel() {
   return {
@@ -219,13 +161,7 @@ export function AgentChatProvider({ children }) {
       let nextCursor = res.nextCursor;
       let nextCursorId = res.nextCursorId;
 
-      // 만약 백엔드 DB에 에이전트 대화 데이터가 없으면, 고품질 종목 맞춤형 실시간 모의 대화 시나리오를 로드하여 채워줌!
-      if (content.length === 0) {
-        content = generateMockMessages(stockCode);
-        hasMore = false;
-        nextCursor = null;
-        nextCursorId = null;
-      }
+      // 백엔드에 대화 데이터가 없으면 빈 리스트 상태를 깔끔히 유지합니다.
 
       content.forEach((m) => seenIdsRef.current.add(m.messageId));
 
