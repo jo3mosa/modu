@@ -177,6 +177,11 @@ class PendingJudgmentServiceTest {
     }
 
     private AiJudgment buildPending(Long id, OffsetDateTime expiresAt) {
+        return buildPendingWithStatus(id, expiresAt, AiExecutionStatus.APPROVAL_REQUIRED);
+    }
+
+    /** S14P31B106-354 — RECOMMENDED 행도 동일 흐름 검증용 */
+    private AiJudgment buildPendingWithStatus(Long id, OffsetDateTime expiresAt, AiExecutionStatus status) {
         AiJudgment judgment = AiJudgment.builder()
                 .userId(USER_ID)
                 .stockCode(STOCK)
@@ -189,10 +194,86 @@ class PendingJudgmentServiceTest {
                 .orderAmount(700_000L)
                 .targetPrice(70_000L)
                 .stopLossPrice(65_000L)
-                .executionStatus(AiExecutionStatus.APPROVAL_REQUIRED)
+                .executionStatus(status)
+                .stockTier(status == AiExecutionStatus.RECOMMENDED ? 3 : null)
+                .matchedRiskGrade(status == AiExecutionStatus.RECOMMENDED ? 4 : null)
                 .build();
         judgment.setApprovalExpiresAt(expiresAt);
         ReflectionTestUtils.setField(judgment, "id", id);
         return judgment;
+    }
+
+    // ───────────────────────────────────────────────────────────────────
+    // S14P31B106-354 — RECOMMENDED 흐름 회귀 방지
+    // ───────────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("listPending: RECOMMENDED 도 결과에 포함 + stockTier/matchedRiskGrade 노출")
+    void listPendingIncludesRecommended() {
+        AiJudgment recommended = buildPendingWithStatus(
+                30L, OffsetDateTime.now().plusMinutes(3), AiExecutionStatus.RECOMMENDED);
+        when(aiJudgmentRepository
+                .findByUserIdAndExecutionStatusInOrderByJudgedAtDesc(
+                        org.mockito.ArgumentMatchers.eq(USER_ID),
+                        org.mockito.ArgumentMatchers.any()))
+                .thenReturn(List.of(recommended));
+
+        List<PendingDecisionResponse> result = service.listPending(USER_ID);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).executionStatus()).isEqualTo(AiExecutionStatus.RECOMMENDED);
+        assertThat(result.get(0).stockTier()).isEqualTo(3);
+        assertThat(result.get(0).matchedRiskGrade()).isEqualTo(4);
+    }
+
+    @Test
+    @DisplayName("approve: RECOMMENDED row 도 Order INSERT + 승인 처리")
+    void approveAcceptsRecommended() {
+        AiJudgment recommended = buildPendingWithStatus(
+                40L, OffsetDateTime.now().plusMinutes(3), AiExecutionStatus.RECOMMENDED);
+        when(aiJudgmentRepository.findByIdForUpdate(40L)).thenReturn(Optional.of(recommended));
+        when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(inv -> {
+            Order saved = inv.getArgument(0);
+            ReflectionTestUtils.setField(saved, "id", 777L);
+            return saved;
+        });
+
+        DecisionApprovalResponse response = service.approve(USER_ID, 40L);
+
+        assertThat(recommended.getExecutionStatus()).isEqualTo(AiExecutionStatus.READY);
+        assertThat(recommended.getOrderId()).isEqualTo(777L);
+        assertThat(response.executionStatus()).isEqualTo(AiExecutionStatus.READY);
+        verify(orderRepository).saveAndFlush(any(Order.class));
+    }
+
+    @Test
+    @DisplayName("reject: RECOMMENDED row 도 REJECTED 전환")
+    void rejectAcceptsRecommended() {
+        AiJudgment recommended = buildPendingWithStatus(
+                41L, OffsetDateTime.now().plusMinutes(3), AiExecutionStatus.RECOMMENDED);
+        when(aiJudgmentRepository.findByIdForUpdate(41L)).thenReturn(Optional.of(recommended));
+
+        service.reject(USER_ID, 41L);
+
+        assertThat(recommended.getExecutionStatus()).isEqualTo(AiExecutionStatus.REJECTED);
+        verify(orderRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("expirePending: RECOMMENDED 도 EXPIRED 전환")
+    void expirePendingIncludesRecommended() {
+        AiJudgment expiredRec = buildPendingWithStatus(
+                90L, OffsetDateTime.now().minusMinutes(1), AiExecutionStatus.RECOMMENDED);
+        AiJudgment expiredAppr = buildPendingWithStatus(
+                91L, OffsetDateTime.now().minusMinutes(2), AiExecutionStatus.APPROVAL_REQUIRED);
+        when(aiJudgmentRepository.findByExecutionStatusInAndApprovalExpiresAtBefore(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any())).thenReturn(List.of(expiredRec, expiredAppr));
+
+        int count = service.expirePending();
+
+        assertThat(count).isEqualTo(2);
+        assertThat(expiredRec.getExecutionStatus()).isEqualTo(AiExecutionStatus.EXPIRED);
+        assertThat(expiredAppr.getExecutionStatus()).isEqualTo(AiExecutionStatus.EXPIRED);
     }
 }
