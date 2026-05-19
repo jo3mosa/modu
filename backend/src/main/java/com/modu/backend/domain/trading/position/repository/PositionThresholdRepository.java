@@ -41,4 +41,14 @@ public interface PositionThresholdRepository extends JpaRepository<PositionThres
      * AI 판단 수신 시 ai_*_price 갱신용 (S14P31B106-263)
      */
     Optional<PositionThreshold> findByUserIdAndStockCodeAndIsActiveTrue(Long userId, String stockCode);
+
+    /**
+     * 사용자별 활성 보유 종목 코드 집합 — gateway 의 UserKisSession 부팅 자동 구독용 (S14P31B106-345)
+     */
+    @Query("""
+        SELECT DISTINCT p.stockCode FROM PositionThreshold p
+        WHERE p.userId = :userId
+          AND p.isActive = true
+    """)
+    Set<String> findActiveStockCodesByUserId(Long userId);
 }

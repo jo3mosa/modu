@@ -469,6 +469,7 @@ def deployToCluster(String configId, String clusterName) {
                         DEPLOY_DIR=$(mktemp -d)
                         cp $K8S_DIR/*.yaml "$DEPLOY_DIR/"
                         sed -i "s|BACKEND_IMAGE|${BE_IMAGE}|g"      "$DEPLOY_DIR/backend.yaml"
+                        sed -i "s|BACKEND_IMAGE|${BE_IMAGE}|g"      "$DEPLOY_DIR/kis-gateway.yaml"
                         sed -i "s|FRONTEND_IMAGE|${FE_IMAGE}|g"     "$DEPLOY_DIR/frontend.yaml"
                         sed -i "s|AIAGENT_IMAGE|${AI_IMAGE}|g"      "$DEPLOY_DIR/ai-agent.yaml"
                         sed -i "s|ANALYSIS_IMAGE|${ANALYSIS_IMAGE}|g" "$DEPLOY_DIR/analysis-server.yaml"

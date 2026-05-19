@@ -58,27 +58,28 @@ spec:
         - name: mongodb-storage
           mountPath: /data/db
         resources:
-          # WiredTiger 캐시 = (메모리 - 1Gi) × 50% — 뉴스 데이터 증가 대비 여유 확보.
-          # memory request: 실측 ~712Mi (이전 512Mi 의 139% 초과 사용 중) → 1Gi 로 증액.
-          # 스케줄러 over-pack 위험 + cgroup memory pressure 해소.
+          # WiredTiger 캐시 = (메모리 - 1Gi) × 50% — limit 4Gi 기준 약 1.5Gi 캐시.
+          # 뉴스 데이터 누적으로 1Gi/2Gi 환경에서 SIGTERM(eviction/메모리 압박) 발생 → 증액.
           requests:
-            memory: "1Gi"
+            memory: "2Gi"
             cpu: "250m"
           limits:
-            memory: "2Gi"
+            memory: "4Gi"
             cpu: "1000m"
+        # mongosh exec probe 는 Node.js 런타임 부팅 비용으로 5s timeout 초과 → kubelet SIGTERM 루프.
+        # mongod 는 storage engine recovery 완료 후에만 27017 listen → standalone 구성에선 TCP probe 로 충분.
         readinessProbe:
-          exec:
-            command: ["mongosh", "--eval", "db.adminCommand('ping')"]
-          initialDelaySeconds: 10
+          tcpSocket:
+            port: 27017
+          initialDelaySeconds: 15
           periodSeconds: 10
-          timeoutSeconds: 5
+          timeoutSeconds: 3
           failureThreshold: 3
         livenessProbe:
-          exec:
-            command: ["mongosh", "--eval", "db.adminCommand('ping')"]
-          initialDelaySeconds: 30
-          periodSeconds: 15
+          tcpSocket:
+            port: 27017
+          initialDelaySeconds: 60
+          periodSeconds: 20
           timeoutSeconds: 5
           failureThreshold: 5
       volumes:
