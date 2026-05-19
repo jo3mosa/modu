@@ -18,19 +18,19 @@ autoresearch 패턴: 같은 데이터·같은 모드로 모델 variant를 자동
 
 실험 목록:
     ── Axis 1: 단일 모델 비교 ──────────────────────────────
-    gpt_mini               전 노드 gpt-4o-mini (저비용 baseline)
-    gpt_full               전 노드 gpt-4o      (고성능 baseline)
+    gpt_mini               전 노드 gpt-4.1-mini (저비용 baseline)
+    gpt_full               전 노드 gpt-4.1     (고성능 baseline)
     claude                 전 노드 claude-3-5-sonnet-20241022
     grok                   전 노드 grok-2
 
     ── Axis 2: 모델 분리, GPT 계열 (비용 최적화) ────────────
-    split_c                bull/bear=mini, strategy+decision=full
-    split_d                bull/bear=mini, strategy=full, decision=mini
+    split_c                bull/bear=mini, strategy+decision=full  (판단이 중요하다)
+    split_d                bull/bear=full, strategy+decision=mini  (근거가 중요하다)
 
     ── Axis 3: 크로스 모델 (각 모델 강점 포지션 활용) ────────
-    claude_debate_gpt_judge  bull/bear=claude, strategy+decision=gpt-4o
-    grok_debate_gpt_judge    bull/bear=grok-2, strategy+decision=gpt-4o
-    best_combo               bull/bear=claude, strategy=claude, decision=gpt-4o
+    claude_debate_gpt_judge  bull/bear=claude, strategy+decision=gpt-4.1
+    grok_debate_gpt_judge    bull/bear=grok-2, strategy+decision=gpt-4.1
+    best_combo               bull/bear=claude, strategy=claude, decision=gpt-4.1
 
 환경변수 우선순위 (llm.py 참고):
     DEBATE_MODEL   → bull/bear 노드
@@ -60,48 +60,48 @@ logger = logging.getLogger(__name__)
 # ── 실험 정의 ──────────────────────────────────────────────────────────────────
 
 EXPERIMENT_CONFIGS: dict[str, dict[str, str]] = {
-    # Axis 1: 모델 종류 비교
+    # Axis 1: 단일 모델 비교 (GPT)
     "gpt_mini": {
-        "DEBATE_MODEL": "gpt-4o-mini",
-        "STRUCTURED_MODEL": "gpt-4o-mini",
+        "DEBATE_MODEL": "gpt-4.1-mini",
+        "STRUCTURED_MODEL": "gpt-4.1-mini",
     },
     "gpt_full": {
-        "DEBATE_MODEL": "gpt-4o",
-        "STRUCTURED_MODEL": "gpt-4o",
-    },
-    "claude": {
-        "DEBATE_MODEL": "claude-3-5-sonnet-20241022",
-        "STRUCTURED_MODEL": "claude-3-5-sonnet-20241022",
-    },
-    "grok": {
-        "DEBATE_MODEL": "grok-2",
-        "STRUCTURED_MODEL": "grok-2",
+        "DEBATE_MODEL": "gpt-4.1",
+        "STRUCTURED_MODEL": "gpt-4.1",
     },
     # Axis 2: 모델 분리 (비용 최적화, GPT 계열)
     "split_c": {
-        "DEBATE_MODEL": "gpt-4o-mini",
-        "STRUCTURED_MODEL": "gpt-4o",          # strategy + decision 모두 deep
+        "DEBATE_MODEL": "gpt-4.1-mini",
+        "STRUCTURED_MODEL": "gpt-4.1",         # strategy + decision 모두 deep
     },
     "split_d": {
-        "DEBATE_MODEL": "gpt-4o-mini",
-        "STRATEGY_MODEL": "gpt-4o",            # strategy만 deep
-        "DECISION_MODEL": "gpt-4o-mini",       # decision은 quick
+        "DEBATE_MODEL": "gpt-4.1",             # bull+bear deep: 근거 품질 투자
+        "STRUCTURED_MODEL": "gpt-4.1-mini",    # strategy+decision quick: 근거 기반 결정
     },
-    # Axis 3: 크로스 모델 (각 모델의 강점 포지션 활용)
-    # 가설: Claude/Grok의 오픈 텍스트 추론(토론) + GPT-4o의 안정적 JSON 출력(판단)
-    "claude_debate_gpt_judge": {
-        "DEBATE_MODEL":   "claude-3-5-sonnet-20241022",  # bull+bear: Claude 추론
-        "STRUCTURED_MODEL": "gpt-4o",                   # strategy+decision: GPT 안정 JSON
-    },
-    "grok_debate_gpt_judge": {
-        "DEBATE_MODEL":   "grok-2",                      # bull+bear: Grok 다양한 시각
-        "STRUCTURED_MODEL": "gpt-4o",                   # strategy+decision: GPT 안정 JSON
-    },
-    "best_combo": {
-        "DEBATE_MODEL":   "claude-3-5-sonnet-20241022",  # bull+bear: Claude 추론
-        "STRATEGY_MODEL": "claude-3-5-sonnet-20241022",  # strategy: Claude 종합
-        "DECISION_MODEL": "gpt-4o",                      # decision: GPT 최종 결정
-    },
+    # ── Claude / Grok 실험 (API 키 준비 후 주석 해제) ─────────────────────────
+    # Axis 1: 단일 모델 비교 (Claude / Grok)
+    # "claude": {
+    #     "DEBATE_MODEL": "claude-3-5-sonnet-20241022",
+    #     "STRUCTURED_MODEL": "claude-3-5-sonnet-20241022",
+    # },
+    # "grok": {
+    #     "DEBATE_MODEL": "grok-2",
+    #     "STRUCTURED_MODEL": "grok-2",
+    # },
+    # Axis 3: 크로스 모델 (각 모델 강점 포지션 활용)
+    # "claude_debate_gpt_judge": {
+    #     "DEBATE_MODEL":     "claude-3-5-sonnet-20241022",
+    #     "STRUCTURED_MODEL": "gpt-4.1",
+    # },
+    # "grok_debate_gpt_judge": {
+    #     "DEBATE_MODEL":     "grok-2",
+    #     "STRUCTURED_MODEL": "gpt-4.1",
+    # },
+    # "best_combo": {
+    #     "DEBATE_MODEL":   "claude-3-5-sonnet-20241022",
+    #     "STRATEGY_MODEL": "claude-3-5-sonnet-20241022",
+    #     "DECISION_MODEL": "gpt-4.1",
+    # },
 }
 
 # KOSPI200 seed=42 랜덤 10종목
