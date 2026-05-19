@@ -83,7 +83,8 @@ DEFAULT_WINDOWS_DAYS = (3, 7, 14)
 DEFAULT_AGREEMENT_THRESHOLD = 0.90    # 일치율 ≥ 90% → 더 작은 n 으로 충분
 DEFAULT_REPEAT = 1                    # agent 비결정성 대응. 클수록 안정성 ↑ 비용 ↑
 DEFAULT_USER_ID = 1                   # dummy. memory/portfolio 없는 user 라도 graph 동작.
-DEFAULT_MODE = "A"                    # A: Bull/Bear 토론. B: 단일 에이전트.
+DEFAULT_MODE = "debate_1"             # Bull/Bear 1라운드 토론 (실시간 prod 기본).
+GRAPH_MODES = ("debate_0", "debate_1", "debate_2")   # ai_agent GraphMode 와 동일
 
 
 # ─── CSV 로드 ───────────────────────────────────────────────────────────────
@@ -406,8 +407,10 @@ def main() -> None:
     parser.add_argument("--user-id", type=int, default=DEFAULT_USER_ID,
                         help=f"agent 호출 시 사용할 dummy user_id. 기본 {DEFAULT_USER_ID}. "
                              "memory/portfolio 없어도 graph 동작하나, DB 에 존재하는 ID 가 안전.")
-    parser.add_argument("--mode", default=DEFAULT_MODE, choices=["A", "B"],
-                        help="graph mode. A=Bull/Bear 토론(prod), B=단일 에이전트(ablation). 기본 A")
+    parser.add_argument("--mode", default=DEFAULT_MODE, choices=GRAPH_MODES,
+                        help="graph mode. debate_0=토론 없음(ablation), "
+                             "debate_1=Bull/Bear 1R(prod 기본), debate_2=2R. "
+                             f"기본 {DEFAULT_MODE}")
     parser.add_argument("--windows", default="3,7,14",
                         help="비교할 일 단위 윈도우 (콤마 구분). 기본 '3,7,14'")
     parser.add_argument("--threshold", type=float, default=DEFAULT_AGREEMENT_THRESHOLD,

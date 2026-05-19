@@ -104,7 +104,11 @@ TradingGoose.github.io/
 TradingAgents/
 Vibe-Trading/
 
-# 트리거 백테스트 이벤트 데이터 (재생성 가능)
+# 트리거 백테스트 이벤트 데이터
 analysis_server/events_*.parquet
 analysis_server/scripts/backtest/events_*.parquet
 analysis_server/scripts/backtest/results/events_*.parquet
+
+# 검증 일회용 산출물
+analysis_server/validation_result*.json
+analysis_server/scripts/backfill/samples_*.csv
