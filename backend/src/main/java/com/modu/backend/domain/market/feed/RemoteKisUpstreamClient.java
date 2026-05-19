@@ -37,13 +37,35 @@ public class RemoteKisUpstreamClient {
         publish(KisControlMessage.unsubscribe(userId, key.type().trId(), key.stockCode(), properties.resolvePodId()));
     }
 
+    /**
+     * control 채널 발행은 반드시 표면화한다 (PR #166 review).
+     *  - 수신자 0명 (Gateway 미구독/다운) → IllegalStateException
+     *  - Redis 장애 등 예외 → IllegalStateException 으로 wrap 후 전파
+     * 호출자(SubscriptionManager.register) 는 이 예외를 받아 매핑을 롤백한다.
+     */
     private void publish(KisControlMessage msg) {
+        String json;
         try {
-            String json = objectMapper.writeValueAsString(msg);
-            redisTemplate.convertAndSend(KisFeedChannels.CONTROL, json);
+            json = objectMapper.writeValueAsString(msg);
         } catch (Exception e) {
-            log.error("[RemoteKisUpstreamClient] control publish 실패 - userId: {}, trId: {}, trKey: {}, error: {}",
-                    msg.userId(), msg.trId(), msg.trKey(), e.getMessage());
+            log.error("[RemoteKisUpstreamClient] control 직렬화 실패 - userId: {}, trId: {}, trKey: {}",
+                    msg.userId(), msg.trId(), msg.trKey(), e);
+            throw new IllegalStateException("CONTROL serialization failed", e);
+        }
+
+        Long receivers;
+        try {
+            receivers = redisTemplate.convertAndSend(KisFeedChannels.CONTROL, json);
+        } catch (Exception e) {
+            log.error("[RemoteKisUpstreamClient] control publish 실패 - userId: {}, trId: {}, trKey: {}",
+                    msg.userId(), msg.trId(), msg.trKey(), e);
+            throw new IllegalStateException("CONTROL publish failed", e);
+        }
+
+        if (receivers == null || receivers == 0L) {
+            log.error("[RemoteKisUpstreamClient] control 수신자 없음 (gateway down?) - userId: {}, trId: {}, trKey: {}",
+                    msg.userId(), msg.trId(), msg.trKey());
+            throw new IllegalStateException("No gateway subscriber for CONTROL channel");
         }
     }
 }

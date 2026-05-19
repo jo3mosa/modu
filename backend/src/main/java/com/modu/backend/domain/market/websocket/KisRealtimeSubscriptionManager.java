@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
+import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
@@ -83,8 +84,29 @@ public class KisRealtimeSubscriptionManager {
 
         if (firstSubscriber.get() && !hasServerHold(key)) {
             // 서버 사이드가 이미 구독 중이면 KIS 측은 이미 SUBSCRIBE 상태 — 중복 전송 회피
-            subscribeUpstream(userId, key);
+            try {
+                subscribeUpstream(userId, key);
+            } catch (Exception e) {
+                // upstream SUBSCRIBE 실패(예: REMOTE 모드에서 gateway 미구독 / Redis 장애) →
+                // 매핑이 남아 있으면 "구독된 줄 아는데 시세가 안 오는" 침묵의 실패가 됨.
+                // 명시적 롤백 + 세션 종료로 프론트가 재연결 시도하도록 유도.
+                log.error("[SubscriptionManager] upstream subscribe failed — rollback. userId: {}, key: {}",
+                        userId, key, e);
+                rollbackRegister(session, key);
+                try { session.close(CloseStatus.SERVICE_RESTARTED); } catch (Exception ignored) {}
+                throw e;
+            }
         }
+    }
+
+    /** register() 의 매핑 등록을 되돌린다. upstream 실패 케이스에서만 호출. */
+    private void rollbackRegister(WebSocketSession session, KisRealtimeStreamKey key) {
+        keyBySessionId.remove(session.getId());
+        userIdBySessionId.remove(session.getId());
+        sessionsByKey.computeIfPresent(key, (ignored, sessions) -> {
+            sessions.remove(session);
+            return sessions.isEmpty() ? null : sessions;
+        });
     }
 
     public void unregister(WebSocketSession session) {
@@ -106,7 +128,13 @@ public class KisRealtimeSubscriptionManager {
         });
 
         if (lastSubscriber.get() && !hasServerHold(key)) {
-            unsubscribeUpstream(userId != null ? userId : 0L, key);
+            if (userId == null) {
+                // 비정상 상태 — register 시 userId 추적 누락. upstream 해제는 skip (잘못된 userId 전송 방지).
+                log.warn("[SubscriptionManager] unregister skip upstream — userId missing. sessionId: {}, key: {}",
+                        session.getId(), key);
+                return;
+            }
+            unsubscribeUpstream(userId, key);
         }
     }
 

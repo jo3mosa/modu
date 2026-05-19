@@ -96,24 +96,25 @@ public class UserKisSessionPool {
 
     // ── 내부 — 세션 생성 + 시작 ──────────────────────────────────────────────
 
+    /**
+     * 세션 생성 + 시작 + 보유종목 자동 구독을 한 단위로 atomic 수행.
+     * computeIfAbsent — 같은 userId 에 대한 동시 호출은 lock 안에서 직렬화되며,
+     * start() 실패 시 map 에 등록되지 않아 다음 호출에서 재시도된다.
+     * (PR #166 review #3 — start 전 노출되어 미시작 세션을 반환하던 race 해소)
+     */
     private UserKisSession openSession(long userId) {
-        UserKisSession created = factory.create(userId);
-        UserKisSession existing = sessions.putIfAbsent(userId, created);
-        if (existing != null) {
-            // race 가드 — 다른 스레드가 먼저 만들었으면 그쪽 사용, 우리는 폐기
-            created.close();
-            return existing;
-        }
-        try {
-            created.start();
-            autoSubscribeHoldings(userId, created);
-            log.info("[UserKisSessionPool] session started - userId: {}", userId);
-        } catch (Exception e) {
-            sessions.remove(userId, created);
-            created.close();
-            throw new IllegalStateException("UserKisSession start failed - userId: " + userId, e);
-        }
-        return created;
+        return sessions.computeIfAbsent(userId, id -> {
+            UserKisSession created = factory.create(id);
+            try {
+                created.start();
+                autoSubscribeHoldings(id, created);
+                log.info("[UserKisSessionPool] session started - userId: {}", id);
+                return created;
+            } catch (Exception e) {
+                created.close();
+                throw new IllegalStateException("UserKisSession start failed - userId: " + id, e);
+            }
+        });
     }
 
     /**

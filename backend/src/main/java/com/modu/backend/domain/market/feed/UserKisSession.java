@@ -125,7 +125,13 @@ public class UserKisSession {
         }
         ensureSession();
         if (htsId != null && !htsId.isBlank() && executionSubscribed.compareAndSet(false, true)) {
-            sendSubscription(KisRealtimeStreamType.EXECUTION.trId(), htsId, SUBSCRIBE);
+            try {
+                sendSubscription(KisRealtimeStreamType.EXECUTION.trId(), htsId, SUBSCRIBE);
+            } catch (Exception e) {
+                // 체결통보 SUBSCRIBE 실패 → 상태 롤백 후 호출자(SessionPool)로 전파
+                executionSubscribed.set(false);
+                throw e;
+            }
         }
     }
 
@@ -172,7 +178,14 @@ public class UserKisSession {
                     userId, currentSubscriptionCount(), type.trId(), stockCode);
             return;
         }
-        sendSubscription(type.trId(), stockCode, SUBSCRIBE);
+        try {
+            sendSubscription(type.trId(), stockCode, SUBSCRIBE);
+        } catch (Exception e) {
+            // 전송 실패 → activeMarketSubs 와 KIS 측 실제 상태 불일치 방지 (PR #166 review #1).
+            // 다음 재연결 흐름에서 다시 시도되지 않으므로 즉시 롤백.
+            activeMarketSubs.remove(key);
+            log.error("[UserKisSession] subscribe send failed — rollback. userId: {}, key: {}", userId, key, e);
+        }
     }
 
     private void unsubscribeMarket(KisRealtimeStreamType type, String stockCode) {
@@ -182,7 +195,14 @@ public class UserKisSession {
         }
         WebSocketSession s = wsSession;
         if (s != null && s.isOpen()) {
-            sendSubscription(type.trId(), stockCode, UNSUBSCRIBE);
+            try {
+                sendSubscription(type.trId(), stockCode, UNSUBSCRIBE);
+            } catch (Exception e) {
+                // UNSUBSCRIBE 실패는 KIS 측에 좀비 구독이 남을 수 있으나 본 backend 상태는 정리 완료.
+                // 다음 재연결 시 restoreSubscriptions 가 등록하지 않으므로 결과적으로 정리됨.
+                log.warn("[UserKisSession] unsubscribe send failed — local state already cleared. userId: {}, key: {}",
+                        userId, key, e);
+            }
         }
     }
 
@@ -193,6 +213,10 @@ public class UserKisSession {
 
     // ── 내부 — WebSocket 송수신 ─────────────────────────────────────────────
 
+    /**
+     * KIS WS 로 SUBSCRIBE/UNSUBSCRIBE payload 전송.
+     * 실패는 호출자에게 전파 (PR #166 review #1 — 호출자가 상태 롤백 책임).
+     */
     private void sendSubscription(String trId, String trKey, String trType) {
         try {
             WebSocketSession session = ensureSession();
@@ -202,11 +226,11 @@ public class UserKisSession {
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.error("[UserKisSession] subscription send interrupted - userId: {}, trId: {}, trKey: {}",
-                    userId, trId, trKey);
+            throw new IllegalStateException(
+                    "KIS subscription send interrupted - userId=" + userId + " trId=" + trId + " trKey=" + trKey, e);
         } catch (Exception e) {
-            log.error("[UserKisSession] subscription send failed - userId: {}, trId: {}, trKey: {}, error: {}",
-                    userId, trId, trKey, e.getMessage());
+            throw new IllegalStateException(
+                    "KIS subscription send failed - userId=" + userId + " trId=" + trId + " trKey=" + trKey, e);
         }
     }
 
@@ -259,13 +283,21 @@ public class UserKisSession {
     }
 
     private void restoreSubscriptions() {
-        // 체결통보 먼저 (cipher 필요)
+        // 재연결 best-effort — 개별 실패는 로그만, 다음 재연결 사이클에서 재시도.
+        // (sendSubscription 이 예외를 던지면 이후 SUBSCRIBE 들이 누락되지 않도록 항목별 try/catch)
         if (htsId != null && !htsId.isBlank()) {
-            sendSubscription(KisRealtimeStreamType.EXECUTION.trId(), htsId, SUBSCRIBE);
+            try {
+                sendSubscription(KisRealtimeStreamType.EXECUTION.trId(), htsId, SUBSCRIBE);
+            } catch (Exception e) {
+                log.warn("[UserKisSession] execution restore failed - userId: {}", userId, e);
+            }
         }
-        // 시세/호가
         for (KisRealtimeStreamKey key : activeMarketSubs) {
-            sendSubscription(key.type().trId(), key.stockCode(), SUBSCRIBE);
+            try {
+                sendSubscription(key.type().trId(), key.stockCode(), SUBSCRIBE);
+            } catch (Exception e) {
+                log.warn("[UserKisSession] market restore failed - userId: {}, key: {}", userId, key, e);
+            }
         }
     }
 

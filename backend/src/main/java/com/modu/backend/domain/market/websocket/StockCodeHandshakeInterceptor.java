@@ -9,6 +9,8 @@ import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.server.HandshakeInterceptor;
 
 import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -99,12 +101,15 @@ public class StockCodeHandshakeInterceptor implements HandshakeInterceptor {
     }
 
     private String extractQueryParam(URI uri, String name) {
-        String query = uri.getQuery();
+        // getRawQuery() — URL 인코딩 그대로 받아서 직접 디코딩
+        // (getQuery() 는 일부 케이스에서 이미 디코딩 되어 있어 일관성 없음)
+        String query = uri.getRawQuery();
         if (query == null) return null;
         String prefix = name + "=";
         for (String part : query.split("&")) {
             if (part.startsWith(prefix)) {
-                return part.substring(prefix.length());
+                String raw = part.substring(prefix.length());
+                return URLDecoder.decode(raw, StandardCharsets.UTF_8);
             }
         }
         return null;
