@@ -131,12 +131,13 @@ def build_record(
         "rule_ids": list(trigger.rule_ids),
         "rule_reasons": list(trigger.rule_reasons),
         "close_price": trigger.close_price,
-        # signal payload 4종 — AI 팀 분석·디버깅용.
+        # signal payload + 뉴스 요약 — AI 팀 분석·디버깅용.
         "signals": {
-            "technical":   trigger.technical,
-            "fundamental": trigger.fundamental,
-            "event":       trigger.event,
-            "sentiment":   trigger.sentiment,
+            "technical":    trigger.technical,
+            "fundamental":  trigger.fundamental,
+            "event":        trigger.event,
+            "sentiment":    trigger.sentiment,
+            "news_summary": trigger.news_summary,
         },
         "decision":           decision,           # _to_jsonable 가 asdict 변환
         "fill":               fill,
