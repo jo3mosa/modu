@@ -165,7 +165,8 @@ class AuthServiceTest {
         TokenResponse result = authService.refresh(request, response);
 
         assertThat(result.accessToken()).isEqualTo("new-access-token");
-        verify(refreshTokenRepository).delete(refreshToken);
+        // AuthService.refresh 가 delete(entity) → deleteByUserId(userId) 로 리팩터링됨
+        verify(refreshTokenRepository).deleteByUserId(1L);
         verify(refreshTokenRepository).save(any(RefreshToken.class));
         verify(response).addHeader(eqSetCookie(), anyString());
     }

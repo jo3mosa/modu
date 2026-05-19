@@ -5,6 +5,7 @@ import com.modu.backend.domain.user.dto.KisKeyUpdateRequest;
 import com.modu.backend.domain.user.entity.KisCredential;
 import com.modu.backend.domain.user.exception.UserErrorCode;
 import com.modu.backend.domain.user.repository.KisCredentialRepository;
+import com.modu.backend.domain.user.repository.KisTokenRepository;
 import com.modu.backend.global.error.ApiException;
 import com.modu.backend.global.util.AesGcmEncryptor;
 import org.junit.jupiter.api.BeforeEach;
@@ -31,6 +32,7 @@ import static org.mockito.Mockito.when;
 class KisKeyServiceTest {
 
     @Mock KisCredentialRepository kisCredentialRepository;
+    @Mock KisTokenRepository kisTokenRepository;
     @Mock KisTokenService kisTokenService;
     @Mock AesGcmEncryptor encryptor;
 

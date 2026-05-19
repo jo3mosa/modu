@@ -1,7 +1,15 @@
 package com.modu.backend.domain.market.websocket;
 
+import com.modu.backend.domain.auth.jwt.JwtProvider;
+import com.modu.backend.domain.market.feed.MarketFeedProperties;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.http.server.ServerHttpRequest;
 
 import java.net.URI;
@@ -12,22 +20,33 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class StockCodeHandshakeInterceptorTest {
+
+    @Mock JwtProvider jwtProvider;
+    @Mock MarketFeedProperties feedProperties;
+
+    private StockCodeHandshakeInterceptor interceptor;
+
+    @BeforeEach
+    void setUp() {
+        // LOCAL 모드 — token 없어도 handshake 통과 (REMOTE 면 토큰 누락 시 reject)
+        when(feedProperties.getClientMode()).thenReturn(MarketFeedProperties.ClientMode.LOCAL);
+        interceptor = new StockCodeHandshakeInterceptor(
+                KisRealtimeStreamType.PRICE, jwtProvider, feedProperties);
+    }
 
     @Test
     @DisplayName("6자리 종목코드면 handshake 속성 저장")
     void validStockCodeStoresAttributes() {
-        // given
-        StockCodeHandshakeInterceptor interceptor = new StockCodeHandshakeInterceptor(KisRealtimeStreamType.PRICE);
         ServerHttpRequest request = mock(ServerHttpRequest.class);
         Map<String, Object> attributes = new HashMap<>();
 
         when(request.getURI()).thenReturn(URI.create("/ws/stocks/005930/price"));
 
-        // when
         boolean result = interceptor.beforeHandshake(request, null, null, attributes);
 
-        // then
         assertThat(result).isTrue();
         assertThat(attributes.get(KisRealtimeFrontendWebSocketHandler.STREAM_TYPE_ATTRIBUTE))
                 .isEqualTo(KisRealtimeStreamType.PRICE);
@@ -38,19 +57,14 @@ class StockCodeHandshakeInterceptorTest {
     @Test
     @DisplayName("6자리 숫자가 아니면 handshake 거부")
     void invalidStockCodeRejectsHandshake() {
-        // given
-        StockCodeHandshakeInterceptor interceptor = new StockCodeHandshakeInterceptor(KisRealtimeStreamType.PRICE);
         ServerHttpRequest request = mock(ServerHttpRequest.class);
         Map<String, Object> attributes = new HashMap<>();
 
         when(request.getURI()).thenReturn(URI.create("/ws/stocks/samsung/price"));
 
-        // when
         boolean result = interceptor.beforeHandshake(request, null, null, attributes);
 
-        // then
         assertThat(result).isFalse();
         assertThat(attributes).isEmpty();
     }
 }
-

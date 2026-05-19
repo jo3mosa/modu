@@ -22,6 +22,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.Optional;
 
@@ -46,6 +48,8 @@ class PositionTriggerExecutorTest {
 
     @BeforeEach
     void setUp() {
+        TransactionSynchronizationManager.initSynchronization();
+
         position = PositionThreshold.builder()
                 .userId(7L)
                 .stockCode("005930")
@@ -65,12 +69,28 @@ class PositionTriggerExecutorTest {
         });
     }
 
+    @org.junit.jupiter.api.AfterEach
+    void tearDown() {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    /** verify 전 호출 — registerSynchronization 으로 등록된 afterCommit 콜백 즉시 실행 */
+    private void flushTransactionSync() {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) return;
+        for (TransactionSynchronization sync : TransactionSynchronizationManager.getSynchronizations()) {
+            sync.afterCommit();
+        }
+    }
+
     @Test
     @DisplayName("STOP_LOSS 트리거 시 Order INSERT(MARKET, SELL, 전량) + Kafka 발행 + markTriggered 수행")
     void executeStopLoss() {
         when(positionThresholdRepository.findById(1L)).thenReturn(Optional.of(position));
 
         executor.execute(1L, PositionTriggerReason.USER_STOP_LOSS);
+        flushTransactionSync();
 
         ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
         verify(orderRepository).saveAndFlush(orderCaptor.capture());
@@ -109,6 +129,7 @@ class PositionTriggerExecutorTest {
         when(positionThresholdRepository.findById(1L)).thenReturn(Optional.of(position));
 
         executor.execute(1L, PositionTriggerReason.AI_TAKE_PROFIT);
+        flushTransactionSync();
 
         ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
         verify(orderRepository).saveAndFlush(orderCaptor.capture());
