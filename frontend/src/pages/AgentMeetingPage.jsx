@@ -1,9 +1,13 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Search, ArrowDown } from 'lucide-react';
+import { Search, ArrowDown, ChevronDown, ChevronUp } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 import { getPortfolio } from '../api/account';
 import { getStocks } from '../api/market';
 import { useAgentChat, BOT_PROFILES } from '../hooks/useAgentChat';
 import './AgentMeetingPage.css';
+
+/** 더보기/접기 임계값 — 한국어 기준 약 5~7줄에 해당 */
+const COLLAPSE_THRESHOLD = 250;
 
 /**
  * "오늘 / 어제 / 2026년 5월 18일 (월)" 카톡 스타일 날짜 포매팅
@@ -21,9 +25,13 @@ function formatDateDivider(date) {
 }
 
 /**
- * 말풍선 글자 타이핑 애니메이션 및 동적 피드 스크롤 핸들링 컴포넌트
+ * 말풍선 컴포넌트 — 두 가지 표시 모드 자동 전환
+ *  · 타이핑 진행 중: plain text + 커서 (마크다운 파싱은 미적용 — 미완성 토큰으로 layout 깨짐 방지)
+ *  · 타이핑 완료/과거 메시지: react-markdown 으로 굵게·리스트·인용·코드 등 렌더링
+ *
+ * 더보기/접기 처리는 외부에서 className 으로 .message-bubble.collapsed 를 토글해 CSS 로 max-height 제한.
  */
-function TypingMessageBubble({ text, isAnimated, onComplete, feedRef }) {
+function TypingMessageBubble({ text, isAnimated, isCollapsed, onComplete, feedRef }) {
   const [displayedText, setDisplayedText] = useState(isAnimated ? '' : text);
   const textRef = useRef(text);
   textRef.current = text;
@@ -55,11 +63,17 @@ function TypingMessageBubble({ text, isAnimated, onComplete, feedRef }) {
     return () => clearInterval(interval);
   }, [isAnimated, feedRef, onComplete]);
 
+  const isStillTyping = isAnimated && displayedText.length < text.length;
+
   return (
-    <div className="message-bubble">
-      {displayedText}
-      {isAnimated && displayedText.length < text.length && (
-        <span className="typing-cursor">|</span>
+    <div className={`message-bubble${isCollapsed ? ' collapsed' : ''}`}>
+      {isStillTyping ? (
+        <>
+          {displayedText}
+          <span className="typing-cursor">|</span>
+        </>
+      ) : (
+        <ReactMarkdown>{text}</ReactMarkdown>
       )}
     </div>
   );
@@ -136,10 +150,24 @@ export default function AgentMeetingPage() {
   const [activeAnimationId, setActiveAnimationId] = useState(null);
   const oldestMessageIdRef = useRef(null);
 
-  // 채널(종목) 변경 시 타이핑 애니메이션 상태 초기화
+  // 더보기/접기 — 메시지별 펼침 여부. 채널 진입 시 임계값 초과 메시지는 기본 접힘,
+  // SSE 신규 메시지는 도착 즉시 자동 펼침되어 사용자 시선이 따라가도록 처리한다.
+  const [expandedIds, setExpandedIds] = useState(new Set());
+
+  const toggleExpanded = useCallback((messageId) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(messageId)) next.delete(messageId);
+      else next.add(messageId);
+      return next;
+    });
+  }, []);
+
+  // 채널(종목) 변경 시 타이핑 애니메이션 + 펼침 상태 초기화
   useEffect(() => {
     setRevealedIds(new Set());
     setActiveAnimationId(null);
+    setExpandedIds(new Set());
     oldestMessageIdRef.current = null;
   }, [selectedStock?.stockCode]);
 
@@ -171,7 +199,15 @@ export default function AgentMeetingPage() {
 
     if (changed) {
       setRevealedIds(nextRevealed);
-      if (latestNewMsgId != null) setActiveAnimationId(latestNewMsgId);
+      if (latestNewMsgId != null) {
+        setActiveAnimationId(latestNewMsgId);
+        // SSE 신규 메시지는 도착 즉시 펼친 상태로 노출 — 사용자 시선이 자연스럽게 따라가도록
+        setExpandedIds((prev) => {
+          const next = new Set(prev);
+          next.add(latestNewMsgId);
+          return next;
+        });
+      }
     }
   }, [displayMessages]);
 
@@ -414,6 +450,10 @@ export default function AgentMeetingPage() {
               });
               const isAnimated = activeAnimationId === msg.messageId;
               const groupClass = isContinuation ? 'group-continuation' : 'group-start';
+              // 더보기/접기 — 임계값 초과 + 사용자가 펼치지 않음 + 타이핑 중이 아닐 때만 접힘 적용
+              const exceedsThreshold = (msg.text?.length ?? 0) > COLLAPSE_THRESHOLD;
+              const isExpanded = expandedIds.has(msg.messageId);
+              const isCollapsed = exceedsThreshold && !isExpanded && !isAnimated;
 
               return (
                 <div key={item.key} className={`chat-message agent-msg-${msg.agent.toLowerCase()} ${groupClass}`}>
@@ -429,12 +469,26 @@ export default function AgentMeetingPage() {
                       <TypingMessageBubble
                         text={msg.text}
                         isAnimated={isAnimated}
+                        isCollapsed={isCollapsed}
                         onComplete={handleTypeComplete}
                         feedRef={feedRef}
                       />
                       {/* 같은 그룹 내 중간 메시지는 시간 중복 노출 방지 */}
                       {!isContinuation && <span className="message-time">{timeStr}</span>}
                     </div>
+                    {exceedsThreshold && !isAnimated && (
+                      <button
+                        type="button"
+                        className="message-toggle-btn"
+                        onClick={() => toggleExpanded(msg.messageId)}
+                      >
+                        {isExpanded ? (
+                          <><ChevronUp size={14} /> 접기</>
+                        ) : (
+                          <><ChevronDown size={14} /> 더보기</>
+                        )}
+                      </button>
+                    )}
                   </div>
                 </div>
               );
