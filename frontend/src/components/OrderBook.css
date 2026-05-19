@@ -11,20 +11,22 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.tab-btn {
+/* MyPage.css 의 글로벌 .tab-btn (font-size: 1.1rem) 이 같은 specificity 로 덮어쓰므로
+   .orderbook-tabs 컨테이너 스코프로 한 단계 올려서 우선 적용되도록 한다. */
+.orderbook-tabs .tab-btn {
   flex: 1;
   background: transparent;
   border: none;
   color: #888;
-  padding: 0.5rem; /* 패딩 축소 */
-  font-size: 0.82rem; /* 상단 탭 폰트 크기 미세 축소 */
+  padding: 0.4rem 0.5rem;
+  font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
   border-radius: 8px;
   transition: all 0.2s;
 }
 
-.tab-btn.active {
+.orderbook-tabs .tab-btn.active {
   background: rgba(255, 255, 255, 0.1);
   color: #fff;
 }
@@ -33,15 +35,18 @@
   display: flex;
   flex-direction: row;
   flex: 1;
-  overflow: hidden; /* 전체 패널 스크롤 완벽 차단 */
+  overflow: hidden;
+  /* 전체 패널 스크롤 완벽 차단 */
 }
 
 .orderbook-table {
   display: flex;
   flex-direction: column;
-  flex: 1.15; /* 약 54% 가로폭 할당 */
+  flex: 1.15;
+  /* 약 54% 가로폭 할당 */
   padding: 0;
-  overflow: hidden; /* 테이블 자체 스크롤 차단 */
+  overflow: hidden;
+  /* 테이블 자체 스크롤 차단 */
 }
 
 /* 매도/매수 호가 목록 개별 스크롤 및 크기 균등 분할 */
@@ -49,23 +54,28 @@
 .bids-list {
   flex: 1;
   overflow-y: auto;
-  min-height: 0; /* flex container 내에서 정상 스크롤 작동을 보장 */
+  min-height: 0;
+  /* flex container 내에서 정상 스크롤 작동을 보장 */
 }
 
 .table-head {
   display: flex;
   justify-content: space-between;
-  padding: 0.4rem 1rem; /* 가로 패딩 축소 */
+  padding: 0.4rem 1rem;
+  /* 가로 패딩 축소 */
   color: #888;
-  font-size: 0.8rem; /* 폰트 축소 */
+  font-size: 0.8rem;
+  /* 폰트 축소 */
 }
 
 .order-row {
   display: flex;
   justify-content: space-between;
-  padding: 0.3rem 0.8rem; /* 줄 간격 밀착 및 패딩 최소화 */
+  padding: 0.3rem 0.8rem;
+  /* 줄 간격 밀착 및 패딩 최소화 */
   position: relative;
-  font-size: 0.8rem; /* 폰트 축소 */
+  font-size: 0.8rem;
+  /* 폰트 축소 */
   font-family: 'Pretendard', sans-serif;
   cursor: pointer;
 }
@@ -125,26 +135,33 @@
 }
 
 .current-price {
-  font-size: 1.15rem; /* 글자 크기 축소 */
+  font-size: 1.15rem;
+  /* 글자 크기 축소 */
   font-weight: 800;
   color: #fff;
 }
 
 .price-diff {
   color: #ef4444;
-  font-size: 0.8rem; /* 폰트 축소 */
+  font-size: 0.8rem;
+  /* 폰트 축소 */
   margin-top: 0.1rem;
 }
 
 .order-form {
-  padding: 0.5rem 0.8rem; /* 상하 패딩을 줄여서 상단 스크롤 잘림 완벽 차단! */
+  padding: 0.5rem 0.8rem;
+  /* 상하 패딩을 줄여서 상단 스크롤 잘림 완벽 차단! */
   border-top: none;
-  border-left: 1px solid rgba(255, 255, 255, 0.05); /* 수직 디바이더 보더 적용 */
+  border-left: 1px solid rgba(255, 255, 255, 0.05);
+  /* 수직 디바이더 보더 적용 */
   display: flex;
   flex-direction: column;
-  gap: 0.5rem; /* 간격을 축소하여 한화면에 100% 안착 */
-  flex: 1; /* 약 46% 가로폭 할당 */
-  overflow-y: auto; /* 극단적 저해상도 시 내부 스크롤 안전장치 */
+  gap: 0.5rem;
+  /* 간격을 축소하여 한화면에 100% 안착 */
+  flex: 1;
+  /* 약 46% 가로폭 할당 */
+  overflow-y: auto;
+  /* 극단적 저해상도 시 내부 스크롤 안전장치 */
 }
 
 .order-type-switch {
@@ -158,7 +175,8 @@
   flex: 1;
   background: transparent;
   border: none;
-  padding: 0.5rem 0.8rem; /* 버튼 세로 패딩 축소로 스페이스 확보 */
+  padding: 0.5rem 0.8rem;
+  /* 버튼 세로 패딩 축소로 스페이스 확보 */
   color: #888;
   font-weight: 700;
   cursor: pointer;
@@ -176,9 +194,12 @@
 
 .buying-power-info {
   display: flex;
-  flex-direction: column; /* 세로 행 배치로 변경하여 글자 깨짐 방지 */
-  gap: 0.3rem; /* 행 사이 간격 */
-  font-size: 0.76rem; /* 폰트 미세 조정 */
+  flex-direction: column;
+  /* 세로 행 배치로 변경하여 글자 깨짐 방지 */
+  gap: 0.3rem;
+  /* 행 사이 간격 */
+  font-size: 0.76rem;
+  /* 폰트 미세 조정 */
   color: #aaa;
   background: rgba(255, 255, 255, 0.04);
   padding: 0.45rem 0.6rem;
@@ -209,17 +230,21 @@
 
 .input-group label {
   color: #aaa;
-  font-size: 0.8rem; /* 글자 크기 축소 */
+  font-size: 0.8rem;
+  /* 글자 크기 축소 */
 }
 
 .input-group input {
   background: rgba(0, 0, 0, 0.3);
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: #fff;
-  padding: 0.4rem 0.6rem; /* 패딩 축소 */
+  padding: 0.4rem 0.6rem;
+  /* 패딩 축소 */
   border-radius: 6px;
-  width: 95px; /* 가로폭 축소 */
-  font-size: 0.85rem; /* 글자 크기 축소 */
+  width: 95px;
+  /* 가로폭 축소 */
+  font-size: 0.85rem;
+  /* 글자 크기 축소 */
   text-align: right;
   font-family: inherit;
 }
@@ -237,7 +262,8 @@
   color: #fff;
   padding: 0.4rem 0.6rem;
   border-radius: 6px;
-  width: 95px; /* 수량 인풋 박스와 완벽 대칭 */
+  width: 95px;
+  /* 수량 인풋 박스와 완벽 대칭 */
   font-size: 0.85rem;
   text-align: right;
   font-family: inherit;
@@ -301,6 +327,7 @@
   -webkit-appearance: none;
   margin: 0;
 }
+
 .input-group input[type="number"] {
   -moz-appearance: textfield;
   appearance: none;
@@ -310,26 +337,31 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 0.3rem; /* 마진 축소 */
+  margin-top: 0.3rem;
+  /* 마진 축소 */
   padding-top: 0.3rem;
   border-top: 1px dashed rgba(255, 255, 255, 0.1);
-  font-size: 0.9rem; /* 폰트 축소 */
+  font-size: 0.9rem;
+  /* 폰트 축소 */
 }
 
 .order-total strong {
   color: #84cc16;
-  font-size: 1.05rem; /* 글자 크기 축소 */
+  font-size: 1.05rem;
+  /* 글자 크기 축소 */
 }
 
 .submit-order-btn {
-  padding: 0.7rem; /* 패딩을 줄여서 한화면에 100% 핏 */
+  padding: 0.7rem;
+  /* 패딩을 줄여서 한화면에 100% 핏 */
   border: none;
   border-radius: 8px;
   font-weight: 700;
   font-size: 1rem;
   color: #fff;
   cursor: pointer;
-  margin-top: 0.2rem; /* 마진 최소화 */
+  margin-top: 0.2rem;
+  /* 마진 최소화 */
   transition: opacity 0.2s;
 }
 
@@ -553,7 +585,8 @@
 @media (max-width: 768px) {
   .orderbook-content {
     flex-direction: column;
-    overflow-y: auto; /* 세로 스크롤 허용 */
+    overflow-y: auto;
+    /* 세로 스크롤 허용 */
   }
 
   .orderbook-table {
@@ -679,7 +712,8 @@
   font-weight: 700;
   color: #aaa;
   margin-top: 0.5rem;
-  border-left: 3px solid #84cc16; /* MODU 메인 라이트 그린 포인트 */
+  border-left: 3px solid #84cc16;
+  /* MODU 메인 라이트 그린 포인트 */
   padding-left: 0.5rem;
 }
 
@@ -750,9 +784,11 @@
 
 /* 상승/하락 컬러 유틸리티 (MODU 디자인 가이드라인 통일) */
 .up {
-  color: #ef4444 !important; /* 상승 네온 레드 */
+  color: #ef4444 !important;
+  /* 상승 네온 레드 */
 }
 
 .down {
-  color: #3b82f6 !important; /* 하락 네온 블루 */
+  color: #3b82f6 !important;
+  /* 하락 네온 블루 */
 }

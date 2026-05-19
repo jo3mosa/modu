@@ -68,6 +68,14 @@ export default function OrderBook({ stockCode }) {
     });
   };
   const [quantity, setQuantity] = useState(1);
+
+  const handleIncreaseQuantity = () => {
+    setQuantity((prev) => (Number.isFinite(prev) ? prev : 0) + 1);
+  };
+
+  const handleDecreaseQuantity = () => {
+    setQuantity((prev) => Math.max(0, (Number.isFinite(prev) ? prev : 0) - 1));
+  };
   const [submittingOrder, setSubmittingOrder] = useState(false);
   const [pendingSubmitOrderId, setPendingSubmitOrderId] = useState(null);
   const submitTimeoutRef = useRef(null);
@@ -673,7 +681,32 @@ export default function OrderBook({ stockCode }) {
             </div>
             <div className="input-group">
               <label>수량 (주)</label>
-              <input type="number" value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} />
+              <div className="price-control-container">
+                <input
+                  type="number"
+                  className="price-field"
+                  value={quantity}
+                  onChange={(e) => setQuantity(Number(e.target.value))}
+                />
+                <div className="price-btn-group">
+                  <button
+                    type="button"
+                    className="price-step-btn minus"
+                    onClick={handleDecreaseQuantity}
+                    aria-label="수량 감소"
+                  >
+                    -
+                  </button>
+                  <button
+                    type="button"
+                    className="price-step-btn plus"
+                    onClick={handleIncreaseQuantity}
+                    aria-label="수량 증가"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div className="order-total">
