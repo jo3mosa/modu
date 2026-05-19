@@ -35,8 +35,7 @@ def _build_decision_payload(event: UserTriggerEvent, result: dict) -> dict:
     final_decision = result.get("final_decision")
     research_verdict = result.get("research_verdict")
     debate_state = result.get("investment_debate_state") or {}
-    analysis_snapshot = result.get("analysis_snapshot") or {}
-    signals = analysis_snapshot.get("signals") or {}
+    analysis_snapshot = event.analysis_snapshot or {}
 
     # BE 매핑표에 없거나 사용처 미합의인 필드는 명시적으로 제외:
     # - asset: top-level stock_code와 중복
@@ -64,13 +63,18 @@ def _build_decision_payload(event: UserTriggerEvent, result: dict) -> dict:
             "key_signals": extract_key_signals(analysis_snapshot),
         },
 
-        "indicators_snapshot": signals,
+        "indicators_snapshot": analysis_snapshot,
 
         "flow_status": result.get("flow_status"),
 
         # 비보유자(False) BUY 결정은 자동매매 실행이 아니라 매수 추천 알림으로 처리해야 한다.
         # 백엔드는 이 값을 보고 is_holder=False 이면 주문 실행 대신 사용자에게 매수 의향을 묻는다.
         "is_holder": event.is_holder,
+
+        # FE 멘트 차별화용. buy_candidate_repository 미주입 시 null.
+        # matched_risk_grade는 보유자(is_holder=True)의 경우 null.
+        "stock_tier": event.stock_tier,
+        "matched_risk_grade": event.matched_risk_grade,
     }
 
 

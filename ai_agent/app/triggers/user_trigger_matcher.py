@@ -109,11 +109,15 @@ def match_market_event_to_users(
     # (user_id, is_holder) 쌍으로 처리 대상 구성
     targets: list[tuple[int, bool]] = [(uid, True) for uid in holding_user_ids]
 
+    stock_tier: int | None = None
+    non_holder_grades: dict[int, int] = {}  # {user_id: risk_grade}
+
     if buy_candidate_repository is not None:
-        eligible_ids = buy_candidate_repository.get_eligible_user_ids(event.stock_code)
-        for uid in eligible_ids:
+        stock_tier, eligible_grades = buy_candidate_repository.get_eligible_user_grades(event.stock_code)
+        for uid, grade in eligible_grades.items():
             if uid not in holder_set:
                 targets.append((uid, False))
+                non_holder_grades[uid] = grade
 
     if not targets:
         return []
@@ -140,6 +144,8 @@ def match_market_event_to_users(
             analysis_snapshot=event.analysis_snapshot,
             portfolio_snapshot=portfolio_snapshot,
             is_holder=is_holder,
+            stock_tier=stock_tier,
+            matched_risk_grade=non_holder_grades.get(user_id) if not is_holder else None,
         ))
 
     return user_trigger_events

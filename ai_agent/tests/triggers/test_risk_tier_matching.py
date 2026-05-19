@@ -50,9 +50,11 @@ def _make_repos(
 def _make_buy_repo(
     stock_code: str = "005930",
     eligible_ids: list[int] | None = None,
+    tier: int = 3,
 ) -> MockBuyCandidateRepository:
     return MockBuyCandidateRepository(
-        store={stock_code: eligible_ids or []}
+        store={stock_code: eligible_ids or []},
+        tier=tier,
     )
 
 
@@ -226,3 +228,62 @@ def test_is_holder_included_in_kafka_payload(is_holder: bool) -> None:
         payload = mock_producer.send.call_args[1]["value"]
         assert "is_holder" in payload
         assert payload["is_holder"] is is_holder
+
+
+# ─────────────────────────────────────────────
+# stock_tier / matched_risk_grade 필드
+# ─────────────────────────────────────────────
+
+def test_stock_tier_and_grade_set_for_non_holder() -> None:
+    """비보유자 이벤트에 stock_tier와 matched_risk_grade가 설정된다."""
+    pos, port, price = _make_repos(holder_ids=[1])
+    buy_repo = _make_buy_repo(eligible_ids=[1, 3], tier=4)
+
+    events = match_market_event_to_users(_make_event(), pos, port, price, buy_repo)
+
+    non_holder = next(e for e in events if e.user_id == 3)
+    assert non_holder.stock_tier == 4
+    assert non_holder.matched_risk_grade == 4
+
+
+def test_holder_has_stock_tier_but_no_matched_grade() -> None:
+    """보유자 이벤트는 stock_tier는 있고 matched_risk_grade는 None이다."""
+    pos, port, price = _make_repos(holder_ids=[1])
+    buy_repo = _make_buy_repo(eligible_ids=[1, 3], tier=4)
+
+    events = match_market_event_to_users(_make_event(), pos, port, price, buy_repo)
+
+    holder = next(e for e in events if e.user_id == 1)
+    assert holder.stock_tier == 4
+    assert holder.matched_risk_grade is None
+
+
+def test_stock_tier_none_when_no_buy_repo() -> None:
+    """buy_candidate_repository 미주입 시 stock_tier와 matched_risk_grade 모두 None이다."""
+    pos, port, price = _make_repos(holder_ids=[1, 2])
+
+    events = match_market_event_to_users(_make_event(), pos, port, price)
+
+    assert all(e.stock_tier is None for e in events)
+    assert all(e.matched_risk_grade is None for e in events)
+
+
+def test_stock_tier_and_grade_included_in_kafka_payload() -> None:
+    """stock_tier, matched_risk_grade 값이 Kafka 페이로드에 포함된다."""
+    from app.graph.runner import run_and_publish
+
+    event = _make_user_trigger_event(user_id=99, is_holder=False)
+    event = event.model_copy(update={"stock_tier": 4, "matched_risk_grade": 5})
+    mock_result = {"final_decision": _make_final_decision("trade", "buy"), "flow_status": "completed"}
+
+    with patch("app.graph.runner.run_pipeline", return_value=mock_result), \
+         patch("app.graph.runner.get_kafka_producer") as mock_producer_factory:
+
+        mock_producer = MagicMock()
+        mock_producer_factory.return_value = mock_producer
+
+        run_and_publish(event)
+
+        payload = mock_producer.send.call_args[1]["value"]
+        assert payload["stock_tier"] == 4
+        assert payload["matched_risk_grade"] == 5

@@ -46,6 +46,9 @@ asset 및 주문 파라미터 규칙:
 [뉴스/이벤트]
 {signals_event}
 
+[뉴스 요약 — 트리거 발화 시점 전후 기사 LLM 요약 (summary가 null이면 기사 없음)]
+{signals_news_summary}
+
 [소셜 감성]
 {signals_sentiment}
 

@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ResearchVerdict(BaseModel):
@@ -33,8 +33,17 @@ class ResearchVerdict(BaseModel):
     target_price: int | None = None
     stop_loss_price: int | None = None
 
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def normalize_confidence(cls, v: float) -> float:
+        if v is not None and v > 1.0:
+            return v / 100.0
+        return v
+
     @model_validator(mode="after")
     def validate_trade_params(self) -> "ResearchVerdict":
+        if self.recommended_side != "hold" and not self.asset:
+            raise ValueError("recommended_side가 buy/sell일 때 asset은 필수입니다.")
         if self.recommended_side == "hold":
             if self.order_amount != 0:
                 raise ValueError("recommended_side가 hold일 때 order_amount는 0이어야 합니다.")
@@ -149,3 +158,10 @@ class FinalDecision(BaseModel):
     confidence: float = 0.0
     risk_level: Literal["low", "medium", "high"] = "low"
     user_message: str = ""
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def normalize_confidence(cls, v: float) -> float:
+        if v is not None and v > 1.0:
+            return v / 100.0
+        return v
