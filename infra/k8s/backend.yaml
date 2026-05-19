@@ -34,6 +34,12 @@ spec:
         envFrom:
         - secretRef:
             name: modu-secret
+        env:
+        # [S14P31B106-345] 시세 Feed 모드 — REMOTE: KIS WS 는 modu-kis-gateway 가 단독 보유,
+        # backend 는 Redis Pub/Sub 으로 tick 만 수신. replicas N 안전.
+        # LOCAL 로 두면 backend 가 직접 KIS WS 연결 → replicas≥2 환경에서 단일세션 충돌 발생.
+        - name: MARKET_FEED_CLIENT_MODE
+          value: "REMOTE"
         resources:
           # Spring Boot JVM(~300Mi) + Kafka 컨슈머/프로듀서 + JPA + SSE 연결 유지
           # 거래시간 burst 대응 위해 limits 여유 확보.
@@ -82,8 +88,7 @@ spec:
 ---
 
 # 3. PodDisruptionBudget — 노드 drain/유지보수 시 최소 1개 backend 가용 보장.
-# [S14P31B106-345] 마이그레이션 동안 replicas=1 이라 minAvailable=1 은 사실상 evict 차단.
-# Phase 7 에서 replicas 를 2 이상으로 복원하면 다시 의미를 가짐.
+# replicas≥2 + REMOTE 모드에서 K8s 가 한 번에 모두 evict 하지 못하게 막아 무중단 보장.
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
