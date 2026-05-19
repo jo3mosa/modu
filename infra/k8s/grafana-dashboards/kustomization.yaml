@@ -1,0 +1,53 @@
+# [S14P31B106-352] Grafana Kafka 대시보드 — ConfigMap 자동 등록 (sidecar 방식)
+#
+# kube-prometheus-stack 의 Grafana sidecar(`grafana-sc-dashboard`) 가
+# label=grafana_dashboard=1 가 붙은 ConfigMap 을 감지해서 Grafana 에
+# 대시보드로 자동 등록한다. Grafana Pod 가 재기동되어도 ConfigMap 만 있으면
+# 대시보드는 복구됨 (영구화).
+#
+# 적용:
+#   kubectl apply -k infra/k8s/grafana-dashboards/
+#
+# 확인:
+#   kubectl get cm -n monitoring -l grafana_dashboard=1
+#   kubectl logs -n monitoring -l app.kubernetes.io/name=grafana \
+#     -c grafana-sc-dashboard --tail=30 | grep -i kafka
+#
+# 대시보드 갱신 절차:
+#   1) Grafana UI 에서 수정 → Share → Export → "Export for sharing externally" 체크
+#   2) 받은 JSON 으로 이 디렉토리의 파일을 덮어쓰기
+#   3) kubectl apply -k 재실행
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Grafana 가 설치된 네임스페이스 — sidecar 가 이 NS 의 ConfigMap 을 감지한다.
+namespace: monitoring
+
+configMapGenerator:
+  - name: grafana-dashboard-kafka-exporter
+    files:
+      - kafka-exporter-overview.json
+    options:
+      labels:
+        # sidecar 가 ConfigMap 을 발견하는 핵심 라벨.
+        # (helm release 의 sidecar.dashboards.label / labelValue 와 일치해야 함)
+        grafana_dashboard: "1"
+      annotations:
+        # Grafana UI 에서 대시보드가 저장될 폴더.
+        # sidecar 가 /tmp/dashboards/<폴더명>/ 으로 JSON 을 떨어뜨리면
+        # Grafana 의 file-based provisioning 이 폴더로 인식한다.
+        k8s-sidecar-target-directory: /tmp/dashboards/Kafka
+
+  - name: grafana-dashboard-kafka-cluster
+    files:
+      - kafka-cluster-overview.json
+    options:
+      labels:
+        grafana_dashboard: "1"
+      annotations:
+        k8s-sidecar-target-directory: /tmp/dashboards/Kafka
+
+# 같은 ConfigMap 이름을 유지 — hash suffix 가 붙으면 sidecar 가
+# 매번 새 파일로 인식해 잠시 중복 대시보드가 보일 수 있음.
+generatorOptions:
+  disableNameSuffixHash: true
