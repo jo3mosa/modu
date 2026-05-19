@@ -3,6 +3,7 @@ package com.modu.backend.domain.strategy.service;
 import com.modu.backend.domain.auth.dto.OnboardingStatus;
 import com.modu.backend.domain.investment.entity.InvestmentProfile;
 import com.modu.backend.domain.investment.entity.ProfileHistory;
+import com.modu.backend.domain.investment.event.UsersByGradeChangedEvent;
 import com.modu.backend.domain.investment.exception.InvestmentErrorCode;
 import com.modu.backend.domain.investment.repository.InvestmentProfileRepository;
 import com.modu.backend.domain.investment.repository.ProfileHistoryRepository;
@@ -15,6 +16,7 @@ import com.modu.backend.domain.trading.repository.TradingRuleRepository;
 import com.modu.backend.global.error.ApiException;
 import com.modu.backend.global.error.ValidationException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -37,6 +39,7 @@ public class StrategyProfileService {
     private final InvestmentProfileRepository investmentProfileRepository;
     private final ProfileHistoryRepository profileHistoryRepository;
     private final TradingRuleRepository tradingRuleRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional(readOnly = true)
     public ProfileResponse getProfile(Long userId) {
@@ -66,18 +69,25 @@ public class StrategyProfileService {
 
         InvestmentProfile profile;
         Long historyVersionNo;
+        Integer prevGradeInt;
 
         var existingProfile = investmentProfileRepository.findById(userId);
         if (existingProfile.isPresent()) {
             profile = existingProfile.get();
+            prevGradeInt = toGradeInt(profile.getRiskGrade());
             historyVersionNo = nextVersion(profile);
             updateExistingProfile(profile, request.version(), assessment, answersSnapshot, now);
         } else {
             profile = createNewProfile(userId, assessment, answersSnapshot, now);
             historyVersionNo = 0L;
+            prevGradeInt = null;
         }
 
         profileHistoryRepository.save(toHistory(profile, historyVersionNo, now));
+
+        eventPublisher.publishEvent(
+                new UsersByGradeChangedEvent(userId, prevGradeInt, assessment.riskLevel().toGradeInt())
+        );
 
         return new ProfileUpdateResponse(
                 assessment.riskLevel(),
@@ -113,6 +123,15 @@ public class StrategyProfileService {
         }
         if (!requestVersion.equals(profile.getVersion())) {
             throw new ObjectOptimisticLockingFailureException(InvestmentProfile.class, profile.getUserId());
+        }
+    }
+
+    private Integer toGradeInt(String riskGrade) {
+        if (riskGrade == null) return null;
+        try {
+            return InvestmentRiskLevel.valueOf(riskGrade).toGradeInt();
+        } catch (IllegalArgumentException e) {
+            return null;
         }
     }
 
