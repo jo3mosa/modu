@@ -29,6 +29,7 @@ if str(_ANALYSIS_SERVER) not in sys.path:
 
 from collectors.disclosure_collector import build_event_payload   # noqa: E402
 from engine.detection_engine import RULE_REASONS, RULES, detect   # noqa: E402
+from engine.event_publisher import _summarize_news                # noqa: E402
 from engine.signal_builder import Signal                          # noqa: E402
 
 from . import config
@@ -211,6 +212,10 @@ def build_trigger(
     if not rule_ids:
         return None
 
+    # 실서비스와 동일하게 rule_ids 기반 윈도우로 Mongo 재조회 + LLM 요약.
+    # pick_news_window(rule_ids)가 가장 긴 윈도우를 선택 → agent가 충분한 컨텍스트 확보.
+    news_summary = _summarize_news(stock_code, rule_ids, signal)
+
     return Trigger(
         as_of_date=as_of,
         stock_code=stock_code,
@@ -221,6 +226,7 @@ def build_trigger(
         event=event,
         sentiment=sentiment,
         close_price=ohlc_row.get("close") if ohlc_row else None,
+        news_summary=news_summary,
     )
 
 

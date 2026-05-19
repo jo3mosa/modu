@@ -42,6 +42,10 @@ class Trigger:
     sentiment: Optional[dict]
     # 가격 메타 — 체결 시뮬레이션에 필요.
     close_price: Optional[float]  # as_of_date 종가 (의사결정 기준 가격)
+    # 뉴스 요약 — event_publisher._summarize_news 와 동일 schema.
+    # rule_ids 기반 윈도우(pick_news_window)로 Mongo 재조회 + LLM 요약.
+    # 실서비스 analysis_snapshot["news_summary"] 와 1:1 대응. 없으면 None.
+    news_summary: Optional[dict] = None
 
 
 @dataclass(frozen=True)
