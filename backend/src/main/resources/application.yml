@@ -44,8 +44,8 @@ spring:
   # 팀에서 동시에 마이그레이션을 추가할 때 안전망.
   # 이미 적용된 마이그레이션보다 더 이른 timestamp 의 마이그레이션이 새로 들어와도 자동 적용.
   # 충돌 없을 때는 동작 차이 없음 (idempotent).
-  # flyway:
-  #   out-of-order: true
+  flyway:
+    out-of-order: true
 
 app:
   cors:

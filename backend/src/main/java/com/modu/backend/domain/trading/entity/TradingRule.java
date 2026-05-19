@@ -40,6 +40,10 @@ public class TradingRule {
     @Column(name = "daily_loss_limit_amount", nullable = false)
     private Long dailyLossLimitAmount;
 
+    // AI 위임 운용 자금 한도 (KRW). 0 = 미설정 → risk_gate / SignalHandler 모두 검증 skip.
+    @Column(name = "ai_budget_amount", nullable = false)
+    private Long aiBudgetAmount;
+
     @Column(name = "natural_language_rule")
     private String naturalLanguageRule;
 
@@ -64,6 +68,7 @@ public class TradingRule {
             Long takeProfitPct,
             Long maxDailyOrderCount,
             Long dailyLossLimitAmount,
+            Long aiBudgetAmount,
             String naturalLanguageRule,
             Map<String, Object> parsedRuleJson,
             Long version,
@@ -75,6 +80,7 @@ public class TradingRule {
         this.takeProfitPct = takeProfitPct;
         this.maxDailyOrderCount = maxDailyOrderCount;
         this.dailyLossLimitAmount = dailyLossLimitAmount;
+        this.aiBudgetAmount = aiBudgetAmount;
         this.naturalLanguageRule = naturalLanguageRule;
         this.parsedRuleJson = parsedRuleJson;
         this.version = version;
@@ -87,12 +93,14 @@ public class TradingRule {
             Long takeProfitPct,
             Long maxDailyOrderCount,
             Long dailyLossLimitAmount,
+            Long aiBudgetAmount,
             OffsetDateTime updatedAt
     ) {
         this.stopLossPct = stopLossPct;
         this.takeProfitPct = takeProfitPct;
         this.maxDailyOrderCount = maxDailyOrderCount;
         this.dailyLossLimitAmount = dailyLossLimitAmount;
+        this.aiBudgetAmount = aiBudgetAmount;
         this.updatedAt = updatedAt;
     }
 }

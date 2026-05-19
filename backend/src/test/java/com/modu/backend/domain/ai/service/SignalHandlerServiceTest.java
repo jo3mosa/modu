@@ -380,6 +380,124 @@ class SignalHandlerServiceTest {
     }
 
     // ───────────────────────────────────────────────────────────────────
+    // AI 운용 한도 hard rule (이중 게이트 BE 2차)
+    // ───────────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("ai_budget_amount 미설정 (0): 한도 검증 skip → READY")
+    void aiBudgetUnsetSkipped() {
+        AiDecisionMessage msg = buildMessage("completed", "trade", "buy", 700_000L, 70_000.0, 65_000.0, "low");
+        TradingRule rule = TradingRule.builder()
+                .userId(USER_ID)
+                .stopLossPct(5L)
+                .takeProfitPct(10L)
+                .maxDailyOrderCount(10L)
+                .dailyLossLimitAmount(10_000_000L)
+                .aiBudgetAmount(0L)
+                .build();
+        when(tradingRuleRepository.findByUserIdForUpdate(USER_ID)).thenReturn(Optional.of(rule));
+
+        service.handle(msg);
+
+        ArgumentCaptor<AiJudgment> captor = ArgumentCaptor.forClass(AiJudgment.class);
+        verify(aiJudgmentRepository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().getExecutionStatus()).isEqualTo(AiExecutionStatus.READY);
+        verify(orderRepository).saveAndFlush(any(Order.class));
+    }
+
+    @Test
+    @DisplayName("단일 주문이 ai_budget 이하: READY + PESSIMISTIC_WRITE 잠금 호출됨")
+    void aiBudgetWithinReady() {
+        AiDecisionMessage msg = buildMessage("completed", "trade", "buy", 300_000L, 30_000.0, 25_000.0, "low");
+        TradingRule rule = TradingRule.builder()
+                .userId(USER_ID)
+                .stopLossPct(5L)
+                .takeProfitPct(10L)
+                .maxDailyOrderCount(10L)
+                .dailyLossLimitAmount(10_000_000L)
+                .aiBudgetAmount(1_000_000L)
+                .build();
+        when(tradingRuleRepository.findByUserIdForUpdate(USER_ID)).thenReturn(Optional.of(rule));
+        when(tradingRuleRepository.findById(USER_ID)).thenReturn(Optional.of(rule)); // exceedsDailyBuyLimit 가 사용
+        when(orderRepository.sumTodayBuyAmount(USER_ID)).thenReturn(500_000L); // 누적 50만 + 신규 30만 = 80만 < 100만
+
+        service.handle(msg);
+
+        // race 차단 보장 — 잠금 메서드 경유 확인
+        verify(tradingRuleRepository).findByUserIdForUpdate(USER_ID);
+        verify(orderRepository).saveAndFlush(any(Order.class));
+        verify(tradeOrderProducer).publishOrderSubmitted(any());
+    }
+
+    @Test
+    @DisplayName("누적 + 단일 합이 ai_budget 초과: BLOCKED (APPROVAL_REQUIRED 아님)")
+    void aiBudgetExceededBlocked() {
+        AiDecisionMessage msg = buildMessage("completed", "trade", "buy", 700_000L, 70_000.0, 65_000.0, "low");
+        TradingRule rule = TradingRule.builder()
+                .userId(USER_ID)
+                .stopLossPct(5L)
+                .takeProfitPct(10L)
+                .maxDailyOrderCount(10L)
+                .dailyLossLimitAmount(10_000_000L)
+                .aiBudgetAmount(1_000_000L)
+                .build();
+        when(tradingRuleRepository.findByUserIdForUpdate(USER_ID)).thenReturn(Optional.of(rule));
+        when(orderRepository.sumTodayBuyAmount(USER_ID)).thenReturn(500_000L); // 누적 50만 + 신규 70만 = 120만 > 100만
+
+        service.handle(msg);
+
+        ArgumentCaptor<AiJudgment> captor = ArgumentCaptor.forClass(AiJudgment.class);
+        verify(aiJudgmentRepository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().getExecutionStatus()).isEqualTo(AiExecutionStatus.BLOCKED);
+        verify(orderRepository, never()).saveAndFlush(any(Order.class));
+        verify(tradeOrderProducer, never()).publishOrderSubmitted(any());
+    }
+
+    @Test
+    @DisplayName("단일 주문 자체가 ai_budget 초과 (누적 0): BLOCKED")
+    void aiBudgetSingleOrderExceedsBlocked() {
+        AiDecisionMessage msg = buildMessage("completed", "trade", "buy", 2_000_000L, 100_000.0, 90_000.0, "low");
+        TradingRule rule = TradingRule.builder()
+                .userId(USER_ID)
+                .stopLossPct(5L)
+                .takeProfitPct(10L)
+                .maxDailyOrderCount(10L)
+                .dailyLossLimitAmount(10_000_000L)
+                .aiBudgetAmount(1_000_000L)
+                .build();
+        when(tradingRuleRepository.findByUserIdForUpdate(USER_ID)).thenReturn(Optional.of(rule));
+        when(orderRepository.sumTodayBuyAmount(USER_ID)).thenReturn(0L);
+
+        service.handle(msg);
+
+        ArgumentCaptor<AiJudgment> captor = ArgumentCaptor.forClass(AiJudgment.class);
+        verify(aiJudgmentRepository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().getExecutionStatus()).isEqualTo(AiExecutionStatus.BLOCKED);
+        verify(orderRepository, never()).saveAndFlush(any(Order.class));
+    }
+
+    @Test
+    @DisplayName("SELL 은 ai_budget hard rule 적용 안 됨 (BUY 한정) — 잠금도 잡지 않음")
+    void aiBudgetDoesNotApplyToSell() {
+        AiDecisionMessage msg = buildMessage("completed", "trade", "sell", 2_000_000L, 100_000.0, 90_000.0, "low");
+        TradingRule rule = TradingRule.builder()
+                .userId(USER_ID)
+                .stopLossPct(5L)
+                .takeProfitPct(10L)
+                .maxDailyOrderCount(10L)
+                .dailyLossLimitAmount(10_000_000L)
+                .aiBudgetAmount(1_000_000L)
+                .build();
+        when(tradingRuleRepository.findById(USER_ID)).thenReturn(Optional.of(rule));
+
+        service.handle(msg);
+
+        // SELL 경로 — PESSIMISTIC_WRITE 잠금 호출되지 않아야 함 (불필요 lock 회피)
+        verify(tradingRuleRepository, never()).findByUserIdForUpdate(any());
+        verify(orderRepository).saveAndFlush(any(Order.class));
+    }
+
+    // ───────────────────────────────────────────────────────────────────
     // 멱등성
     // ───────────────────────────────────────────────────────────────────
 

@@ -176,6 +176,13 @@ public class SignalHandlerService {
             return AiExecutionStatus.APPROVAL_REQUIRED;
         }
 
+        // BUY 한정 — AI 운용 한도 hard rule (단일 + 누적). 사용자 한도 초과는 협상 불가 → BLOCKED.
+        // AI risk_gate 가 단일 주문은 1차 검증하지만 누적은 실시간 데이터가 필요해 BE 영역 (이중 게이트).
+        // exceedsDailyBuyLimit (APPROVAL_REQUIRED) 보다 앞에 두어 hard rule 이 먼저 판정되도록 함.
+        if ("buy".equalsIgnoreCase(side) && exceedsAiBudget(m.userId(), nullToZero(fd.orderAmount()))) {
+            return AiExecutionStatus.BLOCKED;
+        }
+
         // BUY 한정 일일 한도 초과 체크 (sumTodayBuyAmount 는 BUY 만 합산)
         if ("buy".equalsIgnoreCase(side) && exceedsDailyBuyLimit(m.userId(), nullToZero(fd.orderAmount()))) {
             return AiExecutionStatus.APPROVAL_REQUIRED;
@@ -261,6 +268,26 @@ public class SignalHandlerService {
         if (rule == null) return false;
         long todayTotal = orderRepository.sumTodayBuyAmount(userId);
         return todayTotal + orderAmount > rule.getDailyLossLimitAmount();
+    }
+
+    /**
+     * AI 운용 한도 — 단일 주문 + 오늘 누적 매수액이 사용자 설정 한도를 초과하는지.
+     * AI risk_gate 가 결정 시점 스냅샷으로 단일 주문 1차 검증, 여기서는 실시간 누적까지 2차 검증한다 (이중 게이트).
+     * 위반 시 hard rule 차단 — APPROVAL_REQUIRED 가 아니라 BLOCKED 로 매핑 (resolveExecutionStatus 참조).
+     * rule row 없거나 미설정(0) → 검증 skip (AI risk_gate 와 동일 정책).
+     *
+     * 동시성:
+     * SELECT ... FOR UPDATE 로 사용자 룰 row 를 잠가 같은 사용자의 동시 BUY 요청을 직렬화한다.
+     * (handle() 의 @Transactional 컨텍스트 안에서) 첫 tx 가 commit 될 때까지 두 번째 tx 는 대기 →
+     * 갱신된 누적값으로 검증 → "둘 다 통과" race 차단.
+     */
+    private boolean exceedsAiBudget(Long userId, long orderAmount) {
+        TradingRule rule = tradingRuleRepository.findByUserIdForUpdate(userId).orElse(null);
+        if (rule == null || rule.getAiBudgetAmount() == null || rule.getAiBudgetAmount() <= 0) {
+            return false;
+        }
+        long todayTotal = orderRepository.sumTodayBuyAmount(userId);
+        return todayTotal + orderAmount > rule.getAiBudgetAmount();
     }
 
     // ───────────────────────────────────────────────────────────────────
