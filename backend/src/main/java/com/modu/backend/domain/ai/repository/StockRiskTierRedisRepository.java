@@ -51,14 +51,25 @@ public class StockRiskTierRedisRepository {
      */
     public void saveBatch(Map<String, Integer> stockToTier) {
         if (stockToTier == null || stockToTier.isEmpty()) return;
+        var keySerializer = redisTemplate.getStringSerializer();
         try {
             redisTemplate.executePipelined((org.springframework.data.redis.core.RedisCallback<Object>) connection -> {
                 stockToTier.forEach((stockCode, tier) -> {
-                    if (tier == null || !isValidTier(tier)) {
-                        log.error("[StockRiskTier] batch tier 범위 벗어남 - stockCode: {}, tier: {}", stockCode, tier);
-                        return;
+                    try {
+                        if (tier == null || !isValidTier(tier)) {
+                            log.error("[StockRiskTier] batch tier 범위 벗어남 - stockCode: {}, tier: {}", stockCode, tier);
+                            return;
+                        }
+                        byte[] keyBytes = keySerializer.serialize(key(stockCode));
+                        byte[] valueBytes = keySerializer.serialize(Integer.toString(tier));
+                        if (keyBytes == null || valueBytes == null) {
+                            log.error("[StockRiskTier] batch 직렬화 실패 - stockCode: {}", stockCode);
+                            return;
+                        }
+                        connection.stringCommands().set(keyBytes, valueBytes);
+                    } catch (Exception perEntry) {
+                        log.error("[StockRiskTier] batch 단건 SET 실패 - stockCode: {}, tier: {}", stockCode, tier, perEntry);
                     }
-                    connection.stringCommands().set(key(stockCode).getBytes(), Integer.toString(tier).getBytes());
                 });
                 return null;
             });

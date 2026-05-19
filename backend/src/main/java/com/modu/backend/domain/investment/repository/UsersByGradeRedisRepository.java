@@ -65,16 +65,27 @@ public class UsersByGradeRedisRepository {
      */
     public void addUsersBatch(Map<Integer, ? extends Collection<Long>> gradeToUsers) {
         if (gradeToUsers == null || gradeToUsers.isEmpty()) return;
+        var serializer = redisTemplate.getStringSerializer();
         try {
             redisTemplate.executePipelined((org.springframework.data.redis.core.RedisCallback<Object>) connection -> {
                 gradeToUsers.forEach((gradeInt, userIds) -> {
-                    if (gradeInt == null || !isValidGrade(gradeInt)) {
-                        log.error("[UsersByGrade] batch grade 범위 벗어남 - gradeInt: {}", gradeInt);
-                        return;
+                    try {
+                        if (gradeInt == null || !isValidGrade(gradeInt)) {
+                            log.error("[UsersByGrade] batch grade 범위 벗어남 - gradeInt: {}", gradeInt);
+                            return;
+                        }
+                        if (userIds == null || userIds.isEmpty()) return;
+                        byte[] keyBytes = serializer.serialize(key(gradeInt));
+                        if (keyBytes == null) {
+                            log.error("[UsersByGrade] batch key 직렬화 실패 - gradeInt: {}", gradeInt);
+                            return;
+                        }
+                        byte[][] valueBytes = serializeUserIds(userIds, serializer);
+                        if (valueBytes.length == 0) return;
+                        connection.setCommands().sAdd(keyBytes, valueBytes);
+                    } catch (Exception perGrade) {
+                        log.error("[UsersByGrade] batch 단일 등급 SADD 실패 - gradeInt: {}", gradeInt, perGrade);
                     }
-                    if (userIds == null || userIds.isEmpty()) return;
-                    String[] values = userIds.stream().map(Object::toString).toArray(String[]::new);
-                    connection.setCommands().sAdd(key(gradeInt).getBytes(), toByteArrays(values));
                 });
                 return null;
             });
@@ -104,12 +115,13 @@ public class UsersByGradeRedisRepository {
         return gradeInt >= MIN_GRADE && gradeInt <= MAX_GRADE;
     }
 
-    private static byte[][] toByteArrays(String[] values) {
-        byte[][] result = new byte[values.length][];
-        for (int i = 0; i < values.length; i++) {
-            result[i] = values[i].getBytes();
-        }
-        return result;
+    private static byte[][] serializeUserIds(Collection<Long> userIds,
+            org.springframework.data.redis.serializer.RedisSerializer<String> serializer) {
+        return userIds.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(id -> serializer.serialize(id.toString()))
+                .filter(java.util.Objects::nonNull)
+                .toArray(byte[][]::new);
     }
 
     private static String key(int gradeInt) {
