@@ -127,6 +127,7 @@ def _run_one(
     backtest_user_id: int,
     score_after: bool,
     pm_mock: bool,
+    initial_holdings: str | None = None,
 ) -> bool:
     exp_out = output_dir / name
     exp_out.mkdir(parents=True, exist_ok=True)
@@ -151,6 +152,8 @@ def _run_one(
         cmd.append("--score-after")
     if pm_mock:
         cmd.append("--pm-mock")
+    if initial_holdings:
+        cmd += ["--initial-holdings", initial_holdings]
 
     ret = subprocess.run(cmd, env=env)
     if ret.returncode != 0:
@@ -342,6 +345,8 @@ def main() -> int:
                         help="post_mortem LLM 미호출 (stub). --score-after와 함께 사용")
     parser.add_argument("--report-only", action="store_true",
                         help="실험 재실행 없이 기존 결과로 비교 테이블만 출력")
+    parser.add_argument("--initial-holdings", type=str, default=None,
+                        help="초기 보유 주식 (예: 005930:100,000660:50). run_ai_backtest에 그대로 전달.")
     args = parser.parse_args()
 
     requested = [e.strip() for e in args.experiments.split(",") if e.strip()]
@@ -367,6 +372,7 @@ def main() -> int:
                 backtest_user_id=args.backtest_user_id,
                 score_after=args.score_after,
                 pm_mock=args.pm_mock,
+                initial_holdings=args.initial_holdings,
             )
             if not ok:
                 failed.append(name)
