@@ -56,6 +56,30 @@ _MONGO_DISCONNECT_MARKER = "[MONGO_DISCONNECTED]"
 _MONGO_WAITING_MARKER = "[MONGO_WAITING]"
 _MONGO_RECONNECT_MARKER = "[MONGO_RECONNECTED]"
 
+
+def _dump_equity_curve_partial(portfolio: "PortfolioFn", output_root: Path) -> None:
+    """매 영업일 EOD에 equity_curve.jsonl을 partial dump한다.
+
+    Anthropic harness 원칙의 "구조화된 핸드오프" 적용 — 백테스트 종료를 기다리지
+    않고 매 영업일 결과를 즉시 파일로 노출해, dashboard viewer가 진행 중에도
+    자산 추이 / 정통 메트릭 / KOSPI alpha 카드를 30초 주기로 갱신할 수 있게 한다.
+
+    portfolio가 equity_curve 속성을 노출하지 않거나(다른 PortfolioFn 구현체) 빈 경우
+    silent skip — 머니패스 영향 없음.
+    영업일당 ~수십 KB 이내 작은 파일이라 rewrite 비용 무시 가능.
+    """
+    curve = getattr(portfolio, "equity_curve", None) or []
+    if not curve:
+        return
+    try:
+        output_root.mkdir(parents=True, exist_ok=True)
+        path = output_root / "equity_curve.jsonl"
+        with path.open("w", encoding="utf-8") as f:
+            for snap in curve:
+                f.write(json.dumps(snap, ensure_ascii=False, default=str) + "\n")
+    except Exception:
+        logger.exception("equity_curve partial dump 실패 — 진행은 계속")
+
 # 무한 재시도 간격(초). pymongo의 socketTimeoutMS(60s)·retryReads(1회)로 흡수 안 된
 # 장기 단절을 영업일 단위에서 직접 처리. Postgres 등 다른 예외는 catch하지 않음.
 _MONGO_RETRY_INTERVAL_SEC = 30
@@ -364,6 +388,11 @@ def run(
                 portfolio.mark_to_market(day, close_prices)
             except Exception:
                 logger.exception("portfolio.mark_to_market 실패 day=%s", day)
+
+            # 진행 중 viewer 핸드오프 — 매 영업일 EOD에 equity_curve를 즉시 파일로 dump.
+            # 백테스트 종료를 기다리지 않고 부분 결과(자산 추이 / 정통 메트릭 / KOSPI alpha)를
+            # streamlit dashboard가 실시간으로 표시할 수 있게 한다.
+            _dump_equity_curve_partial(portfolio, output_root)
 
             # resume용 portfolio 상태 dump + 영업일 sentinel 마킹.
             # portfolio가 to_dict를 구현한 경우(SimplePortfolio)만 dump.
