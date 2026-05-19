@@ -13,6 +13,10 @@ from app.utils.json_utils import to_json
 from app.utils.prompt_loader import load_prompt
 
 _PROMPT_PATH = Path(__file__).resolve().parents[2] / "config" / "prompts" / "strategy_manager.txt"
+# debate_0(토론 없음) 모드 전용 — Bull/Bear 발언이 모두 빈 상태에서 호출되며,
+# 토론 평가가 아닌 signals 직접 해석으로 ResearchVerdict 생성. bull_arguments /
+# bear_arguments 변수가 없는 별도 ChatPromptTemplate.
+_PROMPT_PATH_SOLO = Path(__file__).resolve().parents[2] / "config" / "prompts" / "strategy_manager_solo.txt"
 
 _parser = PydanticOutputParser(pydantic_object=ResearchVerdict)
 
@@ -29,7 +33,11 @@ def strategy_manager(state: InvestmentAgentState) -> dict[str, Any]:
     Strategy Manager (Research Manager / debate facilitator).
 
     역할:
-    - investment_debate_state.history(Bull/Bear 자유 텍스트 토론)를 비판적으로 평가한다.
+    - 토론 있음(debate_1/2): investment_debate_state.history(Bull/Bear 자유 텍스트 토론)를
+      비판적으로 평가한다. 기존 프롬프트 사용.
+    - 토론 없음(debate_0): bull_history/bear_history가 모두 빈 상태에서 호출되며,
+      signals 4종을 직접 해석해 결정. strategy_manager_solo.txt 사용 — 토론 평가
+      문구가 제거된 별도 프롬프트라 "토론 부재 → hold" 패턴을 회피.
     - 출력은 ResearchVerdict 스키마(structured)이며, 동일 결정을 StrategyDraft로 변환해
       후속 critic/supervisor 단계 계약을 유지한다.
 
@@ -38,13 +46,17 @@ def strategy_manager(state: InvestmentAgentState) -> dict[str, Any]:
     - 후보 외 종목 선택 시에도 hold로 강등한다.
     """
 
-    chain = load_prompt(str(_PROMPT_PATH)) | get_structured_llm() | _parser
-
     debate_state = state.investment_debate_state or {}
     bull_history: list[str] = debate_state.get("bull_history", [])
     bear_history: list[str] = debate_state.get("bear_history", [])
+    is_debate_empty = not bull_history and not bear_history
+
+    # 토론이 비면 solo 프롬프트로 — bull_arguments/bear_arguments 변수가 없어 inputs에서도 제외.
+    prompt_path = _PROMPT_PATH_SOLO if is_debate_empty else _PROMPT_PATH
+    chain = load_prompt(str(prompt_path)) | get_structured_llm() | _parser
 
     signals = state.analysis_snapshot.get("signals", {}) if state.analysis_snapshot else {}
+    mc = state.memory_context or {}
 
     inputs = {
         "candidate_assets": to_json(state.candidate_assets),
@@ -55,12 +67,16 @@ def strategy_manager(state: InvestmentAgentState) -> dict[str, Any]:
         "portfolio_snapshot": to_json(state.portfolio_snapshot),
         "user_context": to_json(state.user_context),
         "policy_context": to_json(state.policy_context),
-        "memory_context": to_json(state.memory_context),
+        "memory_lessons_aggregate": to_json(mc.get("lessons_aggregate", [])),
+        "memory_loss_pattern_brief": mc.get("loss_pattern_brief", "(해당 없음)"),
+        "memory_similar_decisions": to_json(mc.get("similar_decisions_table", [])),
+        "memory_recent_post_mortems": to_json(mc.get("recent_post_mortems", [])),
         "history_context": to_json(state.history_context),
-        "bull_arguments": _format_arguments(bull_history, "Bull"),
-        "bear_arguments": _format_arguments(bear_history, "Bear"),
         "format_instructions": _parser.get_format_instructions(),
     }
+    if not is_debate_empty:
+        inputs["bull_arguments"] = _format_arguments(bull_history, "Bull")
+        inputs["bear_arguments"] = _format_arguments(bear_history, "Bear")
 
     try:
         verdict = chain.invoke(inputs)

@@ -1,0 +1,536 @@
+{
+  "version": "1.0",
+  "generated_at": "2026-05-17T20:19:49.435842+00:00",
+  "data_period": "2023-01-01 ~ 2024-12-31",
+  "methodology": {
+    "split": "23 탐색 / 24 out-of-sample 검증",
+    "alpha": 0.05,
+    "correction": "Benjamini-Hochberg FDR",
+    "ci_method": "bootstrap n=10000, 95%",
+    "horizon_default": "T+5 거래일 (펀더멘털 가설은 T+20)",
+    "lv_thresholds": {
+      "Lv.3": "|effect_mean| ≥ 0.05",
+      "Lv.2": "0.02 ≤ |effect_mean| < 0.05",
+      "Lv.1": "0.01 ≤ |effect_mean| < 0.02",
+      "Lv.0": "A 단독 19개 (baseline 정보 차원)"
+    },
+    "trigger_definitions": {
+      "transition": "어제 임계 외, 오늘 임계 내 (예: RSI<30 진입). 첫 진입일 1회만 발화.",
+      "is_market_event_true": "공시·뉴스 — 라벨링 시 장중 발생은 익일 시가 진입.",
+      "is_market_event_false": "기술 transition — T+1 시가 진입."
+    }
+  },
+  "counts": {
+    "Lv.3": 1,
+    "Lv.2": 3,
+    "Lv.1": 7,
+    "Lv.0_baseline": 19,
+    "total": 30
+  },
+  "triggers": {
+    "Lv.3": [
+      {
+        "id": "B28",
+        "name": "호재공시 & RSI>70",
+        "category": "double",
+        "kind": "event+transition",
+        "components": [
+          "호재공시",
+          "RSI>70 (이미 과매수)"
+        ],
+        "expected_direction": "two_sided",
+        "main_horizon": 5,
+        "effect_mean": 0.08317,
+        "ci_95_low": 0.06642,
+        "ci_95_high": 0.10096,
+        "n_events": 221,
+        "rationale": "이미 과매수 + 추가 호재 → 추가 상승? 차익실현? 방향 불확실",
+        "warning": "low_sample"
+      }
+    ],
+    "Lv.2": [
+      {
+        "id": "C3",
+        "name": "RSI<30 & 볼린저 하단 & 거래량 급증",
+        "category": "triple",
+        "kind": "transition",
+        "components": [
+          "RSI<30",
+          "BB_lower 터치",
+          "거래량 급증"
+        ],
+        "expected_direction": "positive",
+        "main_horizon": 5,
+        "effect_mean": 0.03493,
+        "ci_95_low": 0.0305,
+        "ci_95_high": 0.03936,
+        "n_events": 2144,
+        "rationale": "패닉 바닥 신호 (B2 강화)"
+      },
+      {
+        "id": "B2",
+        "name": "RSI<30 & 볼린저 하단",
+        "category": "double",
+        "kind": "transition",
+        "components": [
+          "RSI<30 transition",
+          "BB_lower 터치"
+        ],
+        "expected_direction": "positive",
+        "main_horizon": 5,
+        "effect_mean": 0.02628,
+        "ci_95_low": 0.02401,
+        "ci_95_high": 0.02861,
+        "n_events": 6777,
+        "rationale": "모멘텀 과매도 + 가격 범위 하단 동조"
+      },
+      {
+        "id": "C6",
+        "name": "RSI>70 & MFI>80 & 볼린저 상단",
+        "category": "triple",
+        "kind": "transition",
+        "components": [
+          "RSI>70",
+          "MFI>80",
+          "BB_upper"
+        ],
+        "expected_direction": "negative",
+        "main_horizon": 5,
+        "effect_mean": -0.02035,
+        "ci_95_low": -0.0257,
+        "ci_95_high": -0.01475,
+        "n_events": 2730,
+        "rationale": "트리플 과매수 — B4+B5+B6 동시"
+      }
+    ],
+    "Lv.1": [
+      {
+        "id": "B35",
+        "name": "ROE 상위 풀 ∩ RSI<30",
+        "category": "double",
+        "kind": "filter+transition",
+        "components": [
+          "filter: ROE 상위 N%",
+          "trigger: RSI<30 transition"
+        ],
+        "expected_direction": "positive",
+        "main_horizon": 20,
+        "effect_mean": 0.0181,
+        "ci_95_low": 0.01304,
+        "ci_95_high": 0.02325,
+        "n_events": 2574,
+        "rationale": "퀄리티 종목 풀에서 저가 진입 (Quality at low price)"
+      },
+      {
+        "id": "C2",
+        "name": "RSI>70 & MFI>80 & 거래량 급증",
+        "category": "triple",
+        "kind": "transition",
+        "components": [
+          "RSI>70",
+          "MFI>80",
+          "거래량 급증"
+        ],
+        "expected_direction": "negative",
+        "main_horizon": 5,
+        "effect_mean": -0.01605,
+        "ci_95_low": -0.02161,
+        "ci_95_high": -0.01023,
+        "n_events": 2614,
+        "rationale": "이중 과매수 + 시장 동조 (B4 강화)"
+      },
+      {
+        "id": "B5",
+        "name": "RSI>70 & 볼린저 상단",
+        "category": "double",
+        "kind": "transition",
+        "components": [
+          "RSI>70 transition",
+          "BB_upper 터치"
+        ],
+        "expected_direction": "negative",
+        "main_horizon": 5,
+        "effect_mean": -0.01454,
+        "ci_95_low": -0.01794,
+        "ci_95_high": -0.01117,
+        "n_events": 6523,
+        "rationale": "모멘텀 과매수 + 가격 범위 상단 동조"
+      },
+      {
+        "id": "C4",
+        "name": "RSI>70 & 볼린저 상단 & 거래량 급증",
+        "category": "triple",
+        "kind": "transition",
+        "components": [
+          "RSI>70",
+          "BB_upper 터치",
+          "거래량 급증"
+        ],
+        "expected_direction": "negative",
+        "main_horizon": 5,
+        "effect_mean": -0.01446,
+        "ci_95_low": -0.01867,
+        "ci_95_high": -0.01011,
+        "n_events": 4397,
+        "rationale": "과매수 가속 신호 (B5 강화)"
+      },
+      {
+        "id": "B1",
+        "name": "RSI<30 & MFI<20",
+        "category": "double",
+        "kind": "transition",
+        "components": [
+          "RSI<30 transition",
+          "MFI<20 transition"
+        ],
+        "expected_direction": "positive",
+        "main_horizon": 5,
+        "effect_mean": 0.01388,
+        "ci_95_low": 0.01026,
+        "ci_95_high": 0.01769,
+        "n_events": 1884,
+        "rationale": "이중 과매도 → 반등 강화 (모멘텀+자금흐름 동조)"
+      },
+      {
+        "id": "B4",
+        "name": "RSI>70 & MFI>80",
+        "category": "double",
+        "kind": "transition",
+        "components": [
+          "RSI>70 transition",
+          "MFI>80 transition"
+        ],
+        "expected_direction": "negative",
+        "main_horizon": 5,
+        "effect_mean": -0.01282,
+        "ci_95_low": -0.01723,
+        "ci_95_high": -0.00828,
+        "n_events": 4202,
+        "rationale": "이중 과매수 → 조정 강화"
+      },
+      {
+        "id": "B6",
+        "name": "MFI>80 & 볼린저 상단",
+        "category": "double",
+        "kind": "transition",
+        "components": [
+          "MFI>80 transition",
+          "BB_upper 터치"
+        ],
+        "expected_direction": "negative",
+        "main_horizon": 5,
+        "effect_mean": -0.01217,
+        "ci_95_low": -0.01528,
+        "ci_95_high": -0.00902,
+        "n_events": 7243,
+        "rationale": "자금흐름 과매수 + 가격 범위 상단 동조"
+      }
+    ],
+    "Lv.0": [
+      {
+        "id": "A17",
+        "name": "뉴스감성 강양 진입",
+        "category": "single",
+        "kind": "media",
+        "components": [
+          "sentiment_score 임계 상회 transition"
+        ],
+        "expected_direction": "positive",
+        "main_horizon": 5,
+        "effect_mean_2023": 0.01827,
+        "n_events_2023": 5382,
+        "win_rate_2023": 0.5288,
+        "rationale": "미디어 호재 점수 강세",
+        "note": "측정만 (검정 X). baseline 정보 신호."
+      },
+      {
+        "id": "A12",
+        "name": "ATR 급증",
+        "category": "single",
+        "kind": "transition",
+        "components": [
+          "ATR 평소 대비 N배"
+        ],
+        "expected_direction": "two_sided",
+        "main_horizon": 5,
+        "effect_mean_2023": -0.01065,
+        "n_events_2023": 2431,
+        "win_rate_2023": 0.3813,
+        "rationale": "변동성 확장 신호",
+        "note": "측정만 (검정 X). baseline 정보 신호."
+      },
+      {
+        "id": "A9",
+        "name": "볼린저 하단 터치",
+        "category": "single",
+        "kind": "transition",
+        "components": [
+          "가격<=BB_lower"
+        ],
+        "expected_direction": "positive",
+        "main_horizon": 5,
+        "effect_mean_2023": 0.01055,
+        "n_events_2023": 16817,
+        "win_rate_2023": 0.5415,
+        "rationale": "변동성 범위 하단 → 반등 기대",
+        "note": "측정만 (검정 X). baseline 정보 신호."
+      },
+      {
+        "id": "A18",
+        "name": "뉴스감성 강음 진입",
+        "category": "single",
+        "kind": "media",
+        "components": [
+          "sentiment_score 임계 하회 transition"
+        ],
+        "expected_direction": "negative",
+        "main_horizon": 5,
+        "effect_mean_2023": -0.01029,
+        "n_events_2023": 2364,
+        "win_rate_2023": 0.4086,
+        "rationale": "미디어 악재 점수 강세",
+        "note": "측정만 (검정 X). baseline 정보 신호."
+      },
+      {
+        "id": "A1",
+        "name": "RSI<30 진입",
+        "category": "single",
+        "kind": "transition",
+        "components": [
+          "RSI<30 transition"
+        ],
+        "expected_direction": "positive",
+        "main_horizon": 5,
+        "effect_mean_2023": 0.00978,
+        "n_events_2023": 8155,
+        "win_rate_2023": 0.5425,
+        "rationale": "기술적 과매도 → 반등 기대",
+        "note": "측정만 (검정 X). baseline 정보 신호."
+      },
+      {
+        "id": "A19",
+        "name": "뉴스감성 급변",
+        "category": "single",
+        "kind": "media",
+        "components": [
+          "|Δsentiment| > 임계"
+        ],
+        "expected_direction": "two_sided",
+        "main_horizon": 5,
+        "effect_mean_2023": 0.00849,
+        "n_events_2023": 14201,
+        "win_rate_2023": 0.49,
+        "rationale": "감성 점수 급변 (방향성 X)",
+        "note": "측정만 (검정 X). baseline 정보 신호."
+      },
+      {
+        "id": "A14",
+        "name": "호재공시 발생",
+        "category": "single",
+        "kind": "event",
+        "components": [
+          "impact_level=positive"
+        ],
+        "expected_direction": "positive",
+        "main_horizon": 5,
+        "effect_mean_2023": 0.00781,
+        "n_events_2023": 7087,
+        "win_rate_2023": 0.4936,
+        "rationale": "긍정적 공시",
+        "note": "측정만 (검정 X). baseline 정보 신호."
+      },
+      {
+        "id": "A15",
+        "name": "악재공시 발생",
+        "category": "single",
+        "kind": "event",
+        "components": [
+          "impact_level=negative"
+        ],
+        "expected_direction": "negative",
+        "main_horizon": 5,
+        "effect_mean_2023": 0.00531,
+        "n_events_2023": 3450,
+        "win_rate_2023": 0.4212,
+        "rationale": "부정적 공시",
+        "note": "측정만 (검정 X). baseline 정보 신호."
+      },
+      {
+        "id": "A6",
+        "name": "MACD 데드크로스",
+        "category": "single",
+        "kind": "transition",
+        "components": [
+          "MACD 데드"
+        ],
+        "expected_direction": "negative",
+        "main_horizon": 5,
+        "effect_mean_2023": 0.00419,
+        "n_events_2023": 22314,
+        "win_rate_2023": 0.4793,
+        "rationale": "모멘텀 하락 전환",
+        "note": "측정만 (검정 X). baseline 정보 신호."
+      },
+      {
+        "id": "A10",
+        "name": "볼린저 상단 터치",
+        "category": "single",
+        "kind": "transition",
+        "components": [
+          "가격>=BB_upper"
+        ],
+        "expected_direction": "negative",
+        "main_horizon": 5,
+        "effect_mean_2023": -0.00414,
+        "n_events_2023": 16815,
+        "win_rate_2023": 0.4024,
+        "rationale": "변동성 범위 상단 → 조정 기대",
+        "note": "측정만 (검정 X). baseline 정보 신호."
+      },
+      {
+        "id": "A8",
+        "name": "SMA20 하향 돌파",
+        "category": "single",
+        "kind": "transition",
+        "components": [
+          "종가<SMA20 transition"
+        ],
+        "expected_direction": "negative",
+        "main_horizon": 5,
+        "effect_mean_2023": 0.00405,
+        "n_events_2023": 33478,
+        "win_rate_2023": 0.4698,
+        "rationale": "단기 추세 하락 전환",
+        "note": "측정만 (검정 X). baseline 정보 신호."
+      },
+      {
+        "id": "A2",
+        "name": "RSI>70 진입",
+        "category": "single",
+        "kind": "transition",
+        "components": [
+          "RSI>70 transition"
+        ],
+        "expected_direction": "negative",
+        "main_horizon": 5,
+        "effect_mean_2023": -0.00356,
+        "n_events_2023": 7817,
+        "win_rate_2023": 0.4068,
+        "rationale": "기술적 과매수 → 조정 기대",
+        "note": "측정만 (검정 X). baseline 정보 신호."
+      },
+      {
+        "id": "A11",
+        "name": "볼린저 밴드폭 급증",
+        "category": "single",
+        "kind": "transition",
+        "components": [
+          "BB_width 평소 대비 N배"
+        ],
+        "expected_direction": "two_sided",
+        "main_horizon": 5,
+        "effect_mean_2023": -0.00284,
+        "n_events_2023": 8273,
+        "win_rate_2023": 0.4441,
+        "rationale": "변동성 확장 = 큰 가격 움직임 임박 (방향성 X)",
+        "note": "측정만 (검정 X). baseline 정보 신호."
+      },
+      {
+        "id": "A16",
+        "name": "URGENT 공시 발생",
+        "category": "single",
+        "kind": "event",
+        "components": [
+          "URGENT 키워드 매칭"
+        ],
+        "expected_direction": "negative",
+        "main_horizon": 5,
+        "effect_mean_2023": -0.00212,
+        "n_events_2023": 1485,
+        "win_rate_2023": 0.4276,
+        "rationale": "거래정지/관리종목/상장폐지 등 긴급 사안",
+        "note": "측정만 (검정 X). baseline 정보 신호."
+      },
+      {
+        "id": "A3",
+        "name": "MFI<20 진입",
+        "category": "single",
+        "kind": "transition",
+        "components": [
+          "MFI<20 transition"
+        ],
+        "expected_direction": "positive",
+        "main_horizon": 5,
+        "effect_mean_2023": 0.00192,
+        "n_events_2023": 8545,
+        "win_rate_2023": 0.468,
+        "rationale": "자금 흐름 과매도 → 반등 기대",
+        "note": "측정만 (검정 X). baseline 정보 신호."
+      },
+      {
+        "id": "A5",
+        "name": "MACD 골든크로스",
+        "category": "single",
+        "kind": "transition",
+        "components": [
+          "MACD 골든"
+        ],
+        "expected_direction": "positive",
+        "main_horizon": 5,
+        "effect_mean_2023": -0.00169,
+        "n_events_2023": 23091,
+        "win_rate_2023": 0.4262,
+        "rationale": "모멘텀 상승 전환",
+        "note": "측정만 (검정 X). baseline 정보 신호."
+      },
+      {
+        "id": "A4",
+        "name": "MFI>80 진입",
+        "category": "single",
+        "kind": "transition",
+        "components": [
+          "MFI>80 transition"
+        ],
+        "expected_direction": "negative",
+        "main_horizon": 5,
+        "effect_mean_2023": -0.00136,
+        "n_events_2023": 14149,
+        "win_rate_2023": 0.423,
+        "rationale": "자금 흐름 과매수 → 조정 기대",
+        "note": "측정만 (검정 X). baseline 정보 신호."
+      },
+      {
+        "id": "A13",
+        "name": "거래량 급증",
+        "category": "single",
+        "kind": "transition",
+        "components": [
+          "거래량 > 20일평균 × N"
+        ],
+        "expected_direction": "two_sided",
+        "main_horizon": 5,
+        "effect_mean_2023": 0.00091,
+        "n_events_2023": 36773,
+        "win_rate_2023": 0.4399,
+        "rationale": "시장 관심 급증 (방향성은 가격으로 결정)",
+        "note": "측정만 (검정 X). baseline 정보 신호."
+      },
+      {
+        "id": "A7",
+        "name": "SMA20 상향 돌파",
+        "category": "single",
+        "kind": "transition",
+        "components": [
+          "종가>SMA20 transition"
+        ],
+        "expected_direction": "positive",
+        "main_horizon": 5,
+        "effect_mean_2023": -0.00038,
+        "n_events_2023": 34467,
+        "win_rate_2023": 0.4308,
+        "rationale": "단기 추세 상승 전환",
+        "note": "측정만 (검정 X). baseline 정보 신호."
+      }
+    ]
+  }
+}

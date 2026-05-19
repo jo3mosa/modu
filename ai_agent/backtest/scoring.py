@@ -296,7 +296,16 @@ def _persist_reflection(persist_store: Any, scored: dict[str, Any]) -> bool | No
 
 
 def _default_post_mortem(**kwargs):
-    """import 지연 — backtest 모듈 로딩 시 LangChain 비용 없음."""
+    """import 지연 — backtest 모듈 로딩 시 LangChain 비용 없음.
+
+    `python -m ai_agent.backtest.run_ai_backtest`로 실행되면 sys.path에 repo root만
+    있어 `from app.*` import가 실패한다. graph_decision adapter와 동일한 패턴으로
+    ai_agent 디렉터리를 sys.path에 보강.
+    """
+    import sys
+    _AI_AGENT_ROOT = Path(__file__).resolve().parents[1]  # modu-reference/ai_agent
+    if str(_AI_AGENT_ROOT) not in sys.path:
+        sys.path.insert(0, str(_AI_AGENT_ROOT))
     from app.agents.feedback.post_mortem_agent import post_mortem_agent
     return post_mortem_agent(**kwargs)
 

@@ -6,20 +6,21 @@ streamlit selectbox)는 registry를 단일 source로 동작한다.
 
 ModeSpec 필드:
     factory     — (backtest_user_id, engine) → DecisionFn
-                  random/mock은 인자 사용 안 함. A/B는 LangGraph 빌더에 mode 문자열 전달.
+                  random/mock은 인자 사용 안 함. debate_*는 LangGraph 빌더에
+                  mode 문자열 전달.
     description — UI/도움말에 노출되는 한 줄 설명
     uses_llm    — LLM 호출 여부 (cost 안내/key 검증)
     uses_db     — ai_judgments INSERT 여부 (engine 필요 + ensure_user 필요)
                   False면 reflection loop 안 닫힘 — baseline 비교용 mode.
 
 신규 mode 등록 예:
-    "C": ModeSpec(
-        factory=lambda uid, eng: _build_graph_factory("C")(uid, eng),
-        description="LangGraph mode C — context_loader → critic → decision",
+    "debate_3": ModeSpec(
+        factory=_build_graph_factory("debate_3"),
+        description="[토론 3라운드] 룰 트리거 → Bull/Bear 3R → Strategy → Decision",
         uses_llm=True,
         uses_db=True,
     ),
-새 LangGraph 변형이면 app/graph/builder.py의 build_investment_graph에도 분기 추가 필요.
+새 토론 라운드 추가 시 app/graph/builder.py의 _DEBATE_ROUNDS에도 항목 추가 필요.
 """
 from __future__ import annotations
 
@@ -67,10 +68,11 @@ def _build_always_trigger_factory() -> Callable[[int, Any], Any]:
 
 
 def _build_graph_factory(mode_name: str) -> Callable[[int, Any], DecisionFn]:
-    """LangGraph mode (A/B/...) 의 factory 생성.
+    """LangGraph mode (debate_0/debate_1/debate_2/...) 의 factory 생성.
 
     Args:
-        mode_name: build_investment_graph가 받는 mode 문자열.
+        mode_name: build_investment_graph가 받는 mode 문자열. app/graph/builder.py의
+            _DEBATE_ROUNDS에 등록된 키와 일치해야 한다.
     """
     def factory(backtest_user_id: int, engine: Any) -> DecisionFn:
         from .adapters.graph_decision import make_graph_decision_fn
@@ -95,22 +97,28 @@ MODE_REGISTRY: dict[str, ModeSpec] = {
         uses_llm=False,
         uses_db=False,
     ),
-    "rule_trigger": ModeSpec(
-        factory=_build_graph_factory("A"),
-        description="[우리 방식] 지표 룰 트리거 → LangGraph Bull/Bear 토론 → 결정",
-        uses_llm=True,
-        uses_db=True,
-    ),
     "daily_scan": ModeSpec(
-        factory=_build_graph_factory("A"),
-        description="[TradingAgents 방식] 전 종목 매일 LangGraph 진입, HOLD=사실상 패스",
+        factory=_build_graph_factory("debate_1"),
+        description="[TradingAgents 방식] 전 종목 매일 LangGraph 진입 (Bull/Bear 1R), HOLD=사실상 패스",
         uses_llm=True,
         uses_db=True,
         signal_factory=_build_always_trigger_factory(),
     ),
-    "single_agent": ModeSpec(
-        factory=_build_graph_factory("B"),
-        description="[ablation] Strategy → Decision 직결 (Bull/Bear 토론 없음)",
+    "debate_0": ModeSpec(
+        factory=_build_graph_factory("debate_0"),
+        description="[토론 0라운드] 룰 트리거 → Strategy → Decision (Bull/Bear 토론 없음, ablation)",
+        uses_llm=True,
+        uses_db=True,
+    ),
+    "debate_1": ModeSpec(
+        factory=_build_graph_factory("debate_1"),
+        description="[토론 1라운드] 룰 트리거 → Bull/Bear 1R → Strategy → Decision (MVP)",
+        uses_llm=True,
+        uses_db=True,
+    ),
+    "debate_2": ModeSpec(
+        factory=_build_graph_factory("debate_2"),
+        description="[토론 2라운드] 룰 트리거 → Bull/Bear 2R → Strategy → Decision",
         uses_llm=True,
         uses_db=True,
     ),

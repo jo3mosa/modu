@@ -59,7 +59,7 @@ DB_PASSWORD=...
 # Mongo
 MONGO_URI=mongodb://...
 
-# LLM (mode A/B 사용 시 필수)
+# LLM (debate_* / daily_scan 사용 시 필수)
 GMS_KEY=...
 ANTHROPIC_API_KEY=...           # claude profile 사용 시
 XAI_API_KEY=...                 # grok profile 사용 시
@@ -81,13 +81,13 @@ python -m ai_agent.backtest.run_ai_backtest \
 ```
 → trigger 생성 + JSONL 출력 확인. 데이터/Mongo/Postgres 정상이면 통과.
 
-### 2. 본 실험 (mode A — Bull/Bear 토론, 실 LLM)
+### 2. 본 실험 (debate_1 — Bull/Bear 1라운드 토론, 실 LLM)
 ```bash
 python -m ai_agent.backtest.run_ai_backtest \
-    --mode A \
+    --mode debate_1 \
     --start 2024-01-02 --end 2024-01-31 \
     --watchlist 005930,000660,035720 \
-    --output backtest_out/mode_A \
+    --output backtest_out/debate_1 \
     --score-after --pm-mock --holding-days 7
 ```
 - `--score-after`: 결정 JSONL을 읽어 raw_return + post_mortem 부착 → `scored_*.jsonl` 생성
@@ -100,16 +100,18 @@ python -m ai_agent.backtest.run_ai_backtest \
 - **summary `stats.equity_metrics`**: total_return / CAGR / Sharpe / Sortino / Calmar / MaxDD. `event_loop.run()` 종료 시 자동 산출.
 - **stop_fills / target_fills**: `SimplePortfolio.evaluate_open_positions`로 보유 기간 중 손절/익절 도달해 자동 청산된 건수. summary `stats`에 포함.
 
-### 3. ablation 비교 (A vs B vs random)
+### 3. 토론 round ablation 비교 (debate_0 vs debate_1 vs debate_2)
 ```bash
-for mode in random A B; do
+for mode in debate_0 debate_1 debate_2; do
     python -m ai_agent.backtest.run_ai_backtest \
         --mode $mode --start 2024-01-02 --end 2024-01-31 \
         --watchlist 005930,000660,035720 \
-        --output backtest_out/mode_$mode \
+        --output backtest_out/$mode \
+        --backtest-user-id 9900${mode#debate_} \
         --score-after --pm-mock
 done
 ```
+`--backtest-user-id`를 mode별로 분리해 memory_context 오염 차단.
 
 ### 4. 결과 시각화
 ```bash
@@ -117,7 +119,7 @@ cd C:/Users/SSAFY/Desktop/modu-reference/ai_agent
 pip install -r requirements-dashboard.txt
 streamlit run dashboards/backtest_viewer.py
 # → http://localhost:8501
-# 사이드바에서 backtest_out/mode_A/scored_*.jsonl 등 선택
+# 사이드바에서 backtest_out/debate_1/scored_*.jsonl 등 선택
 ```
 
 ## dummy data로 빠른 검증 (Postgres/Mongo 없이)
@@ -153,16 +155,16 @@ ai_agent/backtest/
 ├── data/                     # 정적 입력 (kospi_daily.csv 등) — gitignore
 ├── dummy/                    # dummy JSONL 산출물 — gitignore
 ├── runs/                     # ★ backtest 실행 결과 — gitignore
-│   ├── mode_A_2week/
+│   ├── debate_1_2week/
 │   │   ├── triggers_2024-01-02.jsonl   # DA event_loop 결과
 │   │   ├── scored_2024-01-02.jsonl     # --score-after 결과
 │   │   └── summary_<run_id>.json       # 전체 통계
-│   ├── mode_A_2024/
+│   ├── debate_1_2024/
 │   └── ...
 └── logs/                     # nohup 로그 — gitignore
 ```
 
-`run_ai_backtest --output` default가 `runs/default`. 모드/기간별로 `runs/mode_A_2024` 같이 지정 권장.
+`run_ai_backtest --output` default가 `runs/default`. 모드/기간별로 `runs/debate_1_2024` 같이 지정 권장.
 
 `scored_*.jsonl`이 dashboard / LLM-as-Judge의 평가 입력.
 
@@ -173,5 +175,5 @@ ai_agent/backtest/
 | `could not translate host name "postgres"` | `.env`의 `DB_HOST=localhost`로 변경 (docker 외부 포트 사용) |
 | `필수 환경변수 누락: DATABASE_URL` | 분리 변수(DB_HOST/PORT/NAME/USERNAME) 모두 채워졌나 확인 |
 | `MONGO_URI 누락` | docker compose의 `mongo` 외부 포트 매핑 확인 + `.env`에 `MONGO_URI=mongodb://localhost:포트` |
-| `GMS_KEY가 .env에 없습니다` | mode A/B 사용 시 필수 |
+| `GMS_KEY가 .env에 없습니다` | debate_* / daily_scan 사용 시 필수 |
 | watchlist 없는 날 — fill 0건 | `--start/--end` 기간 내 daily_ohlcv가 있는지 dump import 확인 |

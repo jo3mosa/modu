@@ -49,6 +49,10 @@ PRICE_SPIKE_DOWN_PCT = -7.0   # PRICE-002
 SENT_POSITIVE_LINE = 60.0     # SENT-001
 SENT_NEGATIVE_LINE = -60.0    # SENT-002
 
+# QUAL-001: ROE 상위 N% 풀. roe_rank_pct 0=최상위, 1=최하위.
+# 백테스트 B35 이 0.20 으로 통과. compute_fundamental_ranks 가 사전 계산.
+ROE_TOP_PERCENTILE = 0.20
+
 
 # ─── 안전 접근 헬퍼 ─────────────────────────────────────────────────────────
 
@@ -168,6 +172,125 @@ def _rule_dart_001(s: Signal) -> bool:
     return bool(_get(s.signals, "event", "has_urgent_issue"))
 
 
+# ─── 조합 트리거 (백테스트 채택 11개) ──────────────────────────────────────
+#
+# 모두 state 기반 (현재값만 검사). cooldown 으로 transition 효과 재현 —
+# REV/TPL/EVT 24h, QUAL 48h. cooldown_manager.COOLDOWN_TTL_SECONDS 참조.
+#
+# 매핑 (live ID ↔ 백테스트 가설 ID):
+#   REV-001 ↔ B1   이중 과매도 (RSI<30 & MFI<20)
+#   REV-002 ↔ B2   RSI<30 & 볼린저 하단
+#   REV-003 ↔ B4   이중 과매수 (RSI>70 & MFI>80)
+#   REV-004 ↔ B5   RSI>70 & 볼린저 상단
+#   REV-005 ↔ B6   MFI>80 & 볼린저 상단
+#   QUAL-001 ↔ B35  ROE 상위 풀 ∩ RSI<30 (Fama-French Quality)
+#   EVT-001 ↔ B28  호재공시 & RSI>70 (모멘텀 가속)
+#   TPL-001 ↔ C2   RSI>70 & MFI>80 & 거래량 급증
+#   TPL-002 ↔ C3   RSI<30 & 볼린저 하단 & 거래량 급증 (패닉 바닥)
+#   TPL-003 ↔ C4   RSI>70 & 볼린저 상단 & 거래량 급증
+#   TPL-004 ↔ C6   RSI>70 & MFI>80 & 볼린저 상단
+
+
+# REV-001: RSI<30 & MFI<20 (B1)
+def _rule_rev_001(s: Signal) -> bool:
+    rsi = _get(s.signals, "technical", "momentum", "rsi_14")
+    mfi = _get(s.signals, "technical", "volume", "mfi_14")
+    return (rsi is not None and rsi <= RSI_OVERSOLD_LINE
+            and mfi is not None and mfi <= MFI_OVERSOLD_LINE)
+
+
+# REV-002: RSI<30 & 볼린저 하단 (B2)
+def _rule_rev_002(s: Signal) -> bool:
+    rsi = _get(s.signals, "technical", "momentum", "rsi_14")
+    bb_pos = _get(s.signals, "technical", "volatility", "bollinger_position")
+    return (rsi is not None and rsi <= RSI_OVERSOLD_LINE
+            and bb_pos == "lower_breakout")
+
+
+# REV-003: RSI>70 & MFI>80 (B4)
+def _rule_rev_003(s: Signal) -> bool:
+    rsi = _get(s.signals, "technical", "momentum", "rsi_14")
+    mfi = _get(s.signals, "technical", "volume", "mfi_14")
+    return (rsi is not None and rsi >= RSI_OVERBOUGHT_LINE
+            and mfi is not None and mfi >= MFI_OVERBOUGHT_LINE)
+
+
+# REV-004: RSI>70 & 볼린저 상단 (B5)
+def _rule_rev_004(s: Signal) -> bool:
+    rsi = _get(s.signals, "technical", "momentum", "rsi_14")
+    bb_pos = _get(s.signals, "technical", "volatility", "bollinger_position")
+    return (rsi is not None and rsi >= RSI_OVERBOUGHT_LINE
+            and bb_pos == "upper_breakout")
+
+
+# REV-005: MFI>80 & 볼린저 상단 (B6)
+def _rule_rev_005(s: Signal) -> bool:
+    mfi = _get(s.signals, "technical", "volume", "mfi_14")
+    bb_pos = _get(s.signals, "technical", "volatility", "bollinger_position")
+    return (mfi is not None and mfi >= MFI_OVERBOUGHT_LINE
+            and bb_pos == "upper_breakout")
+
+
+# QUAL-001: ROE 상위 20% 풀 ∩ RSI<30 (B35 — Fama-French Quality at low price)
+# roe_rank_pct 0=최상위 → ≤ 0.20 이면 상위 20%.
+def _rule_qual_001(s: Signal) -> bool:
+    rsi = _get(s.signals, "technical", "momentum", "rsi_14")
+    roe_rank = _get(s.signals, "fundamental", "profitability", "roe_rank_pct")
+    return (rsi is not None and rsi <= RSI_OVERSOLD_LINE
+            and roe_rank is not None and roe_rank <= ROE_TOP_PERCENTILE)
+
+
+# EVT-001: 호재공시 & RSI>70 (B28 — 모멘텀 가속, 역설적 가설)
+# recent_disclosures 에 impact_level=positive 가 하나라도 있고 RSI 가 과매수 상태.
+# LOOKBACK_DAYS=2 라 최근 2일 윈도우 — 백테스트 window_days=2 와 일치.
+def _rule_evt_001(s: Signal) -> bool:
+    rsi = _get(s.signals, "technical", "momentum", "rsi_14")
+    if rsi is None or rsi < RSI_OVERBOUGHT_LINE:
+        return False
+    discls = _get(s.signals, "event", "recent_disclosures") or []
+    return any(d.get("impact_level") == "positive" for d in discls)
+
+
+# TPL-001: RSI>70 & MFI>80 & 거래량 급증 (C2)
+def _rule_tpl_001(s: Signal) -> bool:
+    rsi = _get(s.signals, "technical", "momentum", "rsi_14")
+    mfi = _get(s.signals, "technical", "volume", "mfi_14")
+    vol_spike = _get(s.signals, "technical", "snapshot", "volume_spike")
+    return (rsi is not None and rsi >= RSI_OVERBOUGHT_LINE
+            and mfi is not None and mfi >= MFI_OVERBOUGHT_LINE
+            and bool(vol_spike))
+
+
+# TPL-002: RSI<30 & 볼린저 하단 & 거래량 급증 (C3 — 패닉 바닥)
+def _rule_tpl_002(s: Signal) -> bool:
+    rsi = _get(s.signals, "technical", "momentum", "rsi_14")
+    bb_pos = _get(s.signals, "technical", "volatility", "bollinger_position")
+    vol_spike = _get(s.signals, "technical", "snapshot", "volume_spike")
+    return (rsi is not None and rsi <= RSI_OVERSOLD_LINE
+            and bb_pos == "lower_breakout"
+            and bool(vol_spike))
+
+
+# TPL-003: RSI>70 & 볼린저 상단 & 거래량 급증 (C4)
+def _rule_tpl_003(s: Signal) -> bool:
+    rsi = _get(s.signals, "technical", "momentum", "rsi_14")
+    bb_pos = _get(s.signals, "technical", "volatility", "bollinger_position")
+    vol_spike = _get(s.signals, "technical", "snapshot", "volume_spike")
+    return (rsi is not None and rsi >= RSI_OVERBOUGHT_LINE
+            and bb_pos == "upper_breakout"
+            and bool(vol_spike))
+
+
+# TPL-004: RSI>70 & MFI>80 & 볼린저 상단 (C6 — 거래량 없는 트리플 과매수)
+def _rule_tpl_004(s: Signal) -> bool:
+    rsi = _get(s.signals, "technical", "momentum", "rsi_14")
+    mfi = _get(s.signals, "technical", "volume", "mfi_14")
+    bb_pos = _get(s.signals, "technical", "volatility", "bollinger_position")
+    return (rsi is not None and rsi >= RSI_OVERBOUGHT_LINE
+            and mfi is not None and mfi >= MFI_OVERBOUGHT_LINE
+            and bb_pos == "upper_breakout")
+
+
 # ─── 룰 레지스트리 ──────────────────────────────────────────────────────────
 
 # rule_id → check function. 추가 시 여기에만 등록하면 detect 가 자동 적용.
@@ -189,6 +312,18 @@ RULES: dict[str, callable] = {
     "SENT-001":  _rule_sent_001,
     "SENT-002":  _rule_sent_002,
     "DART-001":  _rule_dart_001,
+    # 조합 트리거 — 백테스트 채택 11개.
+    "REV-001":   _rule_rev_001,
+    "REV-002":   _rule_rev_002,
+    "REV-003":   _rule_rev_003,
+    "REV-004":   _rule_rev_004,
+    "REV-005":   _rule_rev_005,
+    "QUAL-001":  _rule_qual_001,
+    "EVT-001":   _rule_evt_001,
+    "TPL-001":   _rule_tpl_001,
+    "TPL-002":   _rule_tpl_002,
+    "TPL-003":   _rule_tpl_003,
+    "TPL-004":   _rule_tpl_004,
 }
 
 
@@ -212,6 +347,18 @@ RULE_REASONS: dict[str, str] = {
     "SENT-001":  "긍정 뉴스 강세",
     "SENT-002":  "부정 뉴스 강세",
     "DART-001":  "긴급 공시",
+    # 조합 트리거 — 백테스트 채택 11개.
+    "REV-001":   "이중 과매도 (RSI+MFI)",
+    "REV-002":   "RSI 과매도 + 볼린저 하단",
+    "REV-003":   "이중 과매수 (RSI+MFI)",
+    "REV-004":   "RSI 과매수 + 볼린저 상단",
+    "REV-005":   "MFI 과매수 + 볼린저 상단",
+    "QUAL-001":  "퀄리티 종목 저가 매수 (ROE 상위 + RSI 과매도)",
+    "EVT-001":   "호재공시 + RSI 과매수 (모멘텀 가속)",
+    "TPL-001":   "트리플 과매수 패닉 (RSI+MFI+거래량)",
+    "TPL-002":   "트리플 과매도 패닉 (RSI+볼린저+거래량)",
+    "TPL-003":   "트리플 과매수 가속 (RSI+볼린저+거래량)",
+    "TPL-004":   "트리플 과매수 (RSI+MFI+볼린저)",
 }
 
 

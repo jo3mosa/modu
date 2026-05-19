@@ -21,11 +21,17 @@ class McNemarResult:
 def mcnemar_paired(
     mode_a_hits: Sequence[bool],
     mode_b_hits: Sequence[bool],
+    label_a: str = "mode A",
+    label_b: str = "mode B",
 ) -> McNemarResult:
     """McNemar's exact test (이항분포 기반).
 
     같은 trigger 인덱스의 두 모드 hit 결과를 받아 차이의 p-value를 반환.
     H0: 두 모드의 hit 확률이 같다.
+
+    label_a / label_b: interpretation 문자열에 표시할 mode 라벨.
+        호출자가 실제 mode 이름(예: "debate_1", "debate_2")을 넘기면
+        결과 해석이 그대로 노출된다.
     """
     if len(mode_a_hits) != len(mode_b_hits):
         raise ValueError(
@@ -42,7 +48,7 @@ def mcnemar_paired(
     one_sided = sum(comb(n, i) for i in range(k + 1)) / (2 ** n)
     p = min(1.0, 2 * one_sided)
 
-    interp = _interpret_mcnemar(b, c, p)
+    interp = _interpret_mcnemar(b, c, p, label_a, label_b)
     return McNemarResult(b=b, c=c, p_value=p, interpretation=interp)
 
 
@@ -73,8 +79,8 @@ def bootstrap_ci(
     return (samples[lo_idx], sum(values) / n, samples[hi_idx])
 
 
-def _interpret_mcnemar(b: int, c: int, p: float) -> str:
+def _interpret_mcnemar(b: int, c: int, p: float, label_a: str, label_b: str) -> str:
     if p >= 0.05:
         return f"유의미한 차이 없음 (p={p:.3f})"
-    winner = "mode A" if b > c else "mode B"
+    winner = label_a if b > c else label_b
     return f"{winner}가 유의미하게 더 자주 hit (p={p:.3f})"

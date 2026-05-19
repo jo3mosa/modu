@@ -332,14 +332,28 @@ def crawl_one_source(source: dict, collection, session) -> dict:
             "keywords":     list(getattr(entry, "tags", []) and
                                  [t.term for t in entry.tags] or []),
             "crawled_at":   datetime.now(timezone.utc),
-            "sentiment":    sentiment,       # FinancialSentimentAnalyzer.analyze() 결과 또는 None
             "stock_codes":  stock_codes,     # 매핑된 종목 (없으면 [])
         }
+        # sentiment 결과는 top-level 5+1 필드로 풀어서 저장 — 백필 스크립트
+        # (import_news_sentiment.py) 와 동일 schema 유지. 백테스트
+        # signal_generator 가 top-level 'sentiment_score' 만 읽기 때문에
+        # nested `sentiment` 필드로 저장하면 백테스트에서 보이지 않는다.
+        if sentiment:
+            doc.update({
+                "sentiment_score":      sentiment.get("sentiment_score"),
+                "sentiment_confidence": sentiment.get("confidence"),
+                "sentiment_pos_prob":   sentiment.get("pos_prob"),
+                "sentiment_neu_prob":   sentiment.get("neu_prob"),
+                "sentiment_neg_prob":   sentiment.get("neg_prob"),
+                "sentiment_updated_at": datetime.now(timezone.utc),
+            })
 
         try:
             collection.update_one(
                 {"_id": article_id},
-                {"$set": doc},
+                # $unset: 옛 nested `sentiment` 필드 제거 — schema 통일 마이그레이션과 정합.
+                # 새 doc 에는 영향 없고 옛 doc 만 정리.
+                {"$set": doc, "$unset": {"sentiment": ""}},
                 upsert=True,
             )
             stats["fetched"] += 1
@@ -380,7 +394,10 @@ def update_sentiment_redis(collection, target_stock_codes: set[str]) -> int:
     cutoff = (datetime.now(KST) - timedelta(hours=SENTIMENT_LOOKBACK_HOURS)).strftime(
         "%Y-%m-%dT%H:%M:%S"
     )
-    required_keys = ("sentiment_score", "confidence", "pos_prob", "neu_prob", "neg_prob")
+    # top-level schema (백필 스크립트 + 통일된 라이브 collector 양쪽 공통).
+    required_keys = ("sentiment_score", "sentiment_confidence",
+                     "sentiment_pos_prob", "sentiment_neu_prob", "sentiment_neg_prob")
+    projection = {k: 1 for k in required_keys}
     written = 0
     for stock_code in target_stock_codes:
         # 24h 안 그 종목 기사 + sentiment 분석된 것만
@@ -388,9 +405,9 @@ def update_sentiment_redis(collection, target_stock_codes: set[str]) -> int:
             {
                 "stock_codes": stock_code,
                 "published_at": {"$gte": cutoff},
-                "sentiment": {"$exists": True, "$ne": None},
+                "sentiment_score": {"$exists": True, "$ne": None},
             },
-            {"sentiment": 1},
+            projection,
         ))
         if not docs:
             continue
@@ -399,17 +416,16 @@ def update_sentiment_redis(collection, target_stock_codes: set[str]) -> int:
         # 직접 인덱싱 시 KeyError 로 집계 전체가 멈추는 것 방지.
         valid = [
             d for d in docs
-            if isinstance(d.get("sentiment"), dict)
-            and all(k in d["sentiment"] for k in required_keys)
+            if all(d.get(k) is not None for k in required_keys)
         ]
         if not valid:
             continue
         n = len(valid)
-        avg_score = sum(d["sentiment"]["sentiment_score"] for d in valid) / n
-        avg_conf  = sum(d["sentiment"]["confidence"]      for d in valid) / n
-        avg_pos   = sum(d["sentiment"]["pos_prob"]        for d in valid) / n
-        avg_neu   = sum(d["sentiment"]["neu_prob"]        for d in valid) / n
-        avg_neg   = sum(d["sentiment"]["neg_prob"]        for d in valid) / n
+        avg_score = sum(d["sentiment_score"]      for d in valid) / n
+        avg_conf  = sum(d["sentiment_confidence"] for d in valid) / n
+        avg_pos   = sum(d["sentiment_pos_prob"]   for d in valid) / n
+        avg_neu   = sum(d["sentiment_neu_prob"]   for d in valid) / n
+        avg_neg   = sum(d["sentiment_neg_prob"]   for d in valid) / n
 
         payload = {
             "daily_score":      round(avg_score, 2),

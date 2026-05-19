@@ -20,12 +20,16 @@ def _build_llm(temperature: float) -> ChatOpenAI:
     gms_key = os.getenv("GMS_KEY")
     if not gms_key:
         raise ValueError("GMS_KEY가 .env에서 로드되지 않았습니다.")
+    # request_timeout/max_retries: 일시적 네트워크 끊김에 견디게 — backtest는 수 시간
+    # 단위로 돌아가며 중간에 wifi가 잠시 끊겨도 trigger 단위로 fallback 강등되지 않도록
+    # langchain default(2회) 대비 retry를 늘림. 환경변수로 override 가능.
     return ChatOpenAI(
         model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
         temperature=temperature,
         base_url="https://gms.ssafy.io/gmsapi/api.openai.com/v1",
         api_key=gms_key,
-        request_timeout=30.0,
+        request_timeout=float(os.getenv("LLM_REQUEST_TIMEOUT", "60.0")),
+        max_retries=int(os.getenv("LLM_MAX_RETRIES", "5")),
     )
 
 

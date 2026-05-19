@@ -31,7 +31,7 @@ class InvestmentAgentState(BaseModel):
     # 분석 서버에서 전달받은 종목 단위 분석 결과 (Kafka 메시지 포맷을 그대로 담는 영역)
     # {"stock_code": "005930", "timestamp": "...", "signals": {"technical": {...}, ...}}
     analysis_snapshot: dict[str, Any] = Field(default_factory=dict)
-    
+
     # 판단 대상 후보 종목 목록
     # # Strategy Agent는 이 목록에서 투자 후보를 선택함
     candidate_assets: list[dict[str, Any]] = Field(default_factory=list)
