@@ -57,7 +57,9 @@ class PendingJudgmentServiceTest {
         AiJudgment valid = buildPending(11L, OffsetDateTime.now().plusMinutes(3));
         AiJudgment expired = buildPending(12L, OffsetDateTime.now().minusMinutes(1));
         when(aiJudgmentRepository
-                .findByUserIdAndExecutionStatusOrderByJudgedAtDesc(USER_ID, AiExecutionStatus.APPROVAL_REQUIRED))
+                .findByUserIdAndExecutionStatusInOrderByJudgedAtDesc(
+                        org.mockito.ArgumentMatchers.eq(USER_ID),
+                        org.mockito.ArgumentMatchers.any()))
                 .thenReturn(List.of(valid, expired));
 
         List<PendingDecisionResponse> result = service.listPending(USER_ID);
@@ -163,8 +165,8 @@ class PendingJudgmentServiceTest {
     void expirePendingBulkUpdate() {
         AiJudgment expired1 = buildPending(80L, OffsetDateTime.now().minusMinutes(1));
         AiJudgment expired2 = buildPending(81L, OffsetDateTime.now().minusMinutes(2));
-        when(aiJudgmentRepository.findByExecutionStatusAndApprovalExpiresAtBefore(
-                org.mockito.ArgumentMatchers.eq(AiExecutionStatus.APPROVAL_REQUIRED),
+        when(aiJudgmentRepository.findByExecutionStatusInAndApprovalExpiresAtBefore(
+                org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any())).thenReturn(List.of(expired1, expired2));
 
         int count = service.expirePending();
