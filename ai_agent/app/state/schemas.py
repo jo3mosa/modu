@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ResearchVerdict(BaseModel):
@@ -32,6 +32,13 @@ class ResearchVerdict(BaseModel):
     order_amount: int = 0
     target_price: int | None = None
     stop_loss_price: int | None = None
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def normalize_confidence(cls, v: float) -> float:
+        if v is not None and v > 1.0:
+            return v / 100.0
+        return v
 
     @model_validator(mode="after")
     def validate_trade_params(self) -> "ResearchVerdict":
@@ -151,3 +158,10 @@ class FinalDecision(BaseModel):
     confidence: float = 0.0
     risk_level: Literal["low", "medium", "high"] = "low"
     user_message: str = ""
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def normalize_confidence(cls, v: float) -> float:
+        if v is not None and v > 1.0:
+            return v / 100.0
+        return v
