@@ -44,6 +44,7 @@ _BEAR_ARGUMENT = (
 
 
 def _mock_bull_researcher(state):
+    debate = state.investment_debate_state or {}
     return {
         "investment_debate_state": {
             "history": _BULL_ARGUMENT,
@@ -51,6 +52,10 @@ def _mock_bull_researcher(state):
             "bear_history": "",
             "current_response": _BULL_ARGUMENT,
             "count": 1,
+            # round_count는 실제 bull_researcher와 동일하게 Bull에서는 건드리지 않는다.
+            "round_count": debate.get("round_count", 0),
+            "latest_bull_argument": _BULL_ARGUMENT,
+            "latest_bear_argument": debate.get("latest_bear_argument"),
         }
     }
 
@@ -59,6 +64,10 @@ def _mock_bear_researcher(state):
     debate = state.investment_debate_state or {}
     history = debate.get("history", "")
     new_history = f"{history}\n{_BEAR_ARGUMENT}" if history else _BEAR_ARGUMENT
+    # 실제 bear_researcher.py는 발언 완료 시점에 round_count를 증가시킨다.
+    # builder.route_after_bear가 이 값을 보고 종료를 결정하므로 mock도 동일 계약을 지켜야 한다 —
+    # 누락 시 conditional edge가 영원히 bull로 루프해 GraphRecursionError가 발생한다.
+    round_count = debate.get("round_count", 0) + 1
     return {
         "investment_debate_state": {
             "history": new_history,
@@ -66,6 +75,9 @@ def _mock_bear_researcher(state):
             "bear_history": _BEAR_ARGUMENT,
             "current_response": _BEAR_ARGUMENT,
             "count": debate.get("count", 0) + 1,
+            "round_count": round_count,
+            "latest_bull_argument": debate.get("latest_bull_argument"),
+            "latest_bear_argument": _BEAR_ARGUMENT,
         }
     }
 
@@ -160,11 +172,14 @@ class TestUserTriggerEventCreation:
         assert event.stock_code == "005930"
 
     def test_snapshots_not_empty(self):
-        """분석/포트폴리오 스냅샷과 trigger 메타가 모두 채워진다"""
+        """분석/포트폴리오 스냅샷과 trigger 메타가 모두 채워진다.
+
+        user_context는 UserTriggerEvent의 책임이 아니므로 검증 대상 아님 —
+        context_loader 노드가 그래프 실행 중 DB에서 직접 로드한다 (schemas.py 참고).
+        """
         event = create_mock_user_trigger()
         assert event.analysis_snapshot
         assert event.portfolio_snapshot
-        assert event.user_context
         assert event.trigger.rule_ids
         assert event.trigger.trigger_reason
 
@@ -189,12 +204,16 @@ class TestStateConversion:
         assert isinstance(state, InvestmentAgentState)
 
     def test_snapshots_transferred(self):
-        """UserTriggerEvent의 스냅샷이 state로 복사되고, candidate_assets는 stock_code 기반 자동 생성된다"""
+        """UserTriggerEvent의 스냅샷이 state로 복사되고, candidate_assets는 stock_code 기반 자동 생성된다.
+
+        user_context는 트리거에서 전달되지 않고 context_loader 노드가 채우므로,
+        state_factory 직후 시점에는 기본값(빈 dict)이어야 정상.
+        """
         event = create_mock_user_trigger()
         state = build_state_from_user_trigger(event)
         assert state.analysis_snapshot == event.analysis_snapshot
         assert state.portfolio_snapshot == event.portfolio_snapshot
-        assert state.user_context == event.user_context
+        assert state.user_context == {}
         # candidate_assets는 DA 명세에 없어서 state_factory가 stock_code 기반으로 구성
         assert state.candidate_assets == [{"stock_code": event.stock_code}]
 

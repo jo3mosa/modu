@@ -8,6 +8,11 @@
   padding-bottom: 2rem;
 }
 
+/* 컨테이너 gap 1.5rem 이 글로벌 margin-bottom 2rem 과 누적되어 헤더 아래 여백이 과해지는 것 보정 — 대시보드(2rem)와 통일 */
+.mypage-container > .page-header-container {
+  margin-bottom: 0.5rem;
+}
+
 .mypage-panel {
   background: rgba(0, 0, 0, 0.2);
   border: 1px solid rgba(255, 255, 255, 0.05);
@@ -31,9 +36,9 @@
 
 /* 1. 프로필 정보 */
 .profile-info {
-  display: flex;
-  flex-direction: column;
-  gap: 0.8rem;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2rem;
   background: rgba(255, 255, 255, 0.02);
   padding: 1.5rem;
   border-radius: 12px;
@@ -42,12 +47,14 @@
 
 .info-row {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: 0.4rem;
+  align-items: flex-start;
 }
 
 .info-label {
   color: #888;
+  font-size: 0.95rem;
   font-weight: 600;
 }
 
@@ -62,6 +69,12 @@
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+}
+
+.api-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
 }
 
 .input-group {
@@ -81,11 +94,12 @@
   background: rgba(0, 0, 0, 0.3);
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: #fff;
-  padding: 1rem;
+  padding: 0.7rem 0.85rem;
   border-radius: 8px;
-  font-size: 1rem;
+  font-size: 0.9rem;
   outline: none;
   transition: border-color 0.2s;
+  min-width: 0; /* 4컬럼 grid에서 input이 컬럼 너비를 넘쳐 흘리지 않도록 */
 }
 
 .input-group input[type="text"]:focus {
@@ -103,12 +117,13 @@
   background: rgba(0, 0, 0, 0.3);
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: #fff;
-  padding: 1rem;
-  padding-right: 3rem;
+  padding: 0.7rem 0.85rem;
+  padding-right: 2.4rem;
   border-radius: 8px;
-  font-size: 1rem;
+  font-size: 0.9rem;
   outline: none;
   transition: border-color 0.2s;
+  min-width: 0;
 }
 
 .password-input-wrapper input:focus {
