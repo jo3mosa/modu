@@ -81,6 +81,11 @@ def pick_active_stock_days(lookback_days: int, top_n: int) -> list[tuple[str, st
     now_kst = datetime.now(KST)
     from_iso = (now_kst - timedelta(days=lookback_days)).isoformat()
 
+    # buffer 는 충분히 크게 — top_n 의 ~10배 + 절대 하한 200.
+    # 이전 top_n*3 은 활동 종목 수가 적을 때 (예: 30 요청 → 90건이 10종목에
+    # 몰림 + 종목당 cap 2 → 20건만 픽업) 인위적 "데이터 부족" 오판을 유발.
+    raw_limit = max(top_n * 10, 200)
+
     pipeline = [
         {"$match": {
             "stock_codes": {"$exists": True, "$ne": []},
@@ -96,28 +101,35 @@ def pick_active_stock_days(lookback_days: int, top_n: int) -> list[tuple[str, st
             "count": {"$sum": 1},
         }},
         {"$sort": {"count": -1}},
-        {"$limit": top_n * 3},      # buffer — 종목 분산 위해 후처리에서 dedup
+        {"$limit": raw_limit},
     ]
 
     raw = list(coll.aggregate(pipeline))
-    logger.info("aggregation hit: %d 쌍 (top %d 선택 예정)", len(raw), top_n)
+    logger.info("aggregation hit: %d 쌍 (raw_limit=%d, top_n=%d)",
+                len(raw), raw_limit, top_n)
 
-    # 종목별 1쌍씩만 (다양성). 그래도 부족하면 같은 종목 다른 날짜 추가.
-    seen_stocks = Counter()
+    # 종목 다양성 우선: cap=1 (종목당 1일) 부터 시작해 부족하면 점진적으로 완화.
+    # 데이터가 충분한데 종목이 적은 케이스에서도 top_n 을 채울 수 있게 함.
     picked: list[tuple[str, str]] = []
-    for r in raw:
+    for cap in range(1, 11):  # 1~10일/종목까지 점진 완화
+        seen_stocks: Counter = Counter()
+        picked = []
+        for r in raw:
+            if len(picked) >= top_n:
+                break
+            stock = r["_id"]["stock"]
+            date = r["_id"]["date"]
+            if seen_stocks[stock] >= cap:
+                continue
+            picked.append((stock, date))
+            seen_stocks[stock] += 1
         if len(picked) >= top_n:
+            logger.info("픽업 완료: %d개 (종목당 최대 %d일)", len(picked), cap)
             break
-        stock = r["_id"]["stock"]
-        date = r["_id"]["date"]
-        if seen_stocks[stock] >= 2:    # 종목당 최대 2일
-            continue
-        picked.append((stock, date))
-        seen_stocks[stock] += 1
 
     if len(picked) < top_n:
-        logger.warning("요청 %d개에 못 미침 — %d개만 반환 (뉴스 데이터 부족)",
-                       top_n, len(picked))
+        logger.warning("요청 %d개에 못 미침 — %d개만 반환 (raw 풀 자체 부족: %d건)",
+                       top_n, len(picked), len(raw))
     return picked
 
 
