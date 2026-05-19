@@ -135,10 +135,7 @@ export default function OrderBook({ stockCode }) {
     setLoadingPending(true);
     try {
       const list = await getPendingOrders();
-      const filtered = stockCode
-        ? list.filter((o) => o.stockCode === stockCode)
-        : list;
-      setPendingOrders(filtered);
+      setPendingOrders(list);
     } catch (error) {
       if (error.status !== 404) {
         console.warn('미체결 주문 조회 실패:', error);
@@ -147,7 +144,7 @@ export default function OrderBook({ stockCode }) {
     } finally {
       setLoadingPending(false);
     }
-  }, [stockCode]);
+  }, []);
 
   // 보유현황 조회 (GET /api/v1/accounts/me/holdings)
   const fetchHoldings = useCallback(async () => {
@@ -212,9 +209,7 @@ export default function OrderBook({ stockCode }) {
         if (prevId === String(latestEvent.orderId)) {
           if (submitTimeoutRef.current) clearTimeout(submitTimeoutRef.current);
           setSubmittingOrder(false);
-          toast.success('주문이 접수되었습니다', {
-            description: `접수번호: ${latestEvent.kisOrderNo || latestEvent.orderId}`,
-          });
+          toast.success('주문이 접수되었습니다');
           fetchPending();
           return null;
         }
@@ -373,9 +368,7 @@ export default function OrderBook({ stockCode }) {
       // 하위 호환성 분기 로직
       // 백엔드 응답에 kisOrderNo가 있거나 status가 PENDING이 아니면 기존(동기) 모드
       if (result.kisOrderNo || result.status !== 'PENDING') {
-        toast.success('주문이 접수되었습니다', {
-          description: `주문번호: ${result.orderId}`,
-        });
+        toast.success('주문이 접수되었습니다');
         fetchPending();
         fetchBuyingPower();
         setSubmittingOrder(false); // 즉시 해제
@@ -508,7 +501,6 @@ export default function OrderBook({ stockCode }) {
           onClick={() => setActiveTab('PENDING')}
         >
           미체결 내역
-          {pendingOrders.length > 0 && ` (${pendingOrders.length})`}
         </button>
       </div>
 
@@ -839,7 +831,7 @@ export default function OrderBook({ stockCode }) {
         <div className="pending-content">
           <div className="pending-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0' }}>
             <span style={{ color: '#aaa', fontSize: '0.9em' }}>
-              {stockCode ? '현재 종목 기준' : '전체 종목'}
+              전체 종목
             </span>
             <button
               className="tool-btn"
