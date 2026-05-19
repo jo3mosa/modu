@@ -405,7 +405,7 @@ class SignalHandlerServiceTest {
     void missingRequiredFieldThrows() {
         AiDecisionMessage msg = new AiDecisionMessage(
                 null, EVENT_ID, STOCK, OffsetDateTime.now(), null,
-                null, null, null, "completed"
+                null, null, null, "completed", null
         );
 
         assertThatThrownBy(() -> service.handle(msg))
@@ -451,7 +451,7 @@ class SignalHandlerServiceTest {
                 USER_ID, EVENT_ID, STOCK,
                 OffsetDateTime.parse("2026-05-14T02:07:00+09:00"),
                 null,
-                fd, debate, indicators, flowStatus
+                fd, debate, indicators, flowStatus, null
         );
     }
 
