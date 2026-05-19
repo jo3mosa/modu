@@ -17,6 +17,7 @@ impact 타입을 세분화한 뒤 추가 — 별도 PR.
 """
 
 import logging
+from datetime import timedelta
 from typing import Optional
 
 from engine.signal_builder import Signal
@@ -362,14 +363,106 @@ RULE_REASONS: dict[str, str] = {
 }
 
 
-# RULES ↔ RULE_REASONS 키셋 드리프트 차단 — 룰 추가 시 사유 누락하면 모듈 로드 자체가 실패.
+# rule_id → 뉴스 요약 윈도우. ("days"|"hours", value) 튜플.
+# event_publisher._summarize_news 가 트리거 시점 - window 범위의 기사를 LLM 요약.
+#
+# 시계열 트리거(RSI/MFI/MACD/BB/REV/QUAL): 일 단위 — 지표 룩백과 정렬 (RSI=14d, MACD=26d 등).
+# 단기 이벤트(DART/SENT/PRICE/VOL/ATR/EVT/TPL): 시간 단위 — 시장 즉시 반응 윈도우.
+#
+# 값은 휴리스틱 디폴트 — 운영 백테스트(scripts/backfill/validate_news_window.py)로 튜닝.
+RULE_NEWS_WINDOWS: dict[str, tuple[str, int]] = {
+    # 시계열 — 일 단위
+    "RSI-001":   ("days", 7),
+    "RSI-002":   ("days", 7),
+    "RSI-003":   ("days", 7),
+    "RSI-004":   ("days", 7),
+    "MACD-001":  ("days", 14),
+    "MACD-002":  ("days", 14),
+    "BB-001":    ("days", 14),
+    "BB-002":    ("days", 14),
+    "MFI-001":   ("days", 7),
+    "MFI-002":   ("days", 7),
+    # 단기 — 시간 단위
+    "ATR-001":   ("hours", 12),
+    "PRICE-001": ("hours", 6),
+    "PRICE-002": ("hours", 6),
+    "VOL-001":   ("hours", 6),
+    "SENT-001":  ("hours", 12),
+    "SENT-002":  ("hours", 12),
+    "DART-001":  ("hours", 24),
+    # 조합 — REV/QUAL 은 시계열성, EVT/TPL 은 단기성.
+    "REV-001":   ("days", 14),
+    "REV-002":   ("days", 14),
+    "REV-003":   ("days", 14),
+    "REV-004":   ("days", 14),
+    "REV-005":   ("days", 14),
+    "QUAL-001":  ("days", 14),
+    "EVT-001":   ("hours", 24),
+    "TPL-001":   ("hours", 24),
+    "TPL-002":   ("hours", 24),
+    "TPL-003":   ("hours", 24),
+    "TPL-004":   ("hours", 24),
+}
+
+
+# 윈도우 단위 화이트리스트 — 오타("day", "hour" 등) 가 조용히 hours 로 처리되는 사고 방지.
+WINDOW_KINDS = frozenset({"days", "hours"})
+
+
+# RULES ↔ RULE_REASONS ↔ RULE_NEWS_WINDOWS 키셋 드리프트 차단 — 룰 추가 시 누락하면 모듈 로드 자체가 실패.
 # event_publisher._build_payload 의 .get(rid, rid) fallback 은 production -O 모드 등 만일의 안전망.
-_RULE_KEY_MISMATCH = set(RULES) ^ set(RULE_REASONS)
+_RULE_KEY_MISMATCH = (set(RULES) ^ set(RULE_REASONS)) | (set(RULES) ^ set(RULE_NEWS_WINDOWS))
 if _RULE_KEY_MISMATCH:
     raise RuntimeError(
-        f"RULES / RULE_REASONS 키셋 불일치: {sorted(_RULE_KEY_MISMATCH)}. "
-        "두 dict 를 동시에 갱신해야 합니다."
+        f"RULES / RULE_REASONS / RULE_NEWS_WINDOWS 키셋 불일치: {sorted(_RULE_KEY_MISMATCH)}. "
+        "세 dict 를 동시에 갱신해야 합니다."
     )
+
+# kind/value 명시 검증 — 모듈 로드 시점에 잡힘 (런타임 silent fallback 방지).
+for _rid, (_kind, _value) in RULE_NEWS_WINDOWS.items():
+    if _kind not in WINDOW_KINDS:
+        raise RuntimeError(
+            f"RULE_NEWS_WINDOWS[{_rid!r}] kind={_kind!r} — "
+            f"허용값: {sorted(WINDOW_KINDS)}"
+        )
+    if not isinstance(_value, int) or _value <= 0:
+        raise RuntimeError(
+            f"RULE_NEWS_WINDOWS[{_rid!r}] value={_value!r} — 양의 정수여야 함"
+        )
+
+
+def pick_news_window(rule_ids: list[str]) -> tuple[str, int]:
+    """동시 발화 룰들의 윈도우 중 가장 큰 값 선택.
+
+    여러 룰이 같이 발화하면 더 긴 컨텍스트가 짧은 컨텍스트를 포함 — agent 가 직접
+    최근/과거를 구분 가능. days/hours 단위가 섞이면 hours 로 환산 비교.
+
+    Returns: ("days", n) 또는 ("hours", m). rule_ids 가 비면 ("hours", 24) fallback.
+    """
+    if not rule_ids:
+        return ("hours", 24)
+
+    def to_hours(kind: str, value: int) -> int:
+        return value * 24 if kind == "days" else value
+
+    candidates = [RULE_NEWS_WINDOWS[rid] for rid in rule_ids if rid in RULE_NEWS_WINDOWS]
+    if not candidates:
+        return ("hours", 24)
+    return max(candidates, key=lambda kv: to_hours(*kv))
+
+
+def window_to_timedelta(window: tuple[str, int]) -> timedelta:
+    """("days"|"hours", value) → timedelta. MongoDB 시간 범위 쿼리용.
+
+    kind 가 WINDOW_KINDS 밖이면 ValueError — 모듈 로드 검증을 통과한 RULE_NEWS_WINDOWS
+    출처라면 도달 불가하나 외부 caller 입력 방어용.
+    """
+    kind, value = window
+    if kind == "days":
+        return timedelta(days=value)
+    if kind == "hours":
+        return timedelta(hours=value)
+    raise ValueError(f"unknown window kind: {kind!r} (허용: {sorted(WINDOW_KINDS)})")
 
 
 def detect(signal: Signal) -> list[str]:

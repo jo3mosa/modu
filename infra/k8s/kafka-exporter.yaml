@@ -1,0 +1,112 @@
+# [S14P31B106-348] kafka-exporter — Consumer Lag 전용 Exporter.
+#
+# JMX Exporter 는 broker 내부 상태(파티션/ISR/JVM)에는 강하지만
+# "컨슈머 그룹이 얼마나 밀려있는가" 는 잘 잡지 못한다.
+# kafka-exporter 는 broker 의 admin/consumer API 를 호출해서
+# topic offset 과 consumer group offset 의 차이(lag) 를 메트릭으로 노출한다.
+#
+# 주요 수집 메트릭:
+#   kafka_consumergroup_lag                : (group, topic, partition) 별 lag
+#   kafka_consumergroup_lag_sum            : 그룹 단위 lag 합
+#   kafka_topic_partition_current_offset   : 최신 오프셋
+#   kafka_topic_partitions                 : 파티션 수
+#   kafka_brokers                          : 브로커 수
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-exporter
+  namespace: modu-apps
+  labels:
+    app: kafka-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-exporter
+  template:
+    metadata:
+      labels:
+        app: kafka-exporter
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - name: kafka-exporter
+        image: danielqsj/kafka-exporter:v1.7.0
+        args:
+          # 3 브로커 모두 등록 — 한 브로커가 죽어도 메트릭 수집 지속.
+          - --kafka.server=kafka-0.kafka-headless.modu-apps.svc.cluster.local:9092
+          - --kafka.server=kafka-1.kafka-headless.modu-apps.svc.cluster.local:9092
+          - --kafka.server=kafka-2.kafka-headless.modu-apps.svc.cluster.local:9092
+          # 모든 컨슈머 그룹 수집 (정규식). 필요 시 특정 그룹만 필터.
+          - --group.filter=.*
+          - --topic.filter=.*
+        ports:
+        - containerPort: 9308
+          name: metrics
+        resources:
+          # exporter 는 가벼움 — broker 폴링만 수행.
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 65534    # nobody
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+        livenessProbe:
+          tcpSocket:
+            port: 9308
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          tcpSocket:
+            port: 9308
+          initialDelaySeconds: 5
+          periodSeconds: 10
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-exporter
+  namespace: modu-apps
+  labels:
+    app: kafka-exporter
+spec:
+  selector:
+    app: kafka-exporter
+  ports:
+  - name: metrics
+    port: 9308
+    targetPort: 9308
+  type: ClusterIP
+
+---
+
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kafka-exporter-monitor
+  namespace: modu-apps
+  labels:
+    # kube-prometheus-stack Prometheus 자동 발견용.
+    release: kube-prom
+spec:
+  selector:
+    matchLabels:
+      app: kafka-exporter
+  namespaceSelector:
+    matchNames:
+      - modu-apps
+  endpoints:
+  - port: metrics
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
