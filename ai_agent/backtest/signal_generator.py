@@ -214,7 +214,11 @@ def build_trigger(
 
     # 실서비스와 동일하게 rule_ids 기반 윈도우로 Mongo 재조회 + LLM 요약.
     # pick_news_window(rule_ids)가 가장 긴 윈도우를 선택 → agent가 충분한 컨텍스트 확보.
-    news_summary = _summarize_news(stock_code, rule_ids, signal)
+    try:
+        news_summary = _summarize_news(stock_code, rule_ids, signal)
+    except Exception:
+        logger.warning("뉴스 요약 실패 — news_summary=None 강등 (stock=%s)", stock_code, exc_info=True)
+        news_summary = None
 
     return Trigger(
         as_of_date=as_of,
