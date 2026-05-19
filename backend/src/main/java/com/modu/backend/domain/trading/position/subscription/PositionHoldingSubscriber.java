@@ -4,9 +4,12 @@ import com.modu.backend.domain.market.websocket.KisRealtimeStreamKey;
 import com.modu.backend.domain.market.websocket.KisRealtimeStreamType;
 import com.modu.backend.domain.market.websocket.KisRealtimeSubscriptionManager;
 import com.modu.backend.domain.trading.position.repository.PositionThresholdRepository;
+import com.modu.backend.global.config.KisProfiles;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.annotation.Profile;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
@@ -29,6 +32,8 @@ import java.util.Set;
  */
 @Slf4j
 @Component
+@Profile(KisProfiles.NOT_GATEWAY)
+@ConditionalOnProperty(name = "market.feed.client-mode", havingValue = "LOCAL", matchIfMissing = true)
 @RequiredArgsConstructor
 public class PositionHoldingSubscriber {
 

@@ -83,6 +83,15 @@ kis:
     connection-timeout-ms: ${KIS_WEBSOCKET_CONNECTION_TIMEOUT_MS:5000}
     allowed-origin-patterns: ${KIS_WEBSOCKET_ALLOWED_ORIGIN_PATTERNS:http://localhost:3000,http://localhost:5173,http://localhost,http://k14b106.p.ssafy.io,https://k14b106.p.ssafy.io,https://moduinvestment.co.kr,https://www.moduinvestment.co.kr}
 
+# 시세 Feed 동작 모드 (S14P31B106-345)
+# - LOCAL : backend 가 KIS WebSocket 직접 보유 (현 동작, replicas=1 환경에서만 안전)
+# - REMOTE : backend 가 Redis pub/sub 경유로 gateway 에서 tick 수신 (replicas N 안전)
+# gateway pod 는 본 설정과 무관 — SPRING_PROFILES_ACTIVE=gateway 로 분기.
+market:
+  feed:
+    client-mode: ${MARKET_FEED_CLIENT_MODE:LOCAL}
+    pod-id: ${HOSTNAME:}
+
 # JWT 설정
 jwt:
   secret: ${JWT_SECRET}

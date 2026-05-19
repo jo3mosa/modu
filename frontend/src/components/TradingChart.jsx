@@ -3,6 +3,7 @@ import { createChart } from 'lightweight-charts';
 import { SMA, BollingerBands, RSI, MACD } from 'technicalindicators';
 import { getStockCandles } from '../api/market';
 import { getOrderHistory } from '../api/order';
+import { buildStockWsUrl } from '../api/wsUrl';
 import './TradingChart.css';
 
 // 보조지표 키
@@ -691,8 +692,7 @@ export default function TradingChart({ stockCode }) {
   useEffect(() => {
     if (!stockCode || !candlestickSeriesRef.current) return;
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/stocks/${stockCode}/price`);
+    const ws = new WebSocket(buildStockWsUrl(stockCode, 'price'));
 
     ws.onmessage = (event) => {
       try {
