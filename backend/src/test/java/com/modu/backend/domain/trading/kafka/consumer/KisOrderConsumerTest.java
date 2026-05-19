@@ -1,292 +1,105 @@
 package com.modu.backend.domain.trading.kafka.consumer;
 
-import com.modu.backend.domain.strategy.service.KillSwitchService;
-import com.modu.backend.domain.trading.client.KisOrderClient;
 import com.modu.backend.domain.trading.entity.Order;
 import com.modu.backend.domain.trading.entity.OrderSide;
 import com.modu.backend.domain.trading.entity.OrderSource;
 import com.modu.backend.domain.trading.entity.OrderStatus;
 import com.modu.backend.domain.trading.entity.OrderType;
-import com.modu.backend.domain.trading.exception.OrderErrorCode;
 import com.modu.backend.domain.trading.repository.OrderRepository;
-import com.modu.backend.domain.trading.sse.OrderSseEmitterManager;
-import com.modu.backend.domain.trading.sse.OrderSseEvent;
-import com.modu.backend.domain.trading.sse.OrderSseEventType;
-import com.modu.backend.domain.user.entity.KisCredential;
-import com.modu.backend.domain.user.exception.UserErrorCode;
-import com.modu.backend.domain.user.repository.KisCredentialRepository;
-import com.modu.backend.global.error.ApiException;
+import com.modu.backend.domain.trading.service.OrderDispatchService;
 import com.modu.backend.global.kafka.dto.TradeOrderMessage;
-import com.modu.backend.global.kis.KisApiCallTemplate;
-import com.modu.backend.global.util.AesGcmEncryptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.junit.jupiter.MockitoSettings;
-import org.mockito.quality.Strictness;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.OffsetDateTime;
 import java.util.Optional;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/**
+ * KisOrderConsumer 단위 테스트
+ *
+ * 515caf0 (2026-05-18) 슬림화 이후 컨슈머의 책임은:
+ *  1. message → orderId 매칭 (orderRepository)
+ *  2. 매칭되면 {@link OrderDispatchService#dispatch(Long)} 에 위임
+ *  3. 어떤 결과든 finally 에서 ack
+ *
+ * KIS 호출 / SSE / Kill Switch 등 dispatch 분기 검증은
+ * {@link com.modu.backend.domain.trading.service.OrderDispatchServiceTest} 책임.
+ */
 @ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT)
 class KisOrderConsumerTest {
 
     @Mock OrderRepository orderRepository;
-    @Mock KisCredentialRepository kisCredentialRepository;
-    @Mock KisApiCallTemplate kisApiCallTemplate;
-    @Mock KisOrderClient kisOrderClient;
-    @Mock AesGcmEncryptor encryptor;
-    @Mock OrderSseEmitterManager sseEmitterManager;
-    @Mock KillSwitchService killSwitchService;
+    @Mock OrderDispatchService orderDispatchService;
     @Mock Acknowledgment ack;
 
     @InjectMocks KisOrderConsumer consumer;
 
-    private KisCredential credential;
-
-    @BeforeEach
-    void setUp() {
-        credential = KisCredential.builder()
-                .userId(1L)
-                .appKeyEnc("enc-key").appSecretEnc("enc-secret")
-                .accountNo("50012345").accountPrdtCd("01")
-                .isRealAccount(true)
-                .build();
-        when(encryptor.decrypt("enc-key")).thenReturn("real-key");
-        when(encryptor.decrypt("enc-secret")).thenReturn("real-secret");
-    }
-
-    // ── 정상 흐름 ────────────────────────────────────────────────────────────
-
     @Test
-    @DisplayName("정상 흐름 — order 갱신 + ORDER_SUBMITTED SSE + ack")
-    void 정상_흐름() {
+    @DisplayName("정상 — order 매칭되면 dispatch 호출 + ack")
+    void 정상_dispatch_위임() {
         TradeOrderMessage msg = sampleMessage("uuid-1", 1L);
         Order order = pendingOrder(100L, "uuid-1");
         when(orderRepository.findByUserIdAndIdempotencyKey(1L, "uuid-1"))
                 .thenReturn(Optional.of(order));
-        when(kisCredentialRepository.findByUserId(1L)).thenReturn(Optional.of(credential));
-        when(kisApiCallTemplate.callWithTokenRetry(eq(1L), any(), any(), any()))
-                .thenReturn(new KisOrderClient.KisOrderResult("KISODNO1", "KISORG1"));
 
         consumer.onMessage(msg, ack);
 
-        // order 갱신
-        assertThat(order.getKisOrderNo()).isEqualTo("KISODNO1");
-        assertThat(order.getKisOrgNo()).isEqualTo("KISORG1");
-        // SSE submitted
-        ArgumentCaptor<OrderSseEvent> eventCaptor = ArgumentCaptor.forClass(OrderSseEvent.class);
-        verify(sseEmitterManager).send(eq(1L), eventCaptor.capture());
-        assertThat(eventCaptor.getValue().type()).isEqualTo(OrderSseEventType.ORDER_SUBMITTED);
-        assertThat(eventCaptor.getValue().kisOrderNo()).isEqualTo("KISODNO1");
+        verify(orderDispatchService).dispatch(eq(100L));
         verify(ack).acknowledge();
     }
 
-    // ── 무시·skip ────────────────────────────────────────────────────────────
-
     @Test
-    @DisplayName("주문 row 없음 — KIS 호출 안 함 + SSE 미발송 + ack")
-    void 주문_row_없음() {
+    @DisplayName("order 미존재 — dispatch 호출 안 함 + ack")
+    void order_미존재_dispatch_생략() {
         TradeOrderMessage msg = sampleMessage("uuid-x", 1L);
         when(orderRepository.findByUserIdAndIdempotencyKey(1L, "uuid-x"))
                 .thenReturn(Optional.empty());
 
         consumer.onMessage(msg, ack);
 
-        verify(kisOrderClient, never()).placeOrder(any(), any(), any(), any(), any(),
-                any(), any(), any(), anyLong(), anyLong());
-        verify(sseEmitterManager, never()).send(any(), any());
+        verify(orderDispatchService, never()).dispatch(eq(0L));
+        verify(orderDispatchService, never()).dispatch(eq(100L));
         verify(ack).acknowledge();
     }
 
     @Test
-    @DisplayName("이미 처리된 주문(kisOrderNo 보유) — skip + ack")
-    void 이미_처리된_주문_skip() {
-        TradeOrderMessage msg = sampleMessage("uuid-1", 1L);
-        Order order = pendingOrder(100L, "uuid-1");
-        order.updateKisInfo("EXISTING", "ORG", OffsetDateTime.now()); // 이미 채워진 상태
-        when(orderRepository.findByUserIdAndIdempotencyKey(1L, "uuid-1"))
-                .thenReturn(Optional.of(order));
-
-        consumer.onMessage(msg, ack);
-
-        verify(kisOrderClient, never()).placeOrder(any(), any(), any(), any(), any(),
-                any(), any(), any(), anyLong(), anyLong());
-        verify(sseEmitterManager, never()).send(any(), any());
-        verify(ack).acknowledge();
-    }
-
-    // ── 실패 처리 ────────────────────────────────────────────────────────────
-
-    @Test
-    @DisplayName("KIS 자격증명 없음 — REJECTED + ORDER_FAILED + ack")
-    void 자격증명_없음_REJECTED() {
+    @DisplayName("dispatch 예외 — ack 보장 (finally)")
+    void dispatch_예외_ack_보장() {
         TradeOrderMessage msg = sampleMessage("uuid-1", 1L);
         Order order = pendingOrder(100L, "uuid-1");
         when(orderRepository.findByUserIdAndIdempotencyKey(1L, "uuid-1"))
                 .thenReturn(Optional.of(order));
-        when(kisCredentialRepository.findByUserId(1L)).thenReturn(Optional.empty());
+        doThrow(new RuntimeException("dispatch boom"))
+                .when(orderDispatchService).dispatch(eq(100L));
 
         consumer.onMessage(msg, ack);
 
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.REJECTED);
-        assertThat(order.getRejectReason()).isEqualTo(UserErrorCode.KIS_NOT_CONNECTED.getDefaultMessage());
-        ArgumentCaptor<OrderSseEvent> eventCaptor = ArgumentCaptor.forClass(OrderSseEvent.class);
-        verify(sseEmitterManager).send(eq(1L), eventCaptor.capture());
-        assertThat(eventCaptor.getValue().type()).isEqualTo(OrderSseEventType.ORDER_FAILED);
         verify(ack).acknowledge();
     }
 
     @Test
-    @DisplayName("KIS 호출 성공 (template 내부 토큰 재시도까지 추상화)")
-    void kis_호출_성공_template_추상화() {
-        // KisApiCallTemplate 의 토큰 재발급 + 재시도 로직은 KisApiCallTemplate 의 단위 테스트 책임.
-        // Consumer 단위 테스트는 template 가 성공 결과를 반환하면 정상 흐름 진입함을 검증.
-        TradeOrderMessage msg = sampleMessage("uuid-1", 1L);
-        Order order = pendingOrder(100L, "uuid-1");
-        when(orderRepository.findByUserIdAndIdempotencyKey(1L, "uuid-1"))
-                .thenReturn(Optional.of(order));
-        when(kisCredentialRepository.findByUserId(1L)).thenReturn(Optional.of(credential));
-        when(kisApiCallTemplate.callWithTokenRetry(eq(1L), any(), any(), any()))
-                .thenReturn(new KisOrderClient.KisOrderResult("KISODNO2", "KISORG2"));
-
-        consumer.onMessage(msg, ack);
-
-        assertThat(order.getKisOrderNo()).isEqualTo("KISODNO2");
-        verify(ack).acknowledge();
-        // MANUAL source → Kill Switch 호출 X
-        verify(killSwitchService, never()).recordSuccess(any(), any());
-    }
-
-    @Test
-    @DisplayName("자동매매(source=AI_DECISION) 성공: KillSwitchService.recordSuccess 호출")
-    void 자동매매_성공_killswitch_recordSuccess_호출() {
-        TradeOrderMessage msg = autoTradeMessage("uuid-auto-ok");
-        Order order = pendingOrder(200L, "uuid-auto-ok");
-        when(orderRepository.findByUserIdAndIdempotencyKey(1L, "uuid-auto-ok"))
-                .thenReturn(Optional.of(order));
-        when(kisCredentialRepository.findByUserId(1L)).thenReturn(Optional.of(credential));
-        when(kisApiCallTemplate.callWithTokenRetry(eq(1L), any(), any(), any()))
-                .thenReturn(new KisOrderClient.KisOrderResult("KISODNO3", "KISORG3"));
-
-        consumer.onMessage(msg, ack);
-
-        verify(killSwitchService).recordSuccess(eq(1L), eq("005930"));
-        verify(killSwitchService, never()).recordReject(any(), any(), any());
-        verify(ack).acknowledge();
-    }
-
-    @Test
-    @DisplayName("KIS template 가 KIS_TOKEN_INVALIDATED 최종 실패 → REJECTED + ORDER_FAILED SSE + KillSwitch 카운트 X (KIS 거부 아님)")
-    void 토큰_재발급_실패_REJECTED() {
-        TradeOrderMessage msg = sampleMessage("uuid-1", 1L);
-        Order order = pendingOrder(100L, "uuid-1");
-        when(orderRepository.findByUserIdAndIdempotencyKey(1L, "uuid-1"))
-                .thenReturn(Optional.of(order));
-        when(kisCredentialRepository.findByUserId(1L)).thenReturn(Optional.of(credential));
-        when(kisApiCallTemplate.callWithTokenRetry(eq(1L), any(), any(), any()))
-                .thenThrow(new ApiException(UserErrorCode.KIS_TOKEN_INVALIDATED));
-
-        consumer.onMessage(msg, ack);
-
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.REJECTED);
-        assertThat(order.getRejectReason())
-                .isEqualTo(UserErrorCode.KIS_TOKEN_INVALIDATED.getDefaultMessage());
-        // ORDER_FAILED SSE 발송
-        ArgumentCaptor<OrderSseEvent> eventCaptor = ArgumentCaptor.forClass(OrderSseEvent.class);
-        verify(sseEmitterManager).send(eq(1L), eventCaptor.capture());
-        assertThat(eventCaptor.getValue().type()).isEqualTo(OrderSseEventType.ORDER_FAILED);
-        // 토큰 실패는 KIS 거부 응답이 아닌 인증 인프라 장애 → Kill Switch 카운트 제외
-        verify(killSwitchService, never()).recordReject(any(), any(), any());
-        verify(ack).acknowledge();
-    }
-
-    @Test
-    @DisplayName("KIS 비-토큰 에러(INSUFFICIENT_BALANCE) — REJECTED + ORDER_FAILED SSE (MANUAL source: KillSwitch X)")
-    void 비_external_error_즉시_REJECTED() {
-        TradeOrderMessage msg = sampleMessage("uuid-1", 1L);
-        Order order = pendingOrder(100L, "uuid-1");
-        when(orderRepository.findByUserIdAndIdempotencyKey(1L, "uuid-1"))
-                .thenReturn(Optional.of(order));
-        when(kisCredentialRepository.findByUserId(1L)).thenReturn(Optional.of(credential));
-        when(kisApiCallTemplate.callWithTokenRetry(eq(1L), any(), any(), any()))
-                .thenThrow(new ApiException(OrderErrorCode.INSUFFICIENT_BALANCE));
-
-        consumer.onMessage(msg, ack);
-
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.REJECTED);
-        assertThat(order.getRejectReason())
-                .isEqualTo(OrderErrorCode.INSUFFICIENT_BALANCE.getDefaultMessage());
-        // ORDER_FAILED SSE 발송
-        ArgumentCaptor<OrderSseEvent> eventCaptor = ArgumentCaptor.forClass(OrderSseEvent.class);
-        verify(sseEmitterManager).send(eq(1L), eventCaptor.capture());
-        assertThat(eventCaptor.getValue().type()).isEqualTo(OrderSseEventType.ORDER_FAILED);
-        // MANUAL source 라 Kill Switch 무관
-        verify(killSwitchService, never()).recordReject(any(), any(), any());
-        verify(ack).acknowledge();
-    }
-
-    @Test
-    @DisplayName("자동매매(source=AI_DECISION) + KIS 거부(INSUFFICIENT_BALANCE) → KillSwitchService.recordReject 호출")
-    void 자동매매_KIS_거부_killswitch_recordReject_호출() {
-        TradeOrderMessage msg = autoTradeMessage("uuid-auto-fail");
-        Order order = pendingOrder(300L, "uuid-auto-fail");
-        when(orderRepository.findByUserIdAndIdempotencyKey(1L, "uuid-auto-fail"))
-                .thenReturn(Optional.of(order));
-        when(kisCredentialRepository.findByUserId(1L)).thenReturn(Optional.of(credential));
-        when(kisApiCallTemplate.callWithTokenRetry(eq(1L), any(), any(), any()))
-                .thenThrow(new ApiException(OrderErrorCode.INSUFFICIENT_BALANCE));
-
-        consumer.onMessage(msg, ack);
-
-        verify(killSwitchService).recordReject(eq(1L), eq("005930"), any());
-        verify(killSwitchService, never()).recordSuccess(any(), any());
-        verify(ack).acknowledge();
-    }
-
-    @Test
-    @DisplayName("자동매매(source=AI_DECISION) + KIS_TOKEN_INVALIDATED → KillSwitch.recordReject 호출 X (인증 인프라 장애)")
-    void 자동매매_토큰_실패_killswitch_recordReject_제외() {
-        TradeOrderMessage msg = autoTradeMessage("uuid-auto-token");
-        Order order = pendingOrder(400L, "uuid-auto-token");
-        when(orderRepository.findByUserIdAndIdempotencyKey(1L, "uuid-auto-token"))
-                .thenReturn(Optional.of(order));
-        when(kisCredentialRepository.findByUserId(1L)).thenReturn(Optional.of(credential));
-        when(kisApiCallTemplate.callWithTokenRetry(eq(1L), any(), any(), any()))
-                .thenThrow(new ApiException(UserErrorCode.KIS_TOKEN_INVALIDATED));
-
-        consumer.onMessage(msg, ack);
-
-        verify(killSwitchService, never()).recordReject(any(), any(), any());
-        verify(ack).acknowledge();
-    }
-
-    @Test
-    @DisplayName("예외 발생 시에도 ack 가 보장됨 (finally)")
-    void 예외_발생시_ack_보장() {
+    @DisplayName("orderRepository 예외 — dispatch 호출 안 함 + ack 보장")
+    void repository_예외_ack_보장() {
         TradeOrderMessage msg = sampleMessage("uuid-1", 1L);
         when(orderRepository.findByUserIdAndIdempotencyKey(1L, "uuid-1"))
                 .thenThrow(new RuntimeException("DB down"));
 
         consumer.onMessage(msg, ack);
 
+        verify(orderDispatchService, never()).dispatch(eq(100L));
         verify(ack).acknowledge();
     }
 
@@ -314,14 +127,5 @@ class KisOrderConsumerTest {
                 .build();
         ReflectionTestUtils.setField(order, "id", id);
         return order;
-    }
-
-    /** 자동매매 source (AI_DECISION) 메시지 — Kill Switch 카운트 대상 */
-    private TradeOrderMessage autoTradeMessage(String orderId) {
-        return TradeOrderMessage.of(
-                orderId, null, 1L, "005930",
-                OrderSide.BUY, OrderType.LIMIT,
-                10L, 70000L, OrderSource.AI_DECISION, null, OffsetDateTime.now()
-        );
     }
 }
