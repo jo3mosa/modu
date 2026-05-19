@@ -24,7 +24,7 @@ import java.util.List;
  * - pdno          → stockCode
  * - prdt_name     → stockName
  * - hldg_qty      → quantity
- * - pchs_avg_pric → avgBuyPrice
+ * - pchs_avg_pric → avgBuyPrice (Double — 분할 매수 평균가는 소수점 가능, S14P31B106-360)
  * - prpr          → currentPrice
  * - evlu_pfls_amt → pnl
  * - evlu_pfls_rt  → pnlPct
@@ -106,7 +106,7 @@ public class KisBalanceClient {
                         item.pdno(),
                         item.prdtName(),
                         parseLong(item.hldgQty()),
-                        parseLong(item.pchsAvgPric()),
+                        parsePrice(item.pchsAvgPric()),
                         parseLong(item.prpr()),
                         parseLong(item.evluPflsAmt()),
                         parseDouble(item.evluPflsRt())
@@ -135,6 +135,21 @@ public class KisBalanceClient {
             return Math.round(Double.parseDouble(value.trim()) * 100.0) / 100.0;
         } catch (NumberFormatException e) {
             log.error("KIS 잔고 응답 Double 파싱 실패 - value: '{}'", value);
+            return 0.0;
+        }
+    }
+
+    /**
+     * 가격 파싱 (S14P31B106-360) — 정수 / 소수점 응답 모두 허용, 둘째자리 반올림.
+     * KIS 응답이 매입평균가 등 일부 필드를 소수점 4자리 ('2436.6000') 로 내려주는 사례 대응.
+     * 명세상 모든 필드가 String 이므로 BE 측이 적절한 number 타입 선택.
+     */
+    private double parsePrice(String value) {
+        if (value == null || value.isBlank()) return 0.0;
+        try {
+            return Math.round(Double.parseDouble(value.trim()) * 100.0) / 100.0;
+        } catch (NumberFormatException e) {
+            log.error("KIS 잔고 응답 price 파싱 실패 - value: '{}'", value);
             return 0.0;
         }
     }
