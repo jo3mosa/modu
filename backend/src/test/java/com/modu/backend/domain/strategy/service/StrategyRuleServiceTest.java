@@ -57,6 +57,7 @@ class StrategyRuleServiceTest {
                 .takeProfitPct(5L)
                 .maxDailyOrderCount(10L)
                 .dailyLossLimitAmount(500000L)
+                .aiBudgetAmount(2_000_000L)
                 .version(2L)
                 .createdAt(updatedAt.minusDays(1))
                 .updatedAt(updatedAt)
@@ -72,6 +73,7 @@ class StrategyRuleServiceTest {
         assertThat(response.takeProfitRate()).isEqualTo(5);
         assertThat(response.maxDailyOrderCount()).isEqualTo(10L);
         assertThat(response.maxDailyLossAmount()).isEqualTo(500000L);
+        assertThat(response.aiBudgetAmount()).isEqualTo(2_000_000L);
         assertThat(response.updatedAt()).isEqualTo(updatedAt);
         assertThat(response.version()).isEqualTo(2L);
     }
@@ -109,6 +111,7 @@ class StrategyRuleServiceTest {
         assertThat(response.takeProfitRate()).isEqualTo(5);
         assertThat(response.maxDailyOrderCount()).isEqualTo(10L);
         assertThat(response.maxDailyLossAmount()).isEqualTo(500000L);
+        assertThat(response.aiBudgetAmount()).isEqualTo(2_000_000L);
         assertThat(response.updatedAt()).isNotNull();
         assertThat(response.version()).isEqualTo(0L);
 
@@ -121,6 +124,7 @@ class StrategyRuleServiceTest {
         assertThat(savedRule.getTakeProfitPct()).isEqualTo(5L);
         assertThat(savedRule.getMaxDailyOrderCount()).isEqualTo(10L);
         assertThat(savedRule.getDailyLossLimitAmount()).isEqualTo(500000L);
+        assertThat(savedRule.getAiBudgetAmount()).isEqualTo(2_000_000L);
         assertThat(savedRule.getCreatedAt()).isNotNull();
         assertThat(savedRule.getUpdatedAt()).isNotNull();
 
@@ -134,6 +138,7 @@ class StrategyRuleServiceTest {
         assertThat(savedHistory.getTakeProfitPct()).isEqualTo(5L);
         assertThat(savedHistory.getMaxDailyOrderCount()).isEqualTo(10L);
         assertThat(savedHistory.getDailyLossLimitAmount()).isEqualTo(500000L);
+        assertThat(savedHistory.getAiBudgetAmount()).isEqualTo(2_000_000L);
         assertThat(savedHistory.getVersionNo()).isEqualTo(0L);
     }
 
@@ -149,6 +154,7 @@ class StrategyRuleServiceTest {
                 .takeProfitPct(4L)
                 .maxDailyOrderCount(5L)
                 .dailyLossLimitAmount(300000L)
+                .aiBudgetAmount(1_000_000L)
                 .version(2L)
                 .createdAt(createdAt)
                 .updatedAt(createdAt)
@@ -159,7 +165,7 @@ class StrategyRuleServiceTest {
         // when
         RuleUpdateResponse response = strategyRuleService.updateRules(
                 userId,
-                new RuleUpdateRequest(3, 5, 10L, 500000L, 2L)
+                new RuleUpdateRequest(3, 5, 10L, 500000L, 2_000_000L, 2L)
         );
 
         // then
@@ -167,6 +173,7 @@ class StrategyRuleServiceTest {
         assertThat(response.takeProfitRate()).isEqualTo(5);
         assertThat(response.maxDailyOrderCount()).isEqualTo(10L);
         assertThat(response.maxDailyLossAmount()).isEqualTo(500000L);
+        assertThat(response.aiBudgetAmount()).isEqualTo(2_000_000L);
         assertThat(response.version()).isEqualTo(3L);
 
         assertThat(existingRule.getCreatedAt()).isEqualTo(createdAt);
@@ -175,6 +182,7 @@ class StrategyRuleServiceTest {
         assertThat(existingRule.getTakeProfitPct()).isEqualTo(5L);
         assertThat(existingRule.getMaxDailyOrderCount()).isEqualTo(10L);
         assertThat(existingRule.getDailyLossLimitAmount()).isEqualTo(500000L);
+        assertThat(existingRule.getAiBudgetAmount()).isEqualTo(2_000_000L);
         verify(tradingRuleRepository, never()).saveAndFlush(any(TradingRule.class));
         verify(tradingRuleRepository).flush();
 
@@ -196,11 +204,12 @@ class StrategyRuleServiceTest {
                 .takeProfitPct(4L)
                 .maxDailyOrderCount(5L)
                 .dailyLossLimitAmount(300000L)
+                .aiBudgetAmount(1_000_000L)
                 .version(2L)
                 .createdAt(createdAt)
                 .updatedAt(createdAt)
                 .build();
-        RuleUpdateRequest request = new RuleUpdateRequest(3, 5, 10L, 500000L, 1L);
+        RuleUpdateRequest request = new RuleUpdateRequest(3, 5, 10L, 500000L, 2_000_000L, 1L);
 
         when(tradingRuleRepository.findById(userId)).thenReturn(Optional.of(existingRule));
 
@@ -252,6 +261,7 @@ class StrategyRuleServiceTest {
                 5,
                 10L,
                 500000L,
+                2_000_000L,
                 0L
         );
     }

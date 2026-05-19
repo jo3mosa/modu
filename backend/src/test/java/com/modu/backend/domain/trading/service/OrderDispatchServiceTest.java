@@ -10,12 +10,18 @@ import com.modu.backend.domain.trading.entity.OrderSide;
 import com.modu.backend.domain.trading.entity.OrderSource;
 import com.modu.backend.domain.trading.entity.OrderStatus;
 import com.modu.backend.domain.trading.entity.OrderType;
+import com.modu.backend.domain.trading.exception.OrderErrorCode;
 import com.modu.backend.domain.trading.repository.OrderRepository;
 import com.modu.backend.domain.trading.sse.OrderSseEmitterManager;
+import com.modu.backend.domain.trading.sse.OrderSseEvent;
+import com.modu.backend.domain.trading.sse.OrderSseEventType;
 import com.modu.backend.domain.user.entity.KisCredential;
+import com.modu.backend.domain.user.exception.UserErrorCode;
+import com.modu.backend.global.error.ApiException;
 import com.modu.backend.global.kis.KisApiCallTemplate;
 import com.modu.backend.global.util.AesGcmEncryptor;
 import com.modu.backend.domain.user.repository.KisCredentialRepository;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -34,6 +40,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -94,6 +101,116 @@ class OrderDispatchServiceTest {
         assertThat(order.getKisOrderNo()).isEqualTo("ORD123");
         verify(killSwitchService).recordSuccess(eq(USER_ID), eq(STOCK));
         verify(sseEmitterManager).send(eq(USER_ID), any());
+    }
+
+    @Test
+    @DisplayName("REGULAR + MANUAL 성공 → recordSuccess 호출 X (수동 주문은 Kill Switch 카운트 제외)")
+    void regularPhase_manual_success() {
+        Order order = orderPending(OrderSource.MANUAL);
+        givenOrder(order, realCredential());
+        when(marketHourPolicy.classify(any())).thenReturn(MarketHourPhase.REGULAR);
+        when(kisOrderClient.placeOrder(any(), any(), any(), any(), any(), any(), any(), any(), anyLong(), anyLong()))
+                .thenReturn(new KisOrderClient.KisOrderResult("ORDM1", "ORGM1"));
+
+        service.dispatch(ORDER_ID);
+
+        assertThat(order.getKisOrderNo()).isEqualTo("ORDM1");
+        verify(killSwitchService, never()).recordSuccess(anyLong(), anyString());
+        verify(sseEmitterManager).send(eq(USER_ID), any());
+    }
+
+    @Test
+    @DisplayName("REGULAR + 자격증명 없음 → REJECTED + ORDER_FAILED SSE")
+    void regularPhase_credentialNotFound() {
+        Order order = orderPending(OrderSource.MANUAL);
+        when(orderRepository.findByIdForUpdate(ORDER_ID)).thenReturn(Optional.of(order));
+        when(kisCredentialRepository.findByUserId(USER_ID)).thenReturn(Optional.empty());
+        when(marketHourPolicy.classify(any())).thenReturn(MarketHourPhase.REGULAR);
+
+        service.dispatch(ORDER_ID);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.REJECTED);
+        assertThat(order.getRejectReason()).isEqualTo(UserErrorCode.KIS_NOT_CONNECTED.getDefaultMessage());
+        ArgumentCaptor<OrderSseEvent> eventCaptor = ArgumentCaptor.forClass(OrderSseEvent.class);
+        verify(sseEmitterManager).send(eq(USER_ID), eventCaptor.capture());
+        assertThat(eventCaptor.getValue().type()).isEqualTo(OrderSseEventType.ORDER_FAILED);
+        // 인프라성 — Kill Switch 카운트 제외
+        verify(killSwitchService, never()).recordReject(anyLong(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("REGULAR + 자격증명 복호화 실패 → REJECTED + Kill Switch 카운트 X")
+    void regularPhase_credentialDecryptFail() {
+        Order order = orderPending(OrderSource.AI_DECISION);
+        givenOrder(order, realCredential());
+        when(marketHourPolicy.classify(any())).thenReturn(MarketHourPhase.REGULAR);
+        when(encryptor.decrypt(anyString()))
+                .thenThrow(new IllegalStateException("decrypt failed"));
+
+        service.dispatch(ORDER_ID);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.REJECTED);
+        assertThat(order.getRejectReason())
+                .isEqualTo(UserErrorCode.KIS_CREDENTIAL_DECRYPT_FAILED.getDefaultMessage());
+        verify(killSwitchService, never()).recordReject(anyLong(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("REGULAR + 토큰 재발급 실패(KIS_TOKEN_INVALIDATED) → REJECTED + ORDER_FAILED + KillSwitch X (인증 인프라 장애)")
+    void regularPhase_tokenInvalidated() {
+        Order order = orderPending(OrderSource.AI_DECISION);
+        givenOrder(order, realCredential());
+        when(marketHourPolicy.classify(any())).thenReturn(MarketHourPhase.REGULAR);
+        // setUp 의 thenAnswer stub 을 doThrow 로 덮어쓴다 (when().thenThrow() 는 thenAnswer 람다를 평가해 NPE)
+        doThrow(new ApiException(UserErrorCode.KIS_TOKEN_INVALIDATED))
+                .when(kisApiCallTemplate).callWithTokenRetry(anyLong(), anyString(), anyString(), any());
+
+        service.dispatch(ORDER_ID);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.REJECTED);
+        assertThat(order.getRejectReason())
+                .isEqualTo(UserErrorCode.KIS_TOKEN_INVALIDATED.getDefaultMessage());
+        ArgumentCaptor<OrderSseEvent> eventCaptor = ArgumentCaptor.forClass(OrderSseEvent.class);
+        verify(sseEmitterManager).send(eq(USER_ID), eventCaptor.capture());
+        assertThat(eventCaptor.getValue().type()).isEqualTo(OrderSseEventType.ORDER_FAILED);
+        // 토큰 실패는 KIS 응답성 거부 아님 → Kill Switch 카운트 제외
+        verify(killSwitchService, never()).recordReject(anyLong(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("REGULAR + MANUAL + INSUFFICIENT_BALANCE → REJECTED + Kill Switch 카운트 X (수동)")
+    void regularPhase_manual_kisReject() {
+        Order order = orderPending(OrderSource.MANUAL);
+        givenOrder(order, realCredential());
+        when(marketHourPolicy.classify(any())).thenReturn(MarketHourPhase.REGULAR);
+        doThrow(new ApiException(OrderErrorCode.INSUFFICIENT_BALANCE))
+                .when(kisApiCallTemplate).callWithTokenRetry(anyLong(), anyString(), anyString(), any());
+
+        service.dispatch(ORDER_ID);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.REJECTED);
+        assertThat(order.getRejectReason())
+                .isEqualTo(OrderErrorCode.INSUFFICIENT_BALANCE.getDefaultMessage());
+        ArgumentCaptor<OrderSseEvent> eventCaptor = ArgumentCaptor.forClass(OrderSseEvent.class);
+        verify(sseEmitterManager).send(eq(USER_ID), eventCaptor.capture());
+        assertThat(eventCaptor.getValue().type()).isEqualTo(OrderSseEventType.ORDER_FAILED);
+        // MANUAL source — Kill Switch 카운트 제외
+        verify(killSwitchService, never()).recordReject(anyLong(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("REGULAR + AI 매매 + INSUFFICIENT_BALANCE → REJECTED + Kill Switch recordReject")
+    void regularPhase_aiDecision_kisReject() {
+        Order order = orderPending(OrderSource.AI_DECISION);
+        givenOrder(order, realCredential());
+        when(marketHourPolicy.classify(any())).thenReturn(MarketHourPhase.REGULAR);
+        doThrow(new ApiException(OrderErrorCode.INSUFFICIENT_BALANCE))
+                .when(kisApiCallTemplate).callWithTokenRetry(anyLong(), anyString(), anyString(), any());
+
+        service.dispatch(ORDER_ID);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.REJECTED);
+        verify(killSwitchService).recordReject(eq(USER_ID), eq(STOCK), anyString());
     }
 
     // ──────────────────────────────────────────────────────────────────

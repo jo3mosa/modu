@@ -4,7 +4,7 @@ from typing import Any
 from langchain_core.exceptions import OutputParserException
 from langchain_core.output_parsers import PydanticOutputParser
 
-from app.config.llm import get_structured_llm
+from app.config.llm import get_decision_llm
 from app.observability.langsmith_helpers import add_run_metadata, count_tokens
 from app.state.investment_state import InvestmentAgentState
 from app.state.schemas import ExpectedScenario, FinalDecision
@@ -61,7 +61,7 @@ def decision_manager(state: InvestmentAgentState) -> dict[str, Any]:
             history_context_tokens=history_context_tokens,
         )
 
-    chain = load_prompt(str(_PROMPT_PATH)) | get_structured_llm() | _parser
+    chain = load_prompt(str(_PROMPT_PATH)) | get_decision_llm() | _parser
 
     debate_state = state.investment_debate_state or {}
     mc = state.memory_context or {}

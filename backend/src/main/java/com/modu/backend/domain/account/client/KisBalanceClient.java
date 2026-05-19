@@ -24,7 +24,8 @@ import java.util.List;
  * - pdno          → stockCode
  * - prdt_name     → stockName
  * - hldg_qty      → quantity
- * - pchs_avg_pric → avgBuyPrice
+ * - pchs_avg_pric → avgBuyPrice (Double — 분할 매수 평균가는 소수점 가능, S14P31B106-360)
+ *                                 parseDouble 사용 (evlu_pfls_rt 와 동일 헬퍼 — DRY)
  * - prpr          → currentPrice
  * - evlu_pfls_amt → pnl
  * - evlu_pfls_rt  → pnlPct
@@ -106,7 +107,7 @@ public class KisBalanceClient {
                         item.pdno(),
                         item.prdtName(),
                         parseLong(item.hldgQty()),
-                        parseLong(item.pchsAvgPric()),
+                        parseDouble(item.pchsAvgPric()),
                         parseLong(item.prpr()),
                         parseLong(item.evluPflsAmt()),
                         parseDouble(item.evluPflsRt())
@@ -129,6 +130,11 @@ public class KisBalanceClient {
         }
     }
 
+    /**
+     * 소수점 응답 파싱 — 정수 / 소수점 모두 허용, 둘째자리 반올림.
+     * 매입평균가 (분할 매수 시 소수점, S14P31B106-360) / 평가손익율 (%) 등 비정수 가격·비율 필드.
+     * KIS 명세상 모든 필드가 String 이라 BE 측 number 매핑이 책임.
+     */
     private double parseDouble(String value) {
         if (value == null || value.isBlank()) return 0.0;
         try {

@@ -19,17 +19,30 @@ public interface AiJudgmentRepository extends JpaRepository<AiJudgment, Long> {
     boolean existsByUserIdAndSourceEventId(Long userId, String sourceEventId);
 
     /**
-     * 승인 대기 목록 (S14P31B106-292)
-     * execution_status = APPROVAL_REQUIRED + 미만료 (스케줄러가 만료 row 는 EXPIRED 로 전환)
+     * 승인 대기 목록 (S14P31B106-292) — 단건 status (legacy)
      */
     java.util.List<AiJudgment> findByUserIdAndExecutionStatusOrderByJudgedAtDesc(
             Long userId, com.modu.backend.domain.ai.entity.AiExecutionStatus executionStatus);
 
     /**
-     * 만료 스케줄러 (단계 9) 가 폴링할 만료 후보 (S14P31B106-292)
+     * 승인 대기 목록 (S14P31B106-354) — APPROVAL_REQUIRED + RECOMMENDED 동시 조회용
+     */
+    java.util.List<AiJudgment> findByUserIdAndExecutionStatusInOrderByJudgedAtDesc(
+            Long userId,
+            java.util.Collection<com.modu.backend.domain.ai.entity.AiExecutionStatus> executionStatuses);
+
+    /**
+     * 만료 스케줄러 (단계 9) 가 폴링할 만료 후보 (S14P31B106-292) — 단건 status (legacy)
      */
     java.util.List<AiJudgment> findByExecutionStatusAndApprovalExpiresAtBefore(
             com.modu.backend.domain.ai.entity.AiExecutionStatus executionStatus,
+            java.time.OffsetDateTime threshold);
+
+    /**
+     * 만료 스케줄러 (S14P31B106-354) — APPROVAL_REQUIRED + RECOMMENDED 동시 만료 처리용
+     */
+    java.util.List<AiJudgment> findByExecutionStatusInAndApprovalExpiresAtBefore(
+            java.util.Collection<com.modu.backend.domain.ai.entity.AiExecutionStatus> executionStatuses,
             java.time.OffsetDateTime threshold);
 
     /**

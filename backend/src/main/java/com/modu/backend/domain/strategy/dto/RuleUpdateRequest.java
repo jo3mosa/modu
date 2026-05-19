@@ -8,6 +8,7 @@ public record RuleUpdateRequest(
         @NotNull @Min(1) Integer takeProfitRate,
         @NotNull @Min(1) Long maxDailyOrderCount,
         @NotNull @Min(1) Long maxDailyLossAmount,
+        @NotNull @Min(1) Long aiBudgetAmount,
         @NotNull @Min(0) Long version
 ) {
 }

@@ -4,7 +4,7 @@ from typing import Any
 from langchain_core.exceptions import OutputParserException
 from langchain_core.output_parsers import PydanticOutputParser
 
-from app.config.llm import get_structured_llm
+from app.config.llm import get_strategy_llm
 from app.observability.langsmith_helpers import add_run_metadata
 from app.state.investment_state import InvestmentAgentState
 from app.state.schemas import ResearchVerdict, StrategyDraft
@@ -53,17 +53,18 @@ def strategy_manager(state: InvestmentAgentState) -> dict[str, Any]:
 
     # 토론이 비면 solo 프롬프트로 — debate_history 변수가 없어 inputs에서도 제외.
     prompt_path = _PROMPT_PATH_SOLO if is_debate_empty else _PROMPT_PATH
-    chain = load_prompt(str(prompt_path)) | get_structured_llm() | _parser
+    chain = load_prompt(str(prompt_path)) | get_strategy_llm() | _parser
 
-    signals = state.analysis_snapshot.get("signals", {}) if state.analysis_snapshot else {}
+    snapshot = state.analysis_snapshot or {}
     mc = state.memory_context or {}
 
     inputs = {
         "candidate_assets": to_json(state.candidate_assets),
-        "signals_technical": to_json(signals.get("technical", {})),
-        "signals_fundamental": to_json(signals.get("fundamental", {})),
-        "signals_event": to_json(signals.get("event", {})),
-        "signals_sentiment": to_json(signals.get("sentiment", {})),
+        "signals_technical": to_json(snapshot.get("technical", {})),
+        "signals_fundamental": to_json(snapshot.get("fundamental", {})),
+        "signals_event": to_json(snapshot.get("event", {})),
+        "signals_news_summary": to_json(snapshot.get("news_summary") or {}),
+        "signals_sentiment": to_json(snapshot.get("sentiment", {})),
         "portfolio_snapshot": to_json(state.portfolio_snapshot),
         "user_context": to_json(state.user_context),
         "policy_context": to_json(state.policy_context),

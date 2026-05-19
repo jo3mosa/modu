@@ -41,6 +41,9 @@ public class TradingRuleHistory {
     @Column(name = "daily_loss_limit_amount", nullable = false)
     private Long dailyLossLimitAmount;
 
+    @Column(name = "ai_budget_amount", nullable = false)
+    private Long aiBudgetAmount;
+
     @Column(name = "natural_language_rule")
     private String naturalLanguageRule;
 
@@ -61,6 +64,7 @@ public class TradingRuleHistory {
             Long takeProfitPct,
             Long maxDailyOrderCount,
             Long dailyLossLimitAmount,
+            Long aiBudgetAmount,
             String naturalLanguageRule,
             Map<String, Object> parsedRuleJson,
             Long versionNo,
@@ -71,6 +75,7 @@ public class TradingRuleHistory {
         this.takeProfitPct = takeProfitPct;
         this.maxDailyOrderCount = maxDailyOrderCount;
         this.dailyLossLimitAmount = dailyLossLimitAmount;
+        this.aiBudgetAmount = aiBudgetAmount;
         this.naturalLanguageRule = naturalLanguageRule;
         this.parsedRuleJson = parsedRuleJson;
         this.versionNo = versionNo;

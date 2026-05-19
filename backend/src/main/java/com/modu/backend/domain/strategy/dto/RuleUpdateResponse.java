@@ -7,6 +7,7 @@ public record RuleUpdateResponse(
         Integer takeProfitRate,
         Long maxDailyOrderCount,
         Long maxDailyLossAmount,
+        Long aiBudgetAmount,
         OffsetDateTime updatedAt,
         Long version
 ) {

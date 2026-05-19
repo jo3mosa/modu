@@ -93,3 +93,13 @@ class UserTriggerEvent(BaseModel):
 
     # backtest 시뮬레이션 기준 시각. None이면 실시간(NOW). retrieval/memory_log가 이 값을 사용.
     as_of: datetime | None = Field(default=None, description="backtest 시뮬레이션 시각 (실시간은 None)")
+
+    # True: 해당 종목 보유자 / False: 비보유자 (risk_grade >= stock_tier 매칭으로 포함된 유저)
+    # run_and_publish에서 False + SELL/HOLD 결과는 Kafka 발행을 생략한다.
+    is_holder: bool = Field(default=True)
+
+    # 트리거 발화 시점에 조회한 종목 risk tier (1~5). buy_candidate_repository 미주입 시 None.
+    stock_tier: int | None = Field(default=None)
+
+    # 비보유자 매칭에 사용된 유저의 실제 risk_grade (1~5). 보유자는 None.
+    matched_risk_grade: int | None = Field(default=None)

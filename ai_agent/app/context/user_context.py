@@ -79,6 +79,9 @@ def load_user_context(user_id: int, engine: Engine) -> dict[str, Any]:
         "risk_rules": {
             "stop_loss_pct": rules.get("stop_loss_pct"),
             "take_profit_pct": rules.get("take_profit_pct"),
+            # AI 운용 한도(단일 주문) — BE의 trading_rules.ai_budget_amount 컬럼 도입 후 활성화.
+            # 현재는 SELECT에 없어 항상 None → risk_gate가 None일 때 검증 skip하므로 backward compat.
+            "ai_budget_amount": rules.get("ai_budget_amount"),
         },
         # TODO: 고도화 시 investment-strategy.md 기반 DB 테이블로 교체
         "domestic_stock_risk_policy": copy.deepcopy(_DOMESTIC_STOCK_RISK_POLICY),
@@ -134,6 +137,8 @@ def _fetch_investment_profile(user_id: int, engine: Engine) -> dict[str, Any]:
 
 
 def _fetch_trading_rules(user_id: int, engine: Engine) -> dict[str, Any]:
+    # TODO(BE): trading_rules.ai_budget_amount 컬럼 추가 시 SELECT에 함께 포함.
+    # risk_gate가 risk_rules.ai_budget_amount를 이미 hard rule로 검증 중 (None이면 skip).
     query = text("""
         SELECT stop_loss_pct, take_profit_pct
         FROM trading_rules

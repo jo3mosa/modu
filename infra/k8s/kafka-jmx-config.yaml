@@ -1,7 +1,10 @@
-# [S14P31B106-348] Kafka JMX Exporter 설정
+# [S14P31B106-352] Kafka JMX Exporter 룰셋 — community 표준 패턴
 #
-# Kafka 브로커가 노출하는 JMX MBean 을 Prometheus 메트릭으로 변환하기 위한 룰셋.
-# kafka.yaml 의 javaagent 가 이 ConfigMap 을 마운트해서 사용한다.
+# 변경 사유:
+#   기존 룰셋은 JMX type 을 메트릭 이름에서 제거해 간결했지만, Grafana 마켓플레이스의
+#   주요 Kafka 대시보드(11962, 7589 등)는 type 을 포함한 표준 패턴
+#   (예: kafka_controller_kafkacontroller_activecontrollercount) 을 기대한다.
+#   대시보드 PromQL 수십 개를 수정하느니 룰셋을 표준에 맞추는 게 유지보수에 유리.
 #
 # 동작 흐름:
 #   kafka pod 내부 JMX MBean
@@ -9,7 +12,9 @@
 #     -> :9404/metrics (Prometheus text format)
 #     -> ServiceMonitor (kafka-servicemonitor.yaml) -> kube-prom Prometheus
 #
-# 룰셋 출처: prometheus/jmx_exporter 공식 kafka 예시를 우리 운영에 필요한 항목만 추려서 정리.
+# 적용 후 Kafka pod 롤링 재기동 필요 — javaagent 는 시작 시점에만 룰 yaml 을 로드.
+#   kubectl apply -f infra/k8s/kafka-jmx-config.yaml
+#   kubectl rollout restart statefulset/kafka -n modu-apps
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -17,16 +22,15 @@ metadata:
   namespace: modu-apps
 data:
   kafka-jmx-exporter.yml: |
-    # 메트릭 이름을 소문자/스네이크케이스로 통일 (Prometheus 컨벤션).
+    # Prometheus 컨벤션 — 소문자 + 스네이크케이스
     lowercaseOutputName: true
-    # 라벨 이름도 동일하게 통일.
     lowercaseOutputLabelNames: true
 
     rules:
-      # ───────────────────────────────────────────────────────────
-      # 1. 브로커 토픽 처리량 (MessagesIn, BytesIn/Out, FailedFetch 등)
-      #    UnderReplicatedPartitions 와 함께 가장 자주 보는 지표.
-      # ───────────────────────────────────────────────────────────
+      # ──────────────────────────────────────────────────────────────────
+      # 1. BrokerTopicMetrics — 토픽별/전체 처리량
+      #    예: MessagesInPerSec, BytesInPerSec, FailedFetchRequestsPerSec
+      # ──────────────────────────────────────────────────────────────────
       - pattern: kafka.server<type=BrokerTopicMetrics, name=(.+), topic=(.+)><>Count
         name: kafka_server_brokertopicmetrics_$1_total
         type: COUNTER
@@ -35,47 +39,84 @@ data:
       - pattern: kafka.server<type=BrokerTopicMetrics, name=(.+)><>Count
         name: kafka_server_brokertopicmetrics_$1_total
         type: COUNTER
-
-      # ───────────────────────────────────────────────────────────
-      # 2. 컨트롤러 상태 — ActiveController 가 정확히 1 이어야 정상.
-      #    OfflinePartitionsCount > 0 이면 즉시 알람.
-      # ───────────────────────────────────────────────────────────
-      - pattern: kafka.controller<type=KafkaController, name=(.+)><>Value
-        name: kafka_controller_$1
-        type: GAUGE
-
-      # ───────────────────────────────────────────────────────────
-      # 3. ReplicaManager — UnderReplicatedPartitions, ISR shrink/expand.
-      #    클러스터 헬스의 핵심 지표.
-      # ───────────────────────────────────────────────────────────
-      - pattern: kafka.server<type=ReplicaManager, name=(.+)><>Value
-        name: kafka_server_replicamanager_$1
-        type: GAUGE
-      - pattern: kafka.server<type=ReplicaManager, name=(.+)><>(Count|OneMinuteRate)
-        name: kafka_server_replicamanager_$1
-        type: GAUGE
-
-      # ───────────────────────────────────────────────────────────
-      # 4. 요청 처리 성능 — RequestHandlerAvgIdlePercent < 20% 면 broker 한계 근접.
-      # ───────────────────────────────────────────────────────────
-      - pattern: kafka.server<type=KafkaRequestHandlerPool, name=RequestHandlerAvgIdlePercent><>OneMinuteRate
-        name: kafka_request_handler_avg_idle_percent
-        type: GAUGE
-      - pattern: kafka.network<type=RequestMetrics, name=RequestsPerSec, request=(.+)><>OneMinuteRate
-        name: kafka_network_requests_per_sec
+      - pattern: kafka.server<type=BrokerTopicMetrics, name=(.+), topic=(.+)><>OneMinuteRate
+        name: kafka_server_brokertopicmetrics_$1_one_minute_rate
         type: GAUGE
         labels:
-          request: "$1"
+          topic: "$2"
+
+      # ──────────────────────────────────────────────────────────────────
+      # 2. RequestMetrics — 요청별 latency 분위수 / 처리량
+      #    예: TotalTimeMs, RequestsPerSec
+      # ──────────────────────────────────────────────────────────────────
+      - pattern: kafka.network<type=RequestMetrics, name=(.+), request=(.+)><>(\d+)thPercentile
+        name: kafka_network_requestmetrics_$1
+        type: GAUGE
+        labels:
+          request: "$2"
+          quantile: "0.$3"
       - pattern: kafka.network<type=RequestMetrics, name=(.+), request=(.+)><>Mean
-        name: kafka_network_request_$1_mean_ms
+        name: kafka_network_requestmetrics_$1
+        type: GAUGE
+        labels:
+          request: "$2"
+          quantile: "0.50"
+      - pattern: kafka.network<type=RequestMetrics, name=(.+), request=(.+)><>(Count|OneMinuteRate)
+        name: kafka_network_requestmetrics_$1
         type: GAUGE
         labels:
           request: "$2"
 
-      # ───────────────────────────────────────────────────────────
-      # 5. 로그(파티션) — LogStartOffset, LogEndOffset, Size.
-      #    Disk 사용량 추정에 사용.
-      # ───────────────────────────────────────────────────────────
+      # ──────────────────────────────────────────────────────────────────
+      # 3. Controller — type=KafkaController 를 메트릭 이름에 포함시켜
+      #    표준 대시보드(11962 등)와 호환. 핵심 지표:
+      #      kafka_controller_kafkacontroller_activecontrollercount     ( = 1 정상)
+      #      kafka_controller_kafkacontroller_offlinepartitionscount   ( = 0 정상)
+      #      kafka_controller_kafkacontroller_globaltopiccount
+      # ──────────────────────────────────────────────────────────────────
+      - pattern: kafka.controller<type=(.+), name=(.+)><>Value
+        name: kafka_controller_$1_$2
+        type: GAUGE
+      - pattern: kafka.controller<type=(.+), name=(.+)><>(Count|OneMinuteRate)
+        name: kafka_controller_$1_$2
+        type: GAUGE
+
+      # ──────────────────────────────────────────────────────────────────
+      # 4. Network SocketServer — NetworkProcessorAvgIdlePercent 등
+      # ──────────────────────────────────────────────────────────────────
+      - pattern: kafka.network<type=(.+), name=(.+)><>Value
+        name: kafka_network_$1_$2
+        type: GAUGE
+
+      # ──────────────────────────────────────────────────────────────────
+      # 5. ReplicaManager — UnderReplicatedPartitions, ISR shrink/expand
+      #    클러스터 헬스의 핵심 지표.
+      # ──────────────────────────────────────────────────────────────────
+      - pattern: kafka.server<type=ReplicaManager, name=(.+)><>(Value|Count|OneMinuteRate)
+        name: kafka_server_replicamanager_$1
+        type: GAUGE
+
+      # ──────────────────────────────────────────────────────────────────
+      # 6. KafkaRequestHandlerPool — RequestHandlerAvgIdlePercent
+      #    Idle < 20% 면 broker 한계 근접.
+      # ──────────────────────────────────────────────────────────────────
+      - pattern: kafka.server<type=KafkaRequestHandlerPool, name=(.+)><>(Count|OneMinuteRate)
+        name: kafka_server_kafkarequesthandlerpool_$1_count
+        type: COUNTER
+
+      # ──────────────────────────────────────────────────────────────────
+      # 7. Cluster Partition — Leader/Follower 표시용
+      # ──────────────────────────────────────────────────────────────────
+      - pattern: kafka.cluster<type=Partition, name=(.+), topic=(.+), partition=(.+)><>Value
+        name: kafka_cluster_partition_$1
+        type: GAUGE
+        labels:
+          topic: "$2"
+          partition: "$3"
+
+      # ──────────────────────────────────────────────────────────────────
+      # 8. Log size — 디스크 사용량 추정
+      # ──────────────────────────────────────────────────────────────────
       - pattern: kafka.log<type=Log, name=(.+), topic=(.+), partition=(.+)><>Value
         name: kafka_log_$1
         type: GAUGE
@@ -83,9 +124,9 @@ data:
           topic: "$2"
           partition: "$3"
 
-      # ───────────────────────────────────────────────────────────
-      # 6. JVM 표준 메트릭 — heap, GC, threads.
-      # ───────────────────────────────────────────────────────────
+      # ──────────────────────────────────────────────────────────────────
+      # 9. JVM 표준 메트릭
+      # ──────────────────────────────────────────────────────────────────
       - pattern: java.lang<type=Memory><HeapMemoryUsage>(\w+)
         name: jvm_memory_heap_$1_bytes
         type: GAUGE
