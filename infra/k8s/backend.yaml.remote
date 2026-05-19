@@ -7,10 +7,8 @@ metadata:
   labels:
     app: backend
 spec:
-  # [S14P31B106-345] KIS 단일세션 제약 회피용 응급조치 — 마이그레이션 동안 1로 축소.
-  # market.feed.client-mode=REMOTE 로 전환 완료 후 다시 2 이상으로 복원 (Phase 7 follow-up).
-  # 이전: replicas: 2 (두 pod 가 같은 공용 appkey 로 KIS WS 동시 접속 → 무한 재연결 루프)
-  replicas: 1
+  # [고가용성] 서버 부하 분산 및 무중단 운영을 위해 2개의 포드를 유지합니다.
+  replicas: 2 
   selector:
     matchLabels:
       app: backend
@@ -37,11 +35,9 @@ spec:
         resources:
           # Spring Boot JVM(~300Mi) + Kafka 컨슈머/프로듀서 + JPA + SSE 연결 유지
           # 거래시간 burst 대응 위해 limits 여유 확보.
-          # CPU request: 실측 ~21m 기반 — burst 와 GC 대비 150m 로 보수적 설정.
-          # 단일 노드 K3s 자원 확보 (이전 300m 시 노드 CPU requests 98% 도달).
           requests:
             memory: "768Mi"
-            cpu: "150m"
+            cpu: "300m"
           limits:
             memory: "1536Mi"
             cpu: "1500m"
@@ -72,8 +68,7 @@ spec:
   selector:
     app: backend # 위의 Deployment 라벨과 일치하여 트래픽을 전달합니다.
   ports:
-  - name: http     # ServiceMonitor (infra/k8s/backend-servicemonitor.yaml) 가 이 이름으로 참조
-    protocol: TCP
+  - protocol: TCP
     port: 80       # 서비스가 클러스터 내부에서 노출할 포트
     targetPort: 8080 # 실제 컨테이너 내부로 전달할 포트
   # [보안/설계] 백엔드는 외부 노출 없이 클러스터 내부(프론트엔드 -> 백엔드) 통신만 허용하는 ClusterIP 타입을 사용합니다.
@@ -82,8 +77,7 @@ spec:
 ---
 
 # 3. PodDisruptionBudget — 노드 drain/유지보수 시 최소 1개 backend 가용 보장.
-# [S14P31B106-345] 마이그레이션 동안 replicas=1 이라 minAvailable=1 은 사실상 evict 차단.
-# Phase 7 에서 replicas 를 2 이상으로 복원하면 다시 의미를 가짐.
+# replicas 2 라 K8s 가 한 번에 둘 다 evict 하지 못하게 막아 무중단 보장.
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:

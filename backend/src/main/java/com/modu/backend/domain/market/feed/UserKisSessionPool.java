@@ -1,5 +1,6 @@
 package com.modu.backend.domain.market.feed;
 
+import com.modu.backend.domain.trading.position.repository.PositionThresholdRepository;
 import com.modu.backend.domain.user.entity.KisCredential;
 import com.modu.backend.domain.user.repository.KisCredentialRepository;
 import com.modu.backend.global.config.KisProfiles;
@@ -12,6 +13,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -33,6 +35,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class UserKisSessionPool {
 
     private final KisCredentialRepository credentialRepository;
+    private final PositionThresholdRepository positionThresholdRepository;
     private final UserKisSessionFactory factory;
 
     private final Map<Long, UserKisSession> sessions = new ConcurrentHashMap<>();
@@ -103,6 +106,7 @@ public class UserKisSessionPool {
         }
         try {
             created.start();
+            autoSubscribeHoldings(userId, created);
             log.info("[UserKisSessionPool] session started - userId: {}", userId);
         } catch (Exception e) {
             sessions.remove(userId, created);
@@ -110,5 +114,29 @@ public class UserKisSessionPool {
             throw new IllegalStateException("UserKisSession start failed - userId: " + userId, e);
         }
         return created;
+    }
+
+    /**
+     * 사용자 보유 종목 일괄 자동 구독 — Position Monitor 등 백그라운드 작업이 캐시된 시세를 참조.
+     * 실패는 WARN 만 — 세션 자체는 살아있어야 함 (체결통보는 필수, 보유종목 시세는 best-effort).
+     */
+    private void autoSubscribeHoldings(long userId, UserKisSession session) {
+        Set<String> stockCodes;
+        try {
+            stockCodes = positionThresholdRepository.findActiveStockCodesByUserId(userId);
+        } catch (Exception e) {
+            log.warn("[UserKisSessionPool] 보유 종목 조회 실패 - userId: {}, error: {}", userId, e.getMessage());
+            return;
+        }
+        if (stockCodes.isEmpty()) return;
+        log.info("[UserKisSessionPool] 보유 종목 자동 구독 - userId: {}, count: {}", userId, stockCodes.size());
+        for (String code : stockCodes) {
+            try {
+                session.subscribePrice(code);
+            } catch (Exception e) {
+                log.warn("[UserKisSessionPool] 보유 종목 구독 실패 - userId: {}, code: {}, error: {}",
+                        userId, code, e.getMessage());
+            }
+        }
     }
 }

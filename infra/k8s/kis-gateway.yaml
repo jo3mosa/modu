@@ -1,0 +1,81 @@
+# ============================================================
+# modu-kis-gateway (S14P31B106-345)
+#
+# [역할]
+#  - KIS WebSocket 단일 세션 보유 (사용자별 N개 풀)
+#  - 시세/호가/체결통보 multiplex
+#  - Redis Pub/Sub 으로 backend pod 들에 fanout
+#
+# [배포 정책]
+#  - replicas: 1 강제 — KIS 의 appkey 당 동시 1세션 제약 회피 목적이므로 다중 인스턴스 불가
+#  - strategy.type: Recreate — 롤링 업데이트 중에도 동시 2개 pod 가 떠선 안 됨
+#  - 같은 backend 이미지를 ENV SPRING_PROFILES_ACTIVE=gateway 로 분기 실행
+#  - PodDisruptionBudget 없음 (replicas=1 이라 의미 없음)
+#
+# [의존성]
+#  - Redis (시세 publish + control subscribe)
+#  - Kafka (체결통보 publish, 기존 토픽)
+#  - PostgreSQL (kis_credentials, position_thresholds, orders 등)
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: modu-kis-gateway
+  namespace: modu-apps
+  labels:
+    app: kis-gateway
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: kis-gateway
+  template:
+    metadata:
+      labels:
+        app: kis-gateway
+    spec:
+      imagePullSecrets:
+      - name: regcred
+      containers:
+      - name: kis-gateway
+        # Jenkinsfile 의 sed 가 같은 BACKEND_IMAGE placeholder 를 치환
+        image: BACKEND_IMAGE
+        ports:
+        - containerPort: 8080
+        envFrom:
+        - secretRef:
+            name: modu-secret
+        env:
+        # SPRING_PROFILES_ACTIVE 대신 _INCLUDE 사용:
+        # application.yml 의 default profile(local 등)을 유지하면서 gateway profile 만 "추가"
+        # → datasource/JPA/Kafka 등 base 설정 그대로 + KIS WS 분기만 gateway 로 활성
+        - name: SPRING_PROFILES_INCLUDE
+          value: "gateway"
+        - name: HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        resources:
+          # backend 보다 약간 작음 — 프론트 트래픽 수용 안 하고 KIS WS + Redis publish 만
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "1024Mi"
+            cpu: "1000m"
+        # Pod 가 KIS 연결까지 마쳤는지 확인 — 준비 전까지 트래픽 차단
+        # (gateway 는 외부 트래픽 받지 않지만, K8s 가 pod 상태를 정확히 알아야 Recreate 시 RTO 단축)
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 15
