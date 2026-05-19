@@ -1888,6 +1888,8 @@ def _build_experiment_command(
     score_after: bool,
     pm_mock: bool,
     initial_holdings: str | None = None,
+    initial_cash: float = 10_000_000,
+    holding_days: int = 7,
     resume: bool = False,
 ) -> list[str]:
     """run_model_experiment.py CLI 인자 리스트."""
@@ -1900,6 +1902,8 @@ def _build_experiment_command(
         "--watchlist", watchlist,
         "--backtest-user-id", str(backtest_user_id),
         "--output", str(output_dir),
+        "--initial-cash", str(int(initial_cash)),
+        "--holding-days", str(holding_days),
     ]
     if score_after:
         cmd.append("--score-after")
@@ -2384,6 +2388,8 @@ def tab_run() -> None:
                 score_after=score_after,
                 pm_mock=pm_mock,
                 initial_holdings=initial_holdings or None,
+                initial_cash=initial_cash,
+                holding_days=holding_days,
                 resume=resume,
             )
         else:
