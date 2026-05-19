@@ -118,12 +118,8 @@ def create_mock_user_trigger() -> UserTriggerEvent:
                 }
             ],
         },
-        user_context={
-            "risk_profile": "moderate",
-            "max_position_ratio": 0.3,
-            "stop_loss_rate": -5.0,
-            "target_profit_rate": 8.0,
-        },
+        # user_context는 UserTriggerEvent의 책임이 아니다 (schemas.py 참고).
+        # context_loader 노드가 그래프 실행 중 DB에서 직접 로드한다.
     )
 
 

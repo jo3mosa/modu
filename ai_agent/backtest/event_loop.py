@@ -29,6 +29,12 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
+from pymongo.errors import (
+    AutoReconnect,
+    ConnectionFailure,
+    NetworkTimeout,
+    ServerSelectionTimeoutError,
+)
 from sqlalchemy.engine import Engine
 
 from . import data_sources, signal_generator
@@ -42,6 +48,107 @@ logger = logging.getLogger(__name__)
 # LLM 호출 실패가 reasoning에 남기는 마커 — bull/bear/strategy_manager의 fallback 메시지.
 # resume 시 영업일을 partial로 마킹할지 판단에 사용.
 _LLM_FAIL_MARKERS = ("LLM 호출 실패", "LLM 출력 파싱", "재시도 중 LLM")
+
+
+# Mongo 원격 단절 시 dashboard(backtest_viewer)가 로그에서 감지하는 마커.
+# 형식 변경 시 dashboards/backtest_viewer.py의 _mongo_status_from_log도 함께 갱신할 것.
+_MONGO_DISCONNECT_MARKER = "[MONGO_DISCONNECTED]"
+_MONGO_WAITING_MARKER = "[MONGO_WAITING]"
+_MONGO_RECONNECT_MARKER = "[MONGO_RECONNECTED]"
+
+
+def _dump_equity_curve_partial(portfolio: "PortfolioFn", output_root: Path) -> None:
+    """매 영업일 EOD에 equity_curve.jsonl을 partial dump한다.
+
+    Anthropic harness 원칙의 "구조화된 핸드오프" 적용 — 백테스트 종료를 기다리지
+    않고 매 영업일 결과를 즉시 파일로 노출해, dashboard viewer가 진행 중에도
+    자산 추이 / 정통 메트릭 / KOSPI alpha 카드를 30초 주기로 갱신할 수 있게 한다.
+
+    portfolio가 equity_curve 속성을 노출하지 않거나(다른 PortfolioFn 구현체) 빈 경우
+    silent skip — 머니패스 영향 없음.
+    영업일당 ~수십 KB 이내 작은 파일이라 rewrite 비용 무시 가능.
+    """
+    curve = getattr(portfolio, "equity_curve", None) or []
+    if not curve:
+        return
+    try:
+        output_root.mkdir(parents=True, exist_ok=True)
+        path = output_root / "equity_curve.jsonl"
+        with path.open("w", encoding="utf-8") as f:
+            for snap in curve:
+                f.write(json.dumps(snap, ensure_ascii=False, default=str) + "\n")
+    except Exception:
+        logger.exception("equity_curve partial dump 실패 — 진행은 계속")
+
+# 무한 재시도 간격(초). pymongo의 socketTimeoutMS(60s)·retryReads(1회)로 흡수 안 된
+# 장기 단절을 영업일 단위에서 직접 처리. Postgres 등 다른 예외는 catch하지 않음.
+_MONGO_RETRY_INTERVAL_SEC = 30
+
+
+def _run_one_day_with_mongo_retry(
+    *,
+    engine: Engine,
+    mongo,
+    day: date,
+    watchlist_override: Optional[list[str]],
+    signal_fn: Optional["SignalFn"] = None,
+) -> tuple[list, dict]:
+    """_run_one_day를 감싸 Mongo 원격 단절 시 무한 재시도한다.
+
+    Mongo가 다시 살아나면 죽었던 영업일을 처음부터 다시 실행한다 — 즉
+    "Mongo 죽기 직전 영업일부터 다시 진행"이 자동으로 보장됨.
+
+    재시도 대상 예외 (모두 pymongo의 connection-level 장애):
+      - AutoReconnect / ConnectionFailure / NetworkTimeout / ServerSelectionTimeoutError
+
+    Postgres 예외나 LLM 예외 등 다른 장애는 의도적으로 catch하지 않는다.
+    Ctrl+C(KeyboardInterrupt)는 sleep을 즉시 중단해 정상 종료된다.
+
+    콘솔에 dashboard polling이 감지하는 마커를 출력해 Streamlit UI가
+    "끊김 / 대기 중 / 재연결" 상태를 표시할 수 있게 한다.
+    """
+    attempt = 0
+    started = time.monotonic()
+    while True:
+        try:
+            result = _run_one_day(
+                engine=engine, mongo=mongo, day=day,
+                watchlist_override=watchlist_override,
+                signal_fn=signal_fn,
+            )
+        except (AutoReconnect, ConnectionFailure,
+                NetworkTimeout, ServerSelectionTimeoutError) as exc:
+            attempt += 1
+            elapsed = int(time.monotonic() - started)
+            if attempt == 1:
+                logger.warning(
+                    "%s day=%s reason=%s",
+                    _MONGO_DISCONNECT_MARKER, day, type(exc).__name__,
+                )
+                logger.warning(
+                    "MongoDB 원격 연결 끊김 — 영업일 %s 재연결 대기 중 "
+                    "(%ds 간격 무한 재시도, Ctrl+C로 중단)",
+                    day, _MONGO_RETRY_INTERVAL_SEC,
+                )
+            else:
+                logger.warning(
+                    "%s day=%s attempt=%d elapsed=%ds",
+                    _MONGO_WAITING_MARKER, day, attempt, elapsed,
+                )
+            time.sleep(_MONGO_RETRY_INTERVAL_SEC)
+            continue
+
+        if attempt > 0:
+            waited = int(time.monotonic() - started)
+            logger.warning(
+                "%s day=%s waited=%ds",
+                _MONGO_RECONNECT_MARKER, day, waited,
+            )
+            logger.warning(
+                "MongoDB 재연결 성공 — 영업일 %s 처음부터 재시작 완료 (대기 ~%.1f분)",
+                day, waited / 60,
+            )
+        return result
 
 
 def _is_llm_failed(decision: Optional[Decision]) -> bool:
@@ -190,7 +297,7 @@ def run(
                 except Exception:
                     logger.exception("portfolio.settle 실패 day=%s", day)
 
-            triggers, fetched_stocks = _run_one_day(
+            triggers, fetched_stocks = _run_one_day_with_mongo_retry(
                 engine=engine, mongo=mongo, day=day,
                 watchlist_override=watchlist_override,
                 signal_fn=signal_fn,
@@ -281,6 +388,11 @@ def run(
                 portfolio.mark_to_market(day, close_prices)
             except Exception:
                 logger.exception("portfolio.mark_to_market 실패 day=%s", day)
+
+            # 진행 중 viewer 핸드오프 — 매 영업일 EOD에 equity_curve를 즉시 파일로 dump.
+            # 백테스트 종료를 기다리지 않고 부분 결과(자산 추이 / 정통 메트릭 / KOSPI alpha)를
+            # streamlit dashboard가 실시간으로 표시할 수 있게 한다.
+            _dump_equity_curve_partial(portfolio, output_root)
 
             # resume용 portfolio 상태 dump + 영업일 sentinel 마킹.
             # portfolio가 to_dict를 구현한 경우(SimplePortfolio)만 dump.
