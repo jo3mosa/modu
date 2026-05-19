@@ -31,6 +31,7 @@ main.py 사이클 흐름 안 위치:
 import atexit
 import logging
 import os
+import time
 from datetime import datetime
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -68,22 +69,34 @@ TOP_ARTICLES_LIMIT = 5
 SUMMARY_ARTICLES_LIMIT = 30
 
 
-# ─── MongoDB 연결 (모듈 단위 lazy 싱글톤) ────────────────────────────────────
+# ─── MongoDB 연결 (모듈 단위 lazy 싱글톤 + 실패 시 retry) ─────────────────────
+
+# 실패 후 재시도까지 대기 시간 — 너무 짧으면 매 cycle 마다 timeout 누적해
+# 1분 budget 침범, 너무 길면 일시 장애 회복이 늦음. 60초가 1분 cycle 과 잘 맞물림.
+MONGO_RETRY_INTERVAL_SEC = 60.0
 
 _mongo_collection = None
-_mongo_initialized = False
+_mongo_last_attempt_ts: float = 0.0
 
 
 def _get_news_collection():
     """modu_mongo.news_articles collection 반환. 실패 시 None — caller 는 skip.
 
-    news_collector._connect_mongo 와 동일 패턴. 초기화 1회만 시도 (성공/실패
-    모두 캐싱) — 매 사이클마다 재시도하지 않음.
+    캐싱 전략:
+      - 성공: 영구 캐싱 (재호출 즉시 반환)
+      - 실패: MONGO_RETRY_INTERVAL_SEC 이내엔 시도 skip → 그 후 자동 재시도
+              일시 장애가 있어도 analysis_server 재시작 없이 자동 복구.
     """
-    global _mongo_collection, _mongo_initialized
-    if _mongo_initialized:
+    global _mongo_collection, _mongo_last_attempt_ts
+
+    if _mongo_collection is not None:
         return _mongo_collection
-    _mongo_initialized = True
+
+    now = time.monotonic()
+    if now - _mongo_last_attempt_ts < MONGO_RETRY_INTERVAL_SEC:
+        # 최근 실패 — cooldown 중. 다음 호출에서 재시도.
+        return None
+    _mongo_last_attempt_ts = now
 
     if MongoClient is None:
         logger.warning("pymongo 미설치 — 뉴스 요약 skip")
@@ -102,7 +115,8 @@ def _get_news_collection():
         logger.info("✓ MongoDB 연결 — modu_mongo.news_articles (event_publisher)")
         return _mongo_collection
     except Exception:
-        logger.exception("MongoDB 연결 실패 — 뉴스 요약 skip")
+        logger.exception("MongoDB 연결 실패 — %d초 후 자동 재시도",
+                         int(MONGO_RETRY_INTERVAL_SEC))
         return None
 
 
