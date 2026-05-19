@@ -1888,6 +1888,7 @@ def _build_experiment_command(
     score_after: bool,
     pm_mock: bool,
     initial_holdings: str | None = None,
+    resume: bool = False,
 ) -> list[str]:
     """run_model_experiment.py CLI 인자 리스트."""
     cmd = [
@@ -1906,6 +1907,8 @@ def _build_experiment_command(
         cmd.append("--pm-mock")
     if initial_holdings:
         cmd += ["--initial-holdings", initial_holdings]
+    if resume:
+        cmd.append("--resume")
     return cmd
 
 
@@ -2381,6 +2384,7 @@ def tab_run() -> None:
                 score_after=score_after,
                 pm_mock=pm_mock,
                 initial_holdings=initial_holdings or None,
+                resume=resume,
             )
         else:
             cmd = _build_run_command(args, output_dir)

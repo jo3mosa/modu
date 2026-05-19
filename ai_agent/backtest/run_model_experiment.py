@@ -128,6 +128,7 @@ def _run_one(
     score_after: bool,
     pm_mock: bool,
     initial_holdings: str | None = None,
+    resume: bool = False,
 ) -> bool:
     exp_out = output_dir / name
     exp_out.mkdir(parents=True, exist_ok=True)
@@ -154,6 +155,8 @@ def _run_one(
         cmd.append("--pm-mock")
     if initial_holdings:
         cmd += ["--initial-holdings", initial_holdings]
+    if resume:
+        cmd.append("--resume")
 
     ret = subprocess.run(cmd, env=env)
     if ret.returncode != 0:
@@ -347,6 +350,8 @@ def main() -> int:
                         help="실험 재실행 없이 기존 결과로 비교 테이블만 출력")
     parser.add_argument("--initial-holdings", type=str, default=None,
                         help="초기 보유 주식 (예: 005930:100,000660:50). run_ai_backtest에 그대로 전달.")
+    parser.add_argument("--resume", action="store_true",
+                        help="끊긴 실험 이어서 실행. 각 실험의 run_ai_backtest에 --resume 전달.")
     args = parser.parse_args()
 
     requested = [e.strip() for e in args.experiments.split(",") if e.strip()]
@@ -373,6 +378,7 @@ def main() -> int:
                 score_after=args.score_after,
                 pm_mock=args.pm_mock,
                 initial_holdings=args.initial_holdings,
+                resume=args.resume,
             )
             if not ok:
                 failed.append(name)
