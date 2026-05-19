@@ -13,8 +13,8 @@ public record HoldingResponse(
         @Schema(description = "보유 수량", example = "10")
         Long quantity,
 
-        @Schema(description = "매입 평균가", example = "75000")
-        Long avgBuyPrice,
+        @Schema(description = "매입 평균가 (분할 매수 시 소수점 가능)", example = "2436.60")
+        Double avgBuyPrice,
 
         @Schema(description = "현재가", example = "80000")
         Long currentPrice,
