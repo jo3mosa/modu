@@ -1,3 +1,9 @@
+import logging
+
+from app.repositories.eligible_user_repository import (
+    EligibleUserRepository,
+    get_eligible_user_repository,
+)
 from app.repositories.market_price_repository import (
     MarketPriceRepository,
     RedisMarketPriceRepository,
@@ -11,6 +17,8 @@ from app.repositories.position_index_repository import (
     RedisPositionIndexRepository,
 )
 from app.triggers.schemas import MarketTriggerEvent, TriggerType, UserTriggerEvent
+
+logger = logging.getLogger(__name__)
 
 _POSITION_INDEX_REPOSITORY: PositionIndexRepository = RedisPositionIndexRepository()
 _PORTFOLIO_SNAPSHOT_REPOSITORY: PortfolioSnapshotRepository = RedisPortfolioSnapshotRepository()
@@ -71,38 +79,79 @@ def get_current_price(
     return repository.get(stock_code)
 
 
+def _resolve_target_user_ids(
+    stock_code: str,
+    holder_ids: list[int],
+    eligible_user_repository: EligibleUserRepository,
+) -> tuple[list[int], int | None]:
+    """
+    종목의 risk_tier 를 조회하고 (보유자 ∪ tier 매칭 ACTIVE 유저) 합집합을 반환.
+
+    Returns:
+        (target_user_ids, risk_tier) — risk_tier 가 NULL 이면 보유자만 반환.
+    """
+    risk_tier = eligible_user_repository.get_stock_risk_tier(stock_code)
+
+    if risk_tier is None:
+        # 미분류 종목 (신규 상장 / 데이터 부족 / compute_risk_tier 미실행).
+        # 안전 폴백: 기존 보유자 기반 라우팅만 유지. tier 매칭 미적용.
+        return sorted(set(holder_ids)), None
+
+    tier_matched_ids = eligible_user_repository.get_eligible_user_ids(risk_tier)
+    union_ids = sorted(set(holder_ids) | set(tier_matched_ids))
+    return union_ids, risk_tier
+
+
 def match_market_event_to_users(
     event: MarketTriggerEvent,
     position_index_repository: PositionIndexRepository | None = None,
     portfolio_snapshot_repository: PortfolioSnapshotRepository | None = None,
     market_price_repository: MarketPriceRepository | None = None,
+    eligible_user_repository: EligibleUserRepository | None = None,
 ) -> list[UserTriggerEvent]:
     """
     MarketTriggerEvent를 사용자별 UserTriggerEvent로 변환한다.
 
-    처리 흐름:
+    처리 흐름 (S14P31B106-350 이후 확장):
     1. MarketTriggerEvent에서 stock_code를 읽는다.
-    2. 해당 종목을 보유한 사용자 목록을 조회한다.
-    3. 사용자별 portfolio_snapshot / user_context를 조회한다.
+    2. 해당 종목 보유자 + risk_tier 매칭 ACTIVE 유저를 합집합으로 모은다.
+       - 보유자는 tier 무시하고 항상 포함 (재분류 직후 갇힌 포지션 방지).
+       - tier 매칭: user.risk_grade >= stock.risk_tier AND auto_trade=ACTIVE.
+       - 종목 risk_tier 가 NULL 이면 보유자만 (안전 폴백).
+    3. 사용자별 portfolio_snapshot 을 조회 (비보유자는 빈 dict).
     4. 종목 현재가를 조회해 portfolio_snapshot에 current_price로 포함한다.
     5. 시장 이벤트 정보와 사용자 정보를 합쳐 UserTriggerEvent를 생성한다.
     6. 매칭 대상 사용자가 없으면 빈 list를 반환한다.
 
     주의:
     - 이 함수는 Reasoning Layer를 직접 실행하지 않는다.
-    - Reasoning Layer가 실행할 수 있는 사용자 단위 이벤트만 생성한다.
+    - 비보유자에게 SELL 트리거가 가더라도 backend SignalHandlerService 의
+      hasSufficientResource 가 보유수량 부족으로 BLOCKED 처리하므로 안전.
     """
 
-    holding_user_ids = get_holding_user_ids(event.stock_code, position_index_repository)
+    holder_ids = get_holding_user_ids(event.stock_code, position_index_repository)
+    elig_repo = eligible_user_repository or get_eligible_user_repository()
 
-    if not holding_user_ids:
+    target_user_ids, risk_tier = _resolve_target_user_ids(
+        event.stock_code, holder_ids, elig_repo
+    )
+
+    if not target_user_ids:
         return []
+
+    logger.info(
+        "[matcher] stock=%s tier=%s holders=%d → fanout=%d",
+        event.stock_code,
+        risk_tier if risk_tier is not None else "NONE",
+        len(holder_ids),
+        len(target_user_ids),
+    )
 
     current_price = get_current_price(event.stock_code, market_price_repository)
 
     user_trigger_events: list[UserTriggerEvent] = []
 
-    for user_id in holding_user_ids:
+    for user_id in target_user_ids:
         portfolio_snapshot = get_portfolio_snapshot(user_id, portfolio_snapshot_repository)
 
         portfolio_snapshot = {**portfolio_snapshot, "current_price": current_price}
