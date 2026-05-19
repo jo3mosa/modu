@@ -1,9 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Highcharts from 'highcharts';
-import HighchartsReactPkg from 'highcharts-react-official';
-const HighchartsReact = HighchartsReactPkg.default || HighchartsReactPkg;
-import highcharts3d from 'highcharts/highcharts-3d';
+import { ResponsivePie, Pie } from '@nivo/pie';
 import TutorialOverlay from '../components/TutorialOverlay';
 import Skeleton from '../components/Skeleton';
 import InlineError from '../components/InlineError';
@@ -16,13 +13,6 @@ import { useOrderSSE } from '../hooks/useOrderSSE';
 import { useNotifications } from '../hooks/useNotifications';
 import './DashboardPage.css';
 
-if (typeof Highcharts === 'object') {
-  if (typeof highcharts3d === 'function') {
-    highcharts3d(Highcharts);
-  } else if (highcharts3d && typeof highcharts3d.default === 'function') {
-    highcharts3d.default(Highcharts);
-  }
-}
 
 
 // ── MOCK 데이터 ──────────────────────────────────
@@ -439,79 +429,28 @@ export default function DashboardPage() {
     return '';
   };
 
-  // 도넛 차트 데이터 포맷팅 (실시간 currentPrice 기반)
-  const chartData = holdings.map((h, i) => ({
-    name: h.stockName,
-    y: (h.quantity ?? 0) * (h.currentPrice ?? 0),
-    color: CHART_COLORS[i % CHART_COLORS.length],
-    quantity: h.quantity
-  }));
-  chartData.push({ name: '주문 가능 금액', y: derivedSummary?.availableCash ?? 0, color: '#84cc16', quantity: null });
-
-  // 비중 내림차순 정렬
-  chartData.sort((a, b) => b.y - a.y);
-
-  // Highcharts 3D 옵션
-  const chartOptions = {
-    chart: {
-      type: 'pie',
-      options3d: {
-        enabled: true,
-        alpha: 30,
-        beta: 0
-      },
-      backgroundColor: 'transparent',
-      style: { fontFamily: "'Pretendard', sans-serif" },
-      margin: [0, 0, 0, 0]
-    },
-    title: { text: null },
-    credits: { enabled: false },
-    tooltip: {
-      useHTML: true,
-      backgroundColor: 'transparent',
-      borderColor: 'transparent',
-      borderWidth: 0,
-      shadow: false,
-      padding: 0,
-      style: { pointerEvents: 'none', zIndex: 1000 },
-      formatter: function () {
-        const data = this.point;
-        const quantityHtml = data.quantity !== null
-          ? `<span style="font-weight:600;">${data.quantity.toLocaleString()}주</span> · `
-          : '';
-        const valueHtml = `${data.y.toLocaleString()}원`;
-
-        return `
-          <div style="background: rgba(0,0,0,0.85); border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 4px 12px rgba(0,0,0,0.3); padding: 10px 15px; border-radius: 8px;">
-            <div style="color:${data.color}; font-weight:700; margin-bottom:6px; font-size:1.05rem;">
-              ${data.name}
-            </div>
-            <div style="color:#fff; font-size:0.95rem; font-weight:600;">
-              ${quantityHtml}${valueHtml}
-            </div>
-          </div>
-        `;
-      }
-    },
-    plotOptions: {
-      pie: {
-        innerSize: 130,
-        depth: 45,
-        size: '80%',
-        center: ['50%', '35%'],
-        dataLabels: { enabled: false },
-        borderWidth: 0,
-        showInLegend: false,
-        states: {
-          hover: { halo: { size: 0 }, brightness: 0.1 }
-        }
-      }
-    },
-    series: [{
-      name: '자산 비중',
-      data: chartData
-    }]
-  };
+  // 도넛 차트 데이터 (nivo Pie 포맷)
+  // - 보유 종목별 평가금액 + 예수금(잠금 매수 포함) 비중 표시
+  // - value 가 0 인 항목은 비중 0% 라 시각적 의미 없으므로 제외
+  const pieData = useMemo(() => {
+    const items = holdings.map((h, i) => ({
+      id: h.stockName,
+      label: h.stockName,
+      value: Math.max(0, Math.round((h.quantity ?? 0) * (h.currentPrice ?? 0))),
+      color: CHART_COLORS[i % CHART_COLORS.length],
+      quantity: h.quantity ?? 0,
+    }));
+    items.push({
+      id: '예수금',
+      label: '예수금',
+      value: Math.max(0, Math.round(derivedSummary?.availableCash ?? 0)),
+      color: '#84cc16',
+      quantity: null,
+    });
+    return items
+      .filter((d) => d.value > 0)
+      .sort((a, b) => b.value - a.value);
+  }, [holdings, derivedSummary]);
 
   // KIS 미연결만 페이지 전체 차단. 그 외엔 페이지 레이아웃 유지하면서
   // 각 영역에서 자체적으로 로딩/에러를 표시한다.
@@ -598,18 +537,57 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <div className="overview-chart">
-              {summaryLoading ? (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}>
-                  <Skeleton width={220} height={220} borderRadius="50%" />
-                </div>
-              ) : (
-                <HighchartsReact
-                  highcharts={Highcharts}
-                  options={chartOptions}
-                  containerProps={{ style: { width: '100%', height: '100%' } }}
-                />
-              )}
+            <div className="overview-chart-area">
+              <div className="overview-chart">
+                {summaryLoading ? (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}>
+                    <Skeleton width={220} height={220} borderRadius="50%" />
+                  </div>
+                ) : pieData.length === 0 ? (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', color: '#666' }}>
+                    표시할 자산이 없습니다.
+                  </div>
+                ) : (
+                  <Pie
+                    data={pieData}
+                    width={280}
+                    height={280}
+                    margin={{ top: 18, right: 18, bottom: 18, left: 18 }}
+                    innerRadius={0.62}
+                    padAngle={1.2}
+                    cornerRadius={4}
+                    activeOuterRadiusOffset={10}
+                    activeInnerRadiusOffset={4}
+                    colors={{ datum: 'data.color' }}
+                    borderWidth={0}
+                    enableArcLinkLabels={false}
+                    enableArcLabels={false}
+                    isInteractive={true}
+                    motionConfig="gentle"
+                    theme={{
+                      tooltip: { container: { background: 'transparent', boxShadow: 'none', padding: 0 } },
+                    }}
+                    tooltip={({ datum }) => (
+                      <div style={{
+                        background: 'rgba(0, 0, 0, 0.88)',
+                        border: '1px solid rgba(255, 255, 255, 0.15)',
+                        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
+                        padding: '10px 14px',
+                        borderRadius: 8,
+                        fontFamily: "'Pretendard', sans-serif",
+                      }}>
+                        <div style={{ color: datum.data.color, fontWeight: 700, marginBottom: 6, fontSize: '1.0rem' }}>
+                          {datum.id}
+                        </div>
+                        <div style={{ color: '#fff', fontSize: '0.9rem', fontWeight: 600 }}>
+                          {datum.data.quantity != null ? `${datum.data.quantity.toLocaleString()}주 · ` : ''}
+                          {datum.value.toLocaleString()}원
+                        </div>
+                      </div>
+                    )}
+                  />
+                )}
+              </div>
             </div>
             </>)}
           </div>
