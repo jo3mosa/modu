@@ -29,7 +29,10 @@ import java.util.Map;
  *  AI 측은 dict.get 으로 graceful 처리. 정확값 필요 시 followups (output2 매핑).
  *
  * [TTL]
- *  10초 — 본 PR 가 약속한 stale 허용 시간. 268 재시작 복구는 그대로 안전망.
+ *  24시간 — 268 (Redis 재시작 복구) AI 팀 합의값. 영구 대신 24h 채택:
+ *    - 268 단계 4 (KIS 잔고 1h 주기 검증) 가 portfolio:snapshot 도 재SET → 정상 운영 중에는 항상 refresh
+ *    - 사용자 매매 / KIS 호출 없이 N일 경과 시 자연 만료로 stale 영구 잔존 회피
+ *  BE 사전 잔고 검증은 별도 키 (portfolio:cache:balance, 10s) 사용 — PortfolioCheckService 참고.
  */
 @Slf4j
 @Repository
@@ -37,7 +40,7 @@ import java.util.Map;
 public class PortfolioSnapshotRedisRepository {
 
     private static final String KEY_PREFIX = "portfolio:snapshot:";
-    private static final Duration TTL = Duration.ofSeconds(10);
+    private static final Duration TTL = Duration.ofHours(24);
 
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
