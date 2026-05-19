@@ -38,7 +38,15 @@ public record AiDecisionMessage(
         FinalDecision finalDecision,
         Debate debate,
         JsonNode indicatorsSnapshot,
-        String flowStatus
+        String flowStatus,
+        /*
+         * S14P31B106-354 — 비보유자 매수 추천 분기
+         *  true  : 보유자 (position:index:stock:{code} 에 포함). 기존 자동매매 흐름.
+         *  false : 비보유 적격 유저 (users:by_grade 매칭). BUY 결정만 발행되며
+         *          SignalHandlerService 가 RECOMMENDED 상태로 INSERT.
+         *  null  : 하위 호환 — 보유자로 간주 (AI 측 미배포 메시지 대응).
+         */
+        Boolean isHolder
 ) {
 
     /**
