@@ -23,6 +23,11 @@ public enum InvestmentRiskLevel {
         return maxProductRisk;
     }
 
+    /** 1~5 정수 매핑 (Redis users:by_grade:{1~5} 키 산출용). STABLE=1 ~ AGGRESSIVE=5. */
+    public int toGradeInt() {
+        return ordinal() + 1;
+    }
+
     public static InvestmentRiskLevel fromScore(long score) {
         if (score <= 20) {
             return STABLE;
