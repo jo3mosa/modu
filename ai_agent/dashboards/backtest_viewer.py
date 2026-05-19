@@ -1634,6 +1634,94 @@ def tab_comparison(df: pd.DataFrame, scored: bool) -> None:
 
 
 # ============================================================
+# LLM 모델 실험 비교 탭
+# ============================================================
+
+
+def tab_model_experiment(run_dir: Path) -> None:
+    """llmModel_gpt 실험 비교 결과 탭.
+
+    선택한 폴더 또는 부모 폴더에 comparison_summary.json이 있으면 비교 테이블 표시.
+    """
+    st.subheader("🔬 LLM 모델 비교 실험 결과")
+
+    # comparison_summary.json 탐색: 현재 폴더 → 부모 폴더 순
+    summary_path: Path | None = None
+    for candidate in [run_dir / "comparison_summary.json", run_dir.parent / "comparison_summary.json"]:
+        if candidate.exists():
+            summary_path = candidate
+            break
+
+    if not summary_path:
+        st.info(
+            "이 폴더에 comparison_summary.json이 없습니다. "
+            "llmModel_gpt 모드로 실행한 결과의 상위 폴더 또는 하위 실험 폴더를 사이드바에서 선택하세요."
+        )
+        return
+
+    try:
+        data = json.loads(summary_path.read_text(encoding="utf-8"))
+    except Exception as e:
+        st.error(f"결과 파일 읽기 실패: {e}")
+        return
+
+    st.caption(
+        f"실행: `{data.get('run_at', '?')}` · 모드: `{data.get('mode')}` · "
+        f"기간: **{data.get('start')} ~ {data.get('end')}** · "
+        f"종목: `{data.get('watchlist', '')}`"
+    )
+
+    results: dict = data.get("results", {})
+    configs: dict = data.get("configs", {})
+
+    rows = []
+    for name, r in results.items():
+        if "error" in r:
+            rows.append({
+                "실험": name, "debate 모델": "—", "judge 모델": "—",
+                "총 결정": 0, "매수": 0, "매도": 0, "홀드": 0, "매매": 0,
+                "hit_rate": "오류", "파싱 실패율": "—", "비용 $": "—", "결정당 $": "—",
+            })
+            continue
+        cfg = configs.get(name, {})
+        debate_m = cfg.get("DEBATE_MODEL", "?")
+        structured_m = cfg.get("STRATEGY_MODEL") or cfg.get("STRUCTURED_MODEL", "?")
+        rows.append({
+            "실험": name,
+            "debate 모델": debate_m,
+            "judge 모델": structured_m,
+            "총 결정": r.get("n_total", 0),
+            "매수": r.get("n_buy", 0),
+            "매도": r.get("n_sell", 0),
+            "홀드": r.get("n_hold", 0),
+            "매매": r.get("n_traded", 0),
+            "hit_rate": f"{r['hit_rate']:.3f}" if r.get("hit_rate") is not None else "— (채점 전)",
+            "파싱 실패율": f"{r.get('parse_failure_rate', 0):.1%}",
+            "비용 $": f"{r.get('total_cost_usd', 0):.4f}",
+            "결정당 $": f"{r.get('cost_per_decision', 0):.5f}",
+        })
+
+    if not rows:
+        st.warning("비교 데이터가 없습니다.")
+        return
+
+    st.dataframe(pd.DataFrame(rows).set_index("실험"), use_container_width=True)
+
+    # 홀드 비율 / 매매 비율 차트
+    valid = {k: v for k, v in results.items() if "error" not in v and v.get("n_total", 0) > 0}
+    if valid:
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("**홀드 비율**")
+            st.bar_chart({n: v["n_hold"] / v["n_total"] for n, v in valid.items()})
+        with c2:
+            st.markdown("**결정당 비용 ($)**")
+            st.bar_chart({n: v.get("cost_per_decision", 0) for n, v in valid.items()})
+
+    st.caption(f"📄 원본: `{summary_path}`")
+
+
+# ============================================================
 # Run launcher — backtest subprocess + 로그 tail
 # ============================================================
 
@@ -1768,19 +1856,55 @@ def _load_mode_choices() -> tuple[list[str], str]:
             sys.path.insert(0, str(repo_root))
         from ai_agent.backtest.modes import MODE_REGISTRY
         choices = list(MODE_REGISTRY.keys())
+        # llmModel_gpt: 4가지 GPT 조합(gpt_mini/gpt_full/split_c/split_d)을 순차 실행하는 실험 모드
+        choices.append("llmModel_gpt")
         # streamlit tooltip은 markdown 렌더. 한 줄 줄바꿈은 합쳐지므로
         # 항목 사이를 빈 줄로 분리해서 가독성 확보.
         help_lines = ["**모드 선택지**", ""]
         for n, s in MODE_REGISTRY.items():
             help_lines.append(f"- **`{n}`** — {s.description}")
+        help_lines.append(
+            "- **`llmModel_gpt`** — [LLM 실험] GPT 4.1/4.1-mini 4가지 조합 순차 실행 "
+            "(gpt_mini / gpt_full / split_c / split_d)"
+        )
         help_str = "\n".join(help_lines)
         return choices, help_str
     except Exception as e:
         return ["debate_0", "debate_1", "debate_2", "daily_scan", "random", "mock"], f"(modes.py 로드 실패: {e}) 기본 목록 사용"
 
 
+def _build_experiment_command(
+    experiments: list[str],
+    mode: str,
+    start: date,
+    end: date,
+    watchlist: str,
+    backtest_user_id: int,
+    output_dir: Path,
+    score_after: bool,
+    pm_mock: bool,
+) -> list[str]:
+    """run_model_experiment.py CLI 인자 리스트."""
+    cmd = [
+        sys.executable, "-m", "ai_agent.backtest.run_model_experiment",
+        "--experiments", ",".join(experiments),
+        "--mode", mode,
+        "--start", start.isoformat(),
+        "--end", end.isoformat(),
+        "--watchlist", watchlist,
+        "--backtest-user-id", str(backtest_user_id),
+        "--output", str(output_dir),
+    ]
+    if score_after:
+        cmd.append("--score-after")
+    if pm_mock:
+        cmd.append("--pm-mock")
+    return cmd
+
+
 def _spawn_backtest(
     cmd: list[str], output_dir: Path, args: dict[str, Any],
+    extra_env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """run_ai_backtest를 별도 프로세스로 spawn. stdout/stderr → run.log.
 
@@ -1808,6 +1932,7 @@ def _spawn_backtest(
             "PYTHONUNBUFFERED": "1",
             "PYTHONIOENCODING": "utf-8",
             "PYTHONUTF8": "1",
+            **(extra_env or {}),
         },
     )
     state = {
@@ -2215,7 +2340,7 @@ def tab_run() -> None:
                           f"DB 회고가 섞이니 다른 값을 쓰세요.")
                 return
         if mode in ("debate_0", "debate_1", "debate_2", "daily_scan") and not (
-            os.getenv("GMS_KEY") or os.getenv("ANTHROPIC_API_KEY") or os.getenv("XAI_API_KEY")
+            os.getenv("GMS_KEY") or os.getenv("CLAUDE_API_KEY") or os.getenv("GROK_API_KEY")
         ):
             st.warning("⚠️ LLM 키 필요 — .env에 GMS_KEY 등이 있는지 확인하세요. 그래도 진행합니다.")
 
@@ -2235,9 +2360,22 @@ def tab_run() -> None:
             "score_after": score_after, "pm_mock": pm_mock,
             "reset_memory": reset_memory, "resume": resume,
         }
-        cmd = _build_run_command(args, output_dir)
-        # 디스크 영속화에 isoformat 문자열로 저장 (json 호환)
         args_for_state = {**args, "start": start.isoformat(), "end": end.isoformat()}
+        # llmModel_gpt 모드: run_model_experiment.py로 4가지 GPT 조합 순차 실행
+        if mode == "llmModel_gpt":
+            cmd = _build_experiment_command(
+                experiments=["gpt_mini", "gpt_full", "split_c", "split_d"],
+                mode="debate_1",
+                start=start,
+                end=end,
+                watchlist=watchlist,
+                backtest_user_id=int(backtest_user_id),
+                output_dir=output_dir,
+                score_after=score_after,
+                pm_mock=pm_mock,
+            )
+        else:
+            cmd = _build_run_command(args, output_dir)
         try:
             state = _spawn_backtest(cmd, output_dir, args_for_state)
         except Exception as e:
@@ -2323,8 +2461,15 @@ def main() -> None:
             run_dirs.append(root)
         # 하위 디렉터리에 jsonl이 있는 경우
         for sub in root.iterdir():
-            if sub.is_dir() and any(sub.glob("*.jsonl")):
+            if not sub.is_dir():
+                continue
+            if any(sub.glob("*.jsonl")):
                 run_dirs.append(sub)
+            else:
+                # 2단계 탐색 — llmModel_gpt 실험처럼 실험명 서브폴더에 jsonl이 있는 경우
+                for subsub in sub.iterdir():
+                    if subsub.is_dir() and any(subsub.glob("*.jsonl")):
+                        run_dirs.append(subsub)
     run_dirs = sorted(set(run_dirs))
 
     if not run_dirs:
@@ -2363,8 +2508,8 @@ def main() -> None:
 
     df_filtered = sidebar_filters(df)
 
-    tab_r, tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
-        ["🚀 실행", "Overview", "Quality", "PnL", "Calibration", "Reasoning", "거래 차트", "Comparison"]
+    tab_r, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(
+        ["🚀 실행", "Overview", "Quality", "PnL", "Calibration", "Reasoning", "거래 차트", "Comparison", "🔬 모델 실험"]
     )
     equity_df = _load_equity_curve(str(run_dir))
 
@@ -2384,6 +2529,8 @@ def main() -> None:
         tab_trade_chart(df_filtered)
     with tab7:
         tab_comparison(df_filtered, scored)
+    with tab8:
+        tab_model_experiment(run_dir)
 
 
 if __name__ == "__main__":
