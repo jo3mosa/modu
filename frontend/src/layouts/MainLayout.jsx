@@ -9,7 +9,8 @@ import {
   FileText,
   ShieldCheck,
   User,
-  Menu
+  Menu,
+  Compass
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getStocks } from '../api/market';
@@ -75,6 +76,7 @@ export default function MainLayout() {
   const menuItems = [
     { path: '/home', label: '대시보드', icon: <LayoutDashboard size={20} /> },
     { path: '/trading', label: '트레이딩 룸', icon: <TrendingUp size={20} /> },
+    { path: '/discovery', label: '종목 추천', icon: <Compass size={20} /> },
     { path: '/agent-meeting', label: '에이전트 회의실', icon: <Bot size={20} /> },
     { path: '/report', label: '리포트', icon: <FileText size={20} /> },
     { path: '/risk-manage', label: '리스크 관리', icon: <ShieldCheck size={20} /> },
