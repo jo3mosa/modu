@@ -8,6 +8,7 @@ import { getAccountSummary, getPortfolio } from '../api/account';
 import { getAiDecisions } from '../api/aiAgent';
 import { getOrderHistory, getBuyingPower, getPendingOrders, ORDER_STATUS_DISPLAY } from '../api/order';
 import { getProfile, updateAutoTradeStatus } from '../api/strategy';
+import { buildStockWsUrl } from '../api/wsUrl';
 import { toast } from 'sonner';
 import { useOrderSSE } from '../hooks/useOrderSSE';
 import { useNotifications } from '../hooks/useNotifications';
@@ -242,9 +243,8 @@ export default function DashboardPage() {
     const codes = stockCodesKey.split(',').filter(Boolean);
     if (codes.length === 0) return;
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const sockets = codes.map((code) => {
-      const ws = new WebSocket(`${protocol}//${window.location.host}/ws/stocks/${code}/price`);
+      const ws = new WebSocket(buildStockWsUrl(code, 'price'));
       ws.onmessage = (event) => {
         try {
           const tick = JSON.parse(event.data);

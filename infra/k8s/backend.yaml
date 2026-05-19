@@ -7,8 +7,10 @@ metadata:
   labels:
     app: backend
 spec:
-  # [고가용성] 서버 부하 분산 및 무중단 운영을 위해 2개의 포드를 유지합니다.
-  replicas: 2 
+  # [S14P31B106-345] REMOTE 모드 (market.feed.client-mode=REMOTE) 적용 후 replicas 복원.
+  # Gateway 가 KIS 단일세션을 단독 보유하므로 backend 는 자유롭게 수평 확장 가능.
+  # 응급조치(replicas=1) 기간 종료 — REMOTE 모드에서 다중 pod 정상 동작 검증 완료.
+  replicas: 2
   selector:
     matchLabels:
       app: backend
@@ -80,7 +82,8 @@ spec:
 ---
 
 # 3. PodDisruptionBudget — 노드 drain/유지보수 시 최소 1개 backend 가용 보장.
-# replicas 2 라 K8s 가 한 번에 둘 다 evict 하지 못하게 막아 무중단 보장.
+# [S14P31B106-345] 마이그레이션 동안 replicas=1 이라 minAvailable=1 은 사실상 evict 차단.
+# Phase 7 에서 replicas 를 2 이상으로 복원하면 다시 의미를 가짐.
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:

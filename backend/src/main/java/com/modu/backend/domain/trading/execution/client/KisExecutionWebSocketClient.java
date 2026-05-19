@@ -10,10 +10,13 @@ import com.modu.backend.domain.trading.execution.service.ExecutionDispatchServic
 import com.modu.backend.domain.user.entity.KisCredential;
 import com.modu.backend.domain.user.repository.KisCredentialRepository;
 import com.modu.backend.domain.user.service.KisTokenService;
+import com.modu.backend.global.config.KisProfiles;
 import com.modu.backend.global.config.KisWebSocketProperties;
 import com.modu.backend.global.util.AesGcmEncryptor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.annotation.Profile;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
@@ -52,6 +55,8 @@ import java.util.concurrent.TimeoutException;
  */
 @Slf4j
 @Component
+@Profile(KisProfiles.NOT_GATEWAY)
+@ConditionalOnProperty(name = "market.feed.client-mode", havingValue = "LOCAL", matchIfMissing = true)
 public class KisExecutionWebSocketClient {
 
     private static final String SUBSCRIBE = "1";

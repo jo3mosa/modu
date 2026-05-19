@@ -9,17 +9,18 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 /**
  * 프론트 실시간 시세 WebSocket 핸들러
  *
- * [처리 대상]
- * - WebSocket 연결 수립
- * - WebSocket 연결 종료
- * - WebSocket 전송 오류
+ * [세션 attributes]
+ *  - streamType / stockCode : StockCodeHandshakeInterceptor 가 채움
+ *  - userId                 : 인증된 사용자 ID. 비로그인 → 0L (LOCAL 모드에서만 허용).
+ *                             REMOTE 모드는 gateway 라우팅에 userId 필수.
  */
 @Slf4j
 @RequiredArgsConstructor
 public class KisRealtimeFrontendWebSocketHandler extends TextWebSocketHandler {
 
-    static final String STREAM_TYPE_ATTRIBUTE = "streamType";
-    static final String STOCK_CODE_ATTRIBUTE = "stockCode";
+    public static final String STREAM_TYPE_ATTRIBUTE = "streamType";
+    public static final String STOCK_CODE_ATTRIBUTE = "stockCode";
+    public static final String USER_ID_ATTRIBUTE = "userId";
 
     private final KisRealtimeSubscriptionManager subscriptionManager;
 
@@ -30,6 +31,7 @@ public class KisRealtimeFrontendWebSocketHandler extends TextWebSocketHandler {
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
         Object typeAttribute = session.getAttributes().get(STREAM_TYPE_ATTRIBUTE);
         Object stockCodeAttribute = session.getAttributes().get(STOCK_CODE_ATTRIBUTE);
+        Object userIdAttribute = session.getAttributes().get(USER_ID_ATTRIBUTE);
 
         if (!(typeAttribute instanceof KisRealtimeStreamType type)
                 || !(stockCodeAttribute instanceof String stockCode)
@@ -40,7 +42,8 @@ public class KisRealtimeFrontendWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
-        subscriptionManager.register(session, new KisRealtimeStreamKey(type, stockCode));
+        long userId = userIdAttribute instanceof Long u ? u : 0L;
+        subscriptionManager.register(session, userId, new KisRealtimeStreamKey(type, stockCode));
     }
 
     /**

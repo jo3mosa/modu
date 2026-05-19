@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { placeOrder, getPendingOrders, updateOrder, getBuyingPower } from '../api/order';
 import { getStockDetail } from '../api/market';
-import { getPortfolio } from '../api/account';
+import { buildStockWsUrl } from '../api/wsUrl';
 import { useOrderSSE } from '../hooks/useOrderSSE';
 import { useNotifications } from '../hooks/useNotifications';
 import ConfirmDialog from './ConfirmDialog';
@@ -106,8 +106,7 @@ export default function OrderBook({ stockCode }) {
   useEffect(() => {
     if (!stockCode) return;
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/stocks/${stockCode}/orderbook`);
+    const ws = new WebSocket(buildStockWsUrl(stockCode, 'orderbook'));
 
     ws.onmessage = (event) => {
       try {
