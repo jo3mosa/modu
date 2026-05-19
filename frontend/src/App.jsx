@@ -17,6 +17,7 @@ import ReportPage from './pages/ReportPage';
 import RiskManagePage from './pages/RiskManagePage';
 import MyPage from './pages/MyPage';
 import AgentMeetingPage from './pages/AgentMeetingPage';
+import DiscoveryPage from './pages/DiscoveryPage';
 
 function App() {
   return (
@@ -58,6 +59,7 @@ function App() {
         >
           <Route path="/home" element={<DashboardPage />} />
           <Route path="/trading" element={<TradingPage />} />
+          <Route path="/discovery" element={<DiscoveryPage />} />
           <Route path="/agent-meeting" element={<AgentMeetingPage />} />
           <Route path="/report" element={<ReportPage />} />
           <Route path="/risk-manage" element={<RiskManagePage />} />

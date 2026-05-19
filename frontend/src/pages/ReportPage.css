@@ -8,6 +8,11 @@
   padding-bottom: 2rem;
 }
 
+/* 컨테이너 gap 1.5rem + 글로벌 margin 2rem 누적 보정 — 대시보드(2rem)와 통일 */
+.report-container > .page-header-container {
+  margin-bottom: 0.5rem;
+}
+
 .report-panel {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.1);

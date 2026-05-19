@@ -1,8 +1,17 @@
 .agent-meeting-container {
   display: flex;
+  flex-direction: column;
   height: 100%;
   color: #fff;
+}
+
+/* 페이지 헤더 아래 본문 영역 — 좌측 채널 사이드바 + 우측 채팅 패널 좌우 분할.
+   flex:1 로 헤더가 차지하고 남은 세로 공간을 모두 사용하고, min-height:0 으로 채팅 피드 내부 overflow 가 정상 동작하도록 보장. */
+.agent-meeting-body {
+  display: flex;
+  flex: 1;
   gap: 1.5rem;
+  min-height: 0;
 }
 
 /* 좌측 채널 리스트 */
@@ -135,6 +144,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative; /* 새 메시지 플로팅 버튼 absolute 기준 */
 }
 
 .chat-header {
@@ -186,6 +196,7 @@
   justify-content: center;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
   transition: transform 0.2s ease;
+  cursor: pointer;
 }
 
 .agent-avatar-mini:hover {
@@ -204,8 +215,34 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 0.2rem; /* 연속 메시지가 카톡처럼 바짝 붙도록 기본 gap 축소 */
   scroll-behavior: smooth; /* 모든 스크롤 이동이 마술처럼 부드럽게 움직이도록 설정 */
+}
+
+/* 그룹 시작 메시지 — 새 발화자가 들어올 때 위쪽으로 호흡을 줌 */
+.chat-message.group-start {
+  margin-top: 1.3rem;
+}
+
+.chat-feed > .chat-message.group-start:first-of-type {
+  margin-top: 0;
+}
+
+/* 연속 메시지(같은 에이전트가 곧바로 이어 말한 경우) — 카톡 단톡방 스타일 */
+.chat-message.group-continuation .agent-avatar-wrap {
+  visibility: hidden; /* 자리는 차지하되 시각적으로 숨김 → 들여쓰기 유지 */
+}
+
+.chat-message.group-continuation .message-header {
+  display: none;
+}
+
+.chat-message.group-continuation .message-bubble {
+  border-top-left-radius: 16px; /* 첫 말풍선의 뾰족함을 부드럽게 */
+}
+
+.chat-message.group-continuation .message-bubble::before {
+  display: none; /* 두 번째 말풍선부터는 꼬리 제거 */
 }
 
 .date-divider {
@@ -490,4 +527,140 @@
 @keyframes blink-cursor {
   0%, 100% { opacity: 0; }
   50% { opacity: 1; }
+}
+
+/* ────────────────────────────────────────────────────────────
+   에이전트 프로필 모달
+   ──────────────────────────────────────────────────────────── */
+.profile-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  animation: fadeIn 0.2s;
+}
+
+.profile-modal {
+  background: #1f1f1f;
+  border-radius: 16px;
+  padding: 2rem;
+  max-width: 420px;
+  width: 90%;
+  border: 1px solid #333;
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  animation: smooth-slide-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.profile-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.profile-modal-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid #3a3a3a;
+  background-color: #2a2a2a;
+  flex-shrink: 0;
+}
+
+.profile-modal-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.profile-modal-name {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.profile-modal-name h3 {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: #fff;
+}
+
+.profile-modal-tagline {
+  font-size: 0.85rem;
+  color: #aaa;
+}
+
+.profile-modal-description {
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: #d4d4d4;
+}
+
+.profile-modal-meta {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.profile-modal-tag {
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  border-radius: 4px;
+  background-color: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #ccc;
+}
+
+.profile-modal-close {
+  align-self: flex-end;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #ddd;
+  padding: 0.5rem 1.2rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: background 0.15s;
+}
+
+.profile-modal-close:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* ────────────────────────────────────────────────────────────
+   새 메시지 N개 플로팅 버튼
+   ──────────────────────────────────────────────────────────── */
+.new-messages-pill {
+  position: absolute;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #84cc16;
+  color: #1a1a1a;
+  padding: 0.55rem 1.1rem;
+  border-radius: 24px;
+  cursor: pointer;
+  font-weight: 800;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  z-index: 20;
+  border: none;
+  box-shadow: 0 6px 16px rgba(132, 204, 22, 0.4);
+  animation: fadeIn 0.25s;
+  transition: transform 0.15s ease;
+}
+
+.new-messages-pill:hover {
+  transform: translateX(-50%) translateY(-2px);
 }

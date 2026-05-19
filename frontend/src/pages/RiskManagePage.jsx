@@ -318,6 +318,18 @@ export default function RiskManagePage() {
               <span className="unit">%</span>
             </div>
           </div>
+
+          <div className="input-group">
+            <label>에이전트 사용 금액 제한</label>
+            <div className="input-with-unit">
+              <input
+                type="number"
+                value={rules.maxLossLimit}
+                onChange={(e) => handleRuleChange('maxLossLimit', e.target.value)}
+              />
+              <span className="unit">원</span>
+            </div>
+          </div>
         </div>
       </div>
 

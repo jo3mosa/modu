@@ -7,8 +7,10 @@ metadata:
   labels:
     app: backend
 spec:
-  # [고가용성] 서버 부하 분산 및 무중단 운영을 위해 2개의 포드를 유지합니다.
-  replicas: 2 
+  # [S14P31B106-345] REMOTE 모드 (market.feed.client-mode=REMOTE) 적용 후 replicas 복원.
+  # Gateway 가 KIS 단일세션을 단독 보유하므로 backend 는 자유롭게 수평 확장 가능.
+  # 응급조치(replicas=1) 기간 종료 — REMOTE 모드에서 다중 pod 정상 동작 검증 완료.
+  replicas: 2
   selector:
     matchLabels:
       app: backend
@@ -32,6 +34,12 @@ spec:
         envFrom:
         - secretRef:
             name: modu-secret
+        env:
+        # [S14P31B106-345] 시세 Feed 모드 — REMOTE: KIS WS 는 modu-kis-gateway 가 단독 보유,
+        # backend 는 Redis Pub/Sub 으로 tick 만 수신. replicas N 안전.
+        # LOCAL 로 두면 backend 가 직접 KIS WS 연결 → replicas≥2 환경에서 단일세션 충돌 발생.
+        - name: MARKET_FEED_CLIENT_MODE
+          value: "REMOTE"
         resources:
           # Spring Boot JVM(~300Mi) + Kafka 컨슈머/프로듀서 + JPA + SSE 연결 유지
           # 거래시간 burst 대응 위해 limits 여유 확보.
@@ -80,7 +88,7 @@ spec:
 ---
 
 # 3. PodDisruptionBudget — 노드 drain/유지보수 시 최소 1개 backend 가용 보장.
-# replicas 2 라 K8s 가 한 번에 둘 다 evict 하지 못하게 막아 무중단 보장.
+# replicas≥2 + REMOTE 모드에서 K8s 가 한 번에 모두 evict 하지 못하게 막아 무중단 보장.
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:

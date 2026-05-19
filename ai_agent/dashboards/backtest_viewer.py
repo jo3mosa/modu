@@ -651,33 +651,47 @@ def tab_pnl(df: pd.DataFrame, scored: bool, equity_df: pd.DataFrame | None = Non
         _render_equity_section(equity_df)
         st.divider()
 
+    # 신호 정확도 평가 메트릭 — 실제 자산 변화는 위 정통 메트릭 참조.
+    # cum_return(복리 곱)·CAGR·Sharpe·MDD 같은 "이론치 메트릭"은 자본 100% 풀투입
+    # + 즉시 회전 가정이라 비현실적이고 misleading해 의도적으로 제거함.
+    # 신호 정확도(Hit Rate / Profit Factor / 평균손익)는 그 가정과 무관하게 의미 있음.
+    def _profit_factor(s: pd.Series) -> float:
+        wins = s[s > 0].sum()
+        losses = abs(s[s < 0].sum())
+        return float(wins / losses) if losses > 1e-9 else float("inf") if wins > 0 else 0.0
+
     by_mode_summary = (
         trades.groupby("mode")
         .agg(
             n=("raw_return", "count"),
-            win_rate=("raw_return", lambda s: (s > 0).mean()),
+            hit_rate=("raw_return", lambda s: (s > 0).mean()),
             avg_return=("raw_return", "mean"),
-            cum_return=("raw_return", lambda s: (1 + s).prod() - 1),
+            profit_factor=("raw_return", _profit_factor),
             best=("raw_return", "max"),
             worst=("raw_return", "min"),
         )
         .reset_index()
     )
 
-    # CAGR / MDD / Sharpe 계산 (mode별)
-    extra_stats = _compute_extra_pnl_stats(trades)
-    by_mode_summary = by_mode_summary.merge(extra_stats, on="mode", how="left")
-
-    # KIS 스타일 4 핵심 KPI 카드 — 모드별 한 줄씩
+    # 신호 정확도 KPI 카드 — 모드별 한 줄씩
+    st.markdown("#### 🎯 모드별 신호 정확도")
+    st.caption("AI 결정 자체의 정확도/강도 평가. **실제 자산 변화는 위 정통 메트릭 참조** "
+               "— 두 지표는 의미가 다름 (정통=실제 통장 잔고, 신호 정확도=결정의 이론적 정확도).")
     for _, row in by_mode_summary.iterrows():
         st.markdown(f"**Mode {row['mode']}**")
         c1, c2, c3, c4, c5, c6 = st.columns(6)
-        c1.metric("총 수익률", f"{row['cum_return']:+.2%}")
-        c2.metric("CAGR", f"{row.get('cagr', 0):+.2%}")
-        c3.metric("Sharpe", f"{row.get('sharpe', 0):.2f}")
-        c4.metric("MDD", f"{row.get('mdd', 0):.2%}")
-        c5.metric("Win Rate", f"{row['win_rate']:.1%}")
-        c6.metric("거래 수", f"{int(row['n']):,}")
+        c1.metric("Hit Rate", f"{row['hit_rate']:.1%}",
+                  help="양수 수익 거래 비율 — 결정의 정확도")
+        c2.metric("평균 거래 수익", f"{row['avg_return']:+.2%}",
+                  help="거래 1건당 평균 raw_return")
+        c3.metric("Profit Factor", f"{row['profit_factor']:.2f}",
+                  help="이익 합계 / |손실 합계|. 2.0 이상이면 우수, 1.0 이하면 손실 시스템")
+        c4.metric("Best", f"{row['best']:+.2%}",
+                  help="최고 수익 거래")
+        c5.metric("Worst", f"{row['worst']:+.2%}",
+                  help="최대 손실 거래")
+        c6.metric("거래 수", f"{int(row['n']):,}",
+                  help="표본 크기 — 작으면 통계 신뢰도 낮음")
 
     # === LLM 토큰/비용 (debate_* 모드 cost-effectiveness 비교용) ===
     # decision.extras에 graph_decision adapter가 부착한 토큰/비용 집계.
@@ -767,6 +781,40 @@ def _load_kospi() -> pd.DataFrame:
     return df
 
 
+def _compute_kospi_alpha(
+    start_date, end_date, portfolio_return: float,
+) -> tuple[float | None, float | None]:
+    """주어진 기간의 KOSPI 수익률과 portfolio alpha(=portfolio_return - kospi_return) 계산.
+
+    Returns:
+        (kospi_return, alpha) — KOSPI 데이터 없거나 기간 매칭 실패 시 (None, None).
+
+    시작/끝 일자가 KOSPI 휴장일이면 그 일자 이전의 가장 가까운 거래일 종가 사용.
+    """
+    kospi_df = _load_kospi()
+    if kospi_df.empty:
+        return None, None
+
+    start_ts = pd.to_datetime(start_date)
+    end_ts = pd.to_datetime(end_date)
+    kospi_sorted = kospi_df.sort_values("date")
+
+    # 시작/끝 일자 이전 가장 가까운 KOSPI 거래일 종가 (휴장일 회피).
+    before_start = kospi_sorted[kospi_sorted["date"] <= start_ts]
+    before_end = kospi_sorted[kospi_sorted["date"] <= end_ts]
+    if before_start.empty or before_end.empty:
+        return None, None
+
+    k_start = float(before_start["kospi_close"].iloc[-1])
+    k_end = float(before_end["kospi_close"].iloc[-1])
+    if k_start <= 0:
+        return None, None
+
+    kospi_return = k_end / k_start - 1
+    alpha = portfolio_return - kospi_return
+    return kospi_return, alpha
+
+
 def _render_equity_section(equity_df: pd.DataFrame) -> None:
     """SimplePortfolio.equity_curve 기반 정통 메트릭 + 차트.
 
@@ -804,6 +852,27 @@ def _render_equity_section(equity_df: pd.DataFrame) -> None:
     c4.metric("Sortino", f"{sortino:.2f}")
     c5.metric("MDD", f"{mdd:.2%}")
     c6.metric("Calmar", f"{calmar:.2f}")
+
+    # KOSPI 벤치마크 대비 alpha — 시장 효과 분리해서 AI 기여분 측정.
+    # 절대 수익률만 보면 시장 추세에 묻혀 AI 가치 판단 불가 (시장 +10%인데 AI -3%면
+    # 절대로는 손실이지만 alpha는 -13%로 의미가 완전히 다름).
+    kospi_return, alpha = _compute_kospi_alpha(
+        df["date"].iloc[0], df["date"].iloc[-1], total_return,
+    )
+    if kospi_return is not None and alpha is not None:
+        st.markdown("##### 📈 KOSPI 벤치마크 대비")
+        k1, k2, k3 = st.columns(3)
+        k1.metric("같은 기간 KOSPI", f"{kospi_return:+.2%}",
+                  help="equity_curve 시작/종료일 KOSPI 종가 기준 수익률")
+        k2.metric("내 포트폴리오", f"{total_return:+.2%}",
+                  help="위 정통 메트릭의 총 수익률과 동일")
+        k3.metric("Alpha (포트폴리오 - KOSPI)", f"{alpha:+.2%}",
+                  delta=f"{alpha*100:+.2f}%p",
+                  delta_color="normal" if alpha >= 0 else "inverse",
+                  help="양수=시장 대비 AI 가치 기여 / 음수=시장 추종만 했어도 더 나았음")
+    else:
+        st.caption("ℹ️ KOSPI 벤치마크 데이터 없음 — `ai_agent/backtest/data/kospi_daily.csv` 생성 필요 "
+                   "(`scripts/fetch_kospi.py`)")
 
     # 자산 추이 + Drawdown subplot
     from plotly.subplots import make_subplots
@@ -1812,6 +1881,31 @@ def _proc_is_alive(pid: int) -> bool:
         return False
 
 
+# backtest/event_loop.py가 콘솔에 출력하는 Mongo 단절/복구 마커.
+# 형식 변경 시 event_loop.py의 _MONGO_*_MARKER 상수도 함께 갱신할 것.
+_MONGO_MARKERS = (
+    ("[MONGO_RECONNECTED]", "reconnected"),
+    ("[MONGO_WAITING]",     "waiting"),
+    ("[MONGO_DISCONNECTED]", "disconnected"),
+)
+
+
+def _mongo_status_from_log(log_text: str) -> tuple[str, str] | None:
+    """run.log 마지막 N줄에서 가장 최근 Mongo 상태 마커를 감지한다.
+
+    Returns:
+        (status, detail) — status ∈ {"disconnected", "waiting", "reconnected"}
+        detail은 마커 뒤 본문 (예: "day=2024-03-15 attempt=5 elapsed=150s")
+        None — 마커 없음 (정상 동작 중)
+    """
+    for line in reversed(log_text.splitlines()):
+        for marker, status in _MONGO_MARKERS:
+            if marker in line:
+                detail = line.split(marker, 1)[1].strip()
+                return status, detail
+    return None
+
+
 def _tail_log(log_path: str, n_lines: int = 80) -> str:
     """로그 파일 마지막 N줄. Windows cp949로 쓰인 구버전 로그도 자동 복구.
 
@@ -1931,6 +2025,35 @@ def _render_running_card(proc: dict[str, Any], idx: int) -> None:
                     ]
                     _delete_run_state_file(proc["output_dir"])
                     st.rerun()
+
+        # Mongo 원격 단절/복구 상태 — 진행 표시줄 위쪽에 강조 노출.
+        # 백테스트 측 event_loop._run_one_day_with_mongo_retry가 콘솔에 출력하는
+        # [MONGO_*] 마커를 감지해 카드 헤더에 보이게 한다.
+        if alive:
+            log_text = _tail_log(proc["log_path"], n_lines=200)
+            mongo_status = _mongo_status_from_log(log_text)
+            prev_status_key = f"mongo_status_{proc['pid']}"
+            prev_status = st.session_state.get(prev_status_key)
+
+            if mongo_status is not None:
+                status, detail = mongo_status
+                if status == "disconnected":
+                    st.error(f"MongoDB 연결 끊김 — {detail}", icon="🔴")
+                elif status == "waiting":
+                    st.warning(f"MongoDB 재연결 대기 중 — {detail}", icon="🟡")
+                elif status == "reconnected":
+                    st.success(f"MongoDB 재연결 성공 — {detail}", icon="🟢")
+
+                # 상태 전이 시 우측 상단 toast로 한 번만 알림.
+                if status != prev_status:
+                    if status == "disconnected":
+                        st.toast("MongoDB 연결 끊김 — 재연결 대기 중", icon="🔴")
+                    elif status == "reconnected":
+                        st.toast("MongoDB 재연결 — 백테스트 재개", icon="🟢")
+                    st.session_state[prev_status_key] = status
+            elif prev_status is not None:
+                # 마커가 더 이상 안 보이고 정상 진행 중 → 상태 reset
+                st.session_state.pop(prev_status_key, None)
 
         # 진행 표시줄
         if progress["current_date"]:

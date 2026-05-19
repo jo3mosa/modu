@@ -72,10 +72,14 @@ class InvestmentAgentState(BaseModel):
     # 4. Reasoning Layer output
     # ==============================
 
-    # Bull/Bear 토론 누적 상태.
-    # - bull_history: list[str] — Bull 발언을 라운드 순서대로 누적
-    # - bear_history: list[str] — Bear 발언을 라운드 순서대로 누적
+    # Bull/Bear 토론 누적 상태. — history 통합 + 분리 사본 유지.
+    # - history: str — Bull/Bear 발언이 시간순으로 인터리브 누적된 단일 문자열.
+    #              "Bull Analyst: ...\nBear Analyst: ...\nBull Analyst: ..." 형식.
+    #              bull/bear/strategy_manager가 모두 이 필드를 보고 *대화*로 인식.
+    # - bull_history: list[str] — Bull 발언만 (디버깅·분리 보관)
+    # - bear_history: list[str] — Bear 발언만 (디버깅·분리 보관)
     # - debate_rounds: list[dict] — 완성된 라운드 {"round": N, "bull": "...", "bear": "..."}
+    #                                decision_manager가 라운드 단위로 보기 위해 유지.
     # - latest_bull_argument: str | None — 직전 Bull 발언 (Bear가 반박 대상으로 사용)
     # - latest_bear_argument: str | None — 직전 Bear 발언 (Bull이 반박 대상으로 사용)
     # - round_count: int — 완성된 라운드 수 (Bear 발언 완료 시점에 증가)

@@ -1,3 +1,7 @@
+from app.repositories.buy_candidate_repository import (
+    BuyCandidateRepository,
+    RedisBuyCandidateRepository,
+)
 from app.repositories.market_price_repository import (
     MarketPriceRepository,
     RedisMarketPriceRepository,
@@ -15,6 +19,7 @@ from app.triggers.schemas import MarketTriggerEvent, TriggerType, UserTriggerEve
 _POSITION_INDEX_REPOSITORY: PositionIndexRepository = RedisPositionIndexRepository()
 _PORTFOLIO_SNAPSHOT_REPOSITORY: PortfolioSnapshotRepository = RedisPortfolioSnapshotRepository()
 _MARKET_PRICE_REPOSITORY: MarketPriceRepository = RedisMarketPriceRepository()
+_BUY_CANDIDATE_REPOSITORY: BuyCandidateRepository = RedisBuyCandidateRepository()
 
 
 def get_position_index_repository() -> PositionIndexRepository:
@@ -27,6 +32,10 @@ def get_portfolio_snapshot_repository() -> PortfolioSnapshotRepository:
 
 def get_market_price_repository() -> MarketPriceRepository:
     return _MARKET_PRICE_REPOSITORY
+
+
+def get_buy_candidate_repository() -> BuyCandidateRepository:
+    return _BUY_CANDIDATE_REPOSITORY
 
 
 def get_holding_user_ids(
@@ -76,42 +85,52 @@ def match_market_event_to_users(
     position_index_repository: PositionIndexRepository | None = None,
     portfolio_snapshot_repository: PortfolioSnapshotRepository | None = None,
     market_price_repository: MarketPriceRepository | None = None,
+    buy_candidate_repository: BuyCandidateRepository | None = None,
 ) -> list[UserTriggerEvent]:
     """
     MarketTriggerEvent를 사용자별 UserTriggerEvent로 변환한다.
 
     처리 흐름:
-    1. MarketTriggerEvent에서 stock_code를 읽는다.
-    2. 해당 종목을 보유한 사용자 목록을 조회한다.
-    3. 사용자별 portfolio_snapshot / user_context를 조회한다.
-    4. 종목 현재가를 조회해 portfolio_snapshot에 current_price로 포함한다.
-    5. 시장 이벤트 정보와 사용자 정보를 합쳐 UserTriggerEvent를 생성한다.
-    6. 매칭 대상 사용자가 없으면 빈 list를 반환한다.
+    1. 해당 종목을 보유한 모든 사용자를 조회한다 (is_holder=True).
+    2. buy_candidate_repository가 주입된 경우, risk_grade >= stock_tier 인
+       전체 적격 유저에서 보유자를 제외한 비보유자를 추가한다 (is_holder=False).
+       - 보유자와 겹치는 유저는 보유자로 처리한다.
+    3. 사용자별 portfolio_snapshot에 current_price를 포함해 UserTriggerEvent를 생성한다.
+    4. 매칭 대상 사용자가 없으면 빈 list를 반환한다.
 
     주의:
     - 이 함수는 Reasoning Layer를 직접 실행하지 않는다.
-    - Reasoning Layer가 실행할 수 있는 사용자 단위 이벤트만 생성한다.
+    - is_holder=False 이벤트는 run_and_publish에서 SELL/HOLD 결과 시 발행이 생략된다.
     """
 
     holding_user_ids = get_holding_user_ids(event.stock_code, position_index_repository)
+    holder_set = set(holding_user_ids)
 
-    if not holding_user_ids:
+    # (user_id, is_holder) 쌍으로 처리 대상 구성
+    targets: list[tuple[int, bool]] = [(uid, True) for uid in holding_user_ids]
+
+    if buy_candidate_repository is not None:
+        eligible_ids = buy_candidate_repository.get_eligible_user_ids(event.stock_code)
+        for uid in eligible_ids:
+            if uid not in holder_set:
+                targets.append((uid, False))
+
+    if not targets:
         return []
 
     current_price = get_current_price(event.stock_code, market_price_repository)
 
     user_trigger_events: list[UserTriggerEvent] = []
 
-    for user_id in holding_user_ids:
+    for user_id, is_holder in targets:
         portfolio_snapshot = get_portfolio_snapshot(user_id, portfolio_snapshot_repository)
-
         portfolio_snapshot = {**portfolio_snapshot, "current_price": current_price}
 
         # TODO: 동일 user_id / stock_code / source_event_id 중복 방지
         # 추후 Redis cooldown 또는 event deduplication 저장소를 붙여서
         # 같은 시장 이벤트가 동일 사용자에게 반복 실행되지 않도록 처리한다.
 
-        user_trigger_event = UserTriggerEvent(
+        user_trigger_events.append(UserTriggerEvent(
             source_event_id=event.event_id,
             event_type=TriggerType.MARKET_EVENT,
             timestamp=event.timestamp,
@@ -120,8 +139,7 @@ def match_market_event_to_users(
             trigger=event.trigger,
             analysis_snapshot=event.analysis_snapshot,
             portfolio_snapshot=portfolio_snapshot,
-        )
-
-        user_trigger_events.append(user_trigger_event)
+            is_holder=is_holder,
+        ))
 
     return user_trigger_events

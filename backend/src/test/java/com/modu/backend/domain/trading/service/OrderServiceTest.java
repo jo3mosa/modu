@@ -22,6 +22,7 @@ import com.modu.backend.domain.user.repository.KisCredentialRepository;
 import com.modu.backend.domain.user.service.KisTokenService;
 import com.modu.backend.global.error.ApiException;
 import com.modu.backend.global.error.CommonErrorCode;
+import com.modu.backend.global.kis.KisApiCallTemplate;
 import com.modu.backend.global.util.AesGcmEncryptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -33,11 +34,14 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.*;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -51,6 +55,7 @@ class OrderServiceTest {
     @Mock KisCredentialRepository kisCredentialRepository;
     @Mock TradingRuleRepository tradingRuleRepository;
     @Mock KisTokenService kisTokenService;
+    @Mock KisApiCallTemplate kisApiCallTemplate;
     @Mock KisOrderClient kisOrderClient;
     @Mock KisPendingOrderClient kisPendingOrderClient;
     @Mock KisModifyOrderClient kisModifyOrderClient;
@@ -79,6 +84,18 @@ class OrderServiceTest {
 
     @BeforeEach
     void setUp() {
+        // KisApiCallTemplate.callWithTokenRetry — fn 을 "token" 으로 실행하여
+        // 내부 KIS 클라이언트 호출 stub 들이 매칭되도록 한다.
+        when(kisApiCallTemplate.callWithTokenRetry(anyLong(), anyString(), anyString(), any()))
+                .thenAnswer(invocation -> {
+                    Function<String, Object> fn = invocation.getArgument(3);
+                    return fn.apply("token");
+                });
+
+        // OrderService.doPlaceOrder 의 TransactionSynchronizationManager.registerSynchronization
+        // 호출을 위한 단위 테스트용 트랜잭션 동기 활성화. 등록된 afterCommit 은 flushTransactionSync 로 수동 트리거.
+        TransactionSynchronizationManager.initSynchronization();
+
         realCredential = KisCredential.builder()
                 .userId(1L)
                 .appKeyEnc("enc-key")
@@ -110,6 +127,21 @@ class OrderServiceTest {
                 .createdAt(OffsetDateTime.now())
                 .updatedAt(OffsetDateTime.now())
                 .build();
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void tearDown() {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    /** verify 전에 호출 — registerSynchronization 으로 등록된 afterCommit 콜백을 즉시 실행 */
+    private void flushTransactionSync() {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) return;
+        for (TransactionSynchronization sync : TransactionSynchronizationManager.getSynchronizations()) {
+            sync.afterCommit();
+        }
     }
 
     // ── Idempotency ───────────────────────────────────────────────────────────
@@ -180,6 +212,7 @@ class OrderServiceTest {
 
             // when: idempotencyKey = null
             OrderResponse response = orderService.placeOrder(1L, buyRequest, null);
+            flushTransactionSync();
 
             // then: 주문이 정상적으로 처리됨 (UUID 자동 생성)
             assertThat(response).isNotNull();
@@ -298,6 +331,7 @@ class OrderServiceTest {
 
             // when
             orderService.placeOrder(1L, sellRequest, "key-001");
+            flushTransactionSync();
 
             // then: 매도는 sumTodayBuyAmount 호출 없음
             verify(orderRepository, never()).sumTodayBuyAmount(anyLong());
@@ -317,6 +351,7 @@ class OrderServiceTest {
 
             // when
             orderService.placeOrder(1L, buyRequest, "key-001");
+            flushTransactionSync();
 
             // then: 룰 없으면 sumTodayBuyAmount 호출 없음
             verify(orderRepository, never()).sumTodayBuyAmount(anyLong());
@@ -393,6 +428,7 @@ class OrderServiceTest {
 
             // when
             OrderResponse response = orderService.placeOrder(1L, buyRequest, "key-001");
+            flushTransactionSync();
 
             // then: HTTP 응답은 PENDING 으로 즉시 반환 (kisOrderNo 는 SSE 로 후속 수신)
             assertThat(response.orderId()).isEqualTo("1");
@@ -436,6 +472,7 @@ class OrderServiceTest {
 
             // when
             OrderResponse response = orderService.placeOrder(1L, sellRequest, "key-002");
+            flushTransactionSync();
 
             // then
             assertThat(response.side()).isEqualTo("SELL");

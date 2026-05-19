@@ -12,13 +12,14 @@ import apiClient from './apiClient';
  *
  * - 사용자당 하나의 KIS 계정만 연동 가능
  * - 이미 연동된 경우 409(USER_001) 반환 → updateKisKey() 사용
- * - appKey, appSecret은 백엔드에서 AES-256-GCM으로 암호화 저장
+ * - appKey, appSecret, htsId는 백엔드에서 AES-256-GCM으로 암호화 저장
  *
- * @param {{ appKey: string, appSecret: string, accountNo: string, isRealAccount: boolean }} payload
- *   accountNo 형식: "계좌번호-상품코드" (예: "50012345-01")
+ * @param {{ appKey: string, appSecret: string, htsId: string, accountNo: string, isRealAccount: boolean }} payload
+ *   - htsId: 한투 HTS/MTS 로그인 ID — 체결통보 WebSocket(H0STCNI0) 구독에 필수
+ *   - accountNo 형식: "계좌번호-상품코드" (예: "50012345-01")
  */
 export async function registerKisKey(payload) {
-  // payload: { appKey, appSecret, accountNo }
+  // payload: { appKey, appSecret, htsId, accountNo, isRealAccount }
   // accountNo = `${cano}-${acntPrdtCd}` 형태로 조합 후 전달
   await apiClient('/users/me/kis-keys', {
     method: 'POST',
@@ -30,11 +31,11 @@ export async function registerKisKey(payload) {
  * 한국투자증권 API 키 정보 수정
  * PATCH /api/v1/users/me/kis-keys
  *
- * - 변경할 필드만 포함해도 됨 (부분 업데이트)
+ * - 변경할 필드만 포함해도 됨 (부분 업데이트). 빈 객체({})는 400 반환
  * - 연동 정보 없을 경우 404(USER_002) 반환 → registerKisKey() 먼저 호출 필요
  *
- * @param {{ appKey?: string, appSecret?: string, accountNo?: string }} payload
- *   변경하고 싶은 필드만 포함
+ * @param {{ appKey?: string, appSecret?: string, htsId?: string, accountNo?: string, isRealAccount?: boolean }} payload
+ *   변경하고 싶은 필드만 포함 (null/undefined 필드는 기존 값 유지)
  */
 export async function updateKisKey(payload) {
   await apiClient('/users/me/kis-keys', {

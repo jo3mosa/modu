@@ -16,6 +16,7 @@ import com.modu.backend.domain.user.exception.UserErrorCode;
 import com.modu.backend.domain.user.repository.KisCredentialRepository;
 import com.modu.backend.domain.user.service.KisTokenService;
 import com.modu.backend.global.error.ApiException;
+import com.modu.backend.global.kis.KisApiCallTemplate;
 import com.modu.backend.global.util.AesGcmEncryptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -34,11 +35,13 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
@@ -49,6 +52,7 @@ class OrderHistoryServiceTest {
     @Mock OrderRepository orderRepository;
     @Mock KisCredentialRepository kisCredentialRepository;
     @Mock KisTokenService kisTokenService;
+    @Mock KisApiCallTemplate kisApiCallTemplate;
     @Mock KisOrderHistoryClient kisOrderHistoryClient;
     @Mock AesGcmEncryptor encryptor;
 
@@ -60,6 +64,12 @@ class OrderHistoryServiceTest {
 
     @BeforeEach
     void setUp() {
+        when(kisApiCallTemplate.callWithTokenRetry(anyLong(), anyString(), anyString(), any()))
+                .thenAnswer(invocation -> {
+                    Function<String, Object> fn = invocation.getArgument(3);
+                    return fn.apply("token");
+                });
+
         realCredential = KisCredential.builder()
                 .userId(1L)
                 .appKeyEnc("enc-key").appSecretEnc("enc-secret")

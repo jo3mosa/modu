@@ -17,17 +17,51 @@
   left: 0;
   top: 0;
   z-index: 50;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .sidebar-logo {
-  padding: 2rem;
+  padding: 1.5rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  min-height: 72px;
+  box-sizing: border-box;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar-menu-btn {
+  background: transparent;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  outline: none;
+}
+
+.sidebar-menu-btn:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.sidebar-logo-text {
+  display: flex;
+  align-items: center;
+  text-decoration: none;
 }
 
 .sidebar-logo h2 {
-  font-size: 2rem;
+  font-size: 1.6rem;
   font-weight: 800;
   color: #fff;
   margin: 0;
+  letter-spacing: -0.5px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .sidebar-nav {
@@ -77,6 +111,7 @@
   display: flex;
   flex-direction: column;
   height: 100vh;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .global-header {
@@ -87,12 +122,21 @@
   justify-content: center;
   align-items: center;
   min-height: 44px; /* 알림 버튼 높이 — absolute 자식이 수직 중앙 정렬되게 base 확보 */
+  z-index: 1000; /* 콘텐츠(z-index 1000 이하) 영역 위로 오버레이 보장 */
 }
 
 .global-search-wrapper {
   position: relative;
   width: 40%;
   max-width: 560px;
+  /* 헤더는 main-content 내부에 있어 justify-content: center 만으로는 사이드바 너비의 절반만큼 우측 쏠림이 생김.
+     사이드바 너비만큼 우측 여백을 주면 flex center 계산이 보정되어 viewport 기준 정중앙으로 옮겨진다. */
+  margin-right: 250px;
+  transition: margin-right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar-collapsed .global-search-wrapper {
+  margin-right: 72px;
 }
 
 .global-notification-btn {
@@ -115,16 +159,121 @@
 }
 
 /* ============================
-   알림 팝업
+   헤더 우측 액션 영역 (알림 & 프로필)
    ============================ */
-.alarm-controls {
+.header-right-actions {
   position: absolute;
   right: 0;
   top: 50%;
   transform: translateY(-50%);
   display: flex;
   align-items: center;
+  gap: 0.8rem;
 }
+
+.alarm-controls,
+.profile-controls {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.global-profile-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: #fff;
+}
+
+.global-profile-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  transform: scale(1.05);
+}
+
+/* ============================
+   프로필 팝업 드롭다운
+   ============================ */
+.profile-popup {
+  position: absolute;
+  top: calc(100% + 12px);
+  right: 0;
+  width: 170px;
+  background: #242424;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0.5rem 0;
+}
+
+.profile-popup-header {
+  padding: 0.4rem 1rem;
+  font-size: 0.72rem;
+  color: #888;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  margin-bottom: 0.3rem;
+}
+
+.profile-popup-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.profile-popup-item {
+  background: transparent;
+  border: none;
+  color: #ddd;
+  padding: 0.55rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s;
+  width: 100%;
+}
+
+.profile-popup-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+}
+
+.profile-popup-item.disconnect {
+  color: #ef4444; /* Neon Red warning */
+}
+
+.profile-popup-item.disconnect:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+.profile-popup-item.logout {
+  color: #3b82f6; /* Neon Blue info */
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  margin-top: 0.3rem;
+  padding-top: 0.55rem;
+}
+
+.profile-popup-item.logout:hover {
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+}
+
+/* ============================
+   알림 팝업
+   ============================ */
 
 .alarm-badge {
   position: absolute;
@@ -153,7 +302,7 @@
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 12px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
-  z-index: 200;
+  z-index: 9999;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -344,7 +493,7 @@
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 12px;
   overflow: hidden;
-  z-index: 200;
+  z-index: 9999;
   list-style: none;
   margin: 0;
   padding: 0.4rem 0;
@@ -432,4 +581,35 @@
   color: #888;
   margin: 0;
   font-size: 1rem;
+}
+
+/* 사이드바 최소화(Collapsed) 스타일 */
+.sidebar-collapsed .sidebar {
+  width: 72px;
+}
+
+.sidebar-collapsed .main-content {
+  margin-left: 72px;
+}
+
+.sidebar-collapsed .sidebar-logo {
+  padding: 1.5rem 0;
+  display: flex;
+  justify-content: center;
+  gap: 0;
+}
+
+.sidebar-collapsed .nav-item {
+  justify-content: center;
+  padding: 0.8rem 0;
+  gap: 0;
+  border-radius: 8px;
+}
+
+.sidebar-collapsed .nav-label {
+  display: none;
+}
+
+.sidebar-collapsed .nav-new-badge {
+  display: none;
 }

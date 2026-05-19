@@ -38,6 +38,7 @@ export default function OnboardingPage() {
   const [apiKeys, setApiKeys] = useState({
     appKey: '',
     appSecret: '',
+    htsId: '',
     accountNo: '',
   });
   const [submittingComplete, setSubmittingComplete] = useState(false);
@@ -122,12 +123,13 @@ export default function OnboardingPage() {
         version: 0,
       });
 
-      // 3) KIS 키 등록 (appKey, appSecret, accountNo 모두 있을 때만)
-      if (apiKeys.appKey && apiKeys.appSecret && apiKeys.accountNo) {
+      // 3) KIS 키 등록 (appKey, appSecret, htsId, accountNo 모두 있을 때만)
+      if (apiKeys.appKey && apiKeys.appSecret && apiKeys.htsId && apiKeys.accountNo) {
         try {
           await registerKisKey({
             appKey: apiKeys.appKey,
             appSecret: apiKeys.appSecret,
+            htsId: apiKeys.htsId,
             accountNo: apiKeys.accountNo,
             isRealAccount: true,
           });
@@ -300,7 +302,7 @@ function Step3Rules({ rules, setRules, profileResult, nextStep, prevStep }) {
 
 // 4단계 -> 계좌 연동
 function Step4ApiKeys({ apiKeys, setApiKeys, handleComplete, prevStep, submitting }) {
-  const isComplete = apiKeys.appKey && apiKeys.appSecret && apiKeys.accountNo;
+  const isComplete = apiKeys.appKey && apiKeys.appSecret && apiKeys.htsId && apiKeys.accountNo;
 
   return (
     <div className="step-wrapper">
@@ -324,6 +326,15 @@ function Step4ApiKeys({ apiKeys, setApiKeys, handleComplete, prevStep, submittin
             value={apiKeys.appSecret}
             onChange={(e) => setApiKeys({ ...apiKeys, appSecret: e.target.value })}
             placeholder="한국투자증권 App Secret을 입력하세요"
+          />
+        </div>
+        <div className="input-box">
+          <label>HTS ID (한투 로그인 ID)</label>
+          <input
+            type="text"
+            value={apiKeys.htsId}
+            onChange={(e) => setApiKeys({ ...apiKeys, htsId: e.target.value })}
+            placeholder="예: myhts01 — 한투 HTS/MTS 접속 ID"
           />
         </div>
         <div className="input-box">

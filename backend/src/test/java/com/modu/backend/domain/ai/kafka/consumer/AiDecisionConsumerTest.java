@@ -31,7 +31,7 @@ class AiDecisionConsumerTest {
 
     private final AiDecisionMessage message = new AiDecisionMessage(
             1L, "evt-1", "005930", OffsetDateTime.now(), null,
-            null, null, null, "completed"
+            null, null, null, "completed", null
     );
 
     @Test

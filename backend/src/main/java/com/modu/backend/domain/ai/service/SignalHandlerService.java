@@ -6,6 +6,10 @@ import com.modu.backend.domain.ai.entity.AiExecutionStatus;
 import com.modu.backend.domain.ai.entity.AiJudgment;
 import com.modu.backend.domain.ai.exception.AiErrorCode;
 import com.modu.backend.domain.ai.repository.AiJudgmentRepository;
+import com.modu.backend.domain.ai.repository.StockRiskTierRedisRepository;
+import com.modu.backend.domain.investment.entity.InvestmentProfile;
+import com.modu.backend.domain.investment.repository.InvestmentProfileRepository;
+import com.modu.backend.domain.strategy.dto.InvestmentRiskLevel;
 import com.modu.backend.domain.strategy.entity.AutoTradeStatus;
 import com.modu.backend.domain.strategy.repository.AutoTradeSettingsRepository;
 import com.modu.backend.domain.trading.entity.Order;
@@ -77,6 +81,9 @@ public class SignalHandlerService {
     private final PortfolioCheckService portfolioCheckService;
     private final TradeOrderProducer tradeOrderProducer;
     private final ObjectMapper objectMapper;
+    // S14P31B106-354 — RECOMMENDED 분기 컨텍스트 조회 (BE 자체 조달)
+    private final StockRiskTierRedisRepository stockRiskTierRedisRepository;
+    private final InvestmentProfileRepository investmentProfileRepository;
 
     @Transactional
     public void handle(AiDecisionMessage message) {
@@ -129,8 +136,14 @@ public class SignalHandlerService {
     // ───────────────────────────────────────────────────────────────────
 
     private AiExecutionStatus resolveExecutionStatus(AiDecisionMessage m) {
-        // 0. 자동매매 상태 우선 확인 — ACTIVE 아니면 BLOCKED (사용자 OFF / Kill Switch / row 없음 모두 차단)
-        //    AI 가 Redis 보고 사전 필터링하나 race 가드 차원에서 BE 도 한 번 더 확인
+        // 0-A. 비보유자 분기 (S14P31B106-354) — 자동매매 상태와 무관 (사용자 동의 후 수동 매수 성격)
+        //      isHolder=null/true 는 보유자 간주 → 기존 흐름. false 는 BUY 만 RECOMMENDED.
+        if (Boolean.FALSE.equals(m.isHolder())) {
+            return resolveNonHolderStatus(m);
+        }
+
+        // 0-B. 자동매매 상태 확인 — ACTIVE 아니면 BLOCKED (사용자 OFF / Kill Switch / row 없음 모두 차단)
+        //      AI 가 Redis 보고 사전 필터링하나 race 가드 차원에서 BE 도 한 번 더 확인
         if (!isAutoTradeActive(m.userId())) {
             return AiExecutionStatus.BLOCKED;
         }
@@ -174,6 +187,33 @@ public class SignalHandlerService {
         }
 
         return AiExecutionStatus.READY;
+    }
+
+    /**
+     * 비보유자 분기 (S14P31B106-354):
+     *  - flow_status 가 "completed" 가 아니면 BLOCKED (failed / blocked / hold / running 등)
+     *  - final_decision 없음 / trade 아님 → BLOCKED + 경고
+     *  - SELL/HOLD → BLOCKED + 경고 로그 (비보유자에게 발행돼서는 안 되는 케이스)
+     *  - BUY → RECOMMENDED (사용자 승인 시 매수 실행)
+     */
+    private AiExecutionStatus resolveNonHolderStatus(AiDecisionMessage m) {
+        if (!"completed".equalsIgnoreCase(m.flowStatus())) {
+            log.warn("[RECOMMENDED] 비보유자 비완료 flow_status 차단 - userId: {}, stockCode: {}, flowStatus: {}",
+                    m.userId(), m.stockCode(), m.flowStatus());
+            return AiExecutionStatus.BLOCKED;
+        }
+        AiDecisionMessage.FinalDecision fd = m.finalDecision();
+        if (fd == null || !"trade".equalsIgnoreCase(fd.action())) {
+            log.warn("[RECOMMENDED] 비보유자에게 trade 아닌 결정 수신 - userId: {}, stockCode: {}, action: {}",
+                    m.userId(), m.stockCode(), fd != null ? fd.action() : null);
+            return AiExecutionStatus.BLOCKED;
+        }
+        if (!"buy".equalsIgnoreCase(fd.side())) {
+            log.warn("[RECOMMENDED] 비보유자에게 BUY 아닌 side 수신 - userId: {}, stockCode: {}, side: {}",
+                    m.userId(), m.stockCode(), fd.side());
+            return AiExecutionStatus.BLOCKED;
+        }
+        return AiExecutionStatus.RECOMMENDED;
     }
 
     /**
@@ -345,6 +385,14 @@ public class SignalHandlerService {
         AiDecisionMessage.FinalDecision fd = m.finalDecision();
         AiDecisionMessage.Debate debate = m.debate();
 
+        // S14P31B106-354 — RECOMMENDED 만 tier/grade 컨텍스트 채움 (그 외는 null)
+        Integer stockTier = null;
+        Integer matchedRiskGrade = null;
+        if (status == AiExecutionStatus.RECOMMENDED) {
+            stockTier = stockRiskTierRedisRepository.get(m.stockCode());
+            matchedRiskGrade = lookupUserGradeInt(m.userId());
+        }
+
         AiJudgment judgment = AiJudgment.builder()
                 .userId(m.userId())
                 .stockCode(m.stockCode())
@@ -367,15 +415,35 @@ public class SignalHandlerService {
                 .decisionId(m.decisionId())
                 .sourceEventId(m.sourceEventId())
                 .executionStatus(status)
+                // V20260519220100 (354) — RECOMMENDED 컨텍스트
+                .stockTier(stockTier)
+                .matchedRiskGrade(matchedRiskGrade)
                 .build();
 
-        // APPROVAL_REQUIRED 진입 시 5분 만료 시각 세팅 (S14P31B106-292)
-        if (status == AiExecutionStatus.APPROVAL_REQUIRED) {
+        // APPROVAL_REQUIRED / RECOMMENDED 진입 시 5분 만료 시각 세팅
+        // (RECOMMENDED 는 354 — 동일 sweeper 가 만료 처리)
+        if (status == AiExecutionStatus.APPROVAL_REQUIRED || status == AiExecutionStatus.RECOMMENDED) {
             judgment.setApprovalExpiresAt(OffsetDateTime.now().plusMinutes(5));
         }
 
         aiJudgmentRepository.saveAndFlush(judgment);
         return judgment;
+    }
+
+    /**
+     * 사용자 risk_grade 를 1~5 정수로 변환 (S14P31B106-354).
+     * profile row 없거나 알 수 없는 grade 면 null 반환 (FE 멘트 풍부화는 best-effort).
+     */
+    private Integer lookupUserGradeInt(Long userId) {
+        InvestmentProfile profile = investmentProfileRepository.findById(userId).orElse(null);
+        if (profile == null || profile.getRiskGrade() == null) return null;
+        try {
+            return InvestmentRiskLevel.valueOf(profile.getRiskGrade()).toGradeInt();
+        } catch (IllegalArgumentException e) {
+            log.warn("[RECOMMENDED] 알 수 없는 riskGrade - userId: {}, value: {}",
+                    userId, profile.getRiskGrade());
+            return null;
+        }
     }
 
     // ───────────────────────────────────────────────────────────────────

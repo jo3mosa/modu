@@ -25,81 +25,59 @@ import { useOrderSSE } from './useOrderSSE';
  *  - 영속화는 서버 책임 — 본 훅은 메모리 버퍼만 유지 (localStorage 사용 X)
  */
 
-import bullImg from '../assets/12.webp';
-import bearImg from '../assets/123.jpg';
-import strategyImg from '../assets/1234.jpg';
-import decideImg from '../assets/12345.webp';
+import bullImg from '../assets/bull.png';
+import bearImg from '../assets/bear.png';
+import strategyImg from '../assets/strategy.png';
+import decideImg from '../assets/decision.png';
 
 // BE 의 AgentType enum 과 동일 키 (대문자)
 // useAiChat 의 소문자 키(bull/bear/strategy/decide) 와는 별개
 export const BOT_PROFILES = {
-  BULL:     { name: '강세 리서처',    role: '리서치',   icon: '강세', color: '#ef4444', avatar: bullImg },
-  BEAR:     { name: '약세 리서처',    role: '리서치',   icon: '약세', color: '#3b82f6', avatar: bearImg },
-  STRATEGY: { name: '전략 매니저',    role: '전략',     icon: '전략', color: '#a78bfa', avatar: strategyImg },
-  DECIDE:   { name: '의사결정 매니저', role: '의사결정', icon: '결정', color: '#10b981', avatar: decideImg },
+  BULL: {
+    name: '강세 리서처',
+    role: '리서치',
+    icon: '강세',
+    color: '#ef4444',
+    avatar: bullImg,
+    tagline: '상방 시나리오 전담',
+    description: '기술적 지표와 매크로 호재 속에서 상승 트리거를 발굴합니다. 강세 근거를 적극적으로 제시해 회의의 한 축을 담당합니다.',
+    style: '공격적 · 모멘텀 중시',
+  },
+  BEAR: {
+    name: '약세 리서처',
+    role: '리서치',
+    icon: '약세',
+    color: '#3b82f6',
+    avatar: bearImg,
+    tagline: '하방 리스크 전담',
+    description: '거시 위험, 수급 부담, 밸류에이션 부담을 점검합니다. 강세 리서처와의 균형을 통해 한쪽 편향을 방지합니다.',
+    style: '보수적 · 리스크 우선',
+  },
+  STRATEGY: {
+    name: '전략 매니저',
+    role: '전략',
+    icon: '전략',
+    color: '#a78bfa',
+    avatar: strategyImg,
+    tagline: '포지션 설계 담당',
+    description: '강세·약세 리서치를 종합해 진입 시점, 분할 매수 비중, 손절가를 설계합니다. 실행 가능한 전략으로 구체화합니다.',
+    style: '균형 · 분할 진입 선호',
+  },
+  DECIDE: {
+    name: '의사결정 매니저',
+    role: '의사결정',
+    icon: '결정',
+    color: '#10b981',
+    avatar: decideImg,
+    tagline: '최종 매수/매도 판단',
+    description: '전략 매니저의 제안을 검토해 최종 BUY/SELL/HOLD를 결정합니다. 회의 결론을 종합 의견으로 압축합니다.',
+    style: '결정적 · 신뢰도 기반',
+  },
 };
 
 const DEFAULT_PAGE_SIZE = 50;
 
-function getStockNameByCode(code) {
-  const mapping = {
-    '005930': '삼성전자',
-    '000660': 'SK하이닉스',
-    '035720': '카카오',
-    '035420': 'NAVER',
-    '005380': '현대차',
-    '000270': '기아',
-    '068270': '셀트리온',
-    '005490': 'POSCO홀딩스',
-    '105560': 'KB금융',
-    '051910': 'LG화학',
-  };
-  return mapping[code] || '해당 종목';
-}
 
-function generateMockMessages(stockCode) {
-  const stockName = getStockNameByCode(stockCode);
-  const now = new Date();
-  
-  return [
-    {
-      messageId: 99004,
-      stockCode,
-      judgmentId: null,
-      agent: 'DECIDE',
-      seq: 4,
-      text: `최종 결론 조율되었습니다. 매크로 불확실성에도 불구하고 기술적 지지세가 탄탄한 국면입니다. 비중 10% 이내의 1차 분할 매수(BUY) 승인 건을 전략 풀에 대기시키겠습니다. 손절가는 금일 지지선 하단으로 설정하여 극도로 타이트하게 제어하겠습니다.`,
-      createdAt: new Date(now.getTime() - 1000 * 60 * 5).toISOString(),
-    },
-    {
-      messageId: 99003,
-      stockCode,
-      judgmentId: null,
-      agent: 'STRATEGY',
-      seq: 3,
-      text: `두 분의 리서치 근거가 모두 설득력 있습니다. 전략적 절충안으로, 상방 돌파 확률을 62%로 보고 롱 포지션을 구축하되 단기 흔들기에 대비해 한 번에 매수하지 않고 3회에 걸친 철저한 분할 매수 분산 전략을 시행하는 것이 유리해 보입니다.`,
-      createdAt: new Date(now.getTime() - 1000 * 60 * 9).toISOString(),
-    },
-    {
-      messageId: 99002,
-      stockCode,
-      judgmentId: null,
-      agent: 'BEAR',
-      seq: 2,
-      text: `기술적 반등만으로 추세 전환을 확신하긴 이릅니다. 최근 해외 경쟁사의 가이드라인 하향 조정 우려가 남아있어, ${stockName} 역시 상단 저항 매물을 소화하는 과정에서 일시 조정이 올 확률이 55%가 넘습니다. 보수적인 리스크 관리가 절대적으로 선행되어야 할 시점입니다.`,
-      createdAt: new Date(now.getTime() - 1000 * 60 * 13).toISOString(),
-    },
-    {
-      messageId: 99001,
-      stockCode,
-      judgmentId: null,
-      agent: 'BULL',
-      seq: 1,
-      text: `최근 ${stockName}의 기술적 추세를 모니터링한 결과, 120일선에서 강력한 기관 순매수가 유입되며 단기적인 하방 경직성을 확보했습니다. 특히 RSI 지표가 과매도 권역을 성공적으로 돌파하며 강한 상방 에너지를 분출하기 시작했습니다!`,
-      createdAt: new Date(now.getTime() - 1000 * 60 * 17).toISOString(),
-    },
-  ];
-}
 
 function emptyChannel() {
   return {
@@ -114,9 +92,9 @@ function emptyChannel() {
 const AgentChatContext = createContext({
   byStock: {},
   unreadByStock: {},
-  loadHistory: async () => {},
-  loadMore: async () => {},
-  markRead: () => {},
+  loadHistory: async () => { },
+  loadMore: async () => { },
+  markRead: () => { },
 });
 
 export function AgentChatProvider({ children }) {
@@ -182,17 +160,11 @@ export function AgentChatProvider({ children }) {
       let hasMore = res.hasMore;
       let nextCursor = res.nextCursor;
       let nextCursorId = res.nextCursorId;
-      
-      // 만약 백엔드 DB에 에이전트 대화 데이터가 없으면, 고품질 종목 맞춤형 실시간 모의 대화 시나리오를 로드하여 채워줌!
-      if (content.length === 0) {
-        content = generateMockMessages(stockCode);
-        hasMore = false;
-        nextCursor = null;
-        nextCursorId = null;
-      }
-      
+
+      // 백엔드에 대화 데이터가 없으면 빈 리스트 상태를 깔끔히 유지합니다.
+
       content.forEach((m) => seenIdsRef.current.add(m.messageId));
-      
+
       setByStock((prev) => ({
         ...prev,
         [stockCode]: {

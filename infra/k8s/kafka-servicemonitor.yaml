@@ -1,0 +1,44 @@
+# [S14P31B106-348] Kafka 브로커 JMX 메트릭 수집 ServiceMonitor.
+#
+# Prometheus 가 kafka-headless Service 의 jmx-metrics(9404) 포트를
+# 30초마다 scrape 한다. publishNotReadyAddresses: true 이므로
+# 기동 중인 Pod 도 일시적으로 타겟에 포함될 수 있으나, /metrics 가
+# 응답 가능해진 뒤에야 실제 값이 수집된다.
+#
+# 동작 흐름:
+#   kube-prom Prometheus
+#     --(release=kube-prom 라벨로 ServiceMonitor 자동 발견)-->
+#   kafka-headless:9404/metrics
+#     --> kafka-0/1/2 Pod 의 jmx_prometheus_javaagent
+#
+# 주요 수집 메트릭:
+#   kafka_server_brokertopicmetrics_*    : 토픽별 in/out 처리량
+#   kafka_server_replicamanager_*        : UnderReplicatedPartitions 등
+#   kafka_controller_*                   : ActiveController, OfflinePartitions
+#   kafka_request_handler_avg_idle_percent
+#   jvm_memory_heap_*, jvm_gc_*
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kafka-monitor
+  namespace: modu-apps
+  labels:
+    # kube-prometheus-stack 의 Prometheus 가 release=kube-prom 라벨이 붙은
+    # ServiceMonitor 만 자동 발견. 누락 시 메트릭 수집 안 됨.
+    release: kube-prom
+spec:
+  selector:
+    matchLabels:
+      app: kafka
+  namespaceSelector:
+    matchNames:
+      - modu-apps
+  endpoints:
+  - port: jmx-metrics       # kafka-headless Service 의 포트 이름과 일치
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+    # 브로커 식별을 위해 pod 이름을 라벨로 추가 (kafka-0/1/2 구분).
+    relabelings:
+      - sourceLabels: [__meta_kubernetes_pod_name]
+        targetLabel: kafka_broker
