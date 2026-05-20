@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # ============================================================
 # Stage 1: Build
 # Node.js 환경에서 React 앱을 정적 파일(dist/)로 빌드합니다.
@@ -12,7 +13,8 @@ WORKDIR /app
 COPY package*.json ./
 
 # 정확한 버전으로 의존성 설치 (npm install 대신 ci 사용)
-RUN npm ci
+# --mount=type=cache : npm 다운로드 캐시(~/.npm)를 빌드 간에 영속화. (BUILDKIT 필요)
+RUN --mount=type=cache,target=/root/.npm npm ci
 
 # 소스코드 전체 복사 후 프로덕션 빌드 실행
 COPY . .

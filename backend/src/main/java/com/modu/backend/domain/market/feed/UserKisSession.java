@@ -21,6 +21,7 @@ import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.net.URI;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -62,6 +63,8 @@ public class UserKisSession {
     private final long userId;
     private final String htsId;        // 체결통보 SUBSCRIBE 의 tr_key. null 이면 체결통보 미가입.
     private final String approvalKey;  // KIS WS approval_key (사용자 키로 발급). 발급은 Factory 책임.
+    /** KIS "invalid approval" 거부 시 호출 — Pool 이 승인키 evict + 세션 재생성 위임. */
+    private final Runnable onInvalidApproval;
 
     // ── 외부 의존성 ─────────────────────────────────────────────────────────
     private final KisWebSocketProperties properties;
@@ -84,6 +87,8 @@ public class UserKisSession {
     private final AtomicBoolean reconnecting = new AtomicBoolean(false);
     /** close() 호출 후 재연결 차단 플래그 */
     private final AtomicBoolean closed = new AtomicBoolean(false);
+    /** invalid approval 복구를 세션당 1회만 위임 + 이후 같은 키 재연결 차단 */
+    private final AtomicBoolean recoveryTriggered = new AtomicBoolean(false);
 
     public UserKisSession(
             long userId,
@@ -95,7 +100,8 @@ public class UserKisSession {
             ExecutionMessagePayloadParser executionParser,
             ExecutionDispatchService executionDispatch,
             KisFeedPublisher feedPublisher,
-            RealtimePriceCacheService priceCache
+            RealtimePriceCacheService priceCache,
+            Runnable onInvalidApproval
     ) {
         this.userId = userId;
         this.htsId = htsId;
@@ -107,6 +113,7 @@ public class UserKisSession {
         this.executionDispatch = executionDispatch;
         this.feedPublisher = feedPublisher;
         this.priceCache = priceCache;
+        this.onInvalidApproval = onInvalidApproval;
     }
 
     public long userId() {
@@ -358,6 +365,10 @@ public class UserKisSession {
         public void afterConnectionClosed(WebSocketSession s, CloseStatus status) {
             log.warn("[UserKisSession] connection closed - userId: {}, status: {}", userId, status);
             if (wsSession == s) wsSession = null;
+            // invalid approval 복구가 위임된 세션은 같은 키로 재연결 금지 — Pool 이 새 키로 재생성한다.
+            if (recoveryTriggered.get()) {
+                return;
+            }
             scheduleReconnect();
         }
 
@@ -382,8 +393,15 @@ public class UserKisSession {
 
             String rtCd = root.path("body").path("rt_cd").asText();
             if ("1".equals(rtCd) || "9".equals(rtCd)) {
-                log.warn("[UserKisSession] subscribe rejected - userId: {}, trId: {}, msg: {}",
-                        userId, trId, root.path("body").path("msg1").asText());
+                String msg = root.path("body").path("msg1").asText();
+                log.warn("[UserKisSession] subscribe rejected - userId: {}, trId: {}, msg: {}", userId, trId, msg);
+                // 무효 승인키는 같은 키로 재연결해봐야 무한 거부 → evict + 세션 재생성을 Pool 에 위임.
+                // 세션당 1회만(recoveryTriggered) — 이후 afterConnectionClosed 도 재연결 차단.
+                if (msg != null && msg.toLowerCase(Locale.ROOT).contains("invalid approval")
+                        && recoveryTriggered.compareAndSet(false, true)) {
+                    log.warn("[UserKisSession] invalid approval 감지 — 승인키 재발급 복구 위임. userId: {}", userId);
+                    onInvalidApproval.run();
+                }
                 return;
             }
 
