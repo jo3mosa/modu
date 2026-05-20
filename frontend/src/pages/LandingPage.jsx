@@ -4,6 +4,7 @@ import Spline from '@splinetool/react-spline';
 import { ArrowRight } from 'lucide-react';
 import dashboardImg from '../assets/dashboard.png';
 import tradingImg from '../assets/trading.png';
+import aiImg from '../assets/ai.png';
 import stockImg from '../assets/stock.png';
 import discoveryImg from '../assets/discovery.png';
 import './LandingPage.css';
@@ -127,6 +128,19 @@ export default function LandingPage() {
               <p className="mockup-info-desc">
                 호가창과 차트를 실시간으로 모니터링하며,<br />
                 AI 에이전트가 제시하는 포지션을 직접 수행하거나 수동으로 자유롭게 거래할 수 있습니다.
+              </p>
+            </div>
+          </div>
+
+          <div className="fade-in-section sneak-peek-item">
+            <ThreeDCard>
+              <img src={aiImg} alt="MODU AI 에이전트 협업 회의실 화면" className="mockup-image" />
+            </ThreeDCard>
+            <div className="mockup-info">
+              <h3 className="mockup-info-title">AI 에이전트 회의실</h3>
+              <p className="mockup-info-desc">
+                나의 투자 성향을 학습한 AI 에이전트들의 투자 전략을 확인하고,<br />
+                에이전트가 제안하는 매수/매도 판단을 검토하고 승인해보세요.
               </p>
             </div>
           </div>
