@@ -1,12 +1,15 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Spline from '@splinetool/react-spline';
+import { ArrowRight } from 'lucide-react';
 import tradingImg from '../assets/trading.png';
 import './LandingPage.css';
 
 export default function LandingPage() {
   const navigate = useNavigate();
   const observerRef = useRef(null);
+  // Spline 3D 씬 로드 완료 여부 — 로드 전에는 어두운 그라데이션 폴백 노출
+  const [isSplineLoaded, setIsSplineLoaded] = useState(false);
 
   useEffect(() => {
     observerRef.current = new IntersectionObserver((entries) => {
@@ -28,27 +31,52 @@ export default function LandingPage() {
   return (
     <div className="landing-container">
       <section className="hero-section">
-        <div className="spline-bg">
-          <Spline scene="https://prod.spline.design/6Wq1Q7YGyM-iab9i/scene.splinecode" />
+        {/* Spline 로딩 동안 배경이 휑하지 않도록 그라데이션 폴백을 깔아둔다 */}
+        <div className={`spline-bg ${isSplineLoaded ? 'loaded' : ''}`}>
+          <div className="spline-fallback" aria-hidden="true" />
+          <Spline
+            scene="https://prod.spline.design/6Wq1Q7YGyM-iab9i/scene.splinecode"
+            onLoad={() => setIsSplineLoaded(true)}
+          />
         </div>
 
         <div className="hero-content fade-in-section">
           <h1 className="hero-title">당신의 투자를<br />모두와 함께.</h1>
           <p className="hero-subtitle">
-            Make Optinal Descion for U<br />
+            Make Optimal Decision for You<br />
             나만의 에이전트를 고용해보세요.
           </p>
+          {/* Hero CTA — 사용자가 첫 화면에서 바로 가입 동선으로 진입 가능 */}
+          <div className="hero-cta-group">
+            <button
+              type="button"
+              className="cta-button hero-cta-primary"
+              onClick={() => navigate('/login')}
+            >
+              지금 시작하기 <ArrowRight size={18} />
+            </button>
+            <button
+              type="button"
+              className="hero-cta-secondary"
+              onClick={() => {
+                document.querySelector('.features-section')?.scrollIntoView({ behavior: 'smooth' });
+              }}
+            >
+              기능 살펴보기
+            </button>
+          </div>
         </div>
       </section>
 
       {/* 2. 주요 기능 섹션 */}
       <section className="features-section">
-        <h2 className="section-title fade-in-section">왜 MODU인가요?</h2>
+        <h2 className="section-title fade-in-section">왜 <span className="brand-font">MODU</span>인가요?</h2>
         <div className="features-grid fade-in-section">
           <div className="feature-card">
             <h3 className="feature-title">나만의 투자 전략을 AI에게</h3>
             <p className="feature-desc">
-              내 취향대로, 투자는 AI가.<br />
+              투자 성향 설문으로 위험 등급을 정의하고,<br />
+              그에 맞는 전략을 AI 에이전트가 실행합니다.
             </p>
           </div>
 

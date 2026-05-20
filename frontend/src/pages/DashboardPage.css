@@ -6,26 +6,33 @@
   min-height: 100%;
 }
 
-.dashboard-layout {
+.dashboard-layout-container {
   display: flex;
+  flex-direction: column;
   gap: 1.5rem;
   flex: 1;
 }
 
-.dashboard-main {
-  flex: 7; /* 좌측 포트폴리오 70% */
+.dashboard-top-row,
+.dashboard-bottom-row {
   display: flex;
-  flex-direction: column;
   gap: 1.5rem;
-  min-width: 0; /* flex overflow 방지 */
 }
 
-.dashboard-side {
-  flex: 3; /* 우측 사이드바 30% */
+.dashboard-top-left,
+.dashboard-bottom-left {
+  flex: 7;
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-top-right,
+.dashboard-bottom-right {
+  flex: 3;
+  min-width: 300px;
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
-  min-width: 300px;
 }
 
 .panel {
@@ -52,7 +59,7 @@
 .overview-panel {
   flex-direction: row;
   align-items: center;
-  flex: 0 0 auto;
+  flex: 1;
   gap: 2rem;
   /* justify-content: space-between 제거 — 도넛 위치는 margin auto 로 우측 여백 중앙에 직접 정렬 */
 }
@@ -246,12 +253,18 @@
    ============================ */
 .ai-mini-panel {
   flex: 0 0 auto;
+  padding: 1.30rem 1.5rem;
+}
+
+.ai-mini-panel h2 {
+  font-size: 1.25rem;
+  margin-bottom: 0.85rem;
 }
 
 .ai-mini-content {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 0.85rem;
 }
 
 .ai-status-row {
@@ -259,14 +272,14 @@
   justify-content: space-between;
   align-items: center;
   background: rgba(0,0,0,0.2);
-  padding: 1rem 1.2rem;
+  padding: 0.65rem 0.95rem;
   border-radius: 12px;
 }
 
 .status-badge {
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 700;
-  padding: 0.4rem 0.8rem;
+  padding: 0.3rem 0.7rem;
   border-radius: 8px;
 }
 
@@ -280,11 +293,11 @@
   color: #888;
 }
 
-/* 커스텀 iOS 스타일 토글 스위치 */
+/* 커스텀 iOS 스타일 토글 스위치 - 소형화 적용 */
 .toggle-switch {
-  width: 56px;
-  height: 32px;
-  border-radius: 32px;
+  width: 46px;
+  height: 26px;
+  border-radius: 26px;
   background: #444;
   position: relative;
   cursor: pointer;
@@ -296,26 +309,26 @@
 }
 
 .toggle-knob {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   background: #fff;
   border-radius: 50%;
   position: absolute;
-  top: 4px;
-  left: 4px;
+  top: 3px;
+  left: 3px;
   transition: transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
   box-shadow: 0 2px 5px rgba(0,0,0,0.2);
 }
 
 .toggle-switch.on .toggle-knob {
-  transform: translateX(24px);
+  transform: translateX(20px);
 }
 
 .ai-info-box {
   display: flex;
   flex-direction: column;
-  gap: 0.8rem;
-  padding: 0 0.5rem;
+  gap: 0.4rem;
+  padding: 0 0.2rem;
 }
 
 .info-row {
@@ -323,8 +336,8 @@
   justify-content: space-between;
 }
 
-.info-label { color: #888; font-size: 0.95rem; font-weight: 600; }
-.info-value { color: #fff; font-size: 1rem; font-weight: 700; }
+.info-label { color: #888; font-size: 0.9rem; font-weight: 600; }
+.info-value { color: #fff; font-size: 0.95rem; font-weight: 700; }
 
 /* ============================
    사이드 2: 매매 로그
@@ -428,8 +441,13 @@
 ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.3); }
 
 @media (max-width: 1024px) {
-  .dashboard-layout {
+  .dashboard-top-row,
+  .dashboard-bottom-row {
     flex-direction: column;
+  }
+  .dashboard-top-right,
+  .dashboard-bottom-right {
+    min-width: 0;
   }
   .overview-panel {
     flex-direction: column;
@@ -447,7 +465,14 @@
 .ai-activity-panel {
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
+  gap: 0.85rem;
+  padding: 1.30rem 1.5rem;
+  flex: 1;
+}
+
+.ai-activity-panel h2 {
+  font-size: 1.25rem;
+  margin-bottom: 0.85rem;
 }
 
 .ai-activity-header {
@@ -482,8 +507,8 @@
 .ai-activity-stats {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
-  padding: 0.7rem 0.85rem;
+  gap: 0.45rem;
+  padding: 0.65rem 0.9rem;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 8px;
@@ -493,7 +518,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
 }
 
 .ai-stat-label {
@@ -508,25 +533,26 @@
 .ai-activity-recent {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.45rem;
+  flex: 1;
 }
 
 .ai-activity-sub-title {
   color: #888;
   font-size: 0.78rem;
   font-weight: 600;
-  margin-bottom: 0.2rem;
+  margin-bottom: 0.15rem;
 }
 
 .ai-decision-item {
   display: flex;
   align-items: center;
   gap: 0.55rem;
-  padding: 0.55rem 0.7rem;
+  padding: 0.35rem 0.55rem;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 8px;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
 }
 
 .decision-action {
@@ -564,11 +590,39 @@
 
 .ai-activity-empty {
   color: #666;
-  font-size: 0.82rem;
-  padding: 0.7rem;
+  font-size: 0.85rem;
+  padding: 0.7rem 0.9rem;
   text-align: center;
   background: rgba(255, 255, 255, 0.02);
-  border: 1px dashed rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* AI 진행 상황 위젯 — 자동매매 OFF 상태 배지 */
+.ai-activity-off-badge {
+  background: rgba(136, 136, 136, 0.15);
+  border: 1px solid rgba(136, 136, 136, 0.35);
+  color: #999;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+/* 매매 로그 카드 — 클릭 가능 카드만 키보드 포커스 시각 표시 */
+.logs-panel .log-item-clickable:focus-visible {
+  outline: 2px solid #84cc16;
+  outline-offset: 2px;
+}
+
+/* Pie 도넛 조각에 클릭 핸들러를 붙였으니 hover 시 손가락 커서 노출 */
+.overview-chart svg path {
+  cursor: pointer;
 }
 

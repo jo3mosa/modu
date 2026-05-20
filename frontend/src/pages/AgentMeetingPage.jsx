@@ -318,192 +318,196 @@ export default function AgentMeetingPage() {
       <div className="agent-meeting-body">
         {/* 좌측 채널 사이드바 */}
         <div className="channel-sidebar">
-        <div className="channel-sidebar-header">
-          <h2>종목 채널</h2>
-          <div className="channel-search">
-            <Search size={16} color="#666" />
-            <input
-              type="text"
-              placeholder="검색"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-            />
-          </div>
-        </div>
-
-        <div className="channel-list">
-          {isLoadingChannels ? (
-            <div style={{ padding: '1rem', color: '#666' }}>로딩 중...</div>
-          ) : filteredChannels.map(channelInfo => {
-            const isActive = selectedStock?.stockCode === channelInfo.stockCode;
-            const unreadCount = unreadByStock[channelInfo.stockCode] ?? 0;
-            const price = channelInfo.currentPrice ? channelInfo.currentPrice.toLocaleString() : '-';
-            const rate = channelInfo.pnlPct ?? channelInfo.compareRate ?? 0;
-            const rateClass = rate > 0 ? 'up' : rate < 0 ? 'down' : 'steady';
-
-            return (
-              <div
-                key={channelInfo.stockCode}
-                className={`channel-item ${isActive ? 'active' : ''}`}
-                onClick={() => handleChannelSelect(channelInfo)}
-              >
-                <div className="channel-info">
-                  <div className="channel-name">{channelInfo.stockName}</div>
-                  <div className="channel-price">
-                    <span>{price}원</span>
-                    <span className={rateClass}>
-                      {rate > 0 ? '+' : ''}{rate.toFixed(2)}%
-                    </span>
-                  </div>
-                </div>
-                {unreadCount > 0 && !isActive && (
-                  <div className="channel-badge">{unreadCount > 9 ? '9+' : unreadCount}</div>
-                )}
-                {isActive && <div className="channel-badge" style={{ width: '8px', height: '8px' }}></div>}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 우측 채팅 피드 */}
-      <div className="chat-panel">
-        <div className="chat-header">
-          <div className="chat-header-title">
-            <h2>{selectedStock?.stockName ?? '선택된 종목 없음'}</h2>
-            <span style={{ fontSize: '0.9rem', color: '#888' }}>
-              {selectedStock?.stockCode}
-            </span>
-          </div>
-          <div className="agent-roster">
-            {Object.entries(BOT_PROFILES).map(([key, bot]) => (
-              <div
-                key={key}
-                className="agent-avatar-mini"
-                title={`${bot.name} — 클릭하면 소개를 볼 수 있어요`}
-                onClick={() => setProfileAgentKey(key)}
-              >
-                <img src={bot.avatar} className="agent-avatar-mini-img" alt={bot.name} />
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="chat-feed" ref={feedRef} onScroll={handleFeedScroll}>
-          {/* 위로 스크롤 sentinel — 보이면 loadMore 트리거 */}
-          {channel?.hasMore && (
-            <div ref={topSentinelRef} style={{ padding: '0.5rem', textAlign: 'center', color: '#888' }}>
-              이전 메시지 불러오는 중…
+          <div className="channel-sidebar-header">
+            <h2>종목 채널</h2>
+            <div className="channel-search">
+              <Search size={16} color="#666" />
+              <input
+                type="text"
+                placeholder="검색"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+              />
             </div>
-          )}
+          </div>
 
-          {selectedStock && channel?.loaded === true && displayMessages.length === 0 && (
-            <div className="empty-chat">
-              <p>아직 이 종목에 대한 AI 에이전트 토론이 없습니다.</p>
-            </div>
-          )}
-
-          {(() => {
-            // 날짜 디바이더 + 연속 메시지 그룹핑을 위한 렌더 아이템 빌드
-            const items = [];
-            let prevDateKey = null;
-            let prevAgent = null;
-            let prevMinuteKey = null;
-
-            for (const msg of displayMessages) {
-              if (!revealedIds.has(msg.messageId)) continue;
-              const date = new Date(msg.createdAt);
-              const dateKey = date.toDateString();
-
-              if (dateKey !== prevDateKey) {
-                items.push({ kind: 'divider', key: `d-${dateKey}`, date });
-                prevDateKey = dateKey;
-                // 새 날짜에서는 그룹 초기화
-                prevAgent = null;
-                prevMinuteKey = null;
-              }
-
-              const minuteKey = `${date.getHours()}:${date.getMinutes()}`;
-              // 같은 에이전트가 같은 분 내에 이어 말한 경우만 카톡식 연속 메시지로 묶음
-              const isContinuation = msg.agent === prevAgent && minuteKey === prevMinuteKey;
-
-              items.push({ kind: 'message', key: `m-${msg.messageId}`, msg, date, isContinuation });
-              prevAgent = msg.agent;
-              prevMinuteKey = minuteKey;
-            }
-
-            return items.map((item) => {
-              if (item.kind === 'divider') {
-                return (
-                  <div key={item.key} className="date-divider">
-                    <span>{formatDateDivider(item.date)}</span>
-                  </div>
-                );
-              }
-
-              const { msg, date, isContinuation } = item;
-              const bot = BOT_PROFILES[msg.agent];
-              if (!bot) return null;
-
-              const timeStr = date.toLocaleTimeString([], {
-                hour: '2-digit', minute: '2-digit',
-              });
-              const isAnimated = activeAnimationId === msg.messageId;
-              const groupClass = isContinuation ? 'group-continuation' : 'group-start';
-              // 더보기/접기 — 임계값 초과 + 사용자가 펼치지 않음 + 타이핑 중이 아닐 때만 접힘 적용
-              const exceedsThreshold = (msg.text?.length ?? 0) > COLLAPSE_THRESHOLD;
-              const isExpanded = expandedIds.has(msg.messageId);
-              const isCollapsed = exceedsThreshold && !isExpanded && !isAnimated;
+          <div className="channel-list">
+            {isLoadingChannels ? (
+              <div style={{ padding: '1rem', color: '#666' }}>로딩 중...</div>
+            ) : filteredChannels.map(channelInfo => {
+              const isActive = selectedStock?.stockCode === channelInfo.stockCode;
+              const unreadCount = unreadByStock[channelInfo.stockCode] ?? 0;
+              const price = channelInfo.currentPrice ? channelInfo.currentPrice.toLocaleString() : '-';
+              const rate = channelInfo.pnlPct ?? channelInfo.compareRate ?? 0;
+              const rateClass = rate > 0 ? 'up' : rate < 0 ? 'down' : 'steady';
 
               return (
-                <div key={item.key} className={`chat-message agent-msg-${msg.agent.toLowerCase()} ${groupClass}`}>
-                  <div className="agent-avatar-wrap">
-                    <img src={bot.avatar} className="agent-avatar-img" alt={bot.name} />
-                  </div>
-                  <div className="message-content">
-                    <div className="message-header">
-                      <span className="message-agent-name">{bot.name}</span>
-                      <span className="message-agent-role">{bot.role} Agent</span>
+                <div
+                  key={channelInfo.stockCode}
+                  className={`channel-item ${isActive ? 'active' : ''}`}
+                  onClick={() => handleChannelSelect(channelInfo)}
+                >
+                  <div className="channel-info">
+                    <div className="channel-name">{channelInfo.stockName}</div>
+                    <div className="channel-price">
+                      <span>{price}원</span>
+                      <span className={rateClass}>
+                        {rate > 0 ? '+' : ''}{rate.toFixed(2)}%
+                      </span>
                     </div>
-                    <div className="message-bubble-wrapper">
-                      <TypingMessageBubble
-                        text={msg.text}
-                        isAnimated={isAnimated}
-                        isCollapsed={isCollapsed}
-                        onComplete={handleTypeComplete}
-                        feedRef={feedRef}
-                      />
-                      {/* 같은 그룹 내 중간 메시지는 시간 중복 노출 방지 */}
-                      {!isContinuation && <span className="message-time">{timeStr}</span>}
-                    </div>
-                    {exceedsThreshold && !isAnimated && (
-                      <button
-                        type="button"
-                        className="message-toggle-btn"
-                        onClick={() => toggleExpanded(msg.messageId)}
-                      >
-                        {isExpanded ? (
-                          <><ChevronUp size={14} /> 접기</>
-                        ) : (
-                          <><ChevronDown size={14} /> 더보기</>
-                        )}
-                      </button>
-                    )}
                   </div>
+                  {unreadCount > 0 && !isActive && (
+                    <div className="channel-badge">{unreadCount > 9 ? '9+' : unreadCount}</div>
+                  )}
+                  {isActive && <div className="channel-badge" style={{ width: '8px', height: '8px' }}></div>}
                 </div>
               );
-            });
-          })()}
+            })}
+          </div>
         </div>
 
-        {/* 위에서 과거 메시지 읽는 중 새 SSE 메시지가 도착했을 때만 노출되는 플로팅 점프 버튼 */}
-        {newMessageCount > 0 && (
-          <button type="button" className="new-messages-pill" onClick={handleJumpToBottom}>
-            <ArrowDown size={14} />
-            새 메시지 {newMessageCount}개
-          </button>
-        )}
-      </div>
+        {/* 우측 채팅 피드 */}
+        <div className="chat-panel">
+          <div className="chat-header">
+            <div className="chat-header-title">
+              <h2>{selectedStock?.stockName ?? '선택된 종목 없음'}</h2>
+              <span style={{ fontSize: '0.9rem', color: '#888' }}>
+                {selectedStock?.stockCode}
+              </span>
+            </div>
+            <div className="agent-roster">
+              {Object.entries(BOT_PROFILES).map(([key, bot]) => (
+                <div
+                  key={key}
+                  className="agent-avatar-mini"
+                  title={`${bot.name} — 클릭하면 소개를 볼 수 있어요`}
+                  onClick={() => setProfileAgentKey(key)}
+                >
+                  <img src={bot.avatar} className="agent-avatar-mini-img" alt={bot.name} />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="chat-feed" ref={feedRef} onScroll={handleFeedScroll}>
+            {/* 위로 스크롤 sentinel — 보이면 loadMore 트리거 */}
+            {channel?.hasMore && (
+              <div ref={topSentinelRef} style={{ padding: '0.5rem', textAlign: 'center', color: '#888' }}>
+                이전 메시지 불러오는 중…
+              </div>
+            )}
+
+            {selectedStock && channel?.loaded === true && displayMessages.length === 0 && (
+              <div className="empty-chat">
+                <p className="empty-chat-title">아직 회의실이 조용해요!</p>
+                <p className="empty-chat-desc">
+                  AI 에이전트들이 <strong>{selectedStock.stockName}</strong> 종목을 분석하기 시작하면<br />
+                  실시간으로 볼 수 있어요.
+                </p>
+              </div>
+            )}
+
+            {(() => {
+              // 날짜 디바이더 + 연속 메시지 그룹핑을 위한 렌더 아이템 빌드
+              const items = [];
+              let prevDateKey = null;
+              let prevAgent = null;
+              let prevMinuteKey = null;
+
+              for (const msg of displayMessages) {
+                if (!revealedIds.has(msg.messageId)) continue;
+                const date = new Date(msg.createdAt);
+                const dateKey = date.toDateString();
+
+                if (dateKey !== prevDateKey) {
+                  items.push({ kind: 'divider', key: `d-${dateKey}`, date });
+                  prevDateKey = dateKey;
+                  // 새 날짜에서는 그룹 초기화
+                  prevAgent = null;
+                  prevMinuteKey = null;
+                }
+
+                const minuteKey = `${date.getHours()}:${date.getMinutes()}`;
+                // 같은 에이전트가 같은 분 내에 이어 말한 경우만 카톡식 연속 메시지로 묶음
+                const isContinuation = msg.agent === prevAgent && minuteKey === prevMinuteKey;
+
+                items.push({ kind: 'message', key: `m-${msg.messageId}`, msg, date, isContinuation });
+                prevAgent = msg.agent;
+                prevMinuteKey = minuteKey;
+              }
+
+              return items.map((item) => {
+                if (item.kind === 'divider') {
+                  return (
+                    <div key={item.key} className="date-divider">
+                      <span>{formatDateDivider(item.date)}</span>
+                    </div>
+                  );
+                }
+
+                const { msg, date, isContinuation } = item;
+                const bot = BOT_PROFILES[msg.agent];
+                if (!bot) return null;
+
+                const timeStr = date.toLocaleTimeString([], {
+                  hour: '2-digit', minute: '2-digit',
+                });
+                const isAnimated = activeAnimationId === msg.messageId;
+                const groupClass = isContinuation ? 'group-continuation' : 'group-start';
+                // 더보기/접기 — 임계값 초과 + 사용자가 펼치지 않음 + 타이핑 중이 아닐 때만 접힘 적용
+                const exceedsThreshold = (msg.text?.length ?? 0) > COLLAPSE_THRESHOLD;
+                const isExpanded = expandedIds.has(msg.messageId);
+                const isCollapsed = exceedsThreshold && !isExpanded && !isAnimated;
+
+                return (
+                  <div key={item.key} className={`chat-message agent-msg-${msg.agent.toLowerCase()} ${groupClass}`}>
+                    <div className="agent-avatar-wrap">
+                      <img src={bot.avatar} className="agent-avatar-img" alt={bot.name} />
+                    </div>
+                    <div className="message-content">
+                      <div className="message-header">
+                        <span className="message-agent-name">{bot.name}</span>
+                        <span className="message-agent-role">{bot.role} Agent</span>
+                      </div>
+                      <div className="message-bubble-wrapper">
+                        <TypingMessageBubble
+                          text={msg.text}
+                          isAnimated={isAnimated}
+                          isCollapsed={isCollapsed}
+                          onComplete={handleTypeComplete}
+                          feedRef={feedRef}
+                        />
+                        {/* 같은 그룹 내 중간 메시지는 시간 중복 노출 방지 */}
+                        {!isContinuation && <span className="message-time">{timeStr}</span>}
+                      </div>
+                      {exceedsThreshold && !isAnimated && (
+                        <button
+                          type="button"
+                          className="message-toggle-btn"
+                          onClick={() => toggleExpanded(msg.messageId)}
+                        >
+                          {isExpanded ? (
+                            <><ChevronUp size={14} /> 접기</>
+                          ) : (
+                            <><ChevronDown size={14} /> 더보기</>
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+
+          {/* 위에서 과거 메시지 읽는 중 새 SSE 메시지가 도착했을 때만 노출되는 플로팅 점프 버튼 */}
+          {newMessageCount > 0 && (
+            <button type="button" className="new-messages-pill" onClick={handleJumpToBottom}>
+              <ArrowDown size={14} />
+              새 메시지 {newMessageCount}개
+            </button>
+          )}
+        </div>
       </div> {/* .agent-meeting-body */}
 
       {/* 에이전트 프로필 모달 — roster 아바타 클릭 시 캐릭터 소개 노출 */}

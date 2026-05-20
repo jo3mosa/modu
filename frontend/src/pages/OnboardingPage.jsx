@@ -14,6 +14,12 @@ const RISK_LEVEL_LABEL = {
   AGGRESSIVE: '공격투자형',
 };
 
+const STEP_META = [
+  { num: 1, label: '투자 성향' },
+  { num: 2, label: '룰셋 설정' },
+  { num: 3, label: '계좌 연동' },
+];
+
 export default function OnboardingPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
@@ -33,7 +39,6 @@ export default function OnboardingPage() {
   const [rules, setRules] = useState({
     takeProfit: '',
     stopLoss: '',
-    positionSize: 'fixed',
   });
   const [apiKeys, setApiKeys] = useState({
     appKey: '',
@@ -153,9 +158,26 @@ export default function OnboardingPage() {
 
   return (
     <div className="onboarding-container">
-      {/* 진행도 표시 */}
-      <div className="progress-bar">
-        <div className="progress-fill" style={{ width: `${(step / 3) * 100}%` }} />
+      {/* 진행도 표시 — 단계 번호/라벨 + 채워지는 바 */}
+      <div className="progress-header">
+        <ol className="progress-steps">
+          {STEP_META.map((meta) => {
+            const isCompleted = step > meta.num;
+            const isCurrent = step === meta.num;
+            return (
+              <li
+                key={meta.num}
+                className={`progress-step${isCurrent ? ' is-current' : ''}${isCompleted ? ' is-completed' : ''}`}
+              >
+                <span className="progress-step-num">{meta.num}</span>
+                <span className="progress-step-label">{meta.label}</span>
+              </li>
+            );
+          })}
+        </ol>
+        <div className="progress-bar">
+          <div className="progress-fill" style={{ width: `${(step / 3) * 100}%` }} />
+        </div>
       </div>
 
       <div className="onboarding-content fade-in-slide" key={step}>
@@ -170,7 +192,7 @@ export default function OnboardingPage() {
           />
         )}
         {step === 2 && (
-          <Step3Rules
+          <Step2Rules
             rules={rules}
             setRules={setRules}
             profileResult={profileResult}
@@ -179,7 +201,7 @@ export default function OnboardingPage() {
           />
         )}
         {step === 3 && (
-          <Step4ApiKeys
+          <Step3ApiKeys
             apiKeys={apiKeys}
             setApiKeys={setApiKeys}
             handleComplete={handleComplete}
@@ -194,8 +216,8 @@ export default function OnboardingPage() {
 
 // 1단계 -> 서버에서 받아온 9개 객관식 문항 표시 + 답변 수집
 function Step1Survey({ questions, questionsError, answers, setAnswers, onSubmit, submitting }) {
-  const isComplete =
-    questions.length > 0 && questions.every((q) => answers[q.questionId] != null);
+  const unansweredCount = questions.filter((q) => answers[q.questionId] == null).length;
+  const isComplete = questions.length > 0 && unansweredCount === 0;
 
   const handleSelect = (questionId, optionId) => {
     setAnswers((prev) => ({ ...prev, [questionId]: optionId }));
@@ -212,24 +234,38 @@ function Step1Survey({ questions, questionsError, answers, setAnswers, onSubmit,
         <p className="loading-text">설문 문항을 불러오는 중입니다…</p>
       )}
 
-      {questions.map((q, idx) => (
-        <div key={q.questionId} className="survey-group">
-          <h3>{idx + 1}. {q.question}</h3>
-          <div className="options-grid">
-            {q.options.map((opt) => (
-              <button
-                key={opt.optionId}
-                className={`option-btn ${answers[q.questionId] === opt.optionId ? 'selected' : ''}`}
-                onClick={() => handleSelect(q.questionId, opt.optionId)}
-              >
-                {opt.label}
-              </button>
-            ))}
+      {questions.map((q, idx) => {
+        const isAnswered = answers[q.questionId] != null;
+        return (
+          <div
+            key={q.questionId}
+            className={`survey-group${!isAnswered ? ' needs-answer' : ''}`}
+          >
+            <h3>
+              {idx + 1}. {q.question}
+              {!isAnswered && <span className="survey-needs-badge">답변 필요</span>}
+            </h3>
+            <div className="options-grid">
+              {q.options.map((opt) => (
+                <button
+                  key={opt.optionId}
+                  className={`option-btn ${answers[q.questionId] === opt.optionId ? 'selected' : ''}`}
+                  onClick={() => handleSelect(q.questionId, opt.optionId)}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       <div className="step-actions">
+        {!isComplete && questions.length > 0 && (
+          <span className="step-hint">
+            {unansweredCount}문항 더 답변하면 다음으로 진행할 수 있어요
+          </span>
+        )}
         <button className="nav-btn primary" disabled={!isComplete || submitting} onClick={onSubmit}>
           {submitting ? '저장 중…' : '다음'} <ArrowRight size={18} />
         </button>
@@ -239,8 +275,8 @@ function Step1Survey({ questions, questionsError, answers, setAnswers, onSubmit,
 }
 
 
-// 3단계 -> 서버 산정 결과(riskLevel, profileSummary) 표시 + 룰셋 설정
-function Step3Rules({ rules, setRules, profileResult, nextStep, prevStep }) {
+// 2단계 -> 서버 산정 결과(riskLevel, profileSummary) 표시 + 룰셋 설정
+function Step2Rules({ rules, setRules, profileResult, nextStep, prevStep }) {
   const levelLabel = profileResult?.riskLevel
     ? RISK_LEVEL_LABEL[profileResult.riskLevel] ?? profileResult.riskLevel
     : null;
@@ -270,25 +306,6 @@ function Step3Rules({ rules, setRules, profileResult, nextStep, prevStep }) {
         </div>
       </div>
 
-      <div className="rule-group">
-        <h3>포지션 크기 제한 (비중 조절 전략)</h3>
-        <div className="options-grid sizing">
-          {[
-            { id: 'fixed', label: '고정 비율' },
-            { id: 'kelly', label: '승률 기반' },
-            { id: 'variable', label: '유동적 비중' }
-          ].map(opt => (
-            <button
-              key={opt.id}
-              className={`option-btn ${rules.positionSize === opt.id ? 'selected' : ''}`}
-              onClick={() => setRules({ ...rules, positionSize: opt.id })}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
       <div className="step-actions split">
         <button className="nav-btn secondary" onClick={prevStep}>
           이전
@@ -301,14 +318,27 @@ function Step3Rules({ rules, setRules, profileResult, nextStep, prevStep }) {
   );
 }
 
-// 4단계 -> 계좌 연동
-function Step4ApiKeys({ apiKeys, setApiKeys, handleComplete, prevStep, submitting }) {
+// 3단계 -> 계좌 연동
+function Step3ApiKeys({ apiKeys, setApiKeys, handleComplete, prevStep, submitting }) {
   const isComplete = apiKeys.appKey && apiKeys.appSecret && apiKeys.htsId && apiKeys.accountNo;
 
   return (
     <div className="step-wrapper">
       <h2 className="step-title">계좌 연동</h2>
       <p className="step-subtitle">마지막입니다! 실제 자동매매를 위해 한국투자증권 API 키를 연결해주세요!</p>
+
+      <p className="api-form-helper">
+        Open API 키는{' '}
+        <a
+          href="https://apiportal.koreainvestment.com/intro"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="api-form-helper-link"
+        >
+          한국투자증권 개발자센터
+        </a>
+        에서 발급할 수 있어요. HTS ID 는 한투 HTS/MTS 접속에 쓰는 일반 로그인 아이디입니다.
+      </p>
 
       <div className="api-form">
         <div className="input-box">

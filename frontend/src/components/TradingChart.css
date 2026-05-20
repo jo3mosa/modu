@@ -8,11 +8,13 @@
   display: flex;
   justify-content: flex-start;
   align-items: center;
-  padding: 0.6rem 1rem;
+  /* 좌측은 차트 캔버스 시작점과 시각적으로 맞춰지도록 안쪽 여백을 축소, 우측은 종전 유지 */
+  padding: 0.6rem 1rem 0.6rem 0.3rem;
   background: rgba(0,0,0,0.2);
   border-bottom: 1px solid rgba(255,255,255,0.05);
   flex-wrap: nowrap;
-  overflow-x: auto;
+  overflow: visible; /* 초정밀 수정: 절대 위치의 분봉 메뉴가 잘리지 않도록 visible 설정 */
+  width: 100%;
 }
 
 .chart-toolbar::-webkit-scrollbar {
@@ -23,6 +25,10 @@
   display: flex;
   gap: 0.5rem;
   align-items: center;
+}
+
+.toolbar-left {
+  justify-content: flex-start; /* 툴바 내 좌측 요소 완벽한 좌측 정렬 강제 */
 }
 
 /* 좌측 그룹은 그대로 좌측 정렬, 우측 그룹은 끝으로 밀어준다 */
@@ -51,6 +57,45 @@
 .tool-btn.active {
   color: #fff;
   background: rgba(255, 255, 255, 0.15); /* 대중적인 증권사 스타일의 중립적인 활성화 표시 */
+}
+
+/* 분봉 드롭다운 — 1분/5분/60분을 묶어서 toolbar 공간 절약 */
+.minute-dropdown {
+  position: relative;
+  display: inline-flex;
+}
+
+.minute-dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.minute-dropdown-caret {
+  opacity: 0.7;
+  transition: transform 0.15s;
+}
+
+.minute-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  background: #1a1a1a;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  min-width: 80px;
+}
+
+.minute-dropdown-menu .tool-btn {
+  text-align: left;
+  width: 100%;
+  padding: 0.35rem 0.6rem;
 }
 
 .chart-container {

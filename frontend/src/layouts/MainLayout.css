@@ -415,6 +415,34 @@
   align-self: flex-start;
 }
 
+.alarm-item-main-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.alarm-item-delete-btn {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.5); /* 어두운 다크 테마에서도 선명하게 시인되도록 밝게 조정 */
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.alarm-item-delete-btn:hover {
+  background: rgba(239, 68, 68, 0.25);
+  color: #ff5252;
+}
+
 /* AI 승인 대기 상단 강조 배너 — Bell 팝업 내부 */
 .alarm-pending-banner {
   display: flex;
@@ -509,8 +537,9 @@
   transition: background 0.15s;
 }
 
-.search-dropdown-item:hover {
-  background: rgba(255, 255, 255, 0.06);
+.search-dropdown-item:hover,
+.search-dropdown-item.focused {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .sd-name {
