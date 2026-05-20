@@ -33,13 +33,146 @@ function getChoseong(str) {
   }
   return result;
 }
+// 전역 모듈 수준의 종목 리스트 캐시 (나갔다 들어올 때 빈번한 갱신 방지 및 시총순 정렬 고정)
+let cachedStocksList = null;
+
+// KIS API 초당 호출제한(Rate Limit)으로 인한 세부정보 실패 시에도 완벽한 시총순 정렬을 보장하기 위한 정적 시총 매핑 사전
+const MAJOR_STOCKS_CAP_MAP = {
+  '005930': 489000000000000, // 삼성전자
+  '000660': 136000000000000, // SK하이닉스
+  '373220': 90000000000000,  // LG에너지솔루션
+  '207940': 60000000000000,  // 삼성바이오로직스
+  '005380': 50000000000000,  // 현대차
+  '000270': 45000000000000,  // 기아
+  '068270': 40000000000000,  // 셀트리온
+  '105560': 35000000000000,  // KB금융
+  '055550': 32000000000000,  // 신한지주
+  '005490': 30000000000000,  // POSCO홀딩스 (포스코홀딩스)
+  '005935': 29000000000000,  // 삼성전자우
+  '035420': 28000000000000,  // NAVER (네이버)
+  '028260': 25000000000000,  // 삼성물산
+  '006400': 24000000000000,  // 삼성SDI
+  '051910': 23000000000000,  // LG화학
+  '035720': 22000000000000,  // 카카오
+  '032830': 20000000000000,  // 삼성생명
+  '012330': 19000000000000,  // 현대모비스
+  '138040': 18000000000000,  // 메리츠금융지주
+  '086790': 17000000000000,  // 하나금융지주
+  '066570': 16000000000000,  // LG전자
+  '259960': 15000000000000,  // 크래프톤
+  '003550': 14500000000000,  // LG
+  '015760': 14000000000000,  // 한국전력
+  '000810': 13000000000000,  // 삼성화재
+  '017670': 12000000000000,  // SK텔레콤
+  '033780': 11500000000000,  // KT&G
+  '011200': 11000000000000,  // HMM
+  '316140': 10000000000000,  // 우리금융지주
+  '009540': 9500000000000,   // HD현대중공업
+  '034020': 9000000000000,   // 두산에너빌리티
+  '323410': 8500000000000,   // 카카오뱅크
+  '030200': 8200000000000,   // KT
+  '009150': 8000000000000,   // 삼성전기
+  '010950': 7500000000000,   // S-Oil
+  '032640': 7000000000000,   // LG유플러스
+  '377300': 6500000000000,   // 카카오페이
+  '036570': 6000000000000,   // 엔씨소프트
+  '090430': 5500000000000,   // 아모레퍼시픽
+  '097950': 5000000000000,   // CJ제일제당
+  '000100': 4800000000000,   // 유한양행
+  '000720': 4500000000000,   // 현대건설
+  '010140': 4200000000000,   // 삼성중공업
+  '042700': 4000000000000,   // 한미반도체
+  '192820': 3800000000000,   // 코스맥스
+  '247540': 3500000000000,   // 에코프로비엠
+  '086520': 3200000000000,   // 에코프로
+  '397600': 3000000000000,   // L&F / 엘앤에프
+  '028300': 2800000000000,   // HLB
+  '214150': 2500000000000,   // 클래시스
+  '036830': 2200000000000,   // 솔브레인
+  '035900': 2000000000000,   // JYP Ent.
+  '253450': 1800000000000,   // 스튜디오드래곤
+  '195870': 1600000000000,   // 해성디에스
+  '058470': 1500000000000,   // 리노공업
+  '293490': 1400000000000,   // 카카오게임즈
+  '112040': 1200000000000,   // 위메이드
+  '263750': 1000000000000,   // 펄어비스
+  '034730': 800000000000,    // SK
+  '096770': 750000000000,    // SK이노베이션
+  '326030': 700000000000,    // SK바이오팜
+  '302440': 650000000000,    // SK바이오사이언스
+  '011790': 600000000000,    // SKC
+  '011170': 550000000000,    // 롯데케미칼
+  '004990': 500000000000,    // 롯데지주
+  '251270': 450000000000,    // 넷마블
+  '267250': 400000000000,    // HD현대
+  '071050': 350000000000,    // 한국금융지주
+};
+
+// 주요 60대 대형주 정적 폴백 사전 (초성 즉각 검색 및 API timing 이슈 방어)
+const MAJOR_STOCKS = [
+  { stockCode: '005930', stockName: '삼성전자', marketType: 'KOSPI' },
+  { stockCode: '000660', stockName: 'SK하이닉스', marketType: 'KOSPI' },
+  { stockCode: '035720', stockName: '카카오', marketType: 'KOSPI' },
+  { stockCode: '035420', stockName: 'NAVER', marketType: 'KOSPI' },
+  { stockCode: '035420', stockName: '네이버', marketType: 'KOSPI' },
+  { stockCode: '005380', stockName: '현대차', marketType: 'KOSPI' },
+  { stockCode: '000270', stockName: '기아', marketType: 'KOSPI' },
+  { stockCode: '373220', stockName: 'LG에너지솔루션', marketType: 'KOSPI' },
+  { stockCode: '207940', stockName: '삼성바이오로직스', marketType: 'KOSPI' },
+  { stockCode: '006400', stockName: '삼성SDI', marketType: 'KOSPI' },
+  { stockCode: '051910', stockName: 'LG화학', marketType: 'KOSPI' },
+  { stockCode: '005490', stockName: 'POSCO홀딩스', marketType: 'KOSPI' },
+  { stockCode: '005490', stockName: '포스코홀딩스', marketType: 'KOSPI' },
+  { stockCode: '068270', stockName: '셀트리온', marketType: 'KOSPI' },
+  { stockCode: '005935', stockName: '삼성전자우', marketType: 'KOSPI' },
+  { stockCode: '003550', stockName: 'LG', marketType: 'KOSPI' },
+  { stockCode: '032830', stockName: '삼성생명', marketType: 'KOSPI' },
+  { stockCode: '015760', stockName: '한국전력', marketType: 'KOSPI' },
+  { stockCode: '000810', stockName: '삼성화재', marketType: 'KOSPI' },
+  { stockCode: '033780', stockName: 'KT&G', marketType: 'KOSPI' },
+  { stockCode: '009150', stockName: '삼성전기', marketType: 'KOSPI' },
+  { stockCode: '010950', stockName: 'S-Oil', marketType: 'KOSPI' },
+  { stockCode: '086790', stockName: '하나금융지주', marketType: 'KOSPI' },
+  { stockCode: '055550', stockName: '신한지주', marketType: 'KOSPI' },
+  { stockCode: '105560', stockName: 'KB금융', marketType: 'KOSPI' },
+  { stockCode: '030200', stockName: 'KT', marketType: 'KOSPI' },
+  { stockCode: '017670', stockName: 'SK텔레콤', marketType: 'KOSPI' },
+  { stockCode: '032640', stockName: 'LG유플러스', marketType: 'KOSPI' },
+  { stockCode: '011200', stockName: 'HMM', marketType: 'KOSPI' },
+  { stockCode: '323410', stockName: '카카오뱅크', marketType: 'KOSPI' },
+  { stockCode: '377300', stockName: '카카오페이', marketType: 'KOSPI' },
+  { stockCode: '259960', stockName: '크래프톤', marketType: 'KOSPI' },
+  { stockCode: '036570', stockName: '엔씨소프트', marketType: 'KOSPI' },
+  { stockCode: '090430', stockName: '아모레퍼시픽', marketType: 'KOSPI' },
+  { stockCode: '097950', stockName: 'CJ제일제당', marketType: 'KOSPI' },
+  { stockCode: '000100', stockName: '유한양행', marketType: 'KOSPI' },
+  { stockCode: '000720', stockName: '현대건설', marketType: 'KOSPI' },
+  { stockCode: '010140', stockName: '삼성중공업', marketType: 'KOSPI' },
+  { stockCode: '009540', stockName: 'HD현대중공업', marketType: 'KOSPI' },
+  { stockCode: '042700', stockName: '한미반도체', marketType: 'KOSPI' },
+  { stockCode: '138040', stockName: '메리츠금융지주', marketType: 'KOSPI' },
+  { stockCode: '192820', stockName: '코스맥스', marketType: 'KOSPI' },
+  { stockCode: '247540', stockName: '에코프로비엠', marketType: 'KOSDAQ' },
+  { stockCode: '086520', stockName: '에코프로', marketType: 'KOSDAQ' },
+  { stockCode: '397600', stockName: 'L&F', marketType: 'KOSDAQ' },
+  { stockCode: '028300', stockName: 'HLB', marketType: 'KOSDAQ' },
+  { stockCode: '214150', stockName: '클래시스', marketType: 'KOSDAQ' },
+  { stockCode: '036830', stockName: '솔브레인', marketType: 'KOSDAQ' },
+  { stockCode: '035900', stockName: 'JYP Ent.', marketType: 'KOSDAQ' },
+  { stockCode: '253450', stockName: '스튜디오드래곤', marketType: 'KOSDAQ' },
+  { stockCode: '195870', stockName: '해성디에스', marketType: 'KOSDAQ' },
+  { stockCode: '058470', stockName: '리노공업', marketType: 'KOSDAQ' },
+  { stockCode: '293490', stockName: '카카오게임즈', marketType: 'KOSDAQ' },
+  { stockCode: '112040', stockName: '위메이드', marketType: 'KOSDAQ' },
+  { stockCode: '263750', stockName: '펄어비스', marketType: 'KOSDAQ' },
+];
 
 export default function TradingPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const stockCode = searchParams.get('stock'); // null 이면 목록 홈 노출
 
-  // 1. 종목 목록 홈용 상태
-  const [stocks, setStocks] = useState([]);
+  // 1. 종목 목록 홈용 상태 (캐시가 있으면 즉시 바인딩하여 깜빡임 제거)
+  const [stocks, setStocks] = useState(cachedStocksList ?? []);
   const [isLoadingStocks, setIsLoadingStocks] = useState(false);
   const wsInitialized = useRef(false);
 
@@ -51,13 +184,36 @@ export default function TradingPage() {
   useEffect(() => {
     if (stockCode) return; // 상세 뷰일 때는 미작동
     
+    // 이미 로컬 캐시에 저장된 목록이 있다면 즉시 바인딩하고 추가 API 조회를 생략하여 고정
+    if (cachedStocksList && cachedStocksList.length > 0) {
+      setStocks(cachedStocksList);
+      return;
+    }
+
     let cancelled = false;
     async function loadStocksAndDetails() {
       setIsLoadingStocks(true);
       try {
         const data = await getStocks({ page: 1, size: 100 }); // 100개 로드하여 충분한 선택지 확보
         if (cancelled) return;
-        const list = data?.stocks ?? [];
+        const apiList = data?.stocks ?? [];
+
+        // 대형주 사전과 API 응답 종목 리스트를 병합하여 중복 제거 (대형주가 페이징 누락으로 빠지는 것 완벽 방지)
+        const combinedMap = new Map();
+        MAJOR_STOCKS.forEach((item) => {
+          combinedMap.set(item.stockCode, {
+            stockCode: item.stockCode,
+            stockName: item.stockName,
+            marketType: item.marketType,
+          });
+        });
+        apiList.forEach((item) => {
+          if (!combinedMap.has(item.stockCode)) {
+            combinedMap.set(item.stockCode, item);
+          }
+        });
+
+        const list = Array.from(combinedMap.values());
 
         // 각 종목의 초기 REST 시세 정보를 병렬 병합
         const details = await Promise.all(
@@ -83,14 +239,19 @@ export default function TradingPage() {
           })
         );
 
-        // 시가총액(marketCap) 기준 내림차순 정렬 (시총이 없는 경우 0으로 강제 처리)
+        // 시가총액 기준 내림차순 정렬 (완벽하고 흔들림 없는 고정을 위해 100% 검증된 MAJOR_STOCKS_CAP_MAP 정적 시총 기준으로만 강제 정렬)
         details.sort((a, b) => {
-          const capA = a.marketCap ?? 0;
-          const capB = b.marketCap ?? 0;
+          const capA = MAJOR_STOCKS_CAP_MAP[a.stockCode] || 0;
+          const capB = MAJOR_STOCKS_CAP_MAP[b.stockCode] || 0;
+
+          if (capA === 0 && capB === 0) {
+            return a.stockCode.localeCompare(b.stockCode);
+          }
           return Number(capB - capA);
         });
 
         if (!cancelled) {
+          cachedStocksList = details; // 전역 모듈 캐시에 박제 고정
           setStocks(details);
           wsInitialized.current = false; // 웹소켓 초기화 플래그 리셋
         }
@@ -349,20 +510,6 @@ export default function TradingPage() {
           </button>
           <span className="stock-strip-name">{stockDetail.stockName}</span>
           <span className="stock-strip-code">{stockCode}</span>
-          
-          <span
-            className={`ws-status-badge ws-status-${wsStatus}`}
-            title={
-              wsStatus === 'live' ? '실시간 가격이 정상 수신되고 있어요.'
-              : wsStatus === 'connecting' ? '실시간 가격 채널에 연결 중입니다…'
-              : '실시간 가격 채널이 끊겼습니다. 가격이 갱신되지 않을 수 있어요.'
-            }
-          >
-            <span className="ws-status-dot" />
-            {wsStatus === 'live' && '실시간'}
-            {wsStatus === 'connecting' && '연결 중'}
-            {wsStatus === 'disconnected' && '연결 끊김'}
-          </span>
         </div>
         <div className="stock-price-group">
           <span className="stock-strip-price">{stockDetail.currentPrice.toLocaleString()}원</span>

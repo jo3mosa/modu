@@ -399,7 +399,7 @@ export default function AgentMeetingPage() {
 
             {selectedStock && channel?.loaded === true && displayMessages.length === 0 && (
               <div className="empty-chat">
-                <p className="empty-chat-title">아직 조용한 회의실이에요</p>
+                <p className="empty-chat-title">아직 회의실이 조용해요!</p>
                 <p className="empty-chat-desc">
                   AI 에이전트들이 <strong>{selectedStock.stockName}</strong> 종목을 분석하기 시작하면<br />
                   실시간으로 볼 수 있어요.
