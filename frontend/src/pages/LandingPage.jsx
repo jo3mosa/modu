@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Spline from '@splinetool/react-spline';
 import { ArrowRight } from 'lucide-react';
+import dashboardImg from '../assets/dashboard.png';
 import tradingImg from '../assets/trading.png';
+import stockImg from '../assets/stock.png';
+import discoveryImg from '../assets/discovery.png';
 import './LandingPage.css';
 
 export default function LandingPage() {
@@ -101,9 +104,26 @@ export default function LandingPage() {
       {/* 3. 서비스 미리보기 섹션 */}
       <section className="sneak-peek-section">
         <h2 className="section-title fade-in-section">모든 것을 한눈에.</h2>
-        <div className="fade-in-section">
-          <div className="mockup-wrapper">
-            <img src={tradingImg} alt="MODU 대시보드 화면" className="mockup-image" />
+        <div className="sneak-peek-grid">
+          <div className="fade-in-section">
+            <div className="mockup-wrapper">
+              <img src={dashboardImg} alt="MODU 대시보드 화면" className="mockup-image" />
+            </div>
+          </div>
+          <div className="fade-in-section">
+            <div className="mockup-wrapper">
+              <img src={tradingImg} alt="MODU 트레이딩 룸 화면" className="mockup-image" />
+            </div>
+          </div>
+          <div className="fade-in-section">
+            <div className="mockup-wrapper">
+              <img src={stockImg} alt="MODU 종목 상세 화면" className="mockup-image" />
+            </div>
+          </div>
+          <div className="fade-in-section">
+            <div className="mockup-wrapper">
+              <img src={discoveryImg} alt="MODU 종목 추천 화면" className="mockup-image" />
+            </div>
           </div>
         </div>
       </section>

@@ -205,14 +205,28 @@
 .sneak-peek-section {
   position: relative;
   z-index: 1;
-  padding: 8rem 2rem;
+  padding: 10rem 2rem;
   background: transparent; /* 뒷배경 Spline 3D 아우라가 100% 쨍하게 보이도록 투명화! */
   text-align: center;
-  min-height: 100vh;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  scroll-snap-align: start;
+}
+
+.sneak-peek-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10rem; /* 각 서비스 이미지 간의 고급스러운 대형 여백으로 프리미엄 연출 */
+  align-items: center;
+  width: 100%;
+  margin-top: 4rem;
+}
+
+.sneak-peek-grid > div {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  scroll-snap-align: center; /* 스크롤 시 개별 이미지 컷이 화면 중앙에 정확히 스냅 안착! */
 }
 
 .mockup-wrapper {
