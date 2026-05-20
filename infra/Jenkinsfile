@@ -101,8 +101,12 @@ pipeline {
                     echo "▶ diff 길이: ${diff.length()}, 빈 문자열?: ${diff.isEmpty()}"
                     echo "▶ contains 검증 — infra/: ${diff.contains('infra/')} | backend/: ${diff.contains('backend/')} | frontend/: ${diff.contains('frontend/')} | ai_agent/: ${diff.contains('ai_agent/')}"
 
-                    // infra/ 변경 시 yaml·Jenkinsfile도 배포에 영향을 주므로 전체 재빌드
-                    def forceAll = (diff == 'ALL') || diff.contains('infra/')
+                    // infra/ (k8s yaml·Jenkinsfile) 변경은 "배포"에만 영향 — 이미지 빌드는 트리거하지 않는다.
+                    //   - 스킵된 서비스는 deploy 단계가 현재 배포 이미지를 그대로 재사용
+                    //   - 변경된 yaml 은 deploy 단계가 apply 하므로 재빌드 없이 반영됨
+                    // 따라서 빌드 여부는 각 서비스의 build context(backend/ frontend/ ...) 변경으로만 결정한다.
+                    // (과거: infra/ 변경 시 forceAll → 안 바뀐 analysis_server 까지 풀 재빌드되어 빌드 시간 폭증)
+                    def forceAll = (diff == 'ALL')
                     echo "▶ forceAll: ${forceAll}"
 
                     env.BUILD_BACKEND  = (forceAll || diff.contains('backend/'))         ? 'true' : 'false'
@@ -150,7 +154,11 @@ pipeline {
                                     // latest: 다음 배포에서 스킵된 서비스의 fallback 태그로 사용
                                     sh '''
                                     {
-                                      docker build -t "$FULL_URI_BE:$BUILD_NUMBER" -t "$FULL_URI_BE:latest" backend
+                                      docker pull "$FULL_URI_BE:latest" || true
+                                      docker build \
+                                        --cache-from "$FULL_URI_BE:latest" \
+                                        --build-arg BUILDKIT_INLINE_CACHE=1 \
+                                        -t "$FULL_URI_BE:$BUILD_NUMBER" -t "$FULL_URI_BE:latest" backend
                                       docker push "$FULL_URI_BE:$BUILD_NUMBER"
                                       docker push "$FULL_URI_BE:latest"
                                     } 2> backend/be_err.log
@@ -175,7 +183,10 @@ ${log}
                                     env.FAILED_STAGE = "2-2. 프론트엔드 빌드 및 푸시"
                                     sh '''
                                     {
+                                      docker pull "$FULL_URI_FE:latest" || true
                                       docker build \
+                                        --cache-from "$FULL_URI_FE:latest" \
+                                        --build-arg BUILDKIT_INLINE_CACHE=1 \
                                         --build-arg VITE_KAKAO_CLIENT_ID="$VITE_KAKAO_CLIENT_ID" \
                                         --build-arg NGINX_CONF=nginx.k8s.conf \
                                         -t "$FULL_URI_FE:$BUILD_NUMBER" \
@@ -205,7 +216,11 @@ ${log}
                                     env.FAILED_STAGE = "2-3. AI Agent 빌드 및 푸시"
                                     sh '''
                                     {
-                                      docker build -t "$FULL_URI_AI:$BUILD_NUMBER" -t "$FULL_URI_AI:latest" ai_agent
+                                      docker pull "$FULL_URI_AI:latest" || true
+                                      docker build \
+                                        --cache-from "$FULL_URI_AI:latest" \
+                                        --build-arg BUILDKIT_INLINE_CACHE=1 \
+                                        -t "$FULL_URI_AI:$BUILD_NUMBER" -t "$FULL_URI_AI:latest" ai_agent
                                       docker push "$FULL_URI_AI:$BUILD_NUMBER"
                                       docker push "$FULL_URI_AI:latest"
                                     } 2> ai_agent/ai_err.log
@@ -230,7 +245,11 @@ ${log}
                                     env.FAILED_STAGE = "2-4. Analysis Server 빌드 및 푸시"
                                     sh '''
                                     {
-                                      docker build -t "$FULL_URI_ANALYSIS:$BUILD_NUMBER" -t "$FULL_URI_ANALYSIS:latest" analysis_server
+                                      docker pull "$FULL_URI_ANALYSIS:latest" || true
+                                      docker build \
+                                        --cache-from "$FULL_URI_ANALYSIS:latest" \
+                                        --build-arg BUILDKIT_INLINE_CACHE=1 \
+                                        -t "$FULL_URI_ANALYSIS:$BUILD_NUMBER" -t "$FULL_URI_ANALYSIS:latest" analysis_server
                                       docker push "$FULL_URI_ANALYSIS:$BUILD_NUMBER"
                                       docker push "$FULL_URI_ANALYSIS:latest"
                                     } 2> analysis_server/analysis_err.log

@@ -171,7 +171,7 @@ spec:
           # Memory: 실측 92Mi (18%) → 256Mi 로 축소.
           requests:
             memory: "256Mi"
-            cpu: "500m"
+            cpu: "250m"     # 500m → 250m: bursty 폴링이라 평소 idle, burst 는 limit 1000m 으로 흡수 (backend 부팅 CPU 양보)
           limits:
             memory: "1Gi"
             cpu: "1000m"

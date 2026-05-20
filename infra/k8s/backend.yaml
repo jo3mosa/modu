@@ -42,14 +42,17 @@ spec:
         # LOCAL 로 두면 backend 가 직접 KIS WS 연결 → replicas≥2 환경에서 단일세션 충돌 발생.
         - name: MARKET_FEED_CLIENT_MODE
           value: "REMOTE"
+        # JVM: 1536Mi limit 안에서 힙 예측가능(OOM 회피) + 저코어(1.5) GC 오버헤드↓ → 부팅/런타임 효율
+        - name: JAVA_TOOL_OPTIONS
+          value: "-XX:MaxRAMPercentage=70 -XX:+UseSerialGC"
         resources:
           # Spring Boot JVM(~300Mi) + Kafka 컨슈머/프로듀서 + JPA + SSE 연결 유지
           # 거래시간 burst 대응 위해 limits 여유 확보.
-          # CPU request: 실측 ~21m 기반 — burst 와 GC 대비 150m 로 보수적 설정.
-          # 단일 노드 K3s 자원 확보 (이전 300m 시 노드 CPU requests 98% 도달).
+          # CPU request: 부팅(클래스로딩/JIT) 시 CFS share 확보용. 150m 면 경합 시 startupProbe 초과.
+          # 400m 로 상향해 replicas=2 가 부팅 window 안에 기동 (candle-collector CPU 감축으로 상쇄).
           requests:
             memory: "768Mi"
-            cpu: "150m"
+            cpu: "400m"
           limits:
             memory: "1536Mi"
             cpu: "1500m"
@@ -62,7 +65,7 @@ spec:
             port: 8080
           periodSeconds: 10
           timeoutSeconds: 3
-          failureThreshold: 30
+          failureThreshold: 40   # 5분 → 6.7분 (자원 정리 전 부팅 안전망)
         # Pod가 트래픽 받을 준비가 됐는지 확인 — 준비 전까지 트래픽 차단
         readinessProbe:
           httpGet:

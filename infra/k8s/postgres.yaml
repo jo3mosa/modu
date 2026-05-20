@@ -63,7 +63,7 @@ spec:
           # shared_buffers + work_mem + OS page cache 여유 확보.
           # 거래시간 트랜잭션 burst 대응 — limit 4Gi 로 증액(메모리 압박 회피).
           requests:
-            memory: "2Gi"
+            memory: "1Gi"     # 2Gi → 1Gi (dev 스케줄링 여유 확보). shared_buffers 등 실사용은 limit 4Gi 내에서 가능
             cpu: "250m"
           limits:
             memory: "4Gi"
