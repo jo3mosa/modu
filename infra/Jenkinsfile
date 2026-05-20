@@ -351,11 +351,18 @@ ${env.ERROR_DETAILS}""")
             }
         }
 
-        // 성공/실패 관계없이 항상 실행 — 미사용 Docker 이미지 정리
+        // 성공/실패 관계없이 항상 실행 — 미사용 Docker 이미지/빌드캐시 정리.
+        // 기존엔 dangling 만 지워, 매 빌드의 :BUILD_NUMBER 태그 이미지 + 빌드캐시가 무한 누적
+        // (관측: 이미지 354개/129GB, 빌드캐시 5083개/100GB) → 디스크·dockerd 부하 폭증했음.
+        //   - image prune -af --filter until=72h : 72h 지난 미사용 이미지 정리(:latest·최근 빌드는 보존 → cache-from 유지)
+        //   - builder prune --keep-storage=20GB  : 빌드캐시를 최근 20GB 로 상한(무한 증식 차단)
         // '|| true': 다른 빌드가 동시에 prune 중이면 "a prune operation is already running"
         //            에러로 exit 1 → 정상 빌드가 FAILURE 로 오인되므로 정리 실패는 무시한다.
         always {
-            sh "docker image prune -f || true"
+            sh '''
+              docker image prune -af --filter 'until=72h' || true
+              docker builder prune -f --keep-storage=20GB || true
+            '''
         }
     }
 }
