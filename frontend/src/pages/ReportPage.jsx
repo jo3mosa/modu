@@ -331,11 +331,36 @@ export default function ReportPage() {
                     <h4>AI 판단 근거</h4>
                     <p className="reason-text">{log.reason}</p>
                     {detail?.indicatorsSnapshot && (
-                      <div className="market-snapshot">
-                        <h4 style={{ marginTop: '0.75rem' }}>판단 시점 지표 스냅샷</h4>
-                        <pre className="snapshot-json" style={{ background: 'rgba(255,255,255,0.04)', padding: '0.75rem', borderRadius: '6px', fontSize: '0.85em', overflowX: 'auto' }}>
-                          {JSON.stringify(detail.indicatorsSnapshot, null, 2)}
-                        </pre>
+                      <div className="market-snapshot" style={{ marginTop: '0.75rem' }}>
+                        <h4 style={{ marginBottom: '0.5rem' }}>판단 시점 지표 스냅샷</h4>
+                        <div className="snapshot-grid" style={{ 
+                          display: 'grid', 
+                          gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', 
+                          gap: '0.5rem', 
+                          background: 'rgba(255, 255, 255, 0.03)', 
+                          padding: '0.75rem', 
+                          borderRadius: '6px',
+                          border: '1px solid rgba(255, 255, 255, 0.05)'
+                        }}>
+                          {Object.entries(detail.indicatorsSnapshot).map(([key, val]) => {
+                            const label = INDICATOR_LABEL[key] || key;
+                            const formatted = formatSnapshotValue(val);
+                            return (
+                              <div key={key} className="snapshot-item" style={{ 
+                                display: 'flex', 
+                                justifyContent: 'space-between', 
+                                alignItems: 'center',
+                                padding: '0.3rem 0.5rem',
+                                background: 'rgba(255, 255, 255, 0.02)',
+                                borderRadius: '4px',
+                                fontSize: '0.85rem'
+                              }}>
+                                <span className="snapshot-key" style={{ color: 'rgba(255, 255, 255, 0.5)' }}>{label}</span>
+                                <strong className="snapshot-value" style={{ color: '#fff' }}>{formatted}</strong>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
                     )}
                   </div>

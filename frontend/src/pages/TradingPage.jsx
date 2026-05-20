@@ -178,6 +178,9 @@ export default function TradingPage() {
   const [isLoadingStocks, setIsLoadingStocks] = useState(false);
   const pageSize = 20;
 
+  // Polling 중첩 요청(Race Condition) 방어용 시퀀스 ID Ref
+  const lastRequestIdRef = useRef(0);
+
   // 2. 단일 종목 상세용 상태
   const [stockDetail, setStockDetail] = useState(null);
   const [wsStatus, setWsStatus] = useState('connecting'); // 'connecting' | 'live' | 'disconnected'
@@ -239,7 +242,7 @@ export default function TradingPage() {
     };
   }, [stockCode, allStocksList.length]);
 
-  // ── [FLOW A-2] 현재 페이지의 20개 종목에 대한 실시간 KIS API 시세 병렬 병합 (5초 Polling으로 웹소켓 제거 & 안전 갱신) ──
+  // ── [FLOW A-2] 현재 페이지의 20개 종목에 대한 실시간 KIS API 시세 병렬 병합 (5초 Polling & 레이스 컨디션 방어막 적용) ──
   useEffect(() => {
     if (stockCode || allStocksList.length === 0) return;
 
@@ -247,6 +250,9 @@ export default function TradingPage() {
     let isFirstLoad = true;
 
     async function loadPageDetails() {
+      // 호출 시점의 고유 요청 시퀀스 ID 발급
+      const currentRequestId = ++lastRequestIdRef.current;
+
       if (isFirstLoad) {
         setIsLoadingStocks(true);
       }
@@ -277,38 +283,45 @@ export default function TradingPage() {
           })
         );
 
-        if (!cancelled) {
-          setStocks((prevStocks) => {
-            // 기존 데이터와 비교하여 가격 등락에 따른 플래시 방향 계산
-            return details.map((newStock) => {
-              const prevStock = prevStocks.find((ps) => ps.stockCode === newStock.stockCode);
-              if (prevStock && prevStock.currentPrice > 0 && newStock.currentPrice > 0) {
-                let flash = null;
-                if (newStock.currentPrice > prevStock.currentPrice) flash = 'up';
-                else if (newStock.currentPrice < prevStock.currentPrice) flash = 'down';
-
-                return {
-                  ...newStock,
-                  flashDirection: flash,
-                  flashTime: flash ? Date.now() : prevStock.flashTime
-                };
-              }
-              return newStock;
-            });
-          });
-          isFirstLoad = false;
+        // 만약 cleanup 되었거나, 이후 틱/페이지가 트리거되어 시퀀스가 밀렸다면 이전 지연 응답은 완전 폐기
+        if (cancelled || currentRequestId !== lastRequestIdRef.current) {
+          return;
         }
+
+        setStocks((prevStocks) => {
+          // 기존 데이터와 비교하여 가격 등락에 따른 플래시 방향 계산
+          return details.map((newStock) => {
+            const prevStock = prevStocks.find((ps) => ps.stockCode === newStock.stockCode);
+            if (prevStock && prevStock.currentPrice > 0 && newStock.currentPrice > 0) {
+              let flash = null;
+              if (newStock.currentPrice > prevStock.currentPrice) flash = 'up';
+              else if (newStock.currentPrice < prevStock.currentPrice) flash = 'down';
+
+              return {
+                ...newStock,
+                flashDirection: flash,
+                flashTime: flash ? Date.now() : prevStock.flashTime
+              };
+            }
+            return newStock;
+          });
+        });
+        isFirstLoad = false;
       } catch (err) {
         console.error('페이지 상세 시세 로드 실패:', err);
       } finally {
-        if (!cancelled && isFirstLoad) setIsLoadingStocks(false);
+        if (!cancelled && isFirstLoad && currentRequestId === lastRequestIdRef.current) {
+          setIsLoadingStocks(false);
+        }
       }
     }
 
     loadPageDetails();
 
     const intervalId = setInterval(() => {
-      loadPageDetails();
+      if (!cancelled) {
+        loadPageDetails();
+      }
     }, 5000);
 
     return () => {
