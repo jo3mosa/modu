@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getStockDetail } from '../api/market';
 import { discoveryMockData, DISCOVERY_FILTERS } from '../mocks/discoveryMock';
 import './DiscoveryPage.css';
 
@@ -74,10 +75,14 @@ function FilterChips({ active, onChange }) {
   );
 }
 
-function StockCard({ stock, tier }) {
+function StockCard({ stock, tier, livePrices = {} }) {
   const navigate = useNavigate();
-  const isUp = stock.changePct > 0;
-  const isDown = stock.changePct < 0;
+  const live = livePrices[stock.stockCode];
+  const currentPrice = (live && live.price > 0) ? live.price : stock.price;
+  const currentChangePct = (live && live.changePct != null) ? live.changePct : stock.changePct;
+
+  const isUp = currentChangePct > 0;
+  const isDown = currentChangePct < 0;
 
   return (
     <article
@@ -97,9 +102,9 @@ function StockCard({ stock, tier }) {
       </header>
 
       <div className="stock-card-price-row">
-        <span className="stock-card-price">{formatPrice(stock.price)}</span>
+        <span className="stock-card-price">{formatPrice(currentPrice)}</span>
         <span className={`stock-card-change ${isUp ? 'up' : ''} ${isDown ? 'down' : ''}`}>
-          {formatChangePct(stock.changePct)}
+          {formatChangePct(currentChangePct)}
         </span>
       </div>
 
