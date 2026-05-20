@@ -340,7 +340,7 @@ export default function DashboardPage() {
     }));
     const manualItems = orderHistory.map((o) => ({
       id: `manual-${o.orderId}`,
-      source: 'MANUAL',
+      source: o.source ?? 'MANUAL',
       action: o.side,
       stockCode: o.stockCode,
       stockName: o.stockName,
@@ -350,11 +350,16 @@ export default function DashboardPage() {
       status: o.status,       // 'FILLED' | 'CANCELED' | 'MODIFIED' | 'PENDING' | 'REJECTED'
       decidedAt: o.createdAt,
     }));
+
+    // 보유 종목 개수에 연동하여 매매 로그 노출 개수를 동적으로 결정 (하단 여백 칼정렬)
+    const n = holdings.length;
+    const logLimit = n <= 1 ? 3 : n === 2 ? 4 : Math.min(8, n + 2);
+
     return [...aiItems, ...manualItems]
       .filter((l) => l.decidedAt)
       .sort((a, b) => new Date(b.decidedAt) - new Date(a.decidedAt))
-      .slice(0, 8);
-  }, [aiDecisions, orderHistory]);
+      .slice(0, logLimit);
+  }, [aiDecisions, orderHistory, holdings]);
 
   // ── AI 진행 상황 위젯 — 헤더 Bell 의 승인 대기와 동일 출처 사용
   const { pending: pendingDecisions } = usePendingDecisions();
@@ -374,6 +379,7 @@ export default function DashboardPage() {
     let filled = 0;
     let rejected = 0;
     for (const o of orderHistory) {
+      if (o.source !== 'AUTO') continue; // 수동 거래(MANUAL) 등 배제, 순수 자동매매만 카운트!
       if (!o.createdAt) continue;
       const created = new Date(o.createdAt);
       if (created < startOfToday) continue;
