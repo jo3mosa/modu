@@ -235,9 +235,6 @@
 }
 
 .disclaimer-content {
-  background: rgba(255, 60, 60, 0.05); /* 경고성 옅은 붉은 배경 */
-  border: 1px solid rgba(255, 60, 60, 0.2);
-  border-radius: 20px;
   padding: 3rem 2rem;
   text-align: center;
   line-height: 1.8;

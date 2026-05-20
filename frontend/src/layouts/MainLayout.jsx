@@ -425,11 +425,9 @@ export default function MainLayout() {
           <button className="sidebar-menu-btn" onClick={toggleSidebar} aria-label="사이드바 토글">
             <Menu size={22} />
           </button>
-          {!isSidebarCollapsed && (
-            <Link to="/home" style={{ textDecoration: 'none', color: 'inherit' }} className="sidebar-logo-text">
-              <h2 className="brand-font">MODU</h2>
-            </Link>
-          )}
+          <Link to="/home" className="sidebar-logo-text">
+            <h2 className="brand-font">MODU</h2>
+          </Link>
         </div>
         <nav className="sidebar-nav">
           {menuItems.map((item) => (

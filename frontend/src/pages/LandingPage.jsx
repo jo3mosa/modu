@@ -35,7 +35,7 @@ export default function LandingPage() {
         <div className={`spline-bg ${isSplineLoaded ? 'loaded' : ''}`}>
           <div className="spline-fallback" aria-hidden="true" />
           <Spline
-            scene="https://prod.spline.design/6Wq1Q7YGyM-iab9i/scene.splinecode"
+            scene="https://prod.spline.design/ZPgpwWX110LhBG0e/scene.splinecode"
             onLoad={() => setIsSplineLoaded(true)}
           />
         </div>

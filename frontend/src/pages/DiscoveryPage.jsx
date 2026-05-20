@@ -194,7 +194,7 @@ export default function DiscoveryPage() {
             오늘의 추천 <span className="discovery-hero-dot">·</span> {data.recommendedAt}
           </p>
           <h1 className="discovery-recommend-title">
-            당신을 위한 <em>{data.totalCount}개</em> 종목
+            당신을 위한 <em>{data.totalCount}</em>개 종목
           </h1>
         </div>
         <div className="discovery-recommend-controls">
