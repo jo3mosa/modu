@@ -127,6 +127,10 @@ def _run_one(
     backtest_user_id: int,
     score_after: bool,
     pm_mock: bool,
+    initial_holdings: str | None = None,
+    initial_cash: float = 10_000_000,
+    holding_days: int = 7,
+    resume: bool = False,
 ) -> bool:
     exp_out = output_dir / name
     exp_out.mkdir(parents=True, exist_ok=True)
@@ -145,12 +149,18 @@ def _run_one(
         "--watchlist", watchlist,
         "--output", str(exp_out),
         "--backtest-user-id", str(backtest_user_id),
+        "--initial-cash", str(int(initial_cash)),
+        "--holding-days", str(holding_days),
         "--reset-memory",
     ]
     if score_after:
         cmd.append("--score-after")
     if pm_mock:
         cmd.append("--pm-mock")
+    if initial_holdings:
+        cmd += ["--initial-holdings", initial_holdings]
+    if resume:
+        cmd.append("--resume")
 
     ret = subprocess.run(cmd, env=env)
     if ret.returncode != 0:
@@ -342,6 +352,14 @@ def main() -> int:
                         help="post_mortem LLM 미호출 (stub). --score-after와 함께 사용")
     parser.add_argument("--report-only", action="store_true",
                         help="실험 재실행 없이 기존 결과로 비교 테이블만 출력")
+    parser.add_argument("--initial-holdings", type=str, default=None,
+                        help="초기 보유 주식 (예: 005930:100,000660:50). run_ai_backtest에 그대로 전달.")
+    parser.add_argument("--initial-cash", type=float, default=10_000_000,
+                        help="초기 현금 (기본: 10,000,000원). run_ai_backtest에 그대로 전달.")
+    parser.add_argument("--holding-days", type=int, default=7,
+                        help="최대 보유일 T+N (기본: 7). --score-after 단계에서 강제 청산 기준.")
+    parser.add_argument("--resume", action="store_true",
+                        help="끊긴 실험 이어서 실행. 각 실험의 run_ai_backtest에 --resume 전달.")
     args = parser.parse_args()
 
     requested = [e.strip() for e in args.experiments.split(",") if e.strip()]
@@ -367,6 +385,10 @@ def main() -> int:
                 backtest_user_id=args.backtest_user_id,
                 score_after=args.score_after,
                 pm_mock=args.pm_mock,
+                initial_holdings=args.initial_holdings,
+                initial_cash=args.initial_cash,
+                holding_days=args.holding_days,
+                resume=args.resume,
             )
             if not ok:
                 failed.append(name)
