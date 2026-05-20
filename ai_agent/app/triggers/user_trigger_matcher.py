@@ -1,3 +1,5 @@
+import logging
+
 from app.repositories.buy_candidate_repository import (
     BuyCandidateRepository,
     RedisBuyCandidateRepository,
@@ -15,6 +17,8 @@ from app.repositories.position_index_repository import (
     RedisPositionIndexRepository,
 )
 from app.triggers.schemas import MarketTriggerEvent, TriggerType, UserTriggerEvent
+
+logger = logging.getLogger(__name__)
 
 _POSITION_INDEX_REPOSITORY: PositionIndexRepository = RedisPositionIndexRepository()
 _PORTFOLIO_SNAPSHOT_REPOSITORY: PortfolioSnapshotRepository = RedisPortfolioSnapshotRepository()
@@ -88,42 +92,64 @@ def match_market_event_to_users(
     buy_candidate_repository: BuyCandidateRepository | None = None,
 ) -> list[UserTriggerEvent]:
     """
-    MarketTriggerEvent를 사용자별 UserTriggerEvent로 변환한다.
+    MarketTriggerEvent를 사용자별 UserTriggerEvent로 변환한다 (S14P31B106-350).
 
     처리 흐름:
     1. 해당 종목을 보유한 모든 사용자를 조회한다 (is_holder=True).
     2. buy_candidate_repository가 주입된 경우, risk_grade >= stock_tier 인
        전체 적격 유저에서 보유자를 제외한 비보유자를 추가한다 (is_holder=False).
-       - 보유자와 겹치는 유저는 보유자로 처리한다.
+       - 보유자와 겹치는 유저는 보유자로 처리한다 (보유자 우선).
+       - stock:risk_tier 미설정(DA 배치 미실행) 종목이면 buy_candidate 가 (None, {}) 반환
+         → 비보유자 매칭 생략, 기존 보유자 라우팅만 유지 (안전 폴백).
     3. 사용자별 portfolio_snapshot에 current_price를 포함해 UserTriggerEvent를 생성한다.
     4. 매칭 대상 사용자가 없으면 빈 list를 반환한다.
 
     주의:
     - 이 함수는 Reasoning Layer를 직접 실행하지 않는다.
-    - is_holder=False 이벤트는 run_and_publish에서 SELL/HOLD 결과 시 발행이 생략된다.
+    - is_holder=False 이벤트는 run_and_publish에서 BUY 결정이 아닐 때 발행이 생략된다
+      (비보유자에게 SELL/HOLD 는 의미 없고, 비보유자 SELL 은 backend 에서도 BLOCKED).
     """
-
     holding_user_ids = get_holding_user_ids(event.stock_code, position_index_repository)
     holder_set = set(holding_user_ids)
 
-    # (user_id, is_holder) 쌍으로 처리 대상 구성
+    # (user_id, is_holder) 쌍으로 처리 대상 구성. 보유자 먼저 적재.
     targets: list[tuple[int, bool]] = [(uid, True) for uid in holding_user_ids]
 
+    # 비보유자 tier 매칭 — buy_candidate 가 (stock_tier, {user_id: risk_grade}) 반환.
+    # 보유자와 겹치면 보유자로 유지 (is_holder=True 우선).
+    stock_tier: int | None = None
+    non_holder_grades: dict[int, int] = {}
+
     if buy_candidate_repository is not None:
-        eligible_ids = buy_candidate_repository.get_eligible_user_ids(event.stock_code)
-        for uid in eligible_ids:
+        stock_tier, eligible_grades = buy_candidate_repository.get_eligible_user_grades(
+            event.stock_code
+        )
+        for uid, grade in eligible_grades.items():
             if uid not in holder_set:
+                non_holder_grades[uid] = grade
                 targets.append((uid, False))
 
     if not targets:
         return []
+
+    logger.info(
+        "[matcher] stock=%s tier=%s holders=%d non_holders=%d → fanout=%d",
+        event.stock_code,
+        stock_tier if stock_tier is not None else "NONE",
+        len(holding_user_ids),
+        len(non_holder_grades),
+        len(targets),
+    )
 
     current_price = get_current_price(event.stock_code, market_price_repository)
 
     user_trigger_events: list[UserTriggerEvent] = []
 
     for user_id, is_holder in targets:
-        portfolio_snapshot = get_portfolio_snapshot(user_id, portfolio_snapshot_repository)
+        # `or {}` 는 Protocol 계약 방어선 — 현 Redis/Mock 구현은 빈 dict 반환하지만,
+        # 향후 다른 구현체가 None 을 돌려줘도 dict-unpack 에서 TypeError 가 나지 않게 보장.
+        portfolio_snapshot = get_portfolio_snapshot(user_id, portfolio_snapshot_repository) or {}
+
         portfolio_snapshot = {**portfolio_snapshot, "current_price": current_price}
 
         # TODO: 동일 user_id / stock_code / source_event_id 중복 방지
@@ -140,6 +166,8 @@ def match_market_event_to_users(
             analysis_snapshot=event.analysis_snapshot,
             portfolio_snapshot=portfolio_snapshot,
             is_holder=is_holder,
+            stock_tier=stock_tier,
+            matched_risk_grade=non_holder_grades.get(user_id) if not is_holder else None,
         ))
 
     return user_trigger_events

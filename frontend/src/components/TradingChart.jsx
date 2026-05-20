@@ -4,6 +4,7 @@ import { SMA, BollingerBands, RSI, MACD } from 'technicalindicators';
 import { ChevronDown } from 'lucide-react';
 import { getStockCandles } from '../api/market';
 import { getOrderHistory } from '../api/order';
+import { getPortfolio } from '../api/account';
 import { buildStockWsUrl } from '../api/wsUrl';
 import './TradingChart.css';
 

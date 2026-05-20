@@ -2,6 +2,7 @@ package com.modu.backend.domain.strategy.service;
 
 import com.modu.backend.domain.investment.entity.InvestmentProfile;
 import com.modu.backend.domain.investment.entity.ProfileHistory;
+import com.modu.backend.domain.investment.event.UsersByGradeChangedEvent;
 import com.modu.backend.domain.investment.exception.InvestmentErrorCode;
 import com.modu.backend.domain.investment.repository.InvestmentProfileRepository;
 import com.modu.backend.domain.investment.repository.ProfileHistoryRepository;
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
@@ -42,6 +44,7 @@ class StrategyProfileServiceTest {
     @Mock InvestmentProfileRepository investmentProfileRepository;
     @Mock ProfileHistoryRepository profileHistoryRepository;
     @Mock TradingRuleRepository tradingRuleRepository;
+    @Mock ApplicationEventPublisher eventPublisher;
 
     private final StrategyProfileQuestionService strategyProfileQuestionService =
             new StrategyProfileQuestionService();
@@ -54,7 +57,8 @@ class StrategyProfileServiceTest {
                 strategyProfileQuestionService,
                 investmentProfileRepository,
                 profileHistoryRepository,
-                tradingRuleRepository
+                tradingRuleRepository,
+                eventPublisher
         );
     }
 
@@ -343,6 +347,74 @@ class StrategyProfileServiceTest {
                 .isInstanceOf(ApiException.class)
                 .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode())
                         .isEqualTo(InvestmentErrorCode.DUPLICATE_PROFILE_ANSWER));
+    }
+
+    @Test
+    @DisplayName("신규 프로필 생성 시 prevGradeInt=null + newGradeInt=4 이벤트 publish")
+    void publishEvent_onCreate() {
+        Long userId = 1L;
+        when(investmentProfileRepository.findById(userId)).thenReturn(Optional.empty());
+        when(investmentProfileRepository.saveAndFlush(any(InvestmentProfile.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(tradingRuleRepository.existsByUserId(userId)).thenReturn(false);
+
+        strategyProfileService.updateProfile(userId, requestForActiveProfile());
+
+        ArgumentCaptor<UsersByGradeChangedEvent> captor =
+                ArgumentCaptor.forClass(UsersByGradeChangedEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertThat(captor.getValue().userId()).isEqualTo(userId);
+        assertThat(captor.getValue().prevGradeInt()).isNull();
+        assertThat(captor.getValue().newGradeInt()).isEqualTo(4); // ACTIVE
+    }
+
+    @Test
+    @DisplayName("기존 프로필 등급 변경 시 prevGradeInt + newGradeInt 이벤트 publish")
+    void publishEvent_onGradeChange() {
+        Long userId = 1L;
+        OffsetDateTime createdAt = OffsetDateTime.now().minusDays(1);
+        InvestmentProfile existing = InvestmentProfile.builder()
+                .userId(userId)
+                .riskScore(30L)
+                .riskGrade("STABLE_SEEKING") // grade 2
+                .answersSnapshot(Map.of("riskScore", 30L))
+                .version(1L)
+                .createdAt(createdAt)
+                .updatedAt(createdAt)
+                .build();
+        when(investmentProfileRepository.findById(userId)).thenReturn(Optional.of(existing));
+        when(tradingRuleRepository.existsByUserId(userId)).thenReturn(true);
+
+        strategyProfileService.updateProfile(userId, requestForActiveProfile(1L));
+
+        ArgumentCaptor<UsersByGradeChangedEvent> captor =
+                ArgumentCaptor.forClass(UsersByGradeChangedEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertThat(captor.getValue().prevGradeInt()).isEqualTo(2); // STABLE_SEEKING
+        assertThat(captor.getValue().newGradeInt()).isEqualTo(4);  // ACTIVE
+    }
+
+    @Test
+    @DisplayName("프로필 수정 실패 (낙관적 락) 시 이벤트 publish X")
+    void publishEvent_skippedOnFailure() {
+        Long userId = 1L;
+        OffsetDateTime createdAt = OffsetDateTime.now().minusDays(1);
+        InvestmentProfile existing = InvestmentProfile.builder()
+                .userId(userId)
+                .riskScore(30L)
+                .riskGrade("STABLE_SEEKING")
+                .answersSnapshot(Map.of("riskScore", 30L))
+                .version(2L)
+                .createdAt(createdAt)
+                .updatedAt(createdAt)
+                .build();
+        ProfileUpdateRequest request = new ProfileUpdateRequest(validAnswers(), null, 1L);
+        when(investmentProfileRepository.findById(userId)).thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> strategyProfileService.updateProfile(userId, request))
+                .isInstanceOf(ObjectOptimisticLockingFailureException.class);
+
+        verify(eventPublisher, never()).publishEvent(any(UsersByGradeChangedEvent.class));
     }
 
     private ProfileUpdateRequest requestForActiveProfile() {

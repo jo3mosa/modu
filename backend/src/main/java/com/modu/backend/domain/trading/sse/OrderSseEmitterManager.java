@@ -1,5 +1,7 @@
 package com.modu.backend.domain.trading.sse;
 
+import com.modu.backend.domain.trading.sse.redis.OrderSseRedisPublisher;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -15,8 +17,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * 동일 사용자가 새로 connect 호출 시 기존 연결은 명시적으로 종료되고 새 연결로 대체된다.
  * (다중 탭 동시 지원이 필요해지면 별도 협의 — 본 클래스는 마지막 연결만 유지)
  *
- * [단일 인스턴스 한계]
- * ConcurrentHashMap 메모리 기반 — 다중 인스턴스로 확장 시 Redis Pub/Sub 도입 필요.
+ * [replicas≥2 라우팅 (S14P31B106-351)]
+ * emitters 맵은 여전히 process-local. SSE 전송은 Redis Pub/Sub fan-out 으로 cross-pod 도달.
+ *  - {@link #send} 계열은 {@link OrderSseRedisPublisher} 로만 위임 → 모든 pod 가 envelope 수신
+ *  - 자신의 맵에 userId 가 있는 pod 만 {@link #deliverLocal} 로 실제 emitter 전송
+ *  - 동일 메서드가 publish 와 local 전송을 모두 하면 무한 루프 위험 → 메서드 분리로 컴파일타임 차단
  *
  * [자동 정리]
  * SseEmitter 의 onCompletion / onTimeout / onError 콜백에서 자신을 Map 에서 제거한다.
@@ -24,6 +29,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class OrderSseEmitterManager {
 
     /** 무기한 연결 유지 — 클라이언트 측 끊김으로 정리 */
@@ -31,6 +37,8 @@ public class OrderSseEmitterManager {
 
     /** 프론트와 약속된 단일 이벤트 name — data.type 으로 종류 구분 */
     private static final String EVENT_NAME = "order";
+
+    private final OrderSseRedisPublisher redisPublisher;
 
     private final Map<Long, SseEmitter> emitters = new ConcurrentHashMap<>();
 
@@ -69,12 +77,11 @@ public class OrderSseEmitterManager {
     }
 
     /**
-     * 사용자에게 주문 이벤트 전송 (event name = "order")
-     * 연결 없으면 조용히 무시 (사용자가 화면을 안 띄운 상태일 수 있음).
-     * 전송 실패 시 emitter 완료 처리 + Map 제거.
+     * 사용자에게 주문 이벤트 전송 — Redis 로 publish 만 한다.
+     * 실제 emitter 전송은 모든 pod 의 subscriber 가 {@link #deliverLocal} 로 위임.
      */
     public void send(Long userId, OrderSseEvent event) {
-        sendInternal(userId, EVENT_NAME, event, event.type().name());
+        redisPublisher.publish(userId, EVENT_NAME, event);
     }
 
     /**
@@ -87,21 +94,30 @@ public class OrderSseEmitterManager {
      * @param payload   JSON 직렬화 가능한 페이로드 (record 권장)
      */
     public void send(Long userId, String eventName, Object payload) {
-        sendInternal(userId, eventName, payload, eventName);
+        redisPublisher.publish(userId, eventName, payload);
     }
 
-    private void sendInternal(Long userId, String eventName, Object payload, String logTag) {
+    /**
+     * subscriber 전용 — Redis 에서 수신한 envelope 을 자신의 emitter 에 전송.
+     *
+     * 호출 가시성을 package-private 으로 두지 못하는 이유: subscriber 가 별도 subpackage(redis).
+     * 대신 send 계열은 절대 본 메서드를 호출하지 않도록 호출 그래프로 무한 루프 방지.
+     *
+     * 연결 없으면 조용히 무시 (사용자가 화면을 안 띄운 상태일 수 있음).
+     * 전송 실패 시 emitter 완료 처리 + Map 제거.
+     */
+    public void deliverLocal(Long userId, String eventName, Object payload) {
         SseEmitter emitter = emitters.get(userId);
         if (emitter == null) {
             // 빈도 높은 이벤트(agent-message 등) 에서 화면 미접속 사용자가 다수면 INFO 로그 폭증.
             // 연결 없음은 정상 흐름(사용자가 화면을 안 띄움) 이라 DEBUG 로 낮춤.
-            log.debug("SSE 연결 없음 - userId: {}, event: {}", userId, logTag);
+            log.debug("SSE 연결 없음 - userId: {}, event: {}", userId, eventName);
             return;
         }
         try {
             emitter.send(SseEmitter.event().name(eventName).data(payload));
         } catch (IOException e) {
-            log.warn("SSE 전송 실패, 연결 제거 - userId: {}, event: {}", userId, logTag, e);
+            log.warn("SSE 전송 실패, 연결 제거 - userId: {}, event: {}", userId, eventName, e);
             emitter.completeWithError(e);
             emitters.remove(userId, emitter);
         }

@@ -94,11 +94,15 @@ export async function updateProfile(payload) {
  *
  * 저장된 룰셋이 없으면 404 응답. 화면 진입 시 호출하여 ruleVersion 보존에 사용.
  *
+ * aiBudgetAmount: AI 위임 운용 자금 한도 (KRW). risk_gate(단일 주문)와
+ * SignalHandlerService(누적 매수액) 양쪽에서 hard rule로 검증된다.
+ *
  * @returns {Promise<{
  *   stopLossRate: number,
  *   takeProfitRate: number,
  *   maxDailyOrderCount: number,
  *   maxDailyLossAmount: number,
+ *   aiBudgetAmount: number,
  *   updatedAt: string,
  *   version: number
  * }>}
@@ -117,6 +121,7 @@ export async function getRules() {
  * 백엔드 검증 (RuleUpdateRequest):
  * - stopLossRate, takeProfitRate: @Min(1) 양수 정수 (% 단위, 절대값)
  * - maxDailyOrderCount, maxDailyLossAmount: @Min(1) 양수
+ * - aiBudgetAmount: @Min(1) 양수 (KRW, AI 운용 자금 한도). 한도 초과 매수 시 BLOCKED.
  * - version: @Min(0) 낙관적 잠금. 최초 호출은 0, 이후엔 직전 응답의 version
  *
  * @param {{
@@ -124,6 +129,7 @@ export async function getRules() {
  *   takeProfitRate: number,
  *   maxDailyOrderCount: number,
  *   maxDailyLossAmount: number,
+ *   aiBudgetAmount: number,
  *   version: number
  * }} payload
  * @returns {Promise<{
@@ -131,6 +137,7 @@ export async function getRules() {
  *   takeProfitRate: number,
  *   maxDailyOrderCount: number,
  *   maxDailyLossAmount: number,
+ *   aiBudgetAmount: number,
  *   updatedAt: string,
  *   version: number
  * }>}

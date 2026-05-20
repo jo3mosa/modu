@@ -119,12 +119,13 @@ export default function OnboardingPage() {
 
     setSubmittingComplete(true);
     try {
-      // 룰셋 저장: 일일 한도는 사용자 입력이 없으므로 기본값. 추후 마이페이지에서 조정.
+      // 룰셋 저장: 일일 한도/AI 운용 한도는 사용자 입력이 없으므로 기본값. 추후 마이페이지에서 조정.
       await updateRules({
         stopLossRate,
         takeProfitRate,
         maxDailyOrderCount: 10,
         maxDailyLossAmount: 500000,
+        aiBudgetAmount: 10000,
         version: 0,
       });
 

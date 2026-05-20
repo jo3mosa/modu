@@ -53,17 +53,48 @@ def _make_result(
     }
 
 
+def _find_avg_price(
+    portfolio_snapshot: dict[str, Any] | None, asset: str | None,
+) -> float | None:
+    """portfolio_snapshot에서 보유 종목 평단가 조회.
+
+    키 컨벤션이 두 종류로 공존하므로 둘 다 시도한다:
+      - production (portfolio_snapshot_repository): "positions"
+      - mock (mock_trigger):                        "holdings"
+    """
+    if not portfolio_snapshot or not asset:
+        return None
+    for key in ("positions", "holdings"):
+        items = portfolio_snapshot.get(key)
+        if not items:
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            if item.get("stock_code") == asset:
+                price = item.get("average_price")
+                if price is not None and price > 0:
+                    return float(price)
+    return None
+
+
 def risk_gate(state: InvestmentAgentState) -> dict[str, Any]:
     """
-    Risk Gate.
+    Risk Gate (AI 측 1차 검증 게이트).
 
-    AI 판단 자체의 유효성만 검증한다.
-    포트폴리오 비중, 현금 잔고, 종목 상태, 시장 상태 등
-    실시간 데이터 의존 검증은 백엔드가 주문 실행 전에 수행한다.
+    AI 판단의 형식 유효성과 사용자 한도(손절·익절·AI 운용 금액) 정합성을
+    1차 hard rule로 검증한다. 백엔드 SignalHandlerService가 실시간 데이터로
+    2차 hard rule을 수행한다 (이중 게이트).
 
     검증 항목:
     1. final_decision 기본값 유효성 (action / asset / side / order_amount)
     2. 자동매매 허용 여부 (allow_auto_trade)
+    3. 사용자 한도 정합성 (hard rule):
+       3-1. BUY 손절 정합성 — user_context.risk_rules.stop_loss_pct vs target_price 기준 손절가
+       3-2. SELL 익절 정합성 — user_context.risk_rules.take_profit_pct vs 평단가 기준 목표가
+       3-3. 단일 주문 AI 운용 한도 — user_context.risk_rules.ai_budget_amount vs order_amount
+            * BE 컬럼(trading_rules.ai_budget_amount) 도입 전에는 값이 None → skip
+            * 일일 누적 한도 검증은 백엔드 SignalHandlerService 영역
     """
 
     checks: list[dict[str, Any]] = []
@@ -208,7 +239,114 @@ def risk_gate(state: InvestmentAgentState) -> dict[str, Any]:
     )
 
     # ==============================
-    # 3. 최종 통과
+    # 3. 사용자 한도 정합성 검증 (hard rule)
+    # ==============================
+    # AI 1차 검증. 백엔드가 실시간 데이터로 2차 hard rule 검증한다 (이중 게이트).
+    # 데이터(사용자 설정값 또는 평단가)가 없으면 검증 skip — backward compat.
+    # 단위 가정: stop_loss_pct / take_profit_pct는 % 단위 (예: 5 = 5%).
+    # 백엔드 trading_rules의 BIGINT 컬럼 단위 컨벤션 일치 필요.
+
+    risk_rules = (state.user_context or {}).get("risk_rules") or {}
+    target_price = get_value(decision, "target_price")
+    stop_loss_price = get_value(decision, "stop_loss_price")
+
+    # ── 3-1. BUY 손절 정합성 ────────────────────────────────────────
+    if side == "buy":
+        stop_loss_pct = risk_rules.get("stop_loss_pct")
+        if (
+            stop_loss_pct is not None and stop_loss_pct > 0
+            and target_price is not None and target_price > 0
+            and stop_loss_price is not None and stop_loss_price > 0
+        ):
+            min_acceptable_stop = float(target_price) * (1.0 - float(stop_loss_pct) / 100.0)
+            if float(stop_loss_price) < min_acceptable_stop:
+                _add_check(
+                    checks,
+                    name="buy_stop_loss_alignment",
+                    status="blocked",
+                    reason=f"AI 손절가가 사용자 허용 손실률({stop_loss_pct}%)을 초과합니다.",
+                    value=stop_loss_price,
+                    limit=min_acceptable_stop,
+                )
+                return _make_result(
+                    status="blocked",
+                    reason="AI 손절가가 사용자 손절률을 위반하여 주문을 차단합니다.",
+                    checks=checks,
+                )
+            _add_check(
+                checks,
+                name="buy_stop_loss_alignment",
+                status="passed",
+                reason="AI 손절가가 사용자 손절률 범위 내입니다.",
+                value=stop_loss_price,
+                limit=min_acceptable_stop,
+            )
+
+    # ── 3-2. SELL 익절 정합성 ───────────────────────────────────────
+    if side == "sell":
+        take_profit_pct = risk_rules.get("take_profit_pct")
+        avg_price = _find_avg_price(state.portfolio_snapshot, asset)
+        if (
+            take_profit_pct is not None and take_profit_pct > 0
+            and avg_price is not None and avg_price > 0
+            and target_price is not None and target_price > 0
+        ):
+            min_acceptable_target = float(avg_price) * (1.0 + float(take_profit_pct) / 100.0)
+            if float(target_price) < min_acceptable_target:
+                _add_check(
+                    checks,
+                    name="sell_take_profit_alignment",
+                    status="blocked",
+                    reason=(
+                        f"AI 매도 목표가가 사용자 익절 목표 수익률({take_profit_pct}%)에 미달합니다."
+                    ),
+                    value=target_price,
+                    limit=min_acceptable_target,
+                )
+                return _make_result(
+                    status="blocked",
+                    reason="AI 매도 목표가가 사용자 익절률에 미달하여 주문을 차단합니다.",
+                    checks=checks,
+                )
+            _add_check(
+                checks,
+                name="sell_take_profit_alignment",
+                status="passed",
+                reason="AI 매도 목표가가 사용자 익절률을 충족합니다.",
+                value=target_price,
+                limit=min_acceptable_target,
+            )
+
+    # ── 3-3. AI 운용 한도 — 단일 주문 ────────────────────────────────
+    # 누적(오늘 누적 매수액 vs ai_budget_amount) 검증은 백엔드 영역.
+    # BE의 trading_rules.ai_budget_amount 컬럼 도입 전엔 값이 None → skip.
+    ai_budget_amount = risk_rules.get("ai_budget_amount")
+    if ai_budget_amount is not None and ai_budget_amount > 0:
+        if order_amount > ai_budget_amount:
+            _add_check(
+                checks,
+                name="ai_budget_single_order",
+                status="blocked",
+                reason="단일 주문 금액이 AI 운용 한도를 초과합니다.",
+                value=order_amount,
+                limit=ai_budget_amount,
+            )
+            return _make_result(
+                status="blocked",
+                reason="단일 주문 금액이 AI 운용 한도를 초과하여 주문을 차단합니다.",
+                checks=checks,
+            )
+        _add_check(
+            checks,
+            name="ai_budget_single_order",
+            status="passed",
+            reason="단일 주문 금액이 AI 운용 한도 이내입니다.",
+            value=order_amount,
+            limit=ai_budget_amount,
+        )
+
+    # ==============================
+    # 4. 최종 통과
     # ==============================
 
     return _make_result(

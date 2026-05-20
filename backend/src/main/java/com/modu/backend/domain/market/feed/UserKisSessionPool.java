@@ -3,6 +3,7 @@ package com.modu.backend.domain.market.feed;
 import com.modu.backend.domain.trading.position.repository.PositionThresholdRepository;
 import com.modu.backend.domain.user.entity.KisCredential;
 import com.modu.backend.domain.user.repository.KisCredentialRepository;
+import com.modu.backend.domain.user.service.KisTokenService;
 import com.modu.backend.global.config.KisProfiles;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,11 +35,17 @@ import java.util.concurrent.ConcurrentHashMap;
 @RequiredArgsConstructor
 public class UserKisSessionPool {
 
+    /** invalid approval 복구 쿨다운 (per-user) — 새 키도 거부될 때 무한 재발급 storm 방지. */
+    private static final long RECOVERY_COOLDOWN_MS = 60_000;
+
     private final KisCredentialRepository credentialRepository;
     private final PositionThresholdRepository positionThresholdRepository;
     private final UserKisSessionFactory factory;
+    private final KisTokenService kisTokenService;
 
     private final Map<Long, UserKisSession> sessions = new ConcurrentHashMap<>();
+    /** userId → 마지막 invalid approval 복구 시각(ms). 쿨다운 판정용. */
+    private final Map<Long, Long> lastRecoveryAt = new ConcurrentHashMap<>();
 
     // ── 부팅 자동 생성 ──────────────────────────────────────────────────────
 
@@ -94,6 +101,34 @@ public class UserKisSessionPool {
         openSession(userId);
     }
 
+    /**
+     * KIS "invalid approval" 거부 복구 — 무효 승인키 evict 후 새 키로 세션 재생성.
+     * UserKisSession 이 거부를 감지하면 콜백으로 호출한다.
+     *
+     * 60초 쿨다운: 재발급해도 또 거부되는 경우(실시간 권한 미신청 / appkey 충돌)엔
+     * 1분에 한 번만 시도하고 멈춰, 과거의 1초 reconnect storm 재발을 차단한다.
+     * (세션은 recoveryTriggered 로 재연결을 멈추므로, 쿨다운에 막히면 조용히 정지)
+     */
+    public void recoverInvalidApproval(long userId) {
+        long now = System.currentTimeMillis();
+        Long last = lastRecoveryAt.get(userId);
+        if (last != null && now - last < RECOVERY_COOLDOWN_MS) {
+            log.warn("[UserKisSessionPool] invalid approval 복구 쿨다운 — 재시도 보류. userId: {} (권한/충돌 확인 필요)", userId);
+            return;
+        }
+        lastRecoveryAt.put(userId, now);
+        log.warn("[UserKisSessionPool] invalid approval 복구 — 승인키 evict + 세션 재생성. userId: {}", userId);
+        kisTokenService.evictWebSocketKey(userId);
+        // reload 는 KIS 연결/구독 I/O 를 포함 → 호출 스레드(WS 핸들러) 블로킹 방지 위해 가상 스레드로 분리.
+        Thread.ofVirtual().start(() -> {
+            try {
+                reload(userId);
+            } catch (Exception e) {
+                log.error("[UserKisSessionPool] invalid approval 복구 reload 실패 - userId: {}", userId, e);
+            }
+        });
+    }
+
     // ── 내부 — 세션 생성 + 시작 ──────────────────────────────────────────────
 
     /**
@@ -104,7 +139,7 @@ public class UserKisSessionPool {
      */
     private UserKisSession openSession(long userId) {
         return sessions.computeIfAbsent(userId, id -> {
-            UserKisSession created = factory.create(id);
+            UserKisSession created = factory.create(id, () -> recoverInvalidApproval(id));
             try {
                 created.start();
                 autoSubscribeHoldings(id, created);

@@ -24,7 +24,9 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.OffsetDateTime;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -48,6 +50,15 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class PendingJudgmentService {
 
+    /**
+     * 승인 대기 / 만료 대상 상태 — APPROVAL_REQUIRED (292) + RECOMMENDED (354).
+     * 두 상태 모두 5분 만료 + 사용자 승인/거부 흐름이 동일하므로 동일 sweeper 가 처리.
+     */
+    private static final Set<AiExecutionStatus> PENDING_STATUSES = EnumSet.of(
+            AiExecutionStatus.APPROVAL_REQUIRED,
+            AiExecutionStatus.RECOMMENDED
+    );
+
     private final AiJudgmentRepository aiJudgmentRepository;
     private final OrderRepository orderRepository;
     private final PositionThresholdRepository positionThresholdRepository;
@@ -60,10 +71,10 @@ public class PendingJudgmentService {
     @Transactional(readOnly = true)
     public List<PendingDecisionResponse> listPending(Long userId) {
         OffsetDateTime now = OffsetDateTime.now();
-        // approvalExpiresAt == null 은 비정상 상태로 간주해 목록 제외 — APPROVAL_REQUIRED 진입 시
-        // SignalHandlerService 가 항상 NOW + 5분 세팅하므로 null 은 데이터 이상.
+        // approvalExpiresAt == null 은 비정상 상태로 간주해 목록 제외 — APPROVAL_REQUIRED / RECOMMENDED
+        // 진입 시 SignalHandlerService 가 항상 NOW + 5분 세팅하므로 null 은 데이터 이상.
         return aiJudgmentRepository
-                .findByUserIdAndExecutionStatusOrderByJudgedAtDesc(userId, AiExecutionStatus.APPROVAL_REQUIRED)
+                .findByUserIdAndExecutionStatusInOrderByJudgedAtDesc(userId, PENDING_STATUSES)
                 .stream()
                 .filter(j -> j.getApprovalExpiresAt() != null
                         && j.getApprovalExpiresAt().isAfter(now))
@@ -164,7 +175,7 @@ public class PendingJudgmentService {
     public int expirePending() {
         OffsetDateTime threshold = OffsetDateTime.now();
         List<AiJudgment> expired = aiJudgmentRepository
-                .findByExecutionStatusAndApprovalExpiresAtBefore(AiExecutionStatus.APPROVAL_REQUIRED, threshold);
+                .findByExecutionStatusInAndApprovalExpiresAtBefore(PENDING_STATUSES, threshold);
         if (expired.isEmpty()) return 0;
         expired.forEach(AiJudgment::markExpired);
         log.info("AI 판단 승인 만료 처리 - count: {}, threshold: {}", expired.size(), threshold);
@@ -187,7 +198,7 @@ public class PendingJudgmentService {
         if (!judgment.getUserId().equals(userId)) {
             throw new ApiException(AiErrorCode.DECISION_FORBIDDEN);
         }
-        if (judgment.getExecutionStatus() != AiExecutionStatus.APPROVAL_REQUIRED) {
+        if (!PENDING_STATUSES.contains(judgment.getExecutionStatus())) {
             throw new ApiException(AiErrorCode.DECISION_NOT_PENDING);
         }
         // approvalExpiresAt == null 은 비정상 상태 — 만료된 것과 동일하게 거절 (DECISION_EXPIRED)

@@ -25,4 +25,9 @@ public interface KisTokenRepository extends JpaRepository<KisToken, Long> {
     @Modifying
     @Query("DELETE FROM KisToken t WHERE t.userId = :userId")
     void deleteAllByUserId(@Param("userId") Long userId);
+
+    /** 특정 타입 토큰만 삭제 — KIS "invalid approval" 거부 시 WEBSOCKET_KEY evict 용 */
+    @Modifying
+    @Query("DELETE FROM KisToken t WHERE t.userId = :userId AND t.tokenType = :tokenType")
+    void deleteByUserIdAndTokenType(@Param("userId") Long userId, @Param("tokenType") String tokenType);
 }

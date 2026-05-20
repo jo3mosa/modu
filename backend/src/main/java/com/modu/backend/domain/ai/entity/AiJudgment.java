@@ -122,6 +122,17 @@ public class AiJudgment {
     @Column(name = "approval_expires_at")
     private OffsetDateTime approvalExpiresAt;
 
+    // ─────────────────────────────────────────────────────────────────────
+    // V20260519220100 (S14P31B106-354) 추가 컬럼 — RECOMMENDED 컨텍스트
+    //   stock_tier / matched_risk_grade 모두 1~5, RECOMMENDED 아닌 경우 NULL.
+    // ─────────────────────────────────────────────────────────────────────
+
+    @Column(name = "stock_tier")
+    private Integer stockTier;
+
+    @Column(name = "matched_risk_grade")
+    private Integer matchedRiskGrade;
+
     @Builder
     public AiJudgment(
             Long userId,
@@ -145,7 +156,9 @@ public class AiJudgment {
             String expectedScenario,
             String decisionId,
             String sourceEventId,
-            AiExecutionStatus executionStatus
+            AiExecutionStatus executionStatus,
+            Integer stockTier,
+            Integer matchedRiskGrade
     ) {
         this.userId = userId;
         this.stockCode = stockCode;
@@ -169,6 +182,8 @@ public class AiJudgment {
         this.decisionId = decisionId;
         this.sourceEventId = sourceEventId;
         this.executionStatus = executionStatus;
+        this.stockTier = stockTier;
+        this.matchedRiskGrade = matchedRiskGrade;
     }
 
     /**

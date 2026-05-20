@@ -90,7 +90,7 @@ class PortfolioServiceTest {
                 .thenReturn("access-token");
 
         List<HoldingResponse> holdings = List.of(
-                new HoldingResponse("005930", "삼성전자", 10L, 75000L, 80000L, 50000L, 6.67)
+                new HoldingResponse("005930", "삼성전자", 10L, 75000.0, 80000L, 50000L, 6.67)
         );
         PortfolioResponse mockResponse = new PortfolioResponse(holdings);
         when(kisBalanceClient.getPortfolio("access-token", "real-app-key", "real-app-secret",

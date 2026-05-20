@@ -209,7 +209,7 @@ def _build_decision_log(
         "bear_claim": _join_lines(verdict_dump.get("key_bear_points")),
         "winning_side": winning_side,
         "expected_scenario": None,
-        "indicators_snapshot": (event.analysis_snapshot or {}).get("signals") or {},
+        "indicators_snapshot": event.analysis_snapshot or {},
     }
     return log
 
@@ -250,14 +250,11 @@ def _to_user_trigger_event(
     as_of_dt = datetime.combine(trigger.as_of_date, datetime.min.time()).replace(hour=9)
 
     analysis_snapshot = {
-        "stock_code": trigger.stock_code,
-        "timestamp": as_of_dt.isoformat(),
-        "signals": {
-            "technical": trigger.technical,
-            "fundamental": trigger.fundamental,
-            "event": trigger.event,
-            "sentiment": trigger.sentiment,
-        },
+        "technical": trigger.technical,
+        "fundamental": trigger.fundamental,
+        "event": trigger.event,
+        "sentiment": trigger.sentiment,
+        **({"news_summary": trigger.news_summary} if trigger.news_summary else {}),
     }
 
     portfolio_dict = portfolio_snapshot if isinstance(portfolio_snapshot, dict) else {}
@@ -303,6 +300,11 @@ def _to_da_decision(final_state: Any) -> Decision:
             action="hold",
             confidence=dump.get("confidence"),
             reasoning=dump.get("reason_summary") or "",
+            extras={
+                "winning_side": _extract_winning_side(final_state),
+                "bull_claim": _extract_bull_bear(final_state, "key_bull_points"),
+                "bear_claim": _extract_bull_bear(final_state, "key_bear_points"),
+            },
         )
 
     return Decision(
