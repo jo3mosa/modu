@@ -42,6 +42,7 @@ class MarketServiceTest {
     @Mock KisPlatformTokenService kisPlatformTokenService;
     @Mock KisPriceClient kisPriceClient;
     @Mock KisCandleClient kisCandleClient;
+    @Mock MinuteCandleService minuteCandleService;
 
     @InjectMocks
     MarketService marketService;
@@ -242,7 +243,7 @@ class MarketServiceTest {
                 new CandleResponse("20250425", 80000L, 82000L, 79500L, 81000L, 12000000L)
         );
         when(kisPlatformTokenService.getAccessToken()).thenReturn("platform-token");
-        when(kisCandleClient.getCandles("platform-token", "005930", "D", null, null))
+        when(kisCandleClient.getDailyCandles("platform-token", "005930", "D", null, null))
                 .thenReturn(mockCandles);
 
         // when
@@ -256,14 +257,13 @@ class MarketServiceTest {
     }
 
     @Test
-    @DisplayName("분봉 캔들 조회 성공")
+    @DisplayName("분봉 캔들 조회 — MinuteCandleService 경유")
     void 분봉_캔들_조회_성공() {
         // given
         List<CandleResponse> mockCandles = List.of(
-                new CandleResponse("090000", 81000L, 81500L, 80800L, 81200L, 500000L)
+                new CandleResponse("20260520090000", 81000L, 81500L, 80800L, 81200L, 500000L)
         );
-        when(kisPlatformTokenService.getAccessToken()).thenReturn("platform-token");
-        when(kisCandleClient.getCandles("platform-token", "005930", "5", null, null))
+        when(minuteCandleService.getMinuteCandles("005930", "5", null, null))
                 .thenReturn(mockCandles);
 
         // when
@@ -272,6 +272,7 @@ class MarketServiceTest {
         // then
         assertThat(result.period()).isEqualTo("5");
         assertThat(result.candles()).hasSize(1);
+        verify(minuteCandleService).getMinuteCandles("005930", "5", null, null);
     }
 
     @Test
@@ -279,7 +280,7 @@ class MarketServiceTest {
     void 캔들_데이터_없으면_빈_목록() {
         // given
         when(kisPlatformTokenService.getAccessToken()).thenReturn("platform-token");
-        when(kisCandleClient.getCandles("platform-token", "005930", "D", null, null))
+        when(kisCandleClient.getDailyCandles("platform-token", "005930", "D", null, null))
                 .thenReturn(List.of());
 
         // when
@@ -294,14 +295,14 @@ class MarketServiceTest {
     void 날짜_파라미터_전달_확인() {
         // given
         when(kisPlatformTokenService.getAccessToken()).thenReturn("platform-token");
-        when(kisCandleClient.getCandles("platform-token", "005930", "D", "20250101", "20250426"))
+        when(kisCandleClient.getDailyCandles("platform-token", "005930", "D", "20250101", "20250426"))
                 .thenReturn(List.of());
 
         // when
         marketService.getCandleData("005930", "D", "20250101", "20250426");
 
         // then
-        verify(kisCandleClient).getCandles("platform-token", "005930", "D", "20250101", "20250426");
+        verify(kisCandleClient).getDailyCandles("platform-token", "005930", "D", "20250101", "20250426");
     }
 
     // ── 종목별 뉴스 조회 ────────────────────────────────────────────────────────
