@@ -1,4 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { getStockDetail } from '../api/market';
 import { discoveryMockData, DISCOVERY_FILTERS } from '../mocks/discoveryMock';
 import './DiscoveryPage.css';
 
@@ -73,12 +75,21 @@ function FilterChips({ active, onChange }) {
   );
 }
 
-function StockCard({ stock, tier }) {
-  const isUp = stock.changePct > 0;
-  const isDown = stock.changePct < 0;
+function StockCard({ stock, tier, livePrices = {} }) {
+  const navigate = useNavigate();
+  const live = livePrices[stock.stockCode];
+  const currentPrice = (live && live.price > 0) ? live.price : stock.price;
+  const currentChangePct = (live && live.changePct != null) ? live.changePct : stock.changePct;
+
+  const isUp = currentChangePct > 0;
+  const isDown = currentChangePct < 0;
 
   return (
-    <article className={`stock-card stock-card-${tier}`}>
+    <article
+      className={`stock-card stock-card-${tier}`}
+      onClick={() => navigate(`/trading?stock=${stock.stockCode}`)}
+      style={{ cursor: 'pointer' }}
+    >
       <header className="stock-card-header">
         <h3 className="stock-card-name">{stock.stockName}</h3>
         <div className="stock-card-meta">
@@ -91,9 +102,9 @@ function StockCard({ stock, tier }) {
       </header>
 
       <div className="stock-card-price-row">
-        <span className="stock-card-price">{formatPrice(stock.price)}</span>
+        <span className="stock-card-price">{formatPrice(currentPrice)}</span>
         <span className={`stock-card-change ${isUp ? 'up' : ''} ${isDown ? 'down' : ''}`}>
-          {formatChangePct(stock.changePct)}
+          {formatChangePct(currentChangePct)}
         </span>
       </div>
 
@@ -190,11 +201,8 @@ export default function DiscoveryPage() {
 
       <section className="discovery-recommend-header">
         <div className="discovery-recommend-title-group">
-          <p className="discovery-recommend-eyebrow">
-            오늘의 추천 <span className="discovery-hero-dot">·</span> {data.recommendedAt}
-          </p>
           <h1 className="discovery-recommend-title">
-            당신을 위한 <em>{data.totalCount}개</em> 종목
+            당신을 위한 <em>{data.totalCount}</em>개 종목
           </h1>
         </div>
         <div className="discovery-recommend-controls">

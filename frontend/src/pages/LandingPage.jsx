@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Spline from '@splinetool/react-spline';
 import { ArrowRight } from 'lucide-react';
+import dashboardImg from '../assets/dashboard.png';
 import tradingImg from '../assets/trading.png';
+import aiImg from '../assets/ai.png';
+import stockImg from '../assets/stock.png';
+import discoveryImg from '../assets/discovery.png';
 import './LandingPage.css';
 
 export default function LandingPage() {
@@ -35,7 +39,7 @@ export default function LandingPage() {
         <div className={`spline-bg ${isSplineLoaded ? 'loaded' : ''}`}>
           <div className="spline-fallback" aria-hidden="true" />
           <Spline
-            scene="https://prod.spline.design/6Wq1Q7YGyM-iab9i/scene.splinecode"
+            scene="https://prod.spline.design/ZPgpwWX110LhBG0e/scene.splinecode"
             onLoad={() => setIsSplineLoaded(true)}
           />
         </div>
@@ -101,9 +105,70 @@ export default function LandingPage() {
       {/* 3. 서비스 미리보기 섹션 */}
       <section className="sneak-peek-section">
         <h2 className="section-title fade-in-section">모든 것을 한눈에.</h2>
-        <div className="fade-in-section">
-          <div className="mockup-wrapper">
-            <img src={tradingImg} alt="MODU 대시보드 화면" className="mockup-image" />
+        <div className="sneak-peek-grid">
+          <div className="fade-in-section sneak-peek-item">
+            <ThreeDCard>
+              <img src={dashboardImg} alt="MODU 대시보드 화면" className="mockup-image" />
+            </ThreeDCard>
+            <div className="mockup-info">
+              <h3 className="mockup-info-title">투자 대시보드</h3>
+              <p className="mockup-info-desc">
+                나의 투자 성향 분석 결과와 연동된 한국투자증권 자산 현황,<br />
+                그리고 가동 중인 AI 에이전트들의 성과를 한눈에 통제하고 관리하세요.
+              </p>
+            </div>
+          </div>
+
+          <div className="fade-in-section sneak-peek-item">
+            <ThreeDCard>
+              <img src={tradingImg} alt="MODU 트레이딩 룸 화면" className="mockup-image" />
+            </ThreeDCard>
+            <div className="mockup-info">
+              <h3 className="mockup-info-title">트레이딩 룸</h3>
+              <p className="mockup-info-desc">
+                호가창과 차트를 실시간으로 모니터링하며,<br />
+                AI 에이전트가 제시하는 포지션을 직접 수행하거나 수동으로 자유롭게 거래할 수 있습니다.
+              </p>
+            </div>
+          </div>
+
+          <div className="fade-in-section sneak-peek-item">
+            <ThreeDCard>
+              <img src={aiImg} alt="MODU AI 에이전트 협업 회의실 화면" className="mockup-image" />
+            </ThreeDCard>
+            <div className="mockup-info">
+              <h3 className="mockup-info-title">AI 에이전트 회의실</h3>
+              <p className="mockup-info-desc">
+                나의 투자 성향을 학습한 AI 에이전트들의 투자 전략을 확인하고,<br />
+                에이전트가 제안하는 매수/매도 판단을 검토하고 승인해보세요.
+              </p>
+            </div>
+          </div>
+
+          <div className="fade-in-section sneak-peek-item">
+            <ThreeDCard>
+              <img src={stockImg} alt="MODU 종목 상세 화면" className="mockup-image" />
+            </ThreeDCard>
+            <div className="mockup-info">
+              <h3 className="mockup-info-title">종목 분석</h3>
+              <p className="mockup-info-desc">
+                다양한 기술 지표와 종목 특화 뉴스를 기반으로<br />
+                AI가 제공하는 정교한 종목 정보 및 체결 강도 지표를 확인하세요.
+              </p>
+            </div>
+          </div>
+
+          <div className="fade-in-section sneak-peek-item">
+            <ThreeDCard>
+              <img src={discoveryImg} alt="MODU 종목 추천 화면" className="mockup-image" />
+            </ThreeDCard>
+            <div className="mockup-info">
+              <h3 className="mockup-info-title">테마 종목 추천</h3>
+              <p className="mockup-info-desc">
+                시장 트렌드에 빠르게 대응하는 AI 에이전트들이<br />
+                유망한 종목들을 추천 사유와 함께 제공합니다.
+              </p>
+            </div>
           </div>
         </div>
       </section>
@@ -126,6 +191,62 @@ export default function LandingPage() {
           시작하기
         </button>
       </section>
+    </div>
+  );
+}
+
+// Aceternity UI 스타일의 순수 하드웨어 가속 3D 카드 효과 컴포넌트
+function ThreeDCard({ children }) {
+  const cardRef = useRef(null);
+  const [rotateX, setRotateX] = useState(0);
+  const [rotateY, setRotateY] = useState(0);
+
+  const handleMouseMove = (e) => {
+    if (!cardRef.current) return;
+    const card = cardRef.current;
+    const rect = card.getBoundingClientRect();
+    const width = rect.width;
+    const height = rect.height;
+
+    // 카드 중앙 대비 마우스 좌표 계산
+    const mouseX = e.clientX - rect.left - width / 2;
+    const mouseY = e.clientY - rect.top - height / 2;
+
+    // 최대 12도까지 부드럽게 틸팅 각도 비례 제어
+    const rY = (mouseX / (width / 2)) * 12;
+    const rX = -(mouseY / (height / 2)) * 12;
+
+    setRotateX(rX);
+    setRotateY(rY);
+  };
+
+  const handleMouseLeave = () => {
+    setRotateX(0);
+    setRotateY(0);
+  };
+
+  // 마우스가 떠날 때는 부드럽게 0.6초 스프링 감각으로 돌아오고, 움직일 때는 쫀득하게 따라오도록 조절
+  const isDefault = rotateX === 0 && rotateY === 0;
+  const transitionStyle = isDefault
+    ? 'transform 0.6s cubic-bezier(0.16, 1, 0.3, 1)'
+    : 'transform 0.08s ease-out';
+
+  return (
+    <div
+      ref={cardRef}
+      className="mockup-wrapper"
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      style={{
+        transform: `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg)`,
+        transition: transitionStyle,
+        transformStyle: 'preserve-3d',
+      }}
+    >
+      {/* 3D 뎁스 효과를 위해 자식(이미지)에 transform: translateZ를 주기 위해 마운팅 */}
+      <div style={{ transform: 'translateZ(20px)', transformStyle: 'preserve-3d' }}>
+        {children}
+      </div>
     </div>
   );
 }

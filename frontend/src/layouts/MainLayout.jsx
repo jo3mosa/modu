@@ -425,11 +425,9 @@ export default function MainLayout() {
           <button className="sidebar-menu-btn" onClick={toggleSidebar} aria-label="사이드바 토글">
             <Menu size={22} />
           </button>
-          {!isSidebarCollapsed && (
-            <Link to="/home" style={{ textDecoration: 'none', color: 'inherit' }} className="sidebar-logo-text">
-              <h2 className="brand-font">MODU</h2>
-            </Link>
-          )}
+          <Link to="/home" className="sidebar-logo-text">
+            <h2 className="brand-font">MODU</h2>
+          </Link>
         </div>
         <nav className="sidebar-nav">
           {menuItems.map((item) => (
@@ -584,16 +582,16 @@ export default function MainLayout() {
                       마이페이지
                     </button>
                     <button
-                      className="profile-popup-item disconnect"
-                      onClick={triggerDisconnectConfirm}
-                    >
-                      연동 해제
-                    </button>
-                    <button
                       className="profile-popup-item logout"
                       onClick={triggerLogoutConfirm}
                     >
                       로그아웃
+                    </button>
+                    <button
+                      className="profile-popup-item disconnect"
+                      onClick={triggerDisconnectConfirm}
+                    >
+                      연동 해제
                     </button>
                   </div>
                 </div>

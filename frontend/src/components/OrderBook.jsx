@@ -896,29 +896,65 @@ export default function OrderBook({ stockCode }) {
 
                     {/* 인라인 정정 폼: 해당 주문 클릭 시 펼쳐짐 */}
                     {modifyingOrder?.orderId === order.orderId && (
-                      <div className="modify-form">
-                        <div className="modify-inputs">
-                          <div className="modify-input-group">
-                            <label>단가</label>
-                            <input
-                              type="number"
-                              min={1}
-                              value={modifyingOrder.newPrice}
-                              onChange={(e) =>
-                                setModifyingOrder((prev) => ({ ...prev, newPrice: e.target.value }))
-                              }
-                            />
+                      <div className="modify-form" style={{ marginTop: '0.75rem', background: 'rgba(255, 255, 255, 0.02)', padding: '0.75rem', borderRadius: '6px' }}>
+                        <div className="modify-inputs" style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                          <div className="modify-input-group" style={{ flex: 1 }}>
+                            <label style={{ fontSize: '0.85rem', color: '#aaa', display: 'block', marginBottom: '0.3rem' }}>단가</label>
+                            <div className="price-control-container">
+                              <input
+                                type="number"
+                                className="price-field"
+                                value={modifyingOrder.newPrice}
+                                onChange={(e) =>
+                                  setModifyingOrder((prev) => ({ ...prev, newPrice: Number(e.target.value) }))
+                                }
+                              />
+                              <div className="price-btn-group">
+                                <button
+                                  type="button"
+                                  className="price-step-btn minus"
+                                  onClick={() => setModifyingOrder(prev => ({ ...prev, newPrice: Math.max(1, (Number(prev.newPrice) || 0) - 100) }))}
+                                >
+                                  -
+                                </button>
+                                <button
+                                  type="button"
+                                  className="price-step-btn plus"
+                                  onClick={() => setModifyingOrder(prev => ({ ...prev, newPrice: (Number(prev.newPrice) || 0) + 100 }))}
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </div>
                           </div>
-                          <div className="modify-input-group">
-                            <label>수량</label>
-                            <input
-                              type="number"
-                              min={1}
-                              value={modifyingOrder.newQuantity}
-                              onChange={(e) =>
-                                setModifyingOrder((prev) => ({ ...prev, newQuantity: e.target.value }))
-                              }
-                            />
+                          <div className="modify-input-group" style={{ flex: 1 }}>
+                            <label style={{ fontSize: '0.85rem', color: '#aaa', display: 'block', marginBottom: '0.3rem' }}>수량</label>
+                            <div className="price-control-container">
+                              <input
+                                type="number"
+                                className="price-field"
+                                value={modifyingOrder.newQuantity}
+                                onChange={(e) =>
+                                  setModifyingOrder((prev) => ({ ...prev, newQuantity: Number(e.target.value) }))
+                                }
+                              />
+                              <div className="price-btn-group">
+                                <button
+                                  type="button"
+                                  className="price-step-btn minus"
+                                  onClick={() => setModifyingOrder(prev => ({ ...prev, newQuantity: Math.max(1, (Number(prev.newQuantity) || 1) - 1) }))}
+                                >
+                                  -
+                                </button>
+                                <button
+                                  type="button"
+                                  className="price-step-btn plus"
+                                  onClick={() => setModifyingOrder(prev => ({ ...prev, newQuantity: (Number(prev.newQuantity) || 1) + 1 }))}
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </div>
                           </div>
                         </div>
                         <div className="modify-actions">
@@ -951,7 +987,7 @@ export default function OrderBook({ stockCode }) {
       <ConfirmDialog
         open={!!cancelConfirm}
         title="주문 취소"
-        message={cancelConfirm ? `주문(${cancelConfirm.orderId})을 취소하시겠습니까?` : ''}
+        message={cancelConfirm ? '주문을 취소하시겠습니까?' : ''}
         confirmLabel="주문 취소"
         cancelLabel="닫기"
         variant="danger"

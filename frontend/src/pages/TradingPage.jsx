@@ -481,7 +481,7 @@ export default function TradingPage() {
                 <button
                   type="button"
                   className="pagination-btn arrow"
-                  disabled={currentPage === 1 || isLoadingStocks}
+                  disabled={currentPage === 1}
                   onClick={() => {
                     setCurrentPage((prev) => Math.max(prev - 1, 1));
                     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -498,7 +498,6 @@ export default function TradingPage() {
                       key={pageNum}
                       type="button"
                       className={`pagination-btn num ${isActive ? 'active' : ''}`}
-                      disabled={isLoadingStocks}
                       onClick={() => {
                         setCurrentPage(pageNum);
                         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -512,7 +511,7 @@ export default function TradingPage() {
                 <button
                   type="button"
                   className="pagination-btn arrow"
-                  disabled={currentPage === Math.ceil(allStocksList.length / pageSize) || isLoadingStocks}
+                  disabled={currentPage === Math.ceil(allStocksList.length / pageSize)}
                   onClick={() => {
                     setCurrentPage((prev) => Math.min(prev + 1, Math.ceil(allStocksList.length / pageSize)));
                     window.scrollTo({ top: 0, behavior: 'smooth' });
