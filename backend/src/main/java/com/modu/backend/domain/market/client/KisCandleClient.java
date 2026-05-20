@@ -17,7 +17,6 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +40,8 @@ public class KisCandleClient {
     private static final int MAX_PAGE_ITER = 50;
     // 장 마감 시각 — endDate 기준 페이징 시작 커서
     private static final String DEFAULT_END_TIME = "153000";
+    // KIS 실전 rate limit (초당 20건) 대비 페이징 호출 간격 — 실전 안전 마진 포함
+    private static final long PAGING_SLEEP_MS = 50L;
 
     private final RestClient kisRestClient;
     private final KisApiProperties kisApiProperties;
@@ -50,19 +51,18 @@ public class KisCandleClient {
         this.kisApiProperties = kisApiProperties;
     }
 
-    public List<CandleResponse> getCandles(String accessToken, String stockCode,
-                                           String period, String startDate, String endDate) {
+    // 일봉/주봉/월봉만 처리 — 분봉은 MinuteCandleService 가 캐시 + KIS 보충 후 호출
+    public List<CandleResponse> getDailyCandles(String accessToken, String stockCode,
+                                                String period, String startDate, String endDate) {
         String resolvedEnd = (endDate != null) ? endDate : LocalDate.now(KST).format(DATE_FMT);
-
         return switch (period) {
-            case "D", "W", "M" -> getDailyCandles(accessToken, stockCode, period, startDate, resolvedEnd);
-            case "1", "5", "60" -> getMinuteCandles(accessToken, stockCode, period, startDate, resolvedEnd);
+            case "D", "W", "M" -> getDailyCandlesInternal(accessToken, stockCode, period, startDate, resolvedEnd);
             default -> throw new ApiException(MarketErrorCode.INVALID_CANDLE_PERIOD);
         };
     }
 
-    private List<CandleResponse> getDailyCandles(String accessToken, String stockCode,
-                                                 String period, String startDate, String endDate) {
+    private List<CandleResponse> getDailyCandlesInternal(String accessToken, String stockCode,
+                                                          String period, String startDate, String endDate) {
         String resolvedStart = (startDate != null) ? startDate : defaultStartDate(period);
 
         try {
@@ -116,38 +116,47 @@ public class KisCandleClient {
         }
     }
 
-    // KIS 213(일별분봉조회) 단일 경로 — startDate 미지정 시 endDate 하루치만 조회
-    private List<CandleResponse> getMinuteCandles(String accessToken, String stockCode,
-                                                  String period, String startDate, String endDate) {
-        String resolvedStart = (startDate != null) ? startDate : endDate;
+    // KIS 213 raw 페이징 결과 노출 — 캐시 레이어가 일자 단위 적재용으로 사용
+    public MinuteCandlePage fetchRawMinuteCandles(String accessToken, String stockCode,
+                                                   String startDate, String endDate) {
+        return fetchMinuteCandlesWithPaging(accessToken, stockCode, startDate, endDate);
+    }
 
-        List<CandleResponse> raw = fetchMinuteCandlesWithPaging(accessToken, stockCode, resolvedStart, endDate);
+    // 페이징 결과 — completed=false 면 rate limit/오류로 중간에 끊긴 부분 응답
+    public record MinuteCandlePage(List<CandleResponse> candles, boolean completed) {}
 
-        // 범위 필터 (페이징이 startDate 직전까지 over-fetch 가능)
-        List<CandleResponse> filtered = new ArrayList<>();
-        for (CandleResponse c : raw) {
-            String ts = c.timestamp();
-            if (ts == null || ts.length() < 8) continue;
-            String date = ts.substring(0, 8);
-            if (date.compareTo(resolvedStart) < 0 || date.compareTo(endDate) > 0) continue;
-            filtered.add(c);
-        }
-
-        // KIS 응답은 최신→과거 역순 — FE 호환을 위해 오름차순 정렬
-        filtered.sort(Comparator.comparing(CandleResponse::timestamp));
-
-        return aggregateMinuteCandles(filtered, period);
+    // 분봉 aggregate(5/60분) 진입점 — 캐시 레이어에서 호출
+    public List<CandleResponse> aggregate(List<CandleResponse> candles, String period) {
+        return aggregateMinuteCandles(candles, period);
     }
 
     // 213 페이징 — endDate+153000부터 시작, 응답 마지막(가장 오래된) 캔들 -1분으로 커서 이동
-    private List<CandleResponse> fetchMinuteCandlesWithPaging(String accessToken, String stockCode,
-                                                              String startDate, String endDate) {
+    // rate limit 등으로 도중 실패 시 받은 데이터까지 + completed=false 로 반환
+    private MinuteCandlePage fetchMinuteCandlesWithPaging(String accessToken, String stockCode,
+                                                          String startDate, String endDate) {
         List<CandleResponse> accumulated = new ArrayList<>();
         String cursorDate = endDate;
         String cursorTime = DEFAULT_END_TIME;
 
         for (int i = 0; i < MAX_PAGE_ITER; i++) {
-            MinuteChartResponse response = callMinuteApi(accessToken, stockCode, cursorDate, cursorTime);
+            if (i > 0) {
+                try {
+                    Thread.sleep(PAGING_SLEEP_MS);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    return new MinuteCandlePage(accumulated, false);
+                }
+            }
+
+            MinuteChartResponse response;
+            try {
+                response = callMinuteApi(accessToken, stockCode, cursorDate, cursorTime);
+            } catch (ApiException ex) {
+                log.warn("KIS minute candle paging interrupted - stockCode: {}, page: {}, accumulated: {} candles",
+                        stockCode, i, accumulated.size());
+                return new MinuteCandlePage(accumulated, false);
+            }
+
             if (response.output2() == null || response.output2().isEmpty()) break;
 
             List<CandleResponse> page = response.output2().stream()
@@ -179,7 +188,7 @@ public class KisCandleClient {
             cursorTime = next[1];
         }
 
-        return accumulated;
+        return new MinuteCandlePage(accumulated, true);
     }
 
     private MinuteChartResponse callMinuteApi(String accessToken, String stockCode,
