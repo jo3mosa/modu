@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -41,9 +42,14 @@ public class MinuteCandleService {
     private static final DateTimeFormatter TS_FMT = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
+    private static final Duration LOCK_TTL = Duration.ofSeconds(10);
+    private static final long LOCK_POLL_INTERVAL_MS = 200L;
+    private static final int LOCK_POLL_RETRY = 3;
+
     private final KisCandleClient kisCandleClient;
     private final StockMinuteCandleRepository repository;
     private final KisPlatformTokenService kisPlatformTokenService;
+    private final KisMinuteCandleLockService lockService;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public List<CandleResponse> getMinuteCandles(String stockCode, String period,
@@ -54,53 +60,21 @@ public class MinuteCandleService {
         LocalDate endD = LocalDate.parse(resolvedEnd, DATE_FMT);
         LocalDate today = LocalDate.now(KST);
 
-        Set<LocalDate> loaded = repository.findLoadedDates(stockCode, startD, endD);
-        List<LocalDate> missing = new ArrayList<>();
-        boolean todayRequested = false;
-        for (LocalDate d = startD; !d.isAfter(endD); d = d.plusDays(1)) {
-            if (d.equals(today)) {
-                todayRequested = true;
-                continue;
-            }
-            if (!loaded.contains(d)) missing.add(d);
-        }
-
+        MissingInfo missingInfo = computeMissing(stockCode, startD, endD, today);
         List<CandleResponse> todayFromKis = List.of();
-        if (!missing.isEmpty() || todayRequested) {
-            LocalDate kisStart = missing.isEmpty() ? today : missing.get(0);
-            String accessToken = kisPlatformTokenService.getAccessToken();
-            KisCandleClient.MinuteCandlePage page = kisCandleClient.fetchRawMinuteCandles(
-                    accessToken, stockCode, kisStart.format(DATE_FMT), endD.format(DATE_FMT));
 
-            Map<LocalDate, List<CandleResponse>> grouped = groupByDate(page.candles());
-
-            // 부분 응답이면 가장 오래된 일자(페이징이 끊긴 지점)는 마커 박지 않음 — 다음 호출에서 재시도 보장
-            LocalDate partialDate = (!page.completed() && !grouped.isEmpty())
-                    ? grouped.keySet().stream().min(LocalDate::compareTo).orElse(null)
-                    : null;
-
-            for (Map.Entry<LocalDate, List<CandleResponse>> entry : grouped.entrySet()) {
-                LocalDate date = entry.getKey();
-                if (date.equals(today)) continue;
-                if (date.isBefore(startD) || date.isAfter(endD)) continue;
-                List<CandleResponse> dayCandles = entry.getValue();
-                repository.saveCandles(stockCode, dayCandles);
-                if (!date.equals(partialDate)) {
-                    repository.markLoaded(stockCode, date, dayCandles.size());
-                }
+        if (missingInfo.needsKis()) {
+            boolean acquired = lockService.tryLock(stockCode, LOCK_TTL);
+            if (!acquired) {
+                // 다른 pod 이 KIS 호출 중 — 짧게 polling 으로 적재 완료 대기
+                missingInfo = waitForOtherPodAndRecompute(stockCode, startD, endD, today);
             }
-
-            // 페이징 정상 종료 시: missing 중 응답에 없던 일자는 휴장일로 간주, 마커만 박음 (candle_count=0)
-            if (page.completed()) {
-                for (LocalDate d : missing) {
-                    if (!grouped.containsKey(d) && !d.isAfter(today)) {
-                        repository.markLoaded(stockCode, d, 0);
-                    }
+            try {
+                if (missingInfo.needsKis()) {
+                    todayFromKis = fetchAndStoreFromKis(stockCode, startD, endD, today, missingInfo);
                 }
-            }
-
-            if (todayRequested && grouped.containsKey(today)) {
-                todayFromKis = grouped.get(today);
+            } finally {
+                if (acquired) lockService.unlock(stockCode);
             }
         }
 
@@ -112,6 +86,80 @@ public class MinuteCandleService {
         merged.sort(Comparator.comparing(CandleResponse::timestamp));
 
         return kisCandleClient.aggregate(merged, period);
+    }
+
+    private MissingInfo computeMissing(String stockCode, LocalDate startD, LocalDate endD, LocalDate today) {
+        Set<LocalDate> loaded = repository.findLoadedDates(stockCode, startD, endD);
+        List<LocalDate> missing = new ArrayList<>();
+        boolean todayRequested = false;
+        for (LocalDate d = startD; !d.isAfter(endD); d = d.plusDays(1)) {
+            if (d.equals(today)) {
+                todayRequested = true;
+                continue;
+            }
+            if (!loaded.contains(d)) missing.add(d);
+        }
+        return new MissingInfo(missing, todayRequested);
+    }
+
+    private MissingInfo waitForOtherPodAndRecompute(String stockCode, LocalDate startD, LocalDate endD, LocalDate today) {
+        for (int i = 0; i < LOCK_POLL_RETRY; i++) {
+            try {
+                Thread.sleep(LOCK_POLL_INTERVAL_MS);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+            MissingInfo recomputed = computeMissing(stockCode, startD, endD, today);
+            if (!recomputed.needsKis()) {
+                log.debug("Minute candle 락 polling 으로 적재 완료 감지 - stockCode: {}", stockCode);
+                return recomputed;
+            }
+        }
+        // 락 hang / 다른 pod 실패 케이스 대비 fallback — 락 없이 직접 KIS 호출
+        log.warn("Minute candle 락 polling 후에도 missing 잔존 — fallback 직접 호출, stockCode: {}", stockCode);
+        return computeMissing(stockCode, startD, endD, today);
+    }
+
+    private List<CandleResponse> fetchAndStoreFromKis(String stockCode, LocalDate startD, LocalDate endD,
+                                                      LocalDate today, MissingInfo info) {
+        LocalDate kisStart = info.missing().isEmpty() ? today : info.missing().get(0);
+        String accessToken = kisPlatformTokenService.getAccessToken();
+        KisCandleClient.MinuteCandlePage page = kisCandleClient.fetchRawMinuteCandles(
+                accessToken, stockCode, kisStart.format(DATE_FMT), endD.format(DATE_FMT));
+
+        Map<LocalDate, List<CandleResponse>> grouped = groupByDate(page.candles());
+
+        LocalDate partialDate = (!page.completed() && !grouped.isEmpty())
+                ? grouped.keySet().stream().min(LocalDate::compareTo).orElse(null)
+                : null;
+
+        for (Map.Entry<LocalDate, List<CandleResponse>> entry : grouped.entrySet()) {
+            LocalDate date = entry.getKey();
+            if (date.equals(today)) continue;
+            if (date.isBefore(startD) || date.isAfter(endD)) continue;
+            List<CandleResponse> dayCandles = entry.getValue();
+            repository.saveCandles(stockCode, dayCandles);
+            if (!date.equals(partialDate)) {
+                repository.markLoaded(stockCode, date, dayCandles.size());
+            }
+        }
+
+        if (page.completed()) {
+            for (LocalDate d : info.missing()) {
+                if (!grouped.containsKey(d) && !d.isAfter(today)) {
+                    repository.markLoaded(stockCode, d, 0);
+                }
+            }
+        }
+
+        return (info.todayRequested() && grouped.containsKey(today)) ? grouped.get(today) : List.of();
+    }
+
+    private record MissingInfo(List<LocalDate> missing, boolean todayRequested) {
+        boolean needsKis() {
+            return !missing.isEmpty() || todayRequested;
+        }
     }
 
     private Map<LocalDate, List<CandleResponse>> groupByDate(List<CandleResponse> candles) {
