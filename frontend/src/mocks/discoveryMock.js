@@ -215,6 +215,5 @@ export const DISCOVERY_FILTERS = [
   { key: 'ALL', label: '전체' },
   { key: '모멘텀', label: '모멘텀' },
   { key: '가치', label: '가치' },
-  { key: '배당', label: '배당' },
   { key: '이슈', label: '이슈' },
 ];

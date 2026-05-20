@@ -23,9 +23,6 @@ function ProfileHero({ user, tierCounts }) {
           <span className="discovery-hero-grade-tier">{user.riskGrade}</span>
           <span className="discovery-hero-grade-label">{user.riskLabel}</span>
         </div>
-        <p className="discovery-hero-desc">
-          성장주 OK. 변동성 6% 또는 고성장 시그널.
-        </p>
         <p className="discovery-hero-note">
           현재 등급으로 <strong>{TIER_ORDER.slice(0, TIER_ORDER.indexOf(user.riskGrade) + 1).join('·')}</strong> 종목을 추천받습니다.{' '}
           <a className="discovery-hero-link" href="/risk-manage">등급 변경 →</a>
@@ -122,10 +119,6 @@ function StockCard({ stock, tier }) {
         <div>
           <dt>PER</dt>
           <dd>{stock.metrics.per.toFixed(1)}</dd>
-        </div>
-        <div>
-          <dt>배당</dt>
-          <dd>{stock.metrics.dividendYield.toFixed(1)}%</dd>
         </div>
       </dl>
 
