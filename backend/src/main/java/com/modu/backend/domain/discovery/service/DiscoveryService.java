@@ -44,6 +44,9 @@ public class DiscoveryService {
 
     private final InvestmentProfileRepository investmentProfileRepository;
     private final DiscoveryQueryRepository discoveryQueryRepository;
+    private final RecommendationTagMapper tagMapper;
+    private final RecommendationFilterMatcher filterMatcher;
+    private final RecommendationReasonBuilder reasonBuilder;
 
     @Transactional(readOnly = true)
     public DiscoveryResponse getRecommendations(Long userId, int perTier) {
@@ -113,6 +116,10 @@ public class DiscoveryService {
                 ? row.priceDate().atStartOfDay(KST).toOffsetDateTime()
                 : null;
 
+        List<String> tags = tagMapper.mapTags(row);
+        List<String> filters = filterMatcher.matchFilters(row);
+        String reason = reasonBuilder.build(row, tags);
+
         return new StockRecommendationResponse(
                 row.stockCode(),
                 row.stockName(),
@@ -120,15 +127,15 @@ public class DiscoveryService {
                 row.sector(),
                 row.price(),
                 computeChangePct(row.price(), row.prevClose()),
-                null,                  // reason — 3단계
-                List.of(),             // tags — 3단계
+                reason,
+                tags,
                 new StockMetricsResponse(
                         row.atrRatio() != null ? row.atrRatio() * 100.0 : null, // ratio → %
                         row.roe(),
                         row.per(),
                         null  // dividendYield — 데이터 부재
                 ),
-                List.of(),             // filters — 3단계
+                filters,
                 updatedAt
         );
     }
