@@ -8,7 +8,17 @@ pipeline {
     // 사용 가능한 모든 Jenkins 에이전트에서 실행
     agent any
 
+    options {
+        // 같은 브랜치(Job)의 빌드가 동시에 돌면 같은 Docker 데몬/CPU를 두고 경쟁해
+        // 빌드가 느려지고, post 의 prune 이 서로 충돌(아래 always 참고)하므로 직렬화한다.
+        disableConcurrentBuilds()
+    }
+
     environment {
+        // BuildKit 활성화 — Dockerfile 의 캐시 마운트(--mount=type=cache)로
+        // Gradle/npm 의존성을 빌드 간에 영속화해 재다운로드를 막는다.
+        DOCKER_BUILDKIT = '1'
+
         // ── 인프라 공통 설정 ──────────────────────────────────
         // AWS 리전
         AWS_REGION     = 'ap-northeast-2'
@@ -323,8 +333,10 @@ ${env.ERROR_DETAILS}""")
         }
 
         // 성공/실패 관계없이 항상 실행 — 미사용 Docker 이미지 정리
+        // '|| true': 다른 빌드가 동시에 prune 중이면 "a prune operation is already running"
+        //            에러로 exit 1 → 정상 빌드가 FAILURE 로 오인되므로 정리 실패는 무시한다.
         always {
-            sh "docker image prune -f"
+            sh "docker image prune -f || true"
         }
     }
 }

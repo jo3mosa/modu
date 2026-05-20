@@ -1,0 +1,13 @@
+# 의존성·빌드 산출물 (컨테이너 내부에서 npm ci / npm run build 로 새로 생성됨)
+node_modules/
+dist/
+
+# 환경파일 (.env.production 은 Dockerfile 에서 build-arg 로 생성)
+.env
+.env.local
+.env.production
+
+# IDE / 로그
+.idea/
+.vscode/
+*.log

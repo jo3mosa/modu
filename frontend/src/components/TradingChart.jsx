@@ -3,6 +3,7 @@ import { createChart } from 'lightweight-charts';
 import { SMA, BollingerBands, RSI, MACD } from 'technicalindicators';
 import { getStockCandles } from '../api/market';
 import { getOrderHistory } from '../api/order';
+import { getPortfolio } from '../api/account';
 import { buildStockWsUrl } from '../api/wsUrl';
 import './TradingChart.css';
 
