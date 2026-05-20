@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { discoveryMockData, DISCOVERY_FILTERS } from '../mocks/discoveryMock';
 import './DiscoveryPage.css';
 
@@ -74,11 +75,16 @@ function FilterChips({ active, onChange }) {
 }
 
 function StockCard({ stock, tier }) {
+  const navigate = useNavigate();
   const isUp = stock.changePct > 0;
   const isDown = stock.changePct < 0;
 
   return (
-    <article className={`stock-card stock-card-${tier}`}>
+    <article
+      className={`stock-card stock-card-${tier}`}
+      onClick={() => navigate(`/trading?stock=${stock.stockCode}`)}
+      style={{ cursor: 'pointer' }}
+    >
       <header className="stock-card-header">
         <h3 className="stock-card-name">{stock.stockName}</h3>
         <div className="stock-card-meta">
@@ -190,9 +196,6 @@ export default function DiscoveryPage() {
 
       <section className="discovery-recommend-header">
         <div className="discovery-recommend-title-group">
-          <p className="discovery-recommend-eyebrow">
-            오늘의 추천 <span className="discovery-hero-dot">·</span> {data.recommendedAt}
-          </p>
           <h1 className="discovery-recommend-title">
             당신을 위한 <em>{data.totalCount}</em>개 종목
           </h1>
