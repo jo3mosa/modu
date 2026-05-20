@@ -30,7 +30,22 @@
   margin-left: -2.5%;
   margin-top: -2.5%;
   z-index: 1;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 1.2s ease-out;
+}
+
+.spline-bg.loaded {
   opacity: 0.7;
+}
+
+/* Spline 씬 로드되기 전 휑한 검은 화면을 막아주는 그라데이션 폴백 — loaded 클래스가 붙으면 자연스럽게 사라짐 */
+.spline-fallback {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 30% 30%, rgba(132, 204, 22, 0.08), transparent 55%),
+    radial-gradient(circle at 75% 70%, rgba(59, 130, 246, 0.08), transparent 55%);
   pointer-events: none;
 }
 
@@ -53,8 +68,49 @@
 .hero-subtitle {
   font-size: 1.25rem;
   color: var(--text-sub);
-  margin-bottom: 3rem;
+  margin-bottom: 2.5rem;
   line-height: 1.6;
+}
+
+/* Hero CTA — 주 버튼(채워진) + 보조 버튼(아웃라인) 가로 정렬 */
+.hero-cta-group {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+/* specificity 를 .cta-button(1) 보다 한 단계 올려야 흰색이 우선 적용된다 */
+.cta-button.hero-cta-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #ffffff;
+  color: #1a1a1a;
+}
+
+.cta-button.hero-cta-primary:hover {
+  background: #e5e5e5;
+  filter: none;
+  box-shadow: 0 8px 20px rgba(255, 255, 255, 0.18);
+}
+
+.hero-cta-secondary {
+  background: transparent;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  padding: 1rem 2rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  border-radius: 50px;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.hero-cta-secondary:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.5);
 }
 
 .cta-button {
@@ -112,11 +168,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 80px;
-  height: 80px;
+  width: 72px;
+  height: 72px;
   border-radius: 50%;
-  background: rgba(59, 130, 246, 0.1);
-  color: var(--primary);
+  background: linear-gradient(135deg, rgba(132, 204, 22, 0.12), rgba(59, 130, 246, 0.12));
+  color: #84cc16;
   margin-bottom: 1.5rem;
 }
 

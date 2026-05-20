@@ -12,7 +12,12 @@ export default function LoginPage() {
 
   const handleSocialLogin = (provider) => {
     if (provider === 'kakao') {
-      const clientId = import.meta.env.VITE_KAKAO_CLIENT_ID || 'YOUR_KAKAO_REST_API_KEY';
+      const clientId = import.meta.env.VITE_KAKAO_CLIENT_ID;
+      // env 미설정 시 카카오 인증 페이지에서 에러로 직행하지 않도록 사전 차단
+      if (!clientId || clientId === 'YOUR_KAKAO_REST_API_KEY') {
+        setErrorMsg('카카오 로그인이 설정되지 않았습니다. 관리자에게 문의해주세요.');
+        return;
+      }
       const redirectUri = `${window.location.origin}/auth/callback/kakao`;
       const kakaoAuthUrl = `https://kauth.kakao.com/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code`;
       window.location.href = kakaoAuthUrl;
@@ -21,7 +26,10 @@ export default function LoginPage() {
 
   const handleTestLogin = async (e) => {
     e.preventDefault();
-    if (!userId.trim()) return;
+    if (!userId.trim()) {
+      setErrorMsg('사용자 ID를 입력해주세요.');
+      return;
+    }
 
     setIsLoading(true);
     setErrorMsg('');
@@ -49,7 +57,7 @@ export default function LoginPage() {
   return (
     <div className="login-container">
       <div className="login-card fade-in-section fade-in-visible">
-        <h1 className="login-title">MODU</h1>
+        <h1 className="login-title brand-font">MODU</h1>
         <p className="login-subtitle">당신의 투자를 모두와 함께.</p>
 
         <div className="social-login-group">
@@ -71,18 +79,18 @@ export default function LoginPage() {
           <div className="input-group">
             <input
               type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               id="userId"
               value={userId}
               onChange={(e) => setUserId(e.target.value)}
               placeholder="테스트 User ID (숫자)"
             />
-            {/* TODO: 연동 후 isLoading에 따라 비활성화 */}
             <button type="submit" className="test-login-btn" disabled={isLoading}>
               {isLoading ? '접속 중...' : '접속'}
             </button>
           </div>
-          {/* TODO: 연동 후 에러 메시지 표시 */}
-          {errorMsg && <p style={{ color: '#ef4444', fontSize: '0.9rem', marginTop: '0.5rem' }}>{errorMsg}</p>}
+          {errorMsg && <p className="login-error-msg" role="alert">{errorMsg}</p>}
         </form>
       </div>
     </div>

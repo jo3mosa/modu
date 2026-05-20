@@ -572,3 +572,27 @@
   border-radius: 8px;
 }
 
+/* AI 진행 상황 위젯 — 자동매매 OFF 상태 배지 */
+.ai-activity-off-badge {
+  background: rgba(136, 136, 136, 0.15);
+  border: 1px solid rgba(136, 136, 136, 0.35);
+  color: #999;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+/* 매매 로그 카드 — 클릭 가능 카드만 키보드 포커스 시각 표시 */
+.logs-panel .log-item-clickable:focus-visible {
+  outline: 2px solid #84cc16;
+  outline-offset: 2px;
+}
+
+/* Pie 도넛 조각에 클릭 핸들러를 붙였으니 hover 시 손가락 커서 노출 */
+.overview-chart svg path {
+  cursor: pointer;
+}
+

@@ -1,0 +1,76 @@
+/* 카카오 OAuth 콜백 페이지 — 다른 페이지(랜딩/로그인)와 동일한 다크 글래스 톤 */
+.kakao-callback-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background:
+    radial-gradient(circle at 30% 30%, rgba(132, 204, 22, 0.06), transparent 55%),
+    radial-gradient(circle at 75% 70%, rgba(59, 130, 246, 0.06), transparent 55%),
+    #0a0a0a;
+  font-family: 'Pretendard', sans-serif;
+}
+
+.kakao-callback-card {
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  padding: 3rem 2.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.9rem;
+  max-width: 420px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+}
+
+.kakao-callback-spinner {
+  color: #84cc16;
+  animation: kakao-callback-spin 1s linear infinite;
+}
+
+@keyframes kakao-callback-spin {
+  to { transform: rotate(360deg); }
+}
+
+.kakao-callback-icon-error {
+  color: #ef4444;
+}
+
+.kakao-callback-title {
+  color: #fff;
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin: 0.4rem 0 0;
+}
+
+.kakao-callback-desc {
+  color: #aaa;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  margin: 0;
+  word-break: keep-all;
+}
+
+.kakao-callback-btn {
+  margin-top: 0.8rem;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  padding: 0.7rem 1.6rem;
+  border-radius: 999px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.kakao-callback-btn:hover {
+  background: #84cc16;
+  border-color: #84cc16;
+  color: #1a1a1a;
+}

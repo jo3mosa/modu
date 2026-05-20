@@ -124,6 +124,15 @@
   border-color: #84cc16;
 }
 
+/* 인라인 style 로 박혀있던 에러 메시지를 디자인 시스템에 맞춰 분리 */
+.login-error-msg {
+  color: #ef4444;
+  font-size: 0.9rem;
+  margin: 0.6rem 0 0;
+  text-align: left;
+  line-height: 1.4;
+}
+
 .test-login-btn {
   background: rgba(255, 255, 255, 0.1);
   color: #fff;

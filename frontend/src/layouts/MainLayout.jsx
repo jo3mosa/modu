@@ -244,7 +244,7 @@ export default function MainLayout() {
           </button>
           {!isSidebarCollapsed && (
             <Link to="/home" style={{ textDecoration: 'none', color: 'inherit' }} className="sidebar-logo-text">
-              <h2>MODU</h2>
+              <h2 className="brand-font">MODU</h2>
             </Link>
           )}
         </div>

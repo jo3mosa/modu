@@ -482,6 +482,7 @@ export default function DashboardPage() {
       value: Math.max(0, Math.round((h.quantity ?? 0) * (h.currentPrice ?? 0))),
       color: CHART_COLORS[i % CHART_COLORS.length],
       quantity: h.quantity ?? 0,
+      stockCode: h.stockCode, // 조각 클릭 시 트레이딩 페이지로 라우팅하기 위함 (예수금 조각은 stockCode 없음 → 클릭 무시)
     }));
     items.push({
       id: '예수금',
@@ -607,6 +608,12 @@ export default function DashboardPage() {
                     enableArcLabels={false}
                     isInteractive={true}
                     motionConfig="gentle"
+                    onClick={(datum) => {
+                      // 예수금 조각은 종목이 아니라 무시. 보유 종목 조각만 트레이딩 페이지로 라우팅.
+                      const code = datum?.data?.stockCode;
+                      if (!code) return;
+                      navigate(`/trading?stock=${code}&name=${encodeURIComponent(datum.id ?? code)}`);
+                    }}
                     theme={{
                       tooltip: { container: { background: 'transparent', boxShadow: 'none', padding: 0 } },
                     }}
@@ -749,6 +756,9 @@ export default function DashboardPage() {
           <div className="panel ai-activity-panel">
             <div className="ai-activity-header">
               <h2>AI 진행 상황</h2>
+              {!aiStatus.isActive && (
+                <span className="ai-activity-off-badge">자동매매 OFF</span>
+              )}
               {pendingCount > 0 && (
                 <button
                   type="button"
@@ -767,10 +777,17 @@ export default function DashboardPage() {
               </div>
               <div className="ai-stat-row">
                 <span className="ai-stat-label">오늘 자동매매</span>
+                {/* 체결·거절 0건일 때 색상 톤다운 — 0이면 회색, 있을 때만 라임/빨강 강조 */}
                 <span className="ai-stat-value">
-                  체결 <strong style={{ color: '#84cc16' }}>{todayAutoTradeStats.filled}</strong>
+                  체결{' '}
+                  <strong style={{ color: todayAutoTradeStats.filled > 0 ? '#84cc16' : '#666' }}>
+                    {todayAutoTradeStats.filled}
+                  </strong>
                   <span style={{ margin: '0 0.4rem', color: '#444' }}>·</span>
-                  거절 <strong style={{ color: '#ef4444' }}>{todayAutoTradeStats.rejected}</strong>
+                  거절{' '}
+                  <strong style={{ color: todayAutoTradeStats.rejected > 0 ? '#ef4444' : '#666' }}>
+                    {todayAutoTradeStats.rejected}
+                  </strong>
                 </span>
               </div>
             </div>
@@ -778,7 +795,11 @@ export default function DashboardPage() {
             <div className="ai-activity-recent">
               <div className="ai-activity-sub-title">최근 판단</div>
               {recentAiTop3.length === 0 ? (
-                <div className="ai-activity-empty">아직 AI 판단 이력이 없습니다.</div>
+                <div className="ai-activity-empty">
+                  {aiStatus.isActive
+                    ? '아직 AI 판단 이력이 없습니다.'
+                    : '자동매매가 꺼져있어요. 켜면 AI가 종목을 분석합니다.'}
+                </div>
               ) : (
                 recentAiTop3.map((d) => {
                   const actionMeta = ACTION_DISPLAY[d.action] ?? ACTION_DISPLAY.UNKNOWN;
@@ -839,8 +860,25 @@ export default function DashboardPage() {
                 const statusDisplay = log.source !== 'AI' && log.status && log.status !== 'FILLED'
                   ? ORDER_STATUS_DISPLAY[log.status]
                   : null;
+                const canNavigate = !!log.stockCode;
+                const handleLogClick = () => {
+                  if (!canNavigate) return;
+                  navigate(`/trading?stock=${log.stockCode}&name=${encodeURIComponent(log.stockName ?? log.stockCode)}`);
+                };
                 return (
-                  <div key={log.id} className="log-item">
+                  <div
+                    key={log.id}
+                    className={`log-item${canNavigate ? ' log-item-clickable' : ''}`}
+                    onClick={canNavigate ? handleLogClick : undefined}
+                    onKeyDown={canNavigate ? (e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleLogClick();
+                      }
+                    } : undefined}
+                    role={canNavigate ? 'button' : undefined}
+                    tabIndex={canNavigate ? 0 : undefined}
+                  >
                     <div className={`log-icon ${actionLower}`}>{actionLabel}</div>
                     <div className="log-content">
                       <div className="log-top">

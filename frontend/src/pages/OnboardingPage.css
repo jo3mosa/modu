@@ -10,14 +10,74 @@
   overflow-y: auto;
 }
 
-.progress-bar {
+/* 진행도 헤더 — 단계 번호/라벨 + 채워지는 바 */
+.progress-header {
   width: 100%;
   max-width: 680px;
+  margin-bottom: 3rem;
+}
+
+.progress-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.8rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.progress-step {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #666;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: color 0.3s;
+}
+
+.progress-step.is-current,
+.progress-step.is-completed {
+  color: #fff;
+}
+
+.progress-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: transparent;
+  font-size: 0.78rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  transition: background 0.3s, border-color 0.3s, color 0.3s;
+}
+
+.progress-step.is-current .progress-step-num {
+  background: #84cc16;
+  border-color: #84cc16;
+  color: #1a1a1a;
+}
+
+.progress-step.is-completed .progress-step-num {
+  background: rgba(132, 204, 22, 0.18);
+  border-color: rgba(132, 204, 22, 0.5);
+  color: #84cc16;
+}
+
+.progress-step-label {
+  white-space: nowrap;
+}
+
+.progress-bar {
+  width: 100%;
   height: 6px;
   background: rgba(255, 255, 255, 0.1);
   border-radius: 4px;
   overflow: hidden;
-  margin-bottom: 3rem;
 }
 
 .progress-fill {
@@ -254,4 +314,56 @@
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* 미답 문항 시각 강조 — "답변 필요" 배지 + 문항 제목 옆 노출 */
+.survey-needs-badge {
+  display: inline-block;
+  margin-left: 0.6rem;
+  padding: 2px 8px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #eab308;
+  background: rgba(234, 179, 8, 0.12);
+  border: 1px solid rgba(234, 179, 8, 0.35);
+  border-radius: 999px;
+  vertical-align: middle;
+  letter-spacing: 0.02em;
+}
+
+/* "다음" 버튼 비활성 사유를 텍스트로 안내 — 버튼 옆에 작게 노출 */
+.step-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.step-hint {
+  color: #888;
+  font-size: 0.85rem;
+}
+
+/* KIS 키 발급 안내 — Step3ApiKeys 상단 안내 박스 */
+.api-form-helper {
+  margin: 0 0 1.4rem;
+  padding: 0.85rem 1rem;
+  background: rgba(132, 204, 22, 0.06);
+  border: 1px solid rgba(132, 204, 22, 0.2);
+  border-radius: 8px;
+  color: #ccc;
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.api-form-helper-link {
+  color: #84cc16;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.api-form-helper-link:hover {
+  color: #a3e635;
 }
