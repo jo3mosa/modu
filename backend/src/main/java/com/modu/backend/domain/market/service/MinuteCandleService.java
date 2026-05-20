@@ -134,11 +134,25 @@ public class MinuteCandleService {
                 ? grouped.keySet().stream().min(LocalDate::compareTo).orElse(null)
                 : null;
 
+        // 진행 중인 분(시계 기준 직전 1분 미만)은 미확정 — DB 적재 제외
+        LocalDateTime confirmedThreshold = LocalDateTime.now(KST).minusMinutes(1);
+
         for (Map.Entry<LocalDate, List<CandleResponse>> entry : grouped.entrySet()) {
             LocalDate date = entry.getKey();
-            if (date.equals(today)) continue;
             if (date.isBefore(startD) || date.isAfter(endD)) continue;
             List<CandleResponse> dayCandles = entry.getValue();
+
+            if (date.equals(today)) {
+                // 당일: 확정 분봉만 INSERT, 마커는 박지 않음 (다음날 missing 으로 재진입 → 그때 마커)
+                List<CandleResponse> confirmed = dayCandles.stream()
+                        .filter(c -> isConfirmed(c, confirmedThreshold))
+                        .toList();
+                if (!confirmed.isEmpty()) {
+                    repository.saveCandles(stockCode, confirmed);
+                }
+                continue;
+            }
+
             repository.saveCandles(stockCode, dayCandles);
             if (!date.equals(partialDate)) {
                 repository.markLoaded(stockCode, date, dayCandles.size());
@@ -154,6 +168,15 @@ public class MinuteCandleService {
         }
 
         return (info.todayRequested() && grouped.containsKey(today)) ? grouped.get(today) : List.of();
+    }
+
+    private boolean isConfirmed(CandleResponse c, LocalDateTime threshold) {
+        try {
+            LocalDateTime ts = LocalDateTime.parse(c.timestamp(), TS_FMT);
+            return ts.isBefore(threshold);
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private record MissingInfo(List<LocalDate> missing, boolean todayRequested) {
