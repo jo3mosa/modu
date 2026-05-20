@@ -34,7 +34,7 @@ function getChoseong(str) {
   return result;
 }
 // 전역 모듈 수준의 종목 리스트 캐시 (나갔다 들어올 때 빈번한 갱신 방지 및 시총순 정렬 고정)
-let cachedStocksList = null;
+let cachedAllStocksList = null;
 
 // KIS API 초당 호출제한(Rate Limit)으로 인한 세부정보 실패 시에도 완벽한 시총순 정렬을 보장하기 위한 정적 시총 매핑 사전
 const MAJOR_STOCKS_CAP_MAP = {
@@ -171,34 +171,31 @@ export default function TradingPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const stockCode = searchParams.get('stock'); // null 이면 목록 홈 노출
 
-  // 1. 종목 목록 홈용 상태 (캐시가 있으면 즉시 바인딩하여 깜빡임 제거)
-  const [stocks, setStocks] = useState(cachedStocksList ?? []);
+  // 1. 종목 목록 홈용 상태
+  const [allStocksList, setAllStocksList] = useState(cachedAllStocksList ?? []);
+  const [stocks, setStocks] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
   const [isLoadingStocks, setIsLoadingStocks] = useState(false);
-  const wsInitialized = useRef(false);
+  const pageSize = 20;
 
   // 2. 단일 종목 상세용 상태
   const [stockDetail, setStockDetail] = useState(null);
   const [wsStatus, setWsStatus] = useState('connecting'); // 'connecting' | 'live' | 'disconnected'
 
-  // ── [FLOW A] 종목 목록 홈 데이터 조회 ──
+  // ── [FLOW A-1] 전체 종목 메타 목록 조회 (시세 미포함 - 로컬 DB 100% 안전 쿼리) ──
   useEffect(() => {
     if (stockCode) return; // 상세 뷰일 때는 미작동
-    
-    // 이미 로컬 캐시에 저장된 목록이 있다면 즉시 바인딩하고 추가 API 조회를 생략하여 고정
-    if (cachedStocksList && cachedStocksList.length > 0) {
-      setStocks(cachedStocksList);
-      return;
-    }
+    if (allStocksList.length > 0) return; // 이미 로드된 경우 패스
 
     let cancelled = false;
-    async function loadStocksAndDetails() {
+    async function loadAllStocksMeta() {
       setIsLoadingStocks(true);
       try {
-        const data = await getStocks({ page: 1, size: 100 }); // 100개 로드하여 충분한 선택지 확보
+        const data = await getStocks({ page: 1, size: 100 }); // 100개 메타데이터 초고속 쿼리
         if (cancelled) return;
         const apiList = data?.stocks ?? [];
 
-        // 대형주 사전과 API 응답 종목 리스트를 병합하여 중복 제거 (대형주가 페이징 누락으로 빠지는 것 완벽 방지)
+        // 대형주 사전과 API 응답 종목 리스트를 병합하여 중복 제거
         const combinedMap = new Map();
         MAJOR_STOCKS.forEach((item) => {
           combinedMap.set(item.stockCode, {
@@ -215,9 +212,50 @@ export default function TradingPage() {
 
         const list = Array.from(combinedMap.values());
 
-        // 각 종목의 초기 REST 시세 정보를 병렬 병합
+        // 시가총액 기준으로 정렬하여 전역 모듈 캐싱 및 상태 저장
+        list.sort((a, b) => {
+          const capA = MAJOR_STOCKS_CAP_MAP[a.stockCode] || 0;
+          const capB = MAJOR_STOCKS_CAP_MAP[b.stockCode] || 0;
+          if (capA === 0 && capB === 0) {
+            return a.stockCode.localeCompare(b.stockCode);
+          }
+          return Number(capB - capA);
+        });
+
+        if (!cancelled) {
+          cachedAllStocksList = list;
+          setAllStocksList(list);
+        }
+      } catch (err) {
+        console.error('전체 종목 목록 메타 로드 실패:', err);
+      } finally {
+        if (!cancelled) setIsLoadingStocks(false);
+      }
+    }
+
+    loadAllStocksMeta();
+    return () => {
+      cancelled = true;
+    };
+  }, [stockCode, allStocksList.length]);
+
+  // ── [FLOW A-2] 현재 페이지의 20개 종목에 대한 실시간 KIS API 시세 병렬 병합 (5초 Polling으로 웹소켓 제거 & 안전 갱신) ──
+  useEffect(() => {
+    if (stockCode || allStocksList.length === 0) return;
+
+    let cancelled = false;
+    let isFirstLoad = true;
+
+    async function loadPageDetails() {
+      if (isFirstLoad) {
+        setIsLoadingStocks(true);
+      }
+      
+      const pageItems = allStocksList.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+      try {
         const details = await Promise.all(
-          list.map(async (s) => {
+          pageItems.map(async (s) => {
             try {
               const detail = await getStockDetail(s.stockCode);
               return {
@@ -239,84 +277,45 @@ export default function TradingPage() {
           })
         );
 
-        // 시가총액 기준 내림차순 정렬 (완벽하고 흔들림 없는 고정을 위해 100% 검증된 MAJOR_STOCKS_CAP_MAP 정적 시총 기준으로만 강제 정렬)
-        details.sort((a, b) => {
-          const capA = MAJOR_STOCKS_CAP_MAP[a.stockCode] || 0;
-          const capB = MAJOR_STOCKS_CAP_MAP[b.stockCode] || 0;
-
-          if (capA === 0 && capB === 0) {
-            return a.stockCode.localeCompare(b.stockCode);
-          }
-          return Number(capB - capA);
-        });
-
         if (!cancelled) {
-          cachedStocksList = details; // 전역 모듈 캐시에 박제 고정
-          setStocks(details);
-          wsInitialized.current = false; // 웹소켓 초기화 플래그 리셋
+          setStocks((prevStocks) => {
+            // 기존 데이터와 비교하여 가격 등락에 따른 플래시 방향 계산
+            return details.map((newStock) => {
+              const prevStock = prevStocks.find((ps) => ps.stockCode === newStock.stockCode);
+              if (prevStock && prevStock.currentPrice > 0 && newStock.currentPrice > 0) {
+                let flash = null;
+                if (newStock.currentPrice > prevStock.currentPrice) flash = 'up';
+                else if (newStock.currentPrice < prevStock.currentPrice) flash = 'down';
+
+                return {
+                  ...newStock,
+                  flashDirection: flash,
+                  flashTime: flash ? Date.now() : prevStock.flashTime
+                };
+              }
+              return newStock;
+            });
+          });
+          isFirstLoad = false;
         }
       } catch (err) {
-        console.error('종목 리스트 로드 실패:', err);
+        console.error('페이지 상세 시세 로드 실패:', err);
       } finally {
-        if (!cancelled) setIsLoadingStocks(false);
+        if (!cancelled && isFirstLoad) setIsLoadingStocks(false);
       }
     }
 
-    loadStocksAndDetails();
+    loadPageDetails();
+
+    const intervalId = setInterval(() => {
+      loadPageDetails();
+    }, 5000);
+
     return () => {
       cancelled = true;
+      clearInterval(intervalId);
     };
-  }, [stockCode]);
-
-  // ── [FLOW A] 목록 홈용 실시간 웹소켓 가격 갱신 풀 연동 ──
-  useEffect(() => {
-    if (stockCode || stocks.length === 0 || wsInitialized.current) return;
-    wsInitialized.current = true;
-
-    const sockets = stocks.map((s) => {
-      const ws = new WebSocket(buildStockWsUrl(s.stockCode, 'price'));
-      
-      ws.onmessage = (event) => {
-        try {
-          const tick = JSON.parse(event.data);
-          setStocks((prev) =>
-            prev.map((item) => {
-              if (item.stockCode === s.stockCode) {
-                const oldPrice = item.currentPrice;
-                const newPrice = tick.currentPrice ?? item.currentPrice;
-                
-                let flash = null;
-                if (newPrice > oldPrice && oldPrice > 0) flash = 'up';
-                else if (newPrice < oldPrice && oldPrice > 0) flash = 'down';
-
-                return {
-                  ...item,
-                  currentPrice: newPrice,
-                  compareRate: tick.priceChangeRate ?? item.compareRate,
-                  accumulatedVolume: tick.accumulatedVolume ?? item.accumulatedVolume,
-                  flashDirection: flash,
-                  flashTime: flash ? Date.now() : item.flashTime
-                };
-              }
-              return item;
-            })
-          );
-        } catch (e) {
-          console.warn('실시간 목록 가격 갱신 실패:', e);
-        }
-      };
-      return ws;
-    });
-
-    return () => {
-      sockets.forEach((ws) => {
-        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-          ws.close();
-        }
-      });
-      wsInitialized.current = false;
-    };
-  }, [stockCode, stocks.length]);
+  }, [stockCode, allStocksList, currentPage]);
 
   // ── [FLOW B] 단일 종목 상세 REST 데이터 조회 ──
   useEffect(() => {
@@ -460,6 +459,54 @@ export default function TradingPage() {
                     </article>
                   );
                 })}
+              </div>
+            )}
+
+            {/* Premium Pagination Control Bar */}
+            {allStocksList.length > 0 && (
+              <div className="pagination-bar">
+                <button
+                  type="button"
+                  className="pagination-btn arrow"
+                  disabled={currentPage === 1 || isLoadingStocks}
+                  onClick={() => {
+                    setCurrentPage((prev) => Math.max(prev - 1, 1));
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                >
+                  &lt; 이전
+                </button>
+                
+                {Array.from({ length: Math.ceil(allStocksList.length / pageSize) }).map((_, idx) => {
+                  const pageNum = idx + 1;
+                  const isActive = currentPage === pageNum;
+                  return (
+                    <button
+                      key={pageNum}
+                      type="button"
+                      className={`pagination-btn num ${isActive ? 'active' : ''}`}
+                      disabled={isLoadingStocks}
+                      onClick={() => {
+                        setCurrentPage(pageNum);
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+
+                <button
+                  type="button"
+                  className="pagination-btn arrow"
+                  disabled={currentPage === Math.ceil(allStocksList.length / pageSize) || isLoadingStocks}
+                  onClick={() => {
+                    setCurrentPage((prev) => Math.min(prev + 1, Math.ceil(allStocksList.length / pageSize)));
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                >
+                  다음 &gt;
+                </button>
               </div>
             )}
           </>
