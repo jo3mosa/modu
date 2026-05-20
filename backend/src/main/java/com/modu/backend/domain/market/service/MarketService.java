@@ -39,6 +39,7 @@ public class MarketService {
     private final KisPlatformTokenService kisPlatformTokenService;
     private final KisPriceClient kisPriceClient;
     private final KisCandleClient kisCandleClient;
+    private final MinuteCandleService minuteCandleService;
 
     /**
      * 종목 전체 조회 또는 키워드 검색
@@ -92,9 +93,12 @@ public class MarketService {
      */
     public CandleListResponse getCandleData(String stockCode, String period,
                                              String startDate, String endDate) {
-        String accessToken = kisPlatformTokenService.getAccessToken();
-        List<CandleResponse> candles = kisCandleClient.getCandles(
-                accessToken, stockCode, period, startDate, endDate);
+        List<CandleResponse> candles = switch (period) {
+            case "D", "W", "M" -> kisCandleClient.getDailyCandles(
+                    kisPlatformTokenService.getAccessToken(), stockCode, period, startDate, endDate);
+            case "1", "5", "60" -> minuteCandleService.getMinuteCandles(stockCode, period, startDate, endDate);
+            default -> throw new ApiException(MarketErrorCode.INVALID_CANDLE_PERIOD);
+        };
 
         return new CandleListResponse(stockCode, period, candles);
     }
