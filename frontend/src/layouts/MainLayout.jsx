@@ -582,16 +582,16 @@ export default function MainLayout() {
                       마이페이지
                     </button>
                     <button
-                      className="profile-popup-item disconnect"
-                      onClick={triggerDisconnectConfirm}
-                    >
-                      연동 해제
-                    </button>
-                    <button
                       className="profile-popup-item logout"
                       onClick={triggerLogoutConfirm}
                     >
                       로그아웃
+                    </button>
+                    <button
+                      className="profile-popup-item disconnect"
+                      onClick={triggerDisconnectConfirm}
+                    >
+                      연동 해제
                     </button>
                   </div>
                 </div>
