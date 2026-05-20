@@ -11,6 +11,8 @@ spec:
   # Gateway 가 KIS 단일세션을 단독 보유하므로 backend 는 자유롭게 수평 확장 가능.
   # 응급조치(replicas=1) 기간 종료 — REMOTE 모드에서 다중 pod 정상 동작 검증 완료.
   replicas: 2
+  # [정리] 옛 ReplicaSet 누적 방지 (기본 10). 잦은 재배포로 RS 20개+ 쌓이던 문제 완화.
+  revisionHistoryLimit: 3
   selector:
     matchLabels:
       app: backend
@@ -51,20 +53,32 @@ spec:
           limits:
             memory: "1536Mi"
             cpu: "1500m"
+        # [중요] startupProbe — 단일 노드 K3s 에서 Spring Boot 부트가 100초+ 걸려
+        # 기존 liveness(delay 60s, timeout 1s 기본)가 부팅 중인 앱을 죽여 CrashLoop 발생했음.
+        # startupProbe 통과 전까지 liveness/readiness 비활성 → 부팅을 최대 5분(30×10s) 대기.
+        startupProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8080
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 30
         # Pod가 트래픽 받을 준비가 됐는지 확인 — 준비 전까지 트래픽 차단
         readinessProbe:
           httpGet:
             path: /actuator/health/readiness
             port: 8080
-          initialDelaySeconds: 30  # Spring Boot 기동 시간 여유
           periodSeconds: 10
-        # Pod가 살아있는지 확인 — 실패 시 자동 재시작
+          timeoutSeconds: 3   # 기본 1s → 3s (DB/Redis health 체크 여유)
+          failureThreshold: 5
+        # Pod가 살아있는지 확인 — 실패 시 자동 재시작 (startupProbe 통과 후에만 동작)
         livenessProbe:
           httpGet:
             path: /actuator/health/liveness
             port: 8080
-          initialDelaySeconds: 60  # readiness보다 여유있게 설정
-          periodSeconds: 15
+          periodSeconds: 20
+          timeoutSeconds: 5   # 기본 1s → 5s (transient 지연 흡수)
+          failureThreshold: 5
 
 ---
 

@@ -65,17 +65,29 @@ spec:
           limits:
             memory: "1024Mi"
             cpu: "1000m"
+        # [중요] startupProbe — backend 와 동일 이미지라 Spring Boot 부트가 100초+ 걸려
+        # 기존 liveness(delay 60s, timeout 1s 기본)가 부팅 중인 앱을 죽여 CrashLoop 발생했음.
+        # startupProbe 통과 전까지 liveness/readiness 비활성 → 부팅을 최대 5분(30×10s) 대기.
+        startupProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8080
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 30
         # Pod 가 KIS 연결까지 마쳤는지 확인 — 준비 전까지 트래픽 차단
         # (gateway 는 외부 트래픽 받지 않지만, K8s 가 pod 상태를 정확히 알아야 Recreate 시 RTO 단축)
         readinessProbe:
           httpGet:
             path: /actuator/health/readiness
             port: 8080
-          initialDelaySeconds: 30
           periodSeconds: 10
+          timeoutSeconds: 3   # 기본 1s → 3s (DB/Redis health 체크 여유)
+          failureThreshold: 5
         livenessProbe:
           httpGet:
             path: /actuator/health/liveness
             port: 8080
-          initialDelaySeconds: 60
-          periodSeconds: 15
+          periodSeconds: 20
+          timeoutSeconds: 5   # 기본 1s → 5s (transient 지연 흡수)
+          failureThreshold: 5
