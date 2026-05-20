@@ -426,10 +426,10 @@
 .alarm-item-delete-btn {
   background: transparent;
   border: none;
-  color: #555;
+  color: rgba(255, 255, 255, 0.5); /* 어두운 다크 테마에서도 선명하게 시인되도록 밝게 조정 */
   cursor: pointer;
-  padding: 4px;
-  border-radius: 4px;
+  padding: 6px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -439,8 +439,8 @@
 }
 
 .alarm-item-delete-btn:hover {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
+  background: rgba(239, 68, 68, 0.25);
+  color: #ff5252;
 }
 
 /* AI 승인 대기 상단 강조 배너 — Bell 팝업 내부 */

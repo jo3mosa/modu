@@ -33,7 +33,45 @@ export const NOTIFICATION_TYPE_META = {
 function loadFromStorage() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
+    if (!raw || raw === '[]') {
+      // 로컬 스토리지에 데이터가 없는 경우, 테스트용 고품격 더미 알림 데이터를 삽입합니다.
+      const initialDummies = [
+        {
+          id: `dummy-executed-1`,
+          type: 'EXECUTED',
+          message: '삼성전자 1주 매수 체결 완료',
+          description: '체결가: 78,500원 · 총액: 78,500원',
+          timestamp: new Date(Date.now() - 5 * 60 * 1000).toISOString(), // 5분 전
+          isRead: false,
+        },
+        {
+          id: `dummy-app-req-1`,
+          type: 'APPROVAL_REQUEST',
+          message: 'SK하이닉스 매도 승인 대기',
+          description: 'AI 분석: 최근 최고점 접근으로 차익 실현 추천',
+          timestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString(), // 15분 전
+          isRead: false,
+        },
+        {
+          id: `dummy-kill-1`,
+          type: 'KILL_SWITCH',
+          message: '자동매매 긴급 강제 중단 발동',
+          description: '안전 장치: 최대 손실 한도 초과로 인한 자동매매 중단',
+          timestamp: new Date(Date.now() - 45 * 60 * 1000).toISOString(), // 45분 전
+          isRead: false,
+        },
+        {
+          id: `dummy-expired-1`,
+          type: 'EXPIRED',
+          message: '카카오 매수 판단 시간 만료',
+          description: '5분 초과: 시장 변동으로 인한 자동 주문 취소',
+          timestamp: new Date(Date.now() - 120 * 60 * 1000).toISOString(), // 2시간 전
+          isRead: true,
+        }
+      ];
+      saveToStorage(initialDummies);
+      return initialDummies;
+    }
     const items = JSON.parse(raw);
     if (!Array.isArray(items)) return [];
     const now = Date.now();
