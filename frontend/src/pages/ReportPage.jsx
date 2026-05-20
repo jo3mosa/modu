@@ -11,7 +11,42 @@ import { getOrderHistory, ORDER_STATUS_DISPLAY } from '../api/order';
 
 import './ReportPage.css';
 
-
+// API 통신 실패나 빈 데이터 상태 시 폴백으로 보여줄 매매 이력 모의 데이터
+const MOCK_GENERAL_HISTORY = [
+  {
+    orderId: 'manual-1001',
+    source: 'MANUAL',
+    stockCode: '005930',
+    stockName: '삼성전자',
+    side: 'BUY',
+    price: 78500,
+    quantity: 10,
+    status: 'FILLED',
+    createdAt: '2026-05-20T09:30:15Z'
+  },
+  {
+    orderId: 'manual-1002',
+    source: 'MANUAL',
+    stockCode: '000660',
+    stockName: 'SK하이닉스',
+    side: 'SELL',
+    price: 182300,
+    quantity: 5,
+    status: 'FILLED',
+    createdAt: '2026-05-20T10:15:30Z'
+  },
+  {
+    orderId: 'manual-1003',
+    source: 'MANUAL',
+    stockCode: '035720',
+    stockName: '카카오',
+    side: 'BUY',
+    price: 48900,
+    quantity: 20,
+    status: 'FILLED',
+    createdAt: '2026-05-20T11:05:45Z'
+  }
+];
 
 // 매매 이력 섹션 페이지당 표시 개수 (클라이언트 페이지네이션)
 const TRADES_PER_PAGE = 10;
@@ -71,6 +106,47 @@ function formatSnapshotValue(value) {
     }
   }
   return String(value);
+}
+
+// 페이지네이션 버튼 전용 유동적 인라인 스타일 (디자인 테마에 완벽 정합)
+function paginationBtnStyle(isActive, isDisabled) {
+  return {
+    padding: '0.4rem 0.8rem',
+    borderRadius: '6px',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    backgroundColor: isActive 
+      ? 'var(--secondary, #84cc16)' 
+      : isDisabled 
+        ? 'transparent' 
+        : 'rgba(255, 255, 255, 0.05)',
+    color: isDisabled 
+      ? 'rgba(255, 255, 255, 0.3)' 
+      : isActive 
+        ? '#0d0d0d' // 연두색 배경 위에서는 검은색 텍스트가 훨씬 가독성 높음 (고품격 UI)
+        : 'rgba(255, 255, 255, 0.8)',
+    fontWeight: isActive ? '700' : 'normal',
+    cursor: isDisabled ? 'not-allowed' : 'pointer',
+    fontSize: '0.9rem',
+    transition: 'all 0.2s ease',
+  };
+}
+
+// 매매 시간을 사용자가 가장 읽기 편한 직관적인 포맷(YYYY.MM.DD HH:mm:ss)으로 변환하는 유틸
+function formatDecidedAt(dateStr) {
+  if (!dateStr) return '';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    const seconds = String(d.getSeconds()).padStart(2, '0');
+    return `${year}.${month}.${day} ${hours}:${minutes}:${seconds}`;
+  } catch {
+    return dateStr;
+  }
 }
 
 export default function ReportPage() {
@@ -245,7 +321,7 @@ export default function ReportPage() {
                     <span className={`source-badge ${isAI ? 'ai' : 'manual'}`}>
                       {isAI ? 'AI' : '수동'}
                     </span>
-                    <span className="log-time">{log.decidedAt}</span>
+                    <span className="log-time">{formatDecidedAt(log.decidedAt)}</span>
                     {isAI && (isExpanded ? <ChevronUp size={20} color="#888" /> : <ChevronDown size={20} color="#888" />)}
                   </div>
                 </div>
