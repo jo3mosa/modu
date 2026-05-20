@@ -105,25 +105,56 @@ export default function LandingPage() {
       <section className="sneak-peek-section">
         <h2 className="section-title fade-in-section">모든 것을 한눈에.</h2>
         <div className="sneak-peek-grid">
-          <div className="fade-in-section">
+          <div className="fade-in-section sneak-peek-item">
             <ThreeDCard>
               <img src={dashboardImg} alt="MODU 대시보드 화면" className="mockup-image" />
             </ThreeDCard>
+            <div className="mockup-info">
+              <h3 className="mockup-info-title">투자 대시보드</h3>
+              <p className="mockup-info-desc">
+                나의 투자 성향 분석 결과와 연동된 한국투자증권 자산 현황,<br />
+                그리고 가동 중인 AI 에이전트들의 성과를 한눈에 통제하고 관리하세요.
+              </p>
+            </div>
           </div>
-          <div className="fade-in-section">
+
+          <div className="fade-in-section sneak-peek-item">
             <ThreeDCard>
               <img src={tradingImg} alt="MODU 트레이딩 룸 화면" className="mockup-image" />
             </ThreeDCard>
+            <div className="mockup-info">
+              <h3 className="mockup-info-title">트레이딩 룸</h3>
+              <p className="mockup-info-desc">
+                호가창과 차트를 실시간으로 모니터링하며,<br />
+                AI 에이전트가 제시하는 포지션을 직접 수행하거나 수동으로 자유롭게 거래할 수 있습니다.
+              </p>
+            </div>
           </div>
-          <div className="fade-in-section">
+
+          <div className="fade-in-section sneak-peek-item">
             <ThreeDCard>
               <img src={stockImg} alt="MODU 종목 상세 화면" className="mockup-image" />
             </ThreeDCard>
+            <div className="mockup-info">
+              <h3 className="mockup-info-title">종목 분석</h3>
+              <p className="mockup-info-desc">
+                다양한 기술 지표와 종목 특화 뉴스를 기반으로<br />
+                AI가 제공하는 정교한 종목 정보 및 체결 강도 지표를 확인하세요.
+              </p>
+            </div>
           </div>
-          <div className="fade-in-section">
+
+          <div className="fade-in-section sneak-peek-item">
             <ThreeDCard>
               <img src={discoveryImg} alt="MODU 종목 추천 화면" className="mockup-image" />
             </ThreeDCard>
+            <div className="mockup-info">
+              <h3 className="mockup-info-title">테마 종목 추천</h3>
+              <p className="mockup-info-desc">
+                시장 트렌드에 빠르게 대응하는 AI 에이전트들이<br />
+                유망한 종목들을 추천 사유와 함께 제공합니다.
+              </p>
+            </div>
           </div>
         </div>
       </section>
@@ -162,7 +193,7 @@ function ThreeDCard({ children }) {
     const rect = card.getBoundingClientRect();
     const width = rect.width;
     const height = rect.height;
-    
+
     // 카드 중앙 대비 마우스 좌표 계산
     const mouseX = e.clientX - rect.left - width / 2;
     const mouseY = e.clientY - rect.top - height / 2;
@@ -182,8 +213,8 @@ function ThreeDCard({ children }) {
 
   // 마우스가 떠날 때는 부드럽게 0.6초 스프링 감각으로 돌아오고, 움직일 때는 쫀득하게 따라오도록 조절
   const isDefault = rotateX === 0 && rotateY === 0;
-  const transitionStyle = isDefault 
-    ? 'transform 0.6s cubic-bezier(0.16, 1, 0.3, 1)' 
+  const transitionStyle = isDefault
+    ? 'transform 0.6s cubic-bezier(0.16, 1, 0.3, 1)'
     : 'transform 0.08s ease-out';
 
   return (
