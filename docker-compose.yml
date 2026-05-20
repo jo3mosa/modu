@@ -63,6 +63,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    image: modu-backend:latest   # kis-gateway 가 동일 이미지를 재사용
     container_name: modu-backend
     ports:
       - "8080:8080"
@@ -94,12 +95,71 @@ services:
       # KIS_CANO: ${KIS_CANO:-}
       # KIS_ACNT_PRDT_CD: ${KIS_ACNT_PRDT_CD:-01}
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
+      # [S14P31B106-345] 시세 Feed 모드 — REMOTE: KIS WS 는 kis-gateway 가 단독 보유,
+      # backend 는 Redis Pub/Sub 으로 tick 만 수신. REMOTE 시 LOCAL 체결 WS(KisExecutionWebSocketClient) 비활성.
+      MARKET_FEED_CLIENT_MODE: "REMOTE"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       mongo:                          
+        condition: service_healthy
+      kafka-0:
+        condition: service_healthy
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+    networks:
+      - modu-network
+    restart: on-failure
+
+  # ============================================================
+  # KIS WebSocket 게이트웨이 (K8s modu-kis-gateway 대응)
+  #  - 같은 backend 이미지를 SPRING_PROFILES_INCLUDE=gateway 로 실행
+  #  - KIS WS 단독 보유(사용자별 세션 풀: 시세/호가/체결통보 multiplex) + Redis fanout
+  #  - KIS appkey 당 1세션 제약 → 단일 인스턴스만 (scale 금지)
+  #  - 외부 트래픽 안 받음 → host 포트 매핑 없음
+  # ============================================================
+  kis-gateway:
+    image: modu-backend:latest   # backend 서비스가 빌드한 이미지를 재사용
+    container_name: modu-kis-gateway
+    hostname: modu-kis-gateway
+    environment:
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_NAME: ${DB_NAME}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD:-localpassword}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ACCESS_TOKEN_EXPIRATION: ${JWT_ACCESS_TOKEN_EXPIRATION:-3600000}
+      JWT_REFRESH_TOKEN_EXPIRATION: ${JWT_REFRESH_TOKEN_EXPIRATION:-1209600000}
+      KAKAO_CLIENT_ID: ${KAKAO_CLIENT_ID}
+      KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET}
+      KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI}
+      KIS_API_URL: ${KIS_API_URL}
+      KIS_APP_KEY: ${KIS_APP_KEY}
+      KIS_WEBSOCKET_URL: ${KIS_WEBSOCKET_URL}
+      KIS_WEBSOCKET_CONNECTION_TIMEOUT_MS: ${KIS_WEBSOCKET_CONNECTION_TIMEOUT_MS:-5000}
+      KIS_APP_SECRET: ${KIS_APP_SECRET}
+      KIS_ENCRYPTION_KEY: ${KIS_ENCRYPTION_KEY}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      MONGO_HOST: ${MONGO_HOST}
+      MONGO_PORT: ${MONGO_PORT}
+      MONGO_USERNAME: ${MONGO_USERNAME}
+      MONGO_PASSWORD: ${MONGO_PASSWORD}
+      MONGO_DB: ${MONGO_DB}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
+      # 게이트웨이 역할로 분기 — KIS WS 단독 보유. client-mode 는 기본 LOCAL 유지.
+      SPRING_PROFILES_INCLUDE: "gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mongo:
         condition: service_healthy
       kafka-0:
         condition: service_healthy

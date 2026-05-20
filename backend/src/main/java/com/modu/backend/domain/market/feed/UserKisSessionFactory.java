@@ -42,9 +42,11 @@ public class UserKisSessionFactory {
     /**
      * 사용자 자격증명 → 복호화 → approval_key 발급 → UserKisSession 인스턴스 생성.
      *
+     * @param onInvalidApproval KIS 가 승인키를 "invalid approval" 로 거부했을 때 세션이 호출하는 복구 콜백.
+     *                          (Pool 이 승인키 evict + 세션 재생성을 수행하도록 위임)
      * @throws IllegalStateException 자격증명이 없거나 잘못된 경우
      */
-    public UserKisSession create(long userId) {
+    public UserKisSession create(long userId, Runnable onInvalidApproval) {
         KisCredential cred = credentialRepository.findByUserId(userId)
                 .orElseThrow(() -> new IllegalStateException(
                         "KIS credential not found - userId: " + userId));
@@ -64,7 +66,8 @@ public class UserKisSessionFactory {
                 executionParser,
                 executionDispatch,
                 feedPublisher,
-                priceCache
+                priceCache,
+                onInvalidApproval
         );
     }
 }

@@ -75,6 +75,14 @@ public class KisTokenService {
         return webSocketKey;
     }
 
+    /**
+     * 무효화된 웹소켓 승인키 캐시 제거 — KIS "invalid approval" 거부 시 호출.
+     * 다음 getOrIssueWebSocketKey 호출이 캐시 미스가 되어 신규 승인키를 재발급한다.
+     */
+    public void evictWebSocketKey(Long userId) {
+        kisTokenRepository.deleteByUserIdAndTokenType(userId, WEBSOCKET_KEY);
+    }
+
     // ── 내부 유틸 ──────────────────────────────────────────────────────────────
 
     private void saveToken(Long userId, String tokenType, String tokenValue) {
