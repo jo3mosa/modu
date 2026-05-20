@@ -35,6 +35,7 @@ asset 및 주문 파라미터 규칙:
 출력 규칙:
 - 반드시 JSON만 반환합니다.
 - 자연어 설명, 마크다운, 코드블록은 절대 포함하지 않습니다.
+- rationale, key_bull_points, key_bear_points 등 자유 텍스트 필드는 반드시 한국어로 작성하세요.
 
 {format_instructions}
 
