@@ -106,24 +106,24 @@ export default function LandingPage() {
         <h2 className="section-title fade-in-section">모든 것을 한눈에.</h2>
         <div className="sneak-peek-grid">
           <div className="fade-in-section">
-            <div className="mockup-wrapper">
+            <ThreeDCard>
               <img src={dashboardImg} alt="MODU 대시보드 화면" className="mockup-image" />
-            </div>
+            </ThreeDCard>
           </div>
           <div className="fade-in-section">
-            <div className="mockup-wrapper">
+            <ThreeDCard>
               <img src={tradingImg} alt="MODU 트레이딩 룸 화면" className="mockup-image" />
-            </div>
+            </ThreeDCard>
           </div>
           <div className="fade-in-section">
-            <div className="mockup-wrapper">
+            <ThreeDCard>
               <img src={stockImg} alt="MODU 종목 상세 화면" className="mockup-image" />
-            </div>
+            </ThreeDCard>
           </div>
           <div className="fade-in-section">
-            <div className="mockup-wrapper">
+            <ThreeDCard>
               <img src={discoveryImg} alt="MODU 종목 추천 화면" className="mockup-image" />
-            </div>
+            </ThreeDCard>
           </div>
         </div>
       </section>
@@ -146,6 +146,62 @@ export default function LandingPage() {
           시작하기
         </button>
       </section>
+    </div>
+  );
+}
+
+// Aceternity UI 스타일의 순수 하드웨어 가속 3D 카드 효과 컴포넌트
+function ThreeDCard({ children }) {
+  const cardRef = useRef(null);
+  const [rotateX, setRotateX] = useState(0);
+  const [rotateY, setRotateY] = useState(0);
+
+  const handleMouseMove = (e) => {
+    if (!cardRef.current) return;
+    const card = cardRef.current;
+    const rect = card.getBoundingClientRect();
+    const width = rect.width;
+    const height = rect.height;
+    
+    // 카드 중앙 대비 마우스 좌표 계산
+    const mouseX = e.clientX - rect.left - width / 2;
+    const mouseY = e.clientY - rect.top - height / 2;
+
+    // 최대 12도까지 부드럽게 틸팅 각도 비례 제어
+    const rY = (mouseX / (width / 2)) * 12;
+    const rX = -(mouseY / (height / 2)) * 12;
+
+    setRotateX(rX);
+    setRotateY(rY);
+  };
+
+  const handleMouseLeave = () => {
+    setRotateX(0);
+    setRotateY(0);
+  };
+
+  // 마우스가 떠날 때는 부드럽게 0.6초 스프링 감각으로 돌아오고, 움직일 때는 쫀득하게 따라오도록 조절
+  const isDefault = rotateX === 0 && rotateY === 0;
+  const transitionStyle = isDefault 
+    ? 'transform 0.6s cubic-bezier(0.16, 1, 0.3, 1)' 
+    : 'transform 0.08s ease-out';
+
+  return (
+    <div
+      ref={cardRef}
+      className="mockup-wrapper"
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      style={{
+        transform: `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg)`,
+        transition: transitionStyle,
+        transformStyle: 'preserve-3d',
+      }}
+    >
+      {/* 3D 뎁스 효과를 위해 자식(이미지)에 transform: translateZ를 주기 위해 마운팅 */}
+      <div style={{ transform: 'translateZ(20px)', transformStyle: 'preserve-3d' }}>
+        {children}
+      </div>
     </div>
   );
 }
