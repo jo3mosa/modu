@@ -472,7 +472,28 @@
   align-items: center;
   justify-content: center;
   color: #666;
-  gap: 1rem;
+  gap: 0.5rem;
+  text-align: center;
+  padding: 2rem;
+}
+
+.empty-chat-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #ddd;
+  margin: 0;
+}
+
+.empty-chat-desc {
+  font-size: 0.9rem;
+  color: #888;
+  line-height: 1.55;
+  margin: 0;
+}
+
+.empty-chat-desc strong {
+  color: #b6d97d;
+  font-weight: 700;
 }
 
 /* 타이핑 인디케이터 */

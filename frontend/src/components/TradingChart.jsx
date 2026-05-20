@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { createChart } from 'lightweight-charts';
 import { SMA, BollingerBands, RSI, MACD } from 'technicalindicators';
+import { ChevronDown } from 'lucide-react';
 import { getStockCandles } from '../api/market';
 import { getOrderHistory } from '../api/order';
 import { buildStockWsUrl } from '../api/wsUrl';
@@ -76,10 +77,17 @@ function calcMACD(candles) {
 }
 
 // timeframe 옵션은 백엔드 period 값과 일대일 대응 (D/W/M/1/5/60)
-const TIMEFRAME_OPTIONS = [
+// 분봉(1/5/60)은 너무 많아 보여서 드롭다운으로 묶는다. 일/주/월은 사용 빈도가 높아 그대로 노출.
+const MINUTE_OPTIONS = [
   { label: '1분', value: '1' },
   { label: '5분', value: '5' },
   { label: '60분', value: '60' },
+];
+
+const isMinuteValue = (v) => v === '1' || v === '5' || v === '60';
+
+const TIMEFRAME_OPTIONS = [
+  ...MINUTE_OPTIONS,
   { label: '일', value: 'D' },
   { label: '주', value: 'W' },
   { label: '월', value: 'M' },
@@ -350,6 +358,21 @@ export default function TradingChart({ stockCode }) {
   const timeframeRef = useRef('D');
   const [timeframe, setTimeframe] = useState('D');
   const [isChartReady, setIsChartReady] = useState(false);
+
+  // 분봉 드롭다운(1분/5분/60분) — 외부 클릭 시 자동 닫힘
+  const [isMinuteMenuOpen, setIsMinuteMenuOpen] = useState(false);
+  const minuteMenuRef = useRef(null);
+
+  useEffect(() => {
+    if (!isMinuteMenuOpen) return;
+    const handleClickOutside = (e) => {
+      if (minuteMenuRef.current && !minuteMenuRef.current.contains(e.target)) {
+        setIsMinuteMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isMinuteMenuOpen]);
 
   // 활성화된 보조지표 (기본값: 이동평균선과 거래량을 기본 켜두어 차트가 가득 차고 고급스럽게 보이도록 함)
   const [activeIndicators, setActiveIndicators] = useState(() => {
@@ -965,12 +988,45 @@ export default function TradingChart({ stockCode }) {
     <div className="chart-wrapper">
       <div className="chart-toolbar">
         <div className="toolbar-left">
-          {TIMEFRAME_OPTIONS.map((opt, idx) => (
+          {/* 분봉 드롭다운 — 1분/5분/60분을 하나로 묶어 toolbar 공간 절약 */}
+          <div className="minute-dropdown" ref={minuteMenuRef}>
+            <button
+              type="button"
+              className={`tool-btn minute-dropdown-trigger ${isMinuteValue(timeframe) ? 'active' : ''}`}
+              onClick={() => setIsMinuteMenuOpen((open) => !open)}
+            >
+              {isMinuteValue(timeframe)
+                ? MINUTE_OPTIONS.find((o) => o.value === timeframe)?.label
+                : '분봉'}
+              <ChevronDown size={12} className="minute-dropdown-caret" />
+            </button>
+            {isMinuteMenuOpen && (
+              <div className="minute-dropdown-menu">
+                {MINUTE_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    className={`tool-btn ${timeframe === opt.value ? 'active' : ''}`}
+                    onClick={() => {
+                      setTimeframe(opt.value);
+                      setIsMinuteMenuOpen(false);
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 일/주/월 — 사용 빈도 높아 그대로 노출 */}
+          {TIMEFRAME_OPTIONS.filter((o) => !isMinuteValue(o.value)).map((opt, idx, arr) => (
             <button
               key={opt.value}
+              type="button"
               className={`tool-btn ${timeframe === opt.value ? 'active' : ''}`}
               onClick={() => setTimeframe(opt.value)}
-              style={idx === TIMEFRAME_OPTIONS.length - 1 ? { marginRight: '1rem' } : {}}
+              style={idx === arr.length - 1 ? { marginRight: '1rem' } : {}}
             >
               {opt.label}
             </button>

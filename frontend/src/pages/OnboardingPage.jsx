@@ -39,7 +39,6 @@ export default function OnboardingPage() {
   const [rules, setRules] = useState({
     takeProfit: '',
     stopLoss: '',
-    positionSize: 'fixed',
   });
   const [apiKeys, setApiKeys] = useState({
     appKey: '',
@@ -303,25 +302,6 @@ function Step2Rules({ rules, setRules, profileResult, nextStep, prevStep }) {
             <label>손절 기준 (%)</label>
             <input type="number" value={rules.stopLoss} onChange={(e) => setRules({ ...rules, stopLoss: e.target.value })} placeholder="예: -3" />
           </div>
-        </div>
-      </div>
-
-      <div className="rule-group">
-        <h3>포지션 크기 제한 (비중 조절 전략)</h3>
-        <div className="options-grid sizing">
-          {[
-            { id: 'fixed', label: '고정 비율' },
-            { id: 'kelly', label: '승률 기반' },
-            { id: 'variable', label: '유동적 비중' }
-          ].map(opt => (
-            <button
-              key={opt.id}
-              className={`option-btn ${rules.positionSize === opt.id ? 'selected' : ''}`}
-              onClick={() => setRules({ ...rules, positionSize: opt.id })}
-            >
-              {opt.label}
-            </button>
-          ))}
         </div>
       </div>
 

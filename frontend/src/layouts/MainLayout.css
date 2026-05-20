@@ -509,8 +509,9 @@
   transition: background 0.15s;
 }
 
-.search-dropdown-item:hover {
-  background: rgba(255, 255, 255, 0.06);
+.search-dropdown-item:hover,
+.search-dropdown-item.focused {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .sd-name {

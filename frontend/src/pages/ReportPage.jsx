@@ -16,29 +16,62 @@ import './ReportPage.css';
 // 매매 이력 섹션 페이지당 표시 개수 (클라이언트 페이지네이션)
 const TRADES_PER_PAGE = 10;
 
-// 페이지 버튼 스타일 (active/disabled에 따라 다른 색상)
-function paginationBtnStyle(isActive, isDisabled) {
-  return {
-    minWidth: '2rem',
-    padding: '0.3rem 0.6rem',
-    fontSize: '0.85rem',
-    fontWeight: 600,
-    border: '1px solid rgba(255,255,255,0.1)',
-    borderRadius: '6px',
-    background: isActive ? 'rgba(132,204,22,0.2)' : 'transparent',
-    color: isActive ? '#84cc16' : isDisabled ? '#444' : '#aaa',
-    cursor: isDisabled ? 'not-allowed' : 'pointer',
-    transition: 'all 0.15s',
-  };
+/**
+ * 페이지네이션 윈도잉 — 페이지 수가 많아도 항상 최대 7~9개 버튼만 노출.
+ * 가운데 생략(`...`)으로 압축하고, 현재 페이지 주변과 첫/마지막은 항상 보여준다.
+ */
+function getPageWindow(current, total) {
+  const MAX_VISIBLE = 7;
+  if (total <= MAX_VISIBLE) return Array.from({ length: total }, (_, i) => i + 1);
+  if (current <= 4) return [1, 2, 3, 4, 5, '...', total];
+  if (current >= total - 3) return [1, '...', total - 4, total - 3, total - 2, total - 1, total];
+  return [1, '...', current - 1, current, current + 1, '...', total];
 }
 
-// 백엔드 getOrderHistory 응답 표준 형식과 동일 (side / orderType / createdAt / source / status).
-const MOCK_GENERAL_HISTORY = [
-  { orderId: '1001', stockCode: '005930', stockName: '삼성전자', side: 'BUY', orderType: 'LIMIT', price: 74500, quantity: 10, status: 'FILLED', source: 'MANUAL', createdAt: '2026-05-03 10:30' },
-  { orderId: '1002', stockCode: '035420', stockName: 'NAVER', side: 'BUY', orderType: 'LIMIT', price: 184000, quantity: 5, status: 'CANCELED', source: 'MANUAL', createdAt: '2026-05-03 09:50' },
-  { orderId: '1003', stockCode: '000660', stockName: 'SK하이닉스', side: 'SELL', orderType: 'LIMIT', price: 149000, quantity: 5, status: 'FILLED', source: 'MANUAL', createdAt: '2026-05-02 09:15' },
-  { orderId: '1004', stockCode: '035720', stockName: '카카오', side: 'SELL', orderType: 'LIMIT', price: 45000, quantity: 20, status: 'FILLED', source: 'MANUAL', createdAt: '2026-05-01 14:20' }
-];
+/**
+ * indicatorsSnapshot — 백엔드가 객체로 내려주는 판단 시점 지표값.
+ * 원본 JSON 을 그대로 노출하면 가독성이 0 이므로 key/value 표 형태로 풀어준다.
+ * 자주 등장하는 키는 한국어 라벨로 매핑, 모르는 키는 그대로 노출.
+ */
+const INDICATOR_LABEL = {
+  rsi: 'RSI',
+  rsi14: 'RSI(14)',
+  macd: 'MACD',
+  macdSignal: 'MACD Signal',
+  bbUpper: '볼린저 상단',
+  bbMiddle: '볼린저 중심',
+  bbLower: '볼린저 하단',
+  sma5: '5일 이동평균',
+  sma20: '20일 이동평균',
+  sma60: '60일 이동평균',
+  sma120: '120일 이동평균',
+  ma5: '5일 이동평균',
+  ma20: '20일 이동평균',
+  ma60: '60일 이동평균',
+  volume: '거래량',
+  currentPrice: '현재가',
+  closePrice: '종가',
+  openPrice: '시가',
+  highPrice: '고가',
+  lowPrice: '저가',
+  changeRate: '등락률',
+  changeAmount: '변동액',
+};
+
+function formatSnapshotValue(value) {
+  if (value == null) return '-';
+  if (typeof value === 'number') return value.toLocaleString('ko-KR', { maximumFractionDigits: 4 });
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'object') {
+    // 중첩 객체/배열 — 짧게 JSON 으로
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
 
 export default function ReportPage() {
   const location = useLocation();
