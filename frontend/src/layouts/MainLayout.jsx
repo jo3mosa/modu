@@ -10,7 +10,8 @@ import {
   ShieldCheck,
   User,
   Menu,
-  Compass
+  Compass,
+  X
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getStocks } from '../api/market';
@@ -118,7 +119,7 @@ export default function MainLayout() {
   const profileDropdownRef = useRef(null);
 
   // 전역 알림 + 승인 대기 — Provider에서 제공
-  const { notifications, unreadCount, addNotification, markAllAsRead } = useNotifications();
+  const { notifications, unreadCount, addNotification, markAllAsRead, removeNotification } = useNotifications();
   const { pending } = usePendingDecisions();
   const pendingCount = pending.length;
   // Bell 뱃지 — 안 읽은 알림 + 승인 대기 합산 (사용자 인지 영역 통합)
@@ -524,16 +525,29 @@ export default function MainLayout() {
                         const meta = NOTIFICATION_TYPE_META[n.type] ?? { label: '', color: '#888' };
                         return (
                           <div key={n.id} className={`alarm-item${n.isRead ? '' : ' unread'}`}>
-                            <div className="alarm-item-content">
-                              <span className="alarm-item-type-tag" style={{ color: meta.color, borderColor: meta.color }}>
-                                {meta.label}
-                              </span>
-                              <div className="alarm-item-text">
-                                <div className="alarm-item-message">{n.message}</div>
-                                {n.description && (
-                                  <div className="alarm-item-description">{n.description}</div>
-                                )}
+                            <div className="alarm-item-main-row">
+                              <div className="alarm-item-content">
+                                <span className="alarm-item-type-tag" style={{ color: meta.color, borderColor: meta.color }}>
+                                  {meta.label}
+                                </span>
+                                <div className="alarm-item-text">
+                                  <div className="alarm-item-message">{n.message}</div>
+                                  {n.description && (
+                                    <div className="alarm-item-description">{n.description}</div>
+                                  )}
+                                </div>
                               </div>
+
+                              <button
+                                className="alarm-item-delete-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeNotification(n.id);
+                                }}
+                                title="삭제"
+                              >
+                                <X size={14} />
+                              </button>
                             </div>
                             <div className="alarm-item-time">{formatNotiTime(n.timestamp)}</div>
                           </div>

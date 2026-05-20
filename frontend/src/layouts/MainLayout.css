@@ -415,6 +415,34 @@
   align-self: flex-start;
 }
 
+.alarm-item-main-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.alarm-item-delete-btn {
+  background: transparent;
+  border: none;
+  color: #555;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.alarm-item-delete-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
 /* AI 승인 대기 상단 강조 배너 — Bell 팝업 내부 */
 .alarm-pending-banner {
   display: flex;

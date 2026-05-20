@@ -521,392 +521,400 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="dashboard-layout">
-        {/* 포트폴리오 메인 */}
-        <div className="dashboard-main">
-          {/* 자산 요약 + 차트 */}
-          <div className="panel overview-panel">
-            {summaryError ? (
-              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
-                <InlineError
-                  message="자산 정보를 불러오지 못했습니다."
-                  onRetry={() => { fetchSummary(); fetchPortfolio(); }}
-                />
-              </div>
-            ) : (<>
-            <div className="overview-text">
-              <h2>포트폴리오 요약</h2>
-              <div className="asset-huge">
-                <span className="label">총 자산</span>
-                <div className="value-row">
-                  {summaryLoading ? (
-                    <Skeleton width={180} height={36} />
-                  ) : (
-                    <>
-                      <span className="value">{formatNumber(derivedSummary.totalAsset)}</span>
-                      <span className="unit">원</span>
-                    </>
-                  )}
+      <div className="dashboard-layout-container">
+        {/* 상단 파트: 포폴요약(좌) + AI자동매매 & AI진행상황(우) */}
+        <div className="dashboard-top-row">
+          <div className="dashboard-top-left">
+            {/* 자산 요약 + 차트 */}
+            <div className="panel overview-panel">
+              {summaryError ? (
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
+                  <InlineError
+                    message="자산 정보를 불러오지 못했습니다."
+                    onRetry={() => { fetchSummary(); fetchPortfolio(); }}
+                  />
+                </div>
+              ) : (<>
+              <div className="overview-text">
+                <h2>포트폴리오 요약</h2>
+                <div className="asset-huge">
+                  <span className="label">총 자산</span>
+                  <div className="value-row">
+                    {summaryLoading ? (
+                      <Skeleton width={180} height={36} />
+                    ) : (
+                      <>
+                        <span className="value">{formatNumber(derivedSummary.totalAsset)}</span>
+                        <span className="unit">원</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="asset-details">
+                  <div className="detail-item">
+                    <span className="detail-label">총 평가 손익</span>
+                    {summaryLoading ? (
+                      <Skeleton width={140} height={20} />
+                    ) : (
+                      <span className={`detail-value ${getColorClass(derivedSummary.totalPnl)}`}>
+                        {derivedSummary.totalPnl > 0 ? '+' : ''}{formatNumber(derivedSummary.totalPnl)}원
+                        <span className="rate">({derivedSummary.totalPnlPct > 0 ? '+' : ''}{derivedSummary.totalPnlPct}%)</span>
+                      </span>
+                    )}
+                  </div>
+                  <div className="detail-item">
+                    <span className="detail-label">투자 원금</span>
+                    {summaryLoading ? (
+                      <Skeleton width={100} height={18} />
+                    ) : (
+                      <span className="detail-value">{formatNumber(derivedSummary.totalBuyAmount)}원</span>
+                    )}
+                  </div>
+                  <div className="detail-item">
+                    <span className="detail-label">예수금</span>
+                    {summaryLoading ? (
+                      <Skeleton width={100} height={18} />
+                    ) : (
+                      <span className="detail-value cash">{formatNumber(derivedSummary.availableCash)}원</span>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              <div className="asset-details">
-                <div className="detail-item">
-                  <span className="detail-label">총 평가 손익</span>
+              <div className="overview-chart-area">
+                <div className="overview-chart">
                   {summaryLoading ? (
-                    <Skeleton width={140} height={20} />
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}>
+                      <Skeleton width={220} height={220} borderRadius="50%" />
+                    </div>
+                  ) : pieData.length === 0 ? (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', color: '#666' }}>
+                      표시할 자산이 없습니다.
+                    </div>
                   ) : (
-                    <span className={`detail-value ${getColorClass(derivedSummary.totalPnl)}`}>
-                      {derivedSummary.totalPnl > 0 ? '+' : ''}{formatNumber(derivedSummary.totalPnl)}원
-                      <span className="rate">({derivedSummary.totalPnlPct > 0 ? '+' : ''}{derivedSummary.totalPnlPct}%)</span>
+                    <Pie
+                      data={pieData}
+                      width={280}
+                      height={280}
+                      margin={{ top: 18, right: 18, bottom: 18, left: 18 }}
+                      innerRadius={0.62}
+                      padAngle={1.2}
+                      cornerRadius={4}
+                      activeOuterRadiusOffset={10}
+                      activeInnerRadiusOffset={4}
+                      colors={{ datum: 'data.color' }}
+                      borderWidth={0}
+                      enableArcLinkLabels={false}
+                      enableArcLabels={false}
+                      isInteractive={true}
+                      motionConfig="gentle"
+                      onClick={(datum) => {
+                        // 예수금 조각은 종목이 아니라 무시. 보유 종목 조각만 트레이딩 페이지로 라우팅.
+                        const code = datum?.data?.stockCode;
+                        if (!code) return;
+                        navigate(`/trading?stock=${code}&name=${encodeURIComponent(datum.id ?? code)}`);
+                      }}
+                      theme={{
+                        tooltip: { container: { background: 'transparent', boxShadow: 'none', padding: 0 } },
+                      }}
+                      tooltip={({ datum }) => (
+                        <div style={{
+                          background: 'rgba(0, 0, 0, 0.88)',
+                          border: '1px solid rgba(255, 255, 255, 0.15)',
+                          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
+                          padding: '10px 14px',
+                          borderRadius: 8,
+                          fontFamily: "'Pretendard', sans-serif",
+                        }}>
+                          <div style={{ color: datum.data.color, fontWeight: 700, marginBottom: 6, fontSize: '1.0rem' }}>
+                            {datum.id}
+                          </div>
+                          <div style={{ color: '#fff', fontSize: '0.9rem', fontWeight: 600 }}>
+                            {datum.data.quantity != null ? `${datum.data.quantity.toLocaleString()}주 · ` : ''}
+                            {datum.value.toLocaleString()}원
+                          </div>
+                        </div>
+                      )}
+                    />
+                  )}
+                </div>
+              </div>
+              </>)}
+            </div>
+          </div>
+
+          <div className="dashboard-top-right">
+            {/* AI 미니 컨트롤 */}
+            <div className="panel ai-mini-panel">
+              <h2>AI 자동매매</h2>
+              <div className="ai-mini-content">
+                <div className="ai-status-row">
+                  <div className="ai-status-text">
+                    <span className={`status-badge ${aiStatus.isActive ? 'active' : 'inactive'}`}>
+                      {aiStatus.isActive ? 'ON' : 'OFF'}
                     </span>
-                  )}
+                  </div>
+                  {/* 토글 스위치 */}
+                  <div
+                    className={`toggle-switch ${aiStatus.isActive ? 'on' : 'off'}`}
+                    onClick={toggleAiStatus}
+                  >
+                    <div className="toggle-knob"></div>
+                  </div>
                 </div>
-                <div className="detail-item">
-                  <span className="detail-label">투자 원금</span>
-                  {summaryLoading ? (
-                    <Skeleton width={100} height={18} />
-                  ) : (
-                    <span className="detail-value">{formatNumber(derivedSummary.totalBuyAmount)}원</span>
-                  )}
-                </div>
-                <div className="detail-item">
-                  <span className="detail-label">예수금</span>
-                  {summaryLoading ? (
-                    <Skeleton width={100} height={18} />
-                  ) : (
-                    <span className="detail-value cash">{formatNumber(derivedSummary.availableCash)}원</span>
-                  )}
+
+                <div className="ai-info-box">
+                  <div className="info-row">
+                    <span className="info-label">전략</span>
+                    <span className="info-value">
+                      {profileRiskLevel
+                        ? RISK_LEVEL_DISPLAY[profileRiskLevel]?.strategy ?? '미설정'
+                        : '성향 진단 필요'}
+                    </span>
+                  </div>
+                  <div className="info-row">
+                    <span className="info-label">위험 수준</span>
+                    <span className="info-value">
+                      {profileRiskLevel
+                        ? RISK_LEVEL_DISPLAY[profileRiskLevel]?.risk ?? '-'
+                        : '-'}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div className="overview-chart-area">
-              <div className="overview-chart">
-                {summaryLoading ? (
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}>
-                    <Skeleton width={220} height={220} borderRadius="50%" />
-                  </div>
-                ) : pieData.length === 0 ? (
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', color: '#666' }}>
-                    표시할 자산이 없습니다.
+            {/* AI 진행 상황 위젯 — 자동매매 흐름을 한눈에: 최근 분석 시각 / 오늘 통계 / 최근 판단 3건 / 승인 대기 */}
+            <div className="panel ai-activity-panel">
+              <div className="ai-activity-header">
+                <h2>AI 진행 상황</h2>
+                {!aiStatus.isActive && (
+                  <span className="ai-activity-off-badge">자동매매 OFF</span>
+                )}
+                {pendingCount > 0 && (
+                  <button
+                    type="button"
+                    className="pending-mini-badge"
+                    onClick={() => setIsPendingModalOpen(true)}
+                  >
+                    승인 대기 {pendingCount}
+                  </button>
+                )}
+              </div>
+
+              <div className="ai-activity-stats">
+                <div className="ai-stat-row">
+                  <span className="ai-stat-label">최근 분석</span>
+                  <span className="ai-stat-value">{formatRelativeTime(lastAiDecidedAt)}</span>
+                </div>
+                <div className="ai-stat-row">
+                  <span className="ai-stat-label">오늘 자동매매</span>
+                  {/* 체결·거절 0건일 때 색상 톤다운 — 0이면 회색, 있을 때만 라임/빨강 강조 */}
+                  <span className="ai-stat-value">
+                    체결{' '}
+                    <strong style={{ color: todayAutoTradeStats.filled > 0 ? '#84cc16' : '#666' }}>
+                      {todayAutoTradeStats.filled}
+                    </strong>
+                    <span style={{ margin: '0 0.4rem', color: '#444' }}>·</span>
+                    거절{' '}
+                    <strong style={{ color: todayAutoTradeStats.rejected > 0 ? '#ef4444' : '#666' }}>
+                      {todayAutoTradeStats.rejected}
+                    </strong>
+                  </span>
+                </div>
+              </div>
+
+              <div className="ai-activity-recent">
+                <div className="ai-activity-sub-title">최근 판단</div>
+                {recentAiTop3.length === 0 ? (
+                  <div className="ai-activity-empty">
+                    {aiStatus.isActive
+                      ? '아직 AI 판단 이력이 없습니다.'
+                      : '자동매매가 꺼져있어요. 켜면 AI가 종목을 분석합니다.'}
                   </div>
                 ) : (
-                  <Pie
-                    data={pieData}
-                    width={280}
-                    height={280}
-                    margin={{ top: 18, right: 18, bottom: 18, left: 18 }}
-                    innerRadius={0.62}
-                    padAngle={1.2}
-                    cornerRadius={4}
-                    activeOuterRadiusOffset={10}
-                    activeInnerRadiusOffset={4}
-                    colors={{ datum: 'data.color' }}
-                    borderWidth={0}
-                    enableArcLinkLabels={false}
-                    enableArcLabels={false}
-                    isInteractive={true}
-                    motionConfig="gentle"
-                    onClick={(datum) => {
-                      // 예수금 조각은 종목이 아니라 무시. 보유 종목 조각만 트레이딩 페이지로 라우팅.
-                      const code = datum?.data?.stockCode;
-                      if (!code) return;
-                      navigate(`/trading?stock=${code}&name=${encodeURIComponent(datum.id ?? code)}`);
-                    }}
-                    theme={{
-                      tooltip: { container: { background: 'transparent', boxShadow: 'none', padding: 0 } },
-                    }}
-                    tooltip={({ datum }) => (
-                      <div style={{
-                        background: 'rgba(0, 0, 0, 0.88)',
-                        border: '1px solid rgba(255, 255, 255, 0.15)',
-                        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
-                        padding: '10px 14px',
-                        borderRadius: 8,
-                        fontFamily: "'Pretendard', sans-serif",
-                      }}>
-                        <div style={{ color: datum.data.color, fontWeight: 700, marginBottom: 6, fontSize: '1.0rem' }}>
-                          {datum.id}
-                        </div>
-                        <div style={{ color: '#fff', fontSize: '0.9rem', fontWeight: 600 }}>
-                          {datum.data.quantity != null ? `${datum.data.quantity.toLocaleString()}주 · ` : ''}
-                          {datum.value.toLocaleString()}원
-                        </div>
+                  recentAiTop3.map((d) => {
+                    const actionMeta = ACTION_DISPLAY[d.action] ?? ACTION_DISPLAY.UNKNOWN;
+                    const statusMeta = EXECUTION_STATUS_DISPLAY[d.executionStatus];
+                    const actionLower = (d.action ?? 'unknown').toLowerCase();
+                    return (
+                      <div key={d.id} className="ai-decision-item">
+                        <span className={`decision-action ${actionLower}`}>{actionMeta.label}</span>
+                        <span className="decision-stock">{d.stockCode}</span>
+                        <span className="decision-confidence">
+                          {d.confidence != null ? `${Math.round(d.confidence)}%` : '-'}
+                        </span>
+                        {statusMeta && (
+                          <span className="decision-status" style={{ color: statusMeta.color }}>
+                            {statusMeta.label}
+                          </span>
+                        )}
                       </div>
-                    )}
-                  />
+                    );
+                  })
                 )}
               </div>
             </div>
-            </>)}
-          </div>
-
-          {/* 보유 종목 리스트 */}
-          <div className="panel holdings-panel">
-            <h2>보유 종목 상세</h2>
-            {holdingsError ? (
-              <InlineError
-                message="보유 종목을 불러오지 못했습니다."
-                onRetry={() => fetchPortfolio()}
-              />
-            ) : (
-            <div className="table-wrapper">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>종목명</th>
-                    <th>보유 수량</th>
-                    <th>매수 평균가</th>
-                    <th>현재가</th>
-                    <th>평가 손익</th>
-                    <th>수익률</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {holdingsLoading ? (
-                    // 로딩 중 — 가짜 row 3개로 테이블 형태 유지
-                    Array.from({ length: 3 }).map((_, idx) => (
-                      <tr key={`sk-${idx}`}>
-                        <td className="col-name">
-                          <Skeleton width="60%" height={14} />
-                          <br />
-                          <Skeleton width="40%" height={11} style={{ marginTop: 4 }} />
-                        </td>
-                        <td><Skeleton width={50} /></td>
-                        <td><Skeleton width={70} /></td>
-                        <td><Skeleton width={70} /></td>
-                        <td><Skeleton width={80} /></td>
-                        <td><Skeleton width={50} /></td>
-                      </tr>
-                    ))
-                  ) : (
-                    holdings.map((item, idx) => (
-                      <tr
-                        key={idx}
-                        onClick={() => navigate(`/trading?stock=${item.stockCode}&name=${encodeURIComponent(item.stockName)}`)}
-                        className="clickable-row"
-                      >
-                        <td className="col-name">
-                          <span className="stock-name">{item.stockName}</span>
-                          <span className="stock-code">{item.stockCode}</span>
-                        </td>
-                        <td>{formatNumber(item.quantity)}주</td>
-                        <td>{formatNumber(item.avgBuyPrice)}원</td>
-                        <td>{formatNumber(item.currentPrice)}원</td>
-                        <td className={getColorClass(item.pnl)}>
-                          {item.pnl > 0 ? '+' : ''}{formatNumber(item.pnl)}원
-                        </td>
-                        <td className={getColorClass(item.pnlPct)}>
-                          {item.pnlPct > 0 ? '+' : ''}{item.pnlPct}%
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-            )}
           </div>
         </div>
 
-        {/* 우측 -> AI on/off */}
-        <div className="dashboard-side">
-          {/* AI 미니 컨트롤 */}
-          <div className="panel ai-mini-panel">
-            <h2>AI 자동매매</h2>
-            <div className="ai-mini-content">
-              <div className="ai-status-row">
-                <div className="ai-status-text">
-                  <span className={`status-badge ${aiStatus.isActive ? 'active' : 'inactive'}`}>
-                    {aiStatus.isActive ? 'ON' : 'OFF'}
-                  </span>
-                </div>
-                {/* 토글 스위치 */}
-                <div
-                  className={`toggle-switch ${aiStatus.isActive ? 'on' : 'off'}`}
-                  onClick={toggleAiStatus}
-                >
-                  <div className="toggle-knob"></div>
-                </div>
+        {/* 하단 파트: 보유종목상세(좌) + 최근매매로그(우) */}
+        <div className="dashboard-bottom-row">
+          <div className="dashboard-bottom-left">
+            {/* 보유 종목 리스트 */}
+            <div className="panel holdings-panel">
+              <h2>보유 종목 상세</h2>
+              {holdingsError ? (
+                <InlineError
+                  message="보유 종목을 불러오지 못했습니다."
+                  onRetry={() => fetchPortfolio()}
+                />
+              ) : (
+              <div className="table-wrapper">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>종목명</th>
+                      <th>보유 수량</th>
+                      <th>매수 평균가</th>
+                      <th>현재가</th>
+                      <th>평가 손익</th>
+                      <th>수익률</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {holdingsLoading ? (
+                      // 로딩 중 — 가짜 row 3개로 테이블 형태 유지
+                      Array.from({ length: 3 }).map((_, idx) => (
+                        <tr key={`sk-${idx}`}>
+                          <td className="col-name">
+                            <Skeleton width="60%" height={14} />
+                            <br />
+                            <Skeleton width="40%" height={11} style={{ marginTop: 4 }} />
+                          </td>
+                          <td><Skeleton width={50} /></td>
+                          <td><Skeleton width={70} /></td>
+                          <td><Skeleton width={70} /></td>
+                          <td><Skeleton width={80} /></td>
+                          <td><Skeleton width={50} /></td>
+                        </tr>
+                      ))
+                    ) : (
+                      holdings.map((item, idx) => (
+                        <tr
+                          key={idx}
+                          onClick={() => navigate(`/trading?stock=${item.stockCode}&name=${encodeURIComponent(item.stockName)}`)}
+                          className="clickable-row"
+                        >
+                          <td className="col-name">
+                            <span className="stock-name">{item.stockName}</span>
+                            <span className="stock-code">{item.stockCode}</span>
+                          </td>
+                          <td>{formatNumber(item.quantity)}주</td>
+                          <td>{formatNumber(item.avgBuyPrice)}원</td>
+                          <td>{formatNumber(item.currentPrice)}원</td>
+                          <td className={getColorClass(item.pnl)}>
+                            {item.pnl > 0 ? '+' : ''}{formatNumber(item.pnl)}원
+                          </td>
+                          <td className={getColorClass(item.pnlPct)}>
+                            {item.pnlPct > 0 ? '+' : ''}{item.pnlPct}%
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
-
-              <div className="ai-info-box">
-                <div className="info-row">
-                  <span className="info-label">전략</span>
-                  <span className="info-value">
-                    {profileRiskLevel
-                      ? RISK_LEVEL_DISPLAY[profileRiskLevel]?.strategy ?? '미설정'
-                      : '성향 진단 필요'}
-                  </span>
-                </div>
-                <div className="info-row">
-                  <span className="info-label">위험 수준</span>
-                  <span className="info-value">
-                    {profileRiskLevel
-                      ? RISK_LEVEL_DISPLAY[profileRiskLevel]?.risk ?? '-'
-                      : '-'}
-                  </span>
-                </div>
-              </div>
+              )}
             </div>
           </div>
 
-          {/* AI 진행 상황 위젯 — 자동매매 흐름을 한눈에: 최근 분석 시각 / 오늘 통계 / 최근 판단 3건 / 승인 대기 */}
-          <div className="panel ai-activity-panel">
-            <div className="ai-activity-header">
-              <h2>AI 진행 상황</h2>
-              {!aiStatus.isActive && (
-                <span className="ai-activity-off-badge">자동매매 OFF</span>
-              )}
-              {pendingCount > 0 && (
-                <button
-                  type="button"
-                  className="pending-mini-badge"
-                  onClick={() => setIsPendingModalOpen(true)}
-                >
-                  승인 대기 {pendingCount}
-                </button>
-              )}
-            </div>
-
-            <div className="ai-activity-stats">
-              <div className="ai-stat-row">
-                <span className="ai-stat-label">최근 분석</span>
-                <span className="ai-stat-value">{formatRelativeTime(lastAiDecidedAt)}</span>
-              </div>
-              <div className="ai-stat-row">
-                <span className="ai-stat-label">오늘 자동매매</span>
-                {/* 체결·거절 0건일 때 색상 톤다운 — 0이면 회색, 있을 때만 라임/빨강 강조 */}
-                <span className="ai-stat-value">
-                  체결{' '}
-                  <strong style={{ color: todayAutoTradeStats.filled > 0 ? '#84cc16' : '#666' }}>
-                    {todayAutoTradeStats.filled}
-                  </strong>
-                  <span style={{ margin: '0 0.4rem', color: '#444' }}>·</span>
-                  거절{' '}
-                  <strong style={{ color: todayAutoTradeStats.rejected > 0 ? '#ef4444' : '#666' }}>
-                    {todayAutoTradeStats.rejected}
-                  </strong>
-                </span>
-              </div>
-            </div>
-
-            <div className="ai-activity-recent">
-              <div className="ai-activity-sub-title">최근 판단</div>
-              {recentAiTop3.length === 0 ? (
-                <div className="ai-activity-empty">
-                  {aiStatus.isActive
-                    ? '아직 AI 판단 이력이 없습니다.'
-                    : '자동매매가 꺼져있어요. 켜면 AI가 종목을 분석합니다.'}
-                </div>
-              ) : (
-                recentAiTop3.map((d) => {
-                  const actionMeta = ACTION_DISPLAY[d.action] ?? ACTION_DISPLAY.UNKNOWN;
-                  const statusMeta = EXECUTION_STATUS_DISPLAY[d.executionStatus];
-                  const actionLower = (d.action ?? 'unknown').toLowerCase();
+          <div className="dashboard-bottom-right">
+            {/* 최근 매매 로그 (AI + 수동 통합, 최근 5개) */}
+            <div className="panel logs-panel">
+              <h2>최근 매매 로그</h2>
+              <div className="logs-list">
+                {logsError ? (
+                  <InlineError
+                    compact
+                    message="거래 이력을 불러오지 못했습니다."
+                    onRetry={() => { fetchAi(); fetchOrders(); }}
+                  />
+                ) : logsLoading ? (
+                  Array.from({ length: 4 }).map((_, idx) => (
+                    <div key={`sk-log-${idx}`} className="log-item">
+                      <Skeleton width={40} height={40} borderRadius={8} />
+                      <div className="log-content" style={{ flex: 1, marginLeft: 8 }}>
+                        <div className="log-top">
+                          <Skeleton width="50%" height={14} />
+                          <Skeleton width={50} height={11} />
+                        </div>
+                        <div className="log-bottom" style={{ marginTop: 6 }}>
+                          <Skeleton width="70%" height={12} />
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : recentLogs.length > 0 ? recentLogs.map((log) => {
+                  const actionLower = (log.action ?? '').toLowerCase();
+                  const actionLabel = log.action === 'BUY' ? '매수'
+                    : log.action === 'SELL' ? '매도'
+                    : log.action === 'HOLD' ? '관망' : '판단';
+                  const date = new Date(log.decidedAt);
+                  const timeLabel = `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+                  // 수동 매매 주문 상태 라벨 (체결/정정/취소/대기/거절). FILLED는 기본값이라 굳이 표시하지 않는다.
+                  const statusDisplay = log.source !== 'AI' && log.status && log.status !== 'FILLED'
+                    ? ORDER_STATUS_DISPLAY[log.status]
+                    : null;
+                  const canNavigate = !!log.stockCode;
+                  const handleLogClick = () => {
+                    if (!canNavigate) return;
+                    navigate(`/trading?stock=${log.stockCode}&name=${encodeURIComponent(log.stockName ?? log.stockCode)}`);
+                  };
                   return (
-                    <div key={d.id} className="ai-decision-item">
-                      <span className={`decision-action ${actionLower}`}>{actionMeta.label}</span>
-                      <span className="decision-stock">{d.stockCode}</span>
-                      <span className="decision-confidence">
-                        {d.confidence != null ? `${Math.round(d.confidence)}%` : '-'}
-                      </span>
-                      {statusMeta && (
-                        <span className="decision-status" style={{ color: statusMeta.color }}>
-                          {statusMeta.label}
-                        </span>
-                      )}
+                    <div
+                      key={log.id}
+                      className={`log-item${canNavigate ? ' log-item-clickable' : ''}`}
+                      onClick={canNavigate ? handleLogClick : undefined}
+                      onKeyDown={canNavigate ? (e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleLogClick();
+                        }
+                      } : undefined}
+                      role={canNavigate ? 'button' : undefined}
+                      tabIndex={canNavigate ? 0 : undefined}
+                    >
+                      <div className={`log-icon ${actionLower}`}>{actionLabel}</div>
+                      <div className="log-content">
+                        <div className="log-top">
+                          <span className="log-stock">
+                            {log.stockName ?? log.stockCode}
+                            {statusDisplay && (
+                              <span style={{ marginLeft: 6, fontSize: '0.85em', color: statusDisplay.color }}>
+                                · {statusDisplay.label}
+                              </span>
+                            )}
+                          </span>
+                          <span className="log-time">{timeLabel}</span>
+                        </div>
+                        <div className="log-bottom">
+                          {log.orderType === 'MARKET' && log.quantity != null
+                            ? `시장가 · ${log.quantity}주`
+                            : log.price != null && log.price > 0 && log.quantity != null
+                            ? `${log.price.toLocaleString()}원 · ${log.quantity}주`
+                            : log.quantity != null
+                            ? `${log.quantity}주`
+                            : (log.source === 'AI' ? 'AI 판단' : '-')}
+                        </div>
+                      </div>
                     </div>
                   );
-                })
-              )}
-            </div>
-          </div>
-
-          {/* 최근 매매 로그 (AI + 수동 통합, 최근 5개) */}
-          <div className="panel logs-panel">
-            <h2>최근 매매 로그</h2>
-            <div className="logs-list">
-              {logsError ? (
-                <InlineError
-                  compact
-                  message="거래 이력을 불러오지 못했습니다."
-                  onRetry={() => { fetchAi(); fetchOrders(); }}
-                />
-              ) : logsLoading ? (
-                Array.from({ length: 4 }).map((_, idx) => (
-                  <div key={`sk-log-${idx}`} className="log-item">
-                    <Skeleton width={40} height={40} borderRadius={8} />
-                    <div className="log-content" style={{ flex: 1, marginLeft: 8 }}>
-                      <div className="log-top">
-                        <Skeleton width="50%" height={14} />
-                        <Skeleton width={50} height={11} />
-                      </div>
-                      <div className="log-bottom" style={{ marginTop: 6 }}>
-                        <Skeleton width="70%" height={12} />
-                      </div>
-                    </div>
-                  </div>
-                ))
-              ) : recentLogs.length > 0 ? recentLogs.map((log) => {
-                const actionLower = (log.action ?? '').toLowerCase();
-                const actionLabel = log.action === 'BUY' ? '매수'
-                  : log.action === 'SELL' ? '매도'
-                  : log.action === 'HOLD' ? '관망' : '판단';
-                const date = new Date(log.decidedAt);
-                const timeLabel = `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-                // 수동 매매 주문 상태 라벨 (체결/정정/취소/대기/거절). FILLED는 기본값이라 굳이 표시하지 않는다.
-                const statusDisplay = log.source !== 'AI' && log.status && log.status !== 'FILLED'
-                  ? ORDER_STATUS_DISPLAY[log.status]
-                  : null;
-                const canNavigate = !!log.stockCode;
-                const handleLogClick = () => {
-                  if (!canNavigate) return;
-                  navigate(`/trading?stock=${log.stockCode}&name=${encodeURIComponent(log.stockName ?? log.stockCode)}`);
-                };
-                return (
-                  <div
-                    key={log.id}
-                    className={`log-item${canNavigate ? ' log-item-clickable' : ''}`}
-                    onClick={canNavigate ? handleLogClick : undefined}
-                    onKeyDown={canNavigate ? (e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        handleLogClick();
-                      }
-                    } : undefined}
-                    role={canNavigate ? 'button' : undefined}
-                    tabIndex={canNavigate ? 0 : undefined}
-                  >
-                    <div className={`log-icon ${actionLower}`}>{actionLabel}</div>
-                    <div className="log-content">
-                      <div className="log-top">
-                        <span className="log-stock">
-                          {log.stockName ?? log.stockCode}
-                          {statusDisplay && (
-                            <span style={{ marginLeft: 6, fontSize: '0.85em', color: statusDisplay.color }}>
-                              · {statusDisplay.label}
-                            </span>
-                          )}
-                        </span>
-                        <span className="log-time">{timeLabel}</span>
-                      </div>
-                      <div className="log-bottom">
-                        {log.orderType === 'MARKET' && log.quantity != null
-                          ? `시장가 · ${log.quantity}주`
-                          : log.price != null && log.price > 0 && log.quantity != null
-                          ? `${log.price.toLocaleString()}원 · ${log.quantity}주`
-                          : log.quantity != null
-                          ? `${log.quantity}주`
-                          : (log.source === 'AI' ? 'AI 판단' : '-')}
-                      </div>
-                    </div>
-                  </div>
-                );
-              }) : (
-                <div className="empty-logs">표시할 활동이 없습니다.</div>
-              )}
+                }) : (
+                  <div className="empty-logs">표시할 활동이 없습니다.</div>
+                )}
+              </div>
             </div>
           </div>
         </div>
