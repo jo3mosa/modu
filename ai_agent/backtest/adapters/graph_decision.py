@@ -300,6 +300,11 @@ def _to_da_decision(final_state: Any) -> Decision:
             action="hold",
             confidence=dump.get("confidence"),
             reasoning=dump.get("reason_summary") or "",
+            extras={
+                "winning_side": _extract_winning_side(final_state),
+                "bull_claim": _extract_bull_bear(final_state, "key_bull_points"),
+                "bear_claim": _extract_bull_bear(final_state, "key_bear_points"),
+            },
         )
 
     return Decision(
