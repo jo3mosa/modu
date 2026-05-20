@@ -254,7 +254,6 @@
 .stock-summary-card:hover {
   background: rgba(255, 255, 255, 0.05);
   border-color: rgba(255, 255, 255, 0.15);
-  transform: translateY(-4px);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4), 
               0 0 1px 1px rgba(255, 255, 255, 0.1) inset;
 }
@@ -341,8 +340,9 @@
 }
 
 @keyframes flash-bounce {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.03); }
+  /* 색상 반짝임 효과만 유지하고 스케일 튕김(움찔 효과)은 완전히 배제 */
+  0%, 100% { transform: none; }
+  50% { transform: none; }
 }
 
 /* 카드 하단 */
