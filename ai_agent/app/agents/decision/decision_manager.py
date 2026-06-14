@@ -5,27 +5,20 @@ from langchain_core.exceptions import OutputParserException
 from langchain_core.output_parsers import PydanticOutputParser
 
 from app.config.llm import get_decision_llm
-from app.observability.langsmith_helpers import add_run_metadata, count_tokens
+from app.observability.langsmith_helpers import add_run_metadata
 from app.state.investment_state import InvestmentAgentState
-from app.state.schemas import ExpectedScenario, FinalDecision
+from app.state.schemas import ResearchVerdict, StrategyDraft
 from app.utils.agent_message import publish_agent_message
 from app.utils.json_utils import to_json
-from app.utils.object_utils import get_value
 from app.utils.prompt_loader import load_prompt
 
 _PROMPT_PATH = Path(__file__).resolve().parents[2] / "config" / "prompts" / "decision_manager.txt"
+# debate_0(토론 없음) 모드 전용 — Bull/Bear 발언이 모두 빈 상태에서 호출되며,
+# 토론 평가가 아닌 signals 직접 해석으로 ResearchVerdict 생성. bull_arguments /
+# bear_arguments 변수가 없는 별도 ChatPromptTemplate.
+_PROMPT_PATH_SOLO = Path(__file__).resolve().parents[2] / "config" / "prompts" / "decision_manager_solo.txt"
 
-_parser = PydanticOutputParser(pydantic_object=FinalDecision)
-
-
-def _format_debate_history(debate_rounds: list[dict]) -> str:
-    if not debate_rounds:
-        return "(토론 기록 없음)"
-    parts = [
-        f"[Round {r['round']}]\nBull: {r['bull']}\nBear: {r['bear']}"
-        for r in debate_rounds
-    ]
-    return "\n\n".join(parts)
+_parser = PydanticOutputParser(pydantic_object=ResearchVerdict)
 
 
 def decision_manager(state: InvestmentAgentState) -> dict[str, Any]:
@@ -33,44 +26,38 @@ def decision_manager(state: InvestmentAgentState) -> dict[str, Any]:
     Decision Manager.
 
     역할:
-    - Strategy Team의 ResearchVerdict를 실행 가능한 FinalDecision으로 변환한다.
-    - 사이즈/타이밍/시나리오/risk_level/user_message를 함께 결정한다.
-    - 출력은 FinalDecision 스키마이며, 후속 Risk Gate가 이를 검증한다.
+    - 토론 있음(debate_1/2): investment_debate_state.history(Bull/Bear 자유 텍스트 토론)를
+      비판적으로 평가한다. 기존 프롬프트 사용.
+    - 토론 없음(debate_0): bull_history/bear_history가 모두 빈 상태에서 호출되며,
+      signals 4종을 직접 해석해 결정. decision_manager_solo.txt 사용 — 토론 평가
+      문구가 제거된 별도 프롬프트라 "토론 부재 → hold" 패턴을 회피.
+    - 출력은 ResearchVerdict 스키마(structured)이며, 동일 결정을 StrategyDraft로 변환해
+      후속 critic/supervisor 단계 계약을 유지한다.
 
     실패 시 정책:
-    - 출력 파싱 또는 LLM 호출이 실패하면 hold로 강등한다.
-    - ResearchVerdict가 hold를 권고했다면 LLM 호출 없이 즉시 hold FinalDecision을 반환한다.
+    - 출력 파싱 또는 LLM 호출이 실패하면 flow_status="hold"로 강등한다.
+    - 후보 외 종목 선택 시에도 hold로 강등한다.
     """
 
-    history_context_tokens = count_tokens(to_json(state.history_context))
-    verdict = state.research_verdict
-
-    if verdict is None:
-        return _hold(
-            reason="research_verdict가 없어 최종 판단을 보류합니다.",
-            asset=None,
-            risk_summary=["Strategy Team 결과 누락"],
-            history_context_tokens=history_context_tokens,
-        )
-
-    if verdict.recommended_side == "hold":
-        return _hold(
-            reason=verdict.rationale or "Strategy Manager가 hold를 권고했습니다.",
-            asset=verdict.asset or None,
-            confidence=verdict.confidence,
-            history_context_tokens=history_context_tokens,
-        )
-
-    chain = load_prompt(str(_PROMPT_PATH)) | get_decision_llm() | _parser
-
     debate_state = state.investment_debate_state or {}
+    bull_history: list[str] = debate_state.get("bull_history", [])
+    bear_history: list[str] = debate_state.get("bear_history", [])
+    is_debate_empty = not bull_history and not bear_history
+
+    # 토론이 비면 solo 프롬프트로 — debate_history 변수가 없어 inputs에서도 제외.
+    prompt_path = _PROMPT_PATH_SOLO if is_debate_empty else _PROMPT_PATH
+    chain = load_prompt(str(prompt_path)) | get_decision_llm() | _parser
+
+    snapshot = state.analysis_snapshot or {}
     mc = state.memory_context or {}
 
     inputs = {
-        "research_verdict": to_json(verdict),
-        "debate_history": _format_debate_history(debate_state.get("debate_rounds", [])),
         "candidate_assets": to_json(state.candidate_assets),
-        "analysis_snapshot": to_json(state.analysis_snapshot),
+        "signals_technical": to_json(snapshot.get("technical", {})),
+        "signals_fundamental": to_json(snapshot.get("fundamental", {})),
+        "signals_event": to_json(snapshot.get("event", {})),
+        "signals_news_summary": to_json(snapshot.get("news_summary") or {}),
+        "signals_sentiment": to_json(snapshot.get("sentiment", {})),
         "portfolio_snapshot": to_json(state.portfolio_snapshot),
         "user_context": to_json(state.user_context),
         "policy_context": to_json(state.policy_context),
@@ -81,105 +68,115 @@ def decision_manager(state: InvestmentAgentState) -> dict[str, Any]:
         "history_context": to_json(state.history_context),
         "format_instructions": _parser.get_format_instructions(),
     }
-
-    try:
-        final_decision = chain.invoke(inputs)
-    except OutputParserException:
-        try:
-            final_decision = chain.invoke(inputs)
-        except OutputParserException as exc:
-            return _hold(
-                reason="LLM 출력 파싱 2회 실패",
-                asset=verdict.asset,
-                risk_summary=[str(exc)],
-                history_context_tokens=history_context_tokens,
-            )
-        except Exception as exc:
-            # 재시도 중 LLM 호출 자체가 실패하면 outer except에 닿지 않으므로 여기서 잡아 hold 강등.
-            return _hold(
-                reason="재시도 중 LLM 호출 실패",
-                asset=verdict.asset,
-                risk_summary=[str(exc)],
-                history_context_tokens=history_context_tokens,
-            )
-    except Exception as exc:
-        return _hold(
-            reason="LLM 호출 실패",
-            asset=verdict.asset,
-            risk_summary=[str(exc)],
-            history_context_tokens=history_context_tokens,
+    if not is_debate_empty:
+        # TradingAgents 패턴 — Bull/Bear 분리 섹션이 아닌 시간순 통합 history를 전달.
+        # decision_manager가 "각자 진술 묶음"이 아니라 "라운드별 대화 흐름"으로 인식.
+        inputs["debate_history"] = (
+            debate_state.get("history")
+            or "(토론 기록 없음 — bull/bear 발언이 누락되었습니다)"
         )
 
-    # action="trade"인 경우 실제 주문으로 이어지므로, 주문 필수 필드가 모두 채워졌는지
-    # 코드 레벨에서 검증한다. Pydantic 파싱이 통과해도 Optional 필드라 비어 있을 수 있다.
-    if final_decision.action == "trade":
-        missing = _missing_trade_fields(final_decision)
-        if missing:
-            return _hold(
-                reason=(
-                    "Decision Manager가 trade 결정을 생성했지만 "
-                    f"필수 주문 필드가 누락되어 보류합니다: {', '.join(missing)}"
-                ),
-                asset=get_value(final_decision, "asset") or verdict.asset,
-                confidence=get_value(final_decision, "confidence"),
-                risk_summary=[
-                    "trade 결정에 필요한 주문 정보가 불완전합니다.",
-                    *(get_value(final_decision, "risk_summary") or []),
-                ],
-                history_context_tokens=history_context_tokens,
-            )
+    try:
+        verdict = chain.invoke(inputs)
+    except OutputParserException:
+        try:
+            verdict = chain.invoke(inputs)
+        except OutputParserException as exc:
+            return _hold("LLM 출력 파싱 2회 실패", str(exc))
+        except Exception as exc:
+            # 재시도 중 LLM 호출 자체가 실패하면 outer except에 닿지 않으므로 여기서 잡아 hold 강등.
+            return _hold("재시도 중 LLM 호출 실패", str(exc))
+    except Exception as exc:
+        return _hold("LLM 호출 실패", str(exc))
+
+    valid_codes = _candidate_codes(state.candidate_assets)
+    if (
+        verdict.recommended_side != "hold"
+        and (not valid_codes or verdict.asset not in valid_codes)
+    ):
+        return _hold(
+            "후보 외 종목 선택",
+            f"Decision Manager가 후보 목록에 없는 종목을 선택했습니다: {verdict.asset}",
+        )
 
     add_run_metadata({
         "node": "decision_manager",
-        "action": final_decision.action,
-        "risk_level": final_decision.risk_level,
-        "history_context_tokens": history_context_tokens,
+        "winning_side": verdict.winning_side,
+        "recommended_side": verdict.recommended_side,
+        "confidence": verdict.confidence,
     })
 
     round_count = debate_state.get("round_count", 0)
-    publish_agent_message(state, "DECIDE", round_count * 2 + 1, final_decision.user_message or final_decision.reason_summary, stock_code=final_decision.asset or None)
+    publish_agent_message(state, "DECIDE", round_count * 2, verdict.rationale, stock_code=verdict.asset or None)
 
     return {
-        "final_decision": final_decision,
-        "flow_status": "running" if final_decision.action == "trade" else "hold",
+        "research_verdict": verdict,
+        "strategy_draft": _to_strategy_draft(verdict),
     }
 
 
-def _hold(
-    reason: str,
-    asset: str | None = None,
-    confidence: float | None = 0.0,
-    risk_summary: list[str] | None = None,
-    history_context_tokens: int = 0,
-) -> dict[str, Any]:
+def _to_strategy_draft(verdict: ResearchVerdict) -> StrategyDraft:
+    """
+    ResearchVerdict를 후속 critic/supervisor 단계가 사용하는 StrategyDraft로 변환한다.
+    """
+
+    if verdict.recommended_side == "hold":
+        return StrategyDraft(
+            asset=verdict.asset or "",
+            side="hold",
+            order_amount=0,
+            target_price=None,
+            stop_loss_price=None,
+            reason=verdict.rationale,
+            confidence=verdict.confidence,
+        )
+
+    return StrategyDraft(
+        asset=verdict.asset,
+        side=verdict.recommended_side,
+        order_amount=verdict.order_amount,
+        target_price=verdict.target_price,
+        stop_loss_price=verdict.stop_loss_price,
+        reason=verdict.rationale,
+        confidence=verdict.confidence,
+    )
+
+
+def _hold(reason: str, detail: str) -> dict[str, Any]:
+    """
+    Manager 단계 실패 시 안전한 hold 상태로 강등한다.
+
+    critic/supervisor가 strategy_draft=None도 자체 fallback으로 처리하긴 하지만,
+    trace 일관성과 사용자 노출용 메시지 보존을 위해 hold verdict/draft를 명시적으로 채운다.
+    """
+    hold_verdict = ResearchVerdict(
+        winning_side="balanced",
+        asset="",
+        recommended_side="hold",
+        rationale=reason,
+        confidence=0.0,
+    )
     add_run_metadata({
         "node": "decision_manager",
-        "action": "hold",
-        "risk_level": "low",
-        "history_context_tokens": history_context_tokens,
+        "winning_side": hold_verdict.winning_side,
+        "recommended_side": hold_verdict.recommended_side,
+        "confidence": hold_verdict.confidence,
     })
     return {
-        "final_decision": FinalDecision(
-            action="hold",
-            asset=asset,
-            reason_summary=reason,
-            risk_summary=risk_summary or [],
-            expected_scenario=ExpectedScenario(
-                base="조건이 명확해질 때까지 진입하지 않습니다.",
-                bear="불확실성이 해소되기 전에는 손실 가능성을 최소화합니다.",
-                bull="추가 데이터 확인 후 조건이 개선되면 재검토합니다.",
-            ),
-            confidence=confidence or 0.0,
-            risk_level="low",
-            user_message="현재 조건에서는 투자 판단을 보류합니다.",
-        ),
         "flow_status": "hold",
+        "research_verdict": hold_verdict,
+        "strategy_draft": _to_strategy_draft(hold_verdict),
+        "error_context": {
+            "agent": "decision_manager",
+            "reason": reason,
+            "detail": detail,
+        },
     }
 
 
-def _missing_trade_fields(decision: FinalDecision) -> list[str]:
-    """
-    trade 결정에 필요한 필수 주문 필드 누락 여부를 확인한다.
-    """
-    required = ["asset", "side", "order_amount", "target_price", "stop_loss_price"]
-    return [f for f in required if get_value(decision, f) is None]
+def _candidate_codes(candidate_assets: list[dict[str, Any]]) -> set[str]:
+    return {
+        asset.get("stock_code") or asset.get("ticker")
+        for asset in candidate_assets
+        if asset.get("stock_code") or asset.get("ticker")
+    }

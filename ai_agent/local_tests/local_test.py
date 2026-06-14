@@ -192,8 +192,8 @@ STEP_LABELS = {
     "context_loader":   "context_loader   — 컨텍스트 로드",
     "bull_researcher":  "bull_researcher  — 매수 논거 생성",
     "bear_researcher":  "bear_researcher  — 매도 논거 생성",
-    "strategy_manager": "strategy_manager — 토론 종합 / 판결",
-    "decision_manager": "decision_manager — 최종 투자 결정",
+    "decision_manager": "decision_manager — 토론 종합 / 판결",
+    "strategy_manager": "strategy_manager — 최종 투자 결정",
     "risk_gate":        "risk_gate        — 리스크 게이트",
 }
 
@@ -219,7 +219,7 @@ def _print_node(step: int, name: str, output: dict) -> None:
         text = debate.get("bear_history", "").replace("Bear Analyst:", "").strip()
         print(f"      {_truncate(text)}")
 
-    elif name == "strategy_manager":
+    elif name == "decision_manager":
         verdict = output.get("research_verdict")
         if verdict:
             v = verdict if isinstance(verdict, dict) else verdict.model_dump()
@@ -232,7 +232,7 @@ def _print_node(step: int, name: str, output: dict) -> None:
                 _row("목표가", v.get("target_price", "-"), 3)
                 _row("손절가", v.get("stop_loss_price", "-"), 3)
 
-    elif name == "decision_manager":
+    elif name == "strategy_manager":
         decision = output.get("final_decision")
         if decision:
             d = decision if isinstance(decision, dict) else decision.model_dump()
@@ -293,7 +293,7 @@ def _print_summary(state: dict) -> None:
     if verdict:
         v = verdict if isinstance(verdict, dict) else verdict.model_dump()
         print()
-        print("  [strategy_manager 판결]")
+        print("  [decision_manager 판결]")
         _row("우세 측", v.get("winning_side"), 2)
         bulls = v.get("key_bull_points", [])[:2]
         bears = v.get("key_bear_points", [])[:2]

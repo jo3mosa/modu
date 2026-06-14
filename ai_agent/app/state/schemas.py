@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 class ResearchVerdict(BaseModel):
     """
-    Strategy Manager(Research Manager)가 Bull/Bear 토론을 종합해 내리는 판결.
+    Decision Manager가 Bull/Bear 토론을 종합해 내리는 판결.
 
     역할:
     - 양측 주장의 핵심 근거를 비교하고 어느 쪽 논리가 더 견고한지 판단한다.
@@ -115,7 +115,7 @@ class StrategyDraft(BaseModel):
 
 class ExpectedScenario(BaseModel):
     """
-    Decision Manager가 생성하는 예상 시나리오
+    Strategy Manager가 생성하는 예상 시나리오
 
     사용자 화면에 보여줄 설명이나 판단 근거 로그에 활용
     - base: 기본 시나리오 설명
@@ -129,7 +129,7 @@ class ExpectedScenario(BaseModel):
 
 class FinalDecision(BaseModel):
     """
-    Decision Manager가 내리는 최종 투자 결정
+    Strategy Manager가 내리는 최종 투자 결정
 
     Risk Gate가 이 객체의 형식·정책을 검증하고, 통과 시 ai.decision.generated 토픽으로
     백엔드(KisOrderConsumer)에 전달되어 실제 KIS 주문이 실행된다.
@@ -143,7 +143,7 @@ class FinalDecision(BaseModel):
       - risk_summary: 주요 리스크 요약
       - expected_scenario: 예상 시나리오 설명
       - confidence: 최종 결정에 대한 신뢰도 점수
-      - risk_level: Decision Manager가 평가한 리스크 등급. Risk Gate가 high이면 사용자 승인 요구.
+      - risk_level: Strategy Manager가 평가한 리스크 등급. Risk Gate가 high이면 사용자 승인 요구.
       - user_message: 사용자에게 보여줄 간단한 판단 사유
     """
     action: Literal["trade", "hold"]
