@@ -1,535 +1,490 @@
 # MODU AI Agent
 
-MODU 사용자별 매매 의사결정을 만드는 **LangGraph 기반 멀티 에이전트** 모듈.
-한국 주식 시장의 분석 신호와 사용자 컨텍스트를 받아
-Bull/Bear 토론 → 전략 종합 → 최종 결정 → 리스크 게이트까지
-한 번의 그래프 호출로 처리한다.
+MODU의 AI Agent 모듈은 분석 서버가 감지한 시장 신호를 사용자별 투자 판단으로 변환하는 **LangGraph 기반 Multi-Agent 파이프라인**입니다.
 
-> 이 문서는 **현재 코드(`app/graph/builder.py` 기준)** 를 정확히 반영한다.
-> 코드를 변경하면 이 문서도 함께 갱신해 주세요. 한 번 어긋나면 신입에게 큰 비용이 됩니다.
+이 모듈은 주문을 직접 실행하지 않습니다. AI Agent는 판단과 근거를 생성해 Kafka로 발행하고, 실제 주문 row 생성, KIS API 호출, 체결 처리, 판단 저장은 백엔드가 담당합니다.
 
 ---
 
-## 1. 시스템 안에서의 위치
+## 시스템 안에서의 위치
 
+```text
+analysis_server
+  |
+  | Kafka: market.signal.detected
+  v
+ai_agent
+  - 시장 신호 수신
+  - 보유자/매수 후보 사용자 fanout
+  - 사용자별 LangGraph 실행
+  - Agent 발화 메시지 발행
+  - 최종 판단 발행
+  |
+  | Kafka: ai.decision.generated
+  v
+backend
+  - AI 판단 저장
+  - 승인 대기/승인/거부 처리
+  - 주문 row 생성
+  - KIS 주문/체결 처리
 ```
-┌──────────────────┐  Kafka                ┌────────────────────┐  Kafka                 ┌──────────────────┐
-│ Analysis Layer   │ ───────────────────▶  │  AI Agent (이 모듈) │ ────────────────────▶ │  Backend         │
-│ (analysis_server)│ market.signal.detected│  사용자 매칭 + Graph│ ai.decision.generated │ (Spring Boot)    │
-└──────────────────┘                       │   실행              │                        │ KIS 주문 실행    │
-                                           └────────────────────┘                        └──────────────────┘
-                                                  ▲       │
-                                                  │       │ DB / Redis read
-                                              사용자 컨텍스트 / 보유 종목 인덱스
+
+피드백 흐름은 별도 consumer로 분리되어 있습니다.
+
+```text
+backend
+  |
+  | Kafka: trade.settled
+  v
+ai_agent feedback consumer
+  - ai_judgments에서 당시 판단 근거 조회
+  - Postmortem Agent 회고 생성
+  - post_mortem_reports 저장
 ```
-
-- **입력**: `market.signal.detected` (Analysis Layer 발행, 종목 단위 신호)
-- **처리**: 신호 → 보유 사용자 매칭 → 사용자별 LangGraph 1회 실행
-- **출력**: `ai.decision.generated` (백엔드가 받아 실제 KIS 주문 실행)
-
-이 모듈은 **결정만 만들고 결정만 발행**한다. 실제 KIS API 호출은 백엔드의 책임이며,
-백엔드 `KisOrderConsumer`가 `ai.decision.generated`를 받아 주문을 집행하고,
-체결 후 `trade.order.executed` 컨슈머에서 `ai_judgments.order_id`를 UPDATE 한다.
-즉, 실행 결과는 ai_agent의 그래프 State가 아니라 DB 레벨에서 합류한다.
 
 ---
 
-## 2. 폴더 구조
+## 운영 진입점
 
-```
+### 판단 Consumer
+
+[app/consumer.py](./app/consumer.py)
+
+운영 기본 진입점입니다. 두 개의 consumer thread를 실행합니다.
+
+| Consumer | 입력 토픽 | 처리 | 출력 |
+| --- | --- | --- | --- |
+| `market-signal-consumer` | `market.signal.detected` | `MarketTriggerEvent`를 사용자별 `UserTriggerEvent`로 변환 | `ai.trigger.requested` |
+| `user-trigger-consumer` | `ai.trigger.requested` | LangGraph 실행 후 판단 payload 생성 | `ai.decision.generated` |
+
+스레드가 예외로 종료되면 프로세스를 종료해 컨테이너/Kubernetes 재시작을 유도합니다.
+
+### 회고 Consumer
+
+[app/feedback/consumer.py](./app/feedback/consumer.py)
+
+`trade.settled` 이벤트를 받아 사후 회고를 생성합니다. 판단 파이프라인과 장애/자원 영향을 분리하기 위해 별도 entry point로 구성되어 있습니다.
+
+---
+
+## Kafka 토픽
+
+| 토픽 | 생산자 | 소비자 | 역할 |
+| --- | --- | --- | --- |
+| `market.signal.detected` | analysis_server | ai_agent | 종목 단위 시장 신호 |
+| `ai.trigger.requested` | ai_agent | ai_agent | 시장 신호를 사용자별 실행 요청으로 fanout |
+| `ai.decision.generated` | ai_agent | backend | AI 최종 판단 payload |
+| `ai.agent.message` | ai_agent | backend | Agent 발화 메시지 저장 및 SSE 전달 |
+| `trade.settled` | backend | ai_agent feedback | 매수→매도 청산 후 postmortem 트리거 |
+
+---
+
+## 폴더 구조
+
+```text
 ai_agent/
-├── main.py                              # 단일 실행 데모 (graph 1회 invoke)
-├── requirements.txt
-├── README.md
-└── app/
-    ├── consumer.py                      # 운영 진입점. Kafka 컨슈머 2개 스레드 기동
-    │
-    ├── config/
-    │   ├── llm.py                       # ChatOpenAI 인스턴스 (SSAFY GMS gateway)
-    │   ├── kafka.py                     # KafkaProducer/Consumer + topic 상수
-    │   ├── redis.py                     # Redis 클라이언트 lazy singleton
-    │   └── prompts/                     # 노드별 prompt 텍스트
-    │       ├── bull_researcher.txt
-    │       ├── bear_researcher.txt
-    │       ├── strategy_manager.txt        # debate_1/2 — 토론 평가 모드
-    │       ├── strategy_manager_solo.txt   # debate_0 — 토론 없이 signals 직접 해석
-    │       ├── decision_manager.txt
-    │       └── post_mortem_agent.txt       # SELL 체결 후 사후 회고 LLM
-    │
-    ├── triggers/                        # Kafka 이벤트 ↔ state 변환
-    │   ├── schemas.py                   # MarketTriggerEvent / UserTriggerEvent
-    │   ├── user_trigger_matcher.py      # MarketEvent → 보유 사용자별 UserTriggerEvent 분기
-    │   ├── state_factory.py             # UserTriggerEvent → InvestmentAgentState
-    │   ├── pipeline.py                  # mock 트리거로 graph end-to-end 검증용
-    │   └── mock_trigger.py              # 개발/테스트용 가짜 트리거 생성
-    │
-    ├── repositories/
-    │   └── position_index_repository.py # Redis Set: "이 종목 보유한 user_id 목록"
-    │
-    ├── state/
-    │   ├── investment_state.py          # 그래프 공유 상태 (모든 노드의 척추)
-    │   └── schemas.py                   # ResearchVerdict / StrategyDraft / FinalDecision
-    │
-    ├── context/                         # Reasoning 노드 입력 컨텍스트 수집 (LLM-free)
-    │   ├── context_loader.py            # context_loader 노드. 아래 모듈 합성
-    │   ├── user_context.py              # PostgreSQL → 투자성향/거래규칙/자동매매 정책
-    │   └── memory_context.py            # MemoryStore → 과거 판단 이력 회상
-    │
-    ├── memory/                          # 과거 판단 저장/조회 (ai_judgments 등)
-    │   ├── interfaces.py                # MemoryStore Protocol + 공통 Enum/TypedDict
-    │   ├── db_store.py                  # MemoryStore의 DB 구현체
-    │   ├── retrieval.py                 # SELECT 전담
-    │   └── memory_log.py                # INSERT 전담 (decision / postmortem)
-    │
-    ├── agents/                          # LangGraph 노드 함수 (LLM 사용)
-    │   ├── strategy/
-    │   │   ├── bull_researcher.py       # 매수 옹호 발언 (자유 텍스트)
-    │   │   ├── bear_researcher.py       # 매도/리스크 반박 (자유 텍스트)
-    │   │   └── strategy_manager.py      # 토론 종합 → ResearchVerdict 구조화 출력
-    │   ├── decision/
-    │   │   ├── decision_manager.py      # ResearchVerdict → FinalDecision
-    │   │   └── risk_gate.py             # ※LLM-free※ 결정의 형식·정책 검증 게이트
-    │   └── feedback/
-    │       └── post_mortem_agent.py     # SELL 체결 후 사후 회고 LLM 노드
-    │
-    ├── feedback/                        # SELL 결정 후 사후 회고 흐름 (MVP: cron 없음)
-    │   ├── consumer.py                  # SELL 체결 알림 컨슈머
-    │   ├── pipeline.py                  # 단일 회고 실행 (학습/디버깅용)
-    │   └── schemas.py                   # PostMortem 입력/출력 스키마
-    │
-    ├── graph/
-    │   ├── builder.py                   # LangGraph 정의 (노드 / 엣지 / 조건부 분기)
-    │   └── runner.py                    # graph.invoke + Kafka publish 래퍼
-    │
-    ├── observability/
-    │   └── langsmith_helpers.py         # LangSmith metadata 태깅 (운영 차단 X)
-    │
-    ├── knowledge_base/                  # 정책/지식 마크다운 (참고용)
-    │   ├── investment-profile.md
-    │   ├── investment-strategy.md
-    │   ├── llm-wiki.md
-    │   └── trade-history-wiki.md
-    │
-    └── utils/
-        ├── prompt_loader.py             # [SYSTEM]/[HUMAN] 구분자 기반 프롬프트 로더 (lru_cache)
-        ├── agent_message.py             # 그래프 노드 발화를 Kafka publish (실시간 시각화용).
-        │                                #   DISABLE_AGENT_MESSAGE=1 환경변수면 즉시 return (backtest 자동 적용)
-        ├── json_utils.py                # Pydantic/dict 통합 JSON 직렬화
-        └── object_utils.py              # dict + Pydantic 통합 get_value
-
-backtest/                                # ※ 별도 모듈 ※ 자세한 가이드는 backtest/README.md
-├── run_ai_backtest.py                   # AI 백테스트 진입점 (debate_0/1/2 / random / mock / daily_scan)
-├── event_loop.py                        # 거래일 단위 시뮬레이션 루프 (resume·sentinel·Mongo 재접속)
-├── scoring.py                           # raw_return + post_mortem 통합 채점
-├── data_sources.py                      # Postgres(시장·지표·재무) + Mongo(공시·뉴스) 조회
-├── signal_generator.py                  # Analysis Layer 신호 생성 (백테스트 시점 재현)
-├── keep_awake.py                        # backtest 실행 중 Windows 절전 방지 (mac/linux no-op)
-├── modes.py                             # MODE_REGISTRY (debate_0/1/2 + random/mock/daily_scan)
-├── adapters/graph_decision.py           # 운영 그래프와 동일한 LangGraph를 백테스트에서 호출 + LLM 토큰 캡처
-└── examples/
-    └── dummy_debate_trace.py            # LangSmith trace 검증용 — 1 trigger 실 LLM 실행
-
-dashboards/                              # Streamlit 백테스트 결과 뷰어
-└── backtest_viewer.py                   # 종목별 보유 수량, 경과 시간, 토큰/비용 KPI, resume 체크박스
+├── app/
+│   ├── consumer.py                 # 판단 파이프라인 Kafka consumer
+│   ├── config/
+│   │   ├── kafka.py                # Kafka topic, producer, consumer
+│   │   ├── llm.py                  # 모델 provider 선택 및 LLM factory
+│   │   └── prompts/                # Agent별 prompt
+│   ├── triggers/
+│   │   ├── schemas.py              # MarketTriggerEvent, UserTriggerEvent
+│   │   ├── user_trigger_matcher.py # 시장 이벤트 → 사용자별 trigger 변환
+│   │   └── state_factory.py        # UserTriggerEvent → InvestmentAgentState
+│   ├── graph/
+│   │   ├── builder.py              # LangGraph 노드/엣지 정의
+│   │   └── runner.py               # graph.invoke + Kafka publish
+│   ├── agents/
+│   │   ├── strategy/               # Bull/Bear + Strategy Manager
+│   │   ├── decision/               # Decision Manager + Risk Gate
+│   │   └── feedback/               # Postmortem Agent
+│   ├── context/                    # LLM-free 컨텍스트 로딩
+│   ├── memory/                     # 과거 판단/회고 조회 및 저장 adapter
+│   ├── repositories/               # Redis 기반 포지션/가격/매수 후보 조회
+│   ├── feedback/                   # trade.settled 회고 파이프라인
+│   ├── state/                      # LangGraph state, Pydantic output schema
+│   └── utils/                      # prompt/json/object/agent message helper
+├── backtest/                       # 운영 그래프를 재사용하는 백테스트 모듈
+├── dashboards/                     # 백테스트 결과 Streamlit viewer
+└── tests/                          # 단위 테스트
 ```
 
 ---
 
-## 3. LangGraph 그래프
+## 판단 파이프라인
 
-`app/graph/builder.py` 의 정의. **mode에 따라 Bull/Bear 토론 라운드 수가 0/1/2로 달라진다** (자세한 분기는 §3.4):
+### 1. 시장 이벤트 수신
 
+분석 서버는 종목 단위로 `MarketTriggerEvent`를 발행합니다.
+
+주요 필드:
+
+- `stock_code`
+- `timestamp`
+- `trigger.rule_ids`
+- `trigger.trigger_reason`
+- `analysis_snapshot`
+
+`analysis_snapshot`에는 기술적 지표, 재무 데이터, 이벤트, 감성 점수, 뉴스 요약 등이 들어올 수 있습니다.
+
+### 2. 사용자별 trigger fanout
+
+[app/triggers/user_trigger_matcher.py](./app/triggers/user_trigger_matcher.py)
+
+`match_market_event_to_users`는 시장 이벤트를 사용자별 `UserTriggerEvent`로 변환합니다.
+
+처리 기준:
+
+- 해당 종목 보유자 조회: `PositionIndexRepository`
+- 사용자 포트폴리오 스냅샷 조회: `PortfolioSnapshotRepository`
+- 현재가 조회: `MarketPriceRepository`
+- 비보유 매수 후보 조회: `BuyCandidateRepository`
+
+보유자는 항상 `is_holder=True`로 처리됩니다. 비보유자는 종목 risk tier와 사용자 risk grade가 맞는 경우에만 포함됩니다.
+
+비보유자 이벤트는 최종 결과가 BUY일 때만 백엔드로 발행됩니다. SELL/HOLD는 비보유자에게 의미가 없으므로 [app/graph/runner.py](./app/graph/runner.py)에서 발행을 생략합니다.
+
+### 3. LangGraph State 생성
+
+[app/triggers/state_factory.py](./app/triggers/state_factory.py)
+
+`UserTriggerEvent`는 `InvestmentAgentState`로 변환됩니다.
+
+```text
+user_id
+as_of
+analysis_snapshot
+candidate_assets = [{"stock_code": event.stock_code}]
+portfolio_snapshot
 ```
-              ┌──────────────────┐
-              │  context_loader  │  user/policy/memory/history 컨텍스트 로드 (DB+메모리)
-              └────────┬─────────┘
-                       ▼
-              ┌──────────────────┐  ┐ mode=debate_0 이면 이 두 노드를 건너뛰고
-              │ bull_researcher  │  │ 바로 strategy_manager 로 진입 (토론 ablation).
-              └────────┬─────────┘  │ mode=debate_1/2 이면 bear → (round_count<N)
-                       ▼            │   → bull 로 conditional edge 루프.
-              ┌──────────────────┐  │ 각 발언은 investment_debate_state.history
-              │ bear_researcher  │  │ 에 시간순으로 인터리브 누적 (TradingAgents 패턴).
-              └────────┬─────────┘  ┘
-                       ▼
-              ┌──────────────────┐
-              │ strategy_manager │  토론 종합 → ResearchVerdict + StrategyDraft
-              └────────┬─────────┘
-                       ▼
-              ┌──────────────────┐
-              │ decision_manager │  FinalDecision 생성 (action / 사이즈 / 시나리오 / risk_level)
-              └────────┬─────────┘
-                       │
-        flow_status == "hold"      flow_status != "hold"
-                       │                  │
-                       ▼                  ▼
-                      END        ┌──────────────────┐
-                                 │    risk_gate     │  형식·정책 검증 (LLM-free)
-                                 └────────┬─────────┘
-                                          ▼
-                                         END
-                                  (risk_cleared 값과 무관하게 그래프는 종료되며,
-                                   결과는 ai.decision.generated 로 백엔드에 발행)
-```
 
-### 노드 역할 요약
-
-| 노드 | 입력 | 출력 (state 갱신) | LLM |
-|---|---|---|---|
-| `context_loader` | `user_id`, `analysis_snapshot`, `candidate_assets` | `user_context`, `policy_context`, `memory_context` (8개 키 — §3.5 참조), `history_context` | ❌ |
-| `bull_researcher` | signals + 컨텍스트 + `memory_*` 4섹션 + **`debate_history` (시간순 통합 대화 — 자기 이전 라운드 발언 포함)** + 직전 Bear 발언 | `investment_debate_state.history` / `bull_history` / `latest_bull_argument` 갱신 | ✅ |
-| `bear_researcher` | 위 + 직전 Bull 발언 | `history` / `bear_history` / `debate_rounds` / `round_count` 증가 | ✅ |
-| `strategy_manager` | 컨텍스트 + `memory_*` 4섹션 + (`debate_1/2`) **`debate_history` 단일 시간순 대화** / (`debate_0`) signals 직접 해석용 solo 프롬프트 | `research_verdict`, `strategy_draft` (실패 시 hold 강등) | ✅ |
-| `decision_manager` | `research_verdict` + 전체 컨텍스트 + `memory_*` 4섹션 + `debate_rounds` (라운드 단위) | `final_decision`, `flow_status` | ✅ |
-| `risk_gate` | `final_decision`, `policy_context.allow_auto_trade` | `risk_cleared`, `risk_check_result`, `flow_status` | ❌ |
-
-> **노드는 `state.memory_context`를 통째로 LLM에 넘기지 않는다.** 정제된 4섹션
-> (`lessons_aggregate` / `loss_pattern_brief` / `similar_decisions_table` /
-> `recent_post_mortems`)을 별도 프롬프트 변수로 분리 주입해 LLM 주의를 집중시킨다.
-> 자세한 정제 함수와 회상 루프는 §3.5 참조.
-
-### 두 개의 hard rule (절대 깨지 않는 가정)
-
-1. **ai_agent는 주문을 실행하지 않는다.** 그래프는 결정 발행에서 끝나며,
-   실주문은 백엔드 `KisOrderConsumer`의 책임이다. ai_agent에 executor 노드/`action/*` 레이어를 다시 도입하지 말 것.
-2. **`risk_gate`, `context/*` 는 LLM을 호출하지 않는다.**
-   결정의 비결정성을 차단하는 안전 레이어이며, LLM 도입은 안전 가정을 깬다.
+trigger의 rule id/reason은 현재 state의 별도 필드로 저장하지 않고, `analysis_snapshot`과 Kafka payload 추적 정보로 활용합니다.
 
 ---
 
-## 3.4. 토론 모드 (`debate_0` / `debate_1` / `debate_2`)
+## LangGraph 구조
 
-`build_investment_graph(mode=...)` 의 mode 인자가 Bull/Bear 토론 라운드 수를 결정한다.
-운영 default 는 `debate_1` (구 mode "A" 와 동등).
+[app/graph/builder.py](./app/graph/builder.py)
 
-| Mode | 토론 라운드 | 그래프 흐름 | 사용 프롬프트 (strategy_manager) |
-|---|---|---|---|
-| **`debate_0`** | 0회 (ablation — 토론 없음) | context_loader → strategy_manager 직결 | `strategy_manager_solo.txt` — *signals 4종을 직접 해석해 결정*. 회피적 hold 금지 명시. |
-| **`debate_1`** | 1회 (MVP, 운영 default) | context → bull → bear → strategy_manager | `strategy_manager.txt` |
-| **`debate_2`** | 2회 (실험용) | context → bull → bear → (`round_count<2`) bull → bear → strategy_manager | `strategy_manager.txt` |
+운영 기본 모드는 `debate_1`입니다.
 
-신규 round 추가는 `app/graph/builder.py` 의 `_DEBATE_ROUNDS` dict 한 줄 + `backtest/modes.py` MODE_REGISTRY 항목 한 줄.
+```text
+context_loader
+  -> bull_researcher
+  -> bear_researcher
+  -> decision_manager
+  -> strategy_manager
+  -> risk_gate
+  -> END
+```
 
-### TradingAgents 패턴 — 토론 발언 시간순 통합
+`strategy_manager`가 `flow_status="hold"`를 반환하면 `risk_gate`를 거치지 않고 종료합니다.
 
-`investment_debate_state` 가 보유하는 키:
+### Debate Mode
 
-| 키 | 형식 | 용도 |
-|---|---|---|
-| **`history`** | `str` (`"Bull Analyst: ...\nBear Analyst: ...\nBull Analyst: ..."`) | bull/bear/strategy_manager 모두 이 필드를 보고 **시간순 대화**로 인식. round 2 의 bull/bear 가 자기 이전 라운드 발언도 함께 본다 (자기 일관성). |
-| `bull_history` / `bear_history` | `list[str]` | 분리 보관 (디버깅·BE payload `debate.bull_claim`/`bear_claim` 호환) |
-| `debate_rounds` | `list[dict]` (`{round, bull, bear}`) | decision_manager 가 라운드 단위로 인식 |
-| `latest_bull_argument` / `latest_bear_argument` | `str | None` | 다음 분석가가 반박 대상으로 highlight |
-| `round_count` | `int` | bear 발언 완료 시 증가, builder 의 conditional edge 종료 조건 |
+| Mode | 토론 라운드 | 그래프 흐름 |
+| --- | --- | --- |
+| `debate_0` | 0회 | `context_loader -> decision_manager -> strategy_manager -> risk_gate` |
+| `debate_1` | 1회 | `context_loader -> bull -> bear -> decision_manager -> strategy_manager -> risk_gate` |
+| `debate_2` | 2회 | `bull -> bear`를 2회 반복한 뒤 `decision_manager`로 이동 |
 
-### Bull/Bear 프롬프트의 명시적 인용·반박 강제
-
-`bull_researcher.txt` / `bear_researcher.txt` 가 LLM에 강제하는 지침:
-
-- *"[토론 기록]에 직전 상대 발언이 있으면 핵심 문구를 짧게 인용한 뒤 반박하세요"*
-- *"자기 이전 라운드 발언과도 일관되게 입장을 보강·심화하세요"*
-
-→ 단순 *"각자 진술 두 개 묶음"* 이 아니라 인용 → 반박 → 재반박이 누적되는 *실제 대화 흐름*을 강제한다.
+`debate_0`은 `decision_manager_solo.txt` 프롬프트를 사용합니다. Bull/Bear 발언이 없는 상태에서 토론 부재를 이유로 hold가 과도하게 나오지 않도록 별도 프롬프트를 둔 구조입니다.
 
 ---
 
-## 3.5. Reflection 메모리 루프 (사후 분석 기반 성장형)
+## 노드 역할
 
-본 시스템은 **LLM 모델을 재학습(fine-tuning)하지 않는다**. 대신 매 거래의
-결정-결과 쌍을 LLM이 자체 회고(post-mortem)하고, 그 회고를 다음 결정의
-프롬프트 컨텍스트로 회상해 의사결정 품질을 점진 강화하는 **닫힌 루프**를 운용한다.
+| 노드 | 역할 | LLM |
+| --- | --- | --- |
+| `context_loader` | 사용자 성향, 자동매매 정책, 과거 판단 memory 로드 | No |
+| `bull_researcher` | 매수/상승 관점의 자유 텍스트 발언 생성 | Yes |
+| `bear_researcher` | 매도/리스크 관점의 자유 텍스트 발언 생성 | Yes |
+| `decision_manager` | Bull/Bear 토론 또는 signal을 종합해 `ResearchVerdict` 생성 | Yes |
+| `strategy_manager` | `ResearchVerdict`를 주문 가능한 `FinalDecision`으로 변환 | Yes |
+| `risk_gate` | 최종 판단의 형식, 자동매매 정책, 사용자 한도 검증 | No |
 
-> 참고: TradingAgents (UCLA, 2024) 논문의 `FinancialSituationMemory` 패턴을
-> 한국 주식·실거래 환경에 맞춰 **정형 SQL 기반으로 단순화**한 구현
-> (벡터 검색 대신 stock_code/sector/key_signals AND/OR 매칭 — 사용자×종목 격리·
-> 백테스트 재현성·운영 인프라 비용을 위해 의도적 단순화).
+### Debate State
 
-### 데이터 흐름 (닫힌 루프)
+Bull/Bear 발언은 `investment_debate_state`에 누적됩니다.
 
-```
-┌─────────────────────────────────────────────┐
-│ 1. Decision Manager → final_decision       │
-│    runner.run_and_publish → BE에 발행        │
-│    BE가 ai_judgments INSERT + KIS 주문 실행  │
-└────────────────────┬────────────────────────┘
-                     ▼
-              (보유 → 매도 → 청산)
-                     ▼
-┌─────────────────────────────────────────────┐
-│ 2. BE: trade.settled Kafka 이벤트 발행       │
-│    feedback consumer (app/feedback/) 수신    │
-└────────────────────┬────────────────────────┘
-                     ▼
-┌─────────────────────────────────────────────┐
-│ 3. post_mortem_agent                        │
-│    decision_content + raw_return            │
-│    + alpha_return + holding_days를 LLM에 입력│
-│    → PostMortemReflection (Pydantic 구조화)  │
-│    → post_mortem_reports DB INSERT          │
-└────────────────────┬────────────────────────┘
-                     ▼
-┌─────────────────────────────────────────────┐
-│ 4. 다음 거래 트리거 → context_loader         │
-│    DecisionRetrieval로 유사 판단 회상        │
-│    (LATERAL JOIN으로 post_mortem 최신 1건)   │
-│    → memory_context 4섹션 정제 → state 저장  │
-└────────────────────┬────────────────────────┘
-                     ▼
-       Bull/Bear/Strategy/Decision LLM에
-       4섹션 프롬프트 변수로 분리 주입
-```
+주요 키:
 
-### `memory_context` 8개 키 (4 정제 + 4 raw)
+- `history`: Bull/Bear 발언을 시간순으로 합친 문자열
+- `bull_history`: Bull 발언 목록
+- `bear_history`: Bear 발언 목록
+- `debate_rounds`: `{round, bull, bear}` 단위 라운드 목록
+- `latest_bull_argument`
+- `latest_bear_argument`
+- `round_count`
 
-`load_memory_context()`가 반환하는 dict 구조:
-
-| 키 | 출처 | 용도 |
-|---|---|---|
-| **`lessons_aggregate`** | `post_mortem_reports.lessons` 빈도 가중 top-8 | **"반드시 우선 검토"** — 회고에서 추출된 룰 |
-| **`loss_pattern_brief`** | 손실 판단의 `judgment_reason` + `bear_claim` 한 줄/건 압축 | 반복 실수 회피용 — Bear 주장의 핵심 근거. **strategy_manager 프롬프트 지침**: `recommended_side` 와 `confidence`/`order_amount` 에만 보수적으로 반영하고 `winning_side`(Bull/Bear 토론 결과)는 메모리로 변경하지 않는다. |
-| **`similar_decisions_table`** | 유사 결정 요약 (정형 메타 제거, `reason` 120자 컷) | 정형 의사결정 표 |
-| **`recent_post_mortems`** | `summary` + `lessons`가 모두 있는 회고만 top-5 | Bear/Decision Manager의 1급 근거 |
-| `query_basis` | 회상 매칭 기준 (stock_codes/sectors/key_signals) | 디버깅·트레이스 |
-| `recent_decisions` | retrieval raw 결과 (PastDecision dict 10건) | 디버깅·향후 벡터 검색 도입 호환 |
-| `recent_loss_decisions` | `only_loss=True` raw 결과 5건 | 디버깅 |
-| `summary` | 회상 건수 카운트 문자열 | 한 줄 요약 |
-
-> **정제 4종은 모두 결정론적 Python 함수** (`_aggregate_lessons` /
-> `_summarize_loss_pattern` / `_brief_table` / `_recent_post_mortems`).
-> LLM 호출이 추가로 발생하지 않아 **백테스트 재현성을 깨지 않는다**.
->
-> `recent_decisions` + `recent_loss_decisions` 는 동일 결정이 양쪽에 등장할 수 있어
-> `_dedupe_past_decisions` (`ai_judgment_id` 기준) 로 중복 제거 후 `_aggregate_lessons` 에 전달한다 — lesson 중복 카운트 방지.
-
-### 회상 매칭 로직
-
-`DecisionRetrieval` (`app/memory/retrieval.py`) — PostgreSQL 정형 SQL:
-
-```
-WHERE  aj.user_id = :user_id
-  AND  aj.judged_at >= NOW() - :days * INTERVAL '1 day'
-  AND  (aj.stock_code = ANY(:stock_codes))   -- 그룹 간 AND, 그룹 내 OR
-  AND  (aj.sector     = ANY(:sectors))
-  AND  EXISTS(jsonb_array_elements_text(aj.key_signals) = ANY(:key_signals))
-LEFT JOIN LATERAL (
-    SELECT lessons, summary FROM post_mortem_reports
-    WHERE ai_judgment_id = aj.id ORDER BY created_at DESC LIMIT 1
-) pmr ON TRUE
-```
-
-- **사용자×종목 격리**: `WHERE aj.user_id`로 자연스럽게 만족 (벡터 검색 시 추가 필터 필요)
-- **재현성**: `as_of` 파라미터로 백테스트 시점 기준 회상 가능 — LLM 결정성과 SQL 결정성을 모두 보장
-
-### 운영 가동 상태 (현재)
-
-| 단계 | 구현 | 운영 가동 |
-|---|---|---|
-| 1. 결정 발행 + ai_judgments 적재 | ✅ | ✅ |
-| 2. trade.settled Kafka 발행 | (BE 측) | ⚠️ BE 발행 합의/구현 진행 중 — 토픽 비어 있으면 컨슈머 polling 대기 |
-| 3. post_mortem_agent 회고 생성 + DB 영속 | ✅ | (2번 가동 후 동작) |
-| 4. 다음 결정 시 회상 + memory_context 4섹션 주입 | ✅ | ✅ (회상할 회고가 0건이면 빈 배열로 안전 fallback) |
+`decision_manager`는 `history`를 보고 토론 흐름을 종합하고, `strategy_manager`는 `debate_rounds`를 라운드 단위 근거로 사용합니다.
 
 ---
 
-## 4. State (`InvestmentAgentState`)
+## Context Loader
 
-모든 노드는 **단일 Pydantic 모델**(`app/state/investment_state.py`)을 읽고 자기 담당 필드만 갱신한다.
+[app/context/context_loader.py](./app/context/context_loader.py)
 
-| 영역 | 필드 | 누가 채우나 |
-|---|---|---|
-| 실행 주체 | `user_id` | 트리거 단계 (`state_factory`) |
-| 시장/분석 입력 | `analysis_snapshot` | Analysis Layer (Kafka, `trigger` nested + 4분할 signals) |
-| 후보 종목 | `candidate_assets` | `state_factory` (Analysis Layer 메시지의 stock_code 기반 자체 생성) |
-| 포트폴리오 | `portfolio_snapshot` | 그래프 실행 전 백엔드 주입 — **Risk Gate가 broker API를 직접 호출하지 않는 정책** |
-| 컨텍스트 | `user_context`, `policy_context`, `memory_context` (8개 키 — §3.5), `history_context` | `context_loader` |
-| 토론 | `investment_debate_state` (`history` 시간순 단일 / `bull_history` / `bear_history` / `debate_rounds` / `latest_bull_argument` / `latest_bear_argument` / `round_count` — §3.4 참조) | bull/bear/strategy_manager |
-| Reasoning 결과 | `research_verdict`, `strategy_draft`, `final_decision` | strategy/decision manager |
-| 리스크 | `risk_check_result`, `risk_cleared` | risk_gate |
-| 제어 | `flow_status` (`running`/`hold`/`blocked`/`completed`/`failed`), `error_context` | 모든 노드 |
-| 사후 | `later_market_data`, `postmortem_report` | (별도 Feedback graph / 백엔드 — 현재 MVP 범위 밖) |
+`context_loader`는 LLM을 호출하지 않는 결정론적 데이터 수집 레이어입니다.
 
-> 실행 결과(주문 ID/체결가 등)는 ai_agent State에 들어오지 않는다. 백엔드가 `trade.order.executed` 컨슈머에서 `ai_judgments.order_id`를 UPDATE 하는 흐름으로 합류한다.
+수집하는 컨텍스트:
 
-> 실행 결과(주문 ID/체결가 등)는 ai_agent State에 들어오지 않는다. 백엔드가 `trade.order.executed` 컨슈머에서 `ai_judgments.order_id`를 UPDATE 하는 흐름으로 합류한다.
+- `user_context`
+  - 투자 성향
+  - 손절률/익절률
+  - AI 운용 한도 값이 제공되는 경우 단일 주문 한도 검증에 사용
+  - 국내 주식 위험 정책
+- `policy_context`
+  - 자동매매 상태
+  - kill switch 여부
+  - 공통 거래 제한 정책
+- `memory_context`
+  - 최근 유사 판단
+  - 최근 손실 판단
+  - postmortem lessons
+  - 유사 판단 요약 table
+- `history_context`
+  - 현재는 stub
 
-### 핵심 Pydantic 스키마 (`app/state/schemas.py`)
-
-- **`ResearchVerdict`** — Strategy Manager 출력. `winning_side`, `recommended_side`, `target_price`, `stop_loss_price`, `order_amount`, `confidence` 포함. `recommended_side != hold` 일 때 가격/금액 필드 필수 (`@model_validator`).
-- **`StrategyDraft`** — Verdict를 후속 단계 계약으로 옮긴 단순화 본.
-- **`FinalDecision`** — Decision Manager 출력. `action ∈ {trade, hold}`, `risk_level ∈ {low, medium, high}`, `expected_scenario` (base/bear/bull) 포함. `action="trade"` 인데 주문 필수 필드 누락 시 hold로 강등.
-
----
-
-## 5. 두 가지 실행 모드
-
-### 5-1. 단일 호출 (학습/디버깅)
-
-`pipeline.py` 가 **mock UserTriggerEvent → graph 끝까지** 검증한다. 이게 가장 안전한 학습용 실행 경로다:
-
-```bash
-python -m app.triggers.pipeline
-```
-
-> ⚠️ `python main.py` 도 존재하지만, `main.py` 의 mock state 에 `user_id` 가 비어 있어
-> 현재 `context_loader` 에서 `ValueError` 가 난다. 학습용으로는 `pipeline.py` 를 쓰거나,
-> `main.py` 의 `InvestmentAgentState(...)` 에 `user_id=1` 을 직접 추가해서 돌리면 된다.
-
-### 5-2. 운영 모드 (Kafka 컨슈머)
-
-```bash
-python -m app.consumer
-```
-
-`app/consumer.py` 는 두 개의 컨슈머 스레드를 띄운다:
-
-| 스레드 | 입력 토픽 | 처리 | 출력 토픽 |
-|---|---|---|---|
-| `market-signal-consumer` | `market.signal.detected` | `match_market_event_to_users` 로 보유 사용자별 분기 | `ai.trigger.requested` |
-| `user-trigger-consumer` | `ai.trigger.requested` | `run_and_publish` (graph 실행 + 페이로드 빌더 `_build_decision_payload`) | `ai.decision.generated` |
-
-분리 이유: 사용자 매칭은 가볍고, LLM 실행은 무겁다. 백프레셔/재시도/스로틀을 단계별로 독립 관리하기 위함.
-
-**출력 페이로드 (`ai.decision.generated`, BE 합의)**
-
-`app/graph/runner.py:_build_decision_payload` 가 구성한다:
-
-```json
-{
-  "user_id": 1,
-  "source_event_id": "market_event_abc123",
-  "stock_code": "005930",
-  "created_at": "2026-05-14T02:07:00+09:00",
-  "final_decision": {
-    "action": "trade",
-    "side": "buy",
-    "order_amount": 500000,
-    "target_price": 75000,
-    "stop_loss_price": 67000,
-    "reason_summary": "...",
-    "confidence": 0.78,
-    "risk_level": "low"
-  },
-  "debate": {
-    "bull_claim": "...",
-    "bear_claim": "...",
-    "winner": "bull",
-    "key_signals": ["technical_signal", "sentiment_signal"]
-  },
-  "indicators_snapshot": { "technical": {...}, "fundamental": {...} },
-  "flow_status": "completed"
-}
-```
-
-- `source_event_id`: 입력 트리거 식별자. BE 컨슈머는 `(user_id, source_event_id)` 조합으로 멱등 처리 (같은 트리거 재수신 시 INSERT 무시).
-- `created_at`: ai_agent 발행 시각(KST). BE 측 `ai_judgments.judged_at`에 매핑.
-- `final_decision`: `FinalDecision.model_dump()` 결과에서 `asset / risk_summary / expected_scenario / user_message`는 BE 매핑 컬럼이 없어 명시 `exclude`.
-- `debate.bull_claim` / `bear_claim`: 그래프 토론 상태(`investment_debate_state`)의 누적 발언 텍스트.
-- `debate.winner`: `research_verdict.winning_side`.
-- `debate.key_signals`: `extract_key_signals(analysis_snapshot)` 결과.
-- `indicators_snapshot`: 분석 서버가 보낸 `analysis_snapshot.signals` 원본을 그대로 forwarding (BE는 `ai_judgments.indicators_snapshot` JSONB로 저장).
-
-### 5-3. 회고 컨슈머 (별도 프로세스)
-
-매도 체결 후 사후 회고를 실행하는 컨슈머는 **결정 컨슈머와 분리된 별도 entry point**다:
-
-```bash
-python -m app.feedback.consumer
-```
-
-| 프로세스 | 입력 토픽 | 처리 | 출력 |
-|---|---|---|---|
-| `trade-settled-consumer` | `trade.settled` | `run_post_mortem` (`app/feedback/pipeline.py`) — 과거 결정 컨텍스트 조회 + Post-Mortem LLM 실행 | DB INSERT (`post_mortem_reports`) |
-
-분리 이유: 회고는 비동기/지연 허용 영역이라 결정 컨슈머와 자원·장애를 격리한다 (k8s 배포 시 별도 Pod 권장). 컨슈머 그룹은 `ai-agent-trade-settled`.
-
-> 현재 `trade.settled` 토픽은 BE 측 발행이 합의/구현 진행 중이며, 토픽이 비어 있으면 컨슈머는 polling 상태로 대기한다.
+DB 연결은 `DATABASE_URL` 또는 `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD` 환경변수를 사용합니다.
 
 ---
 
-## 6. 외부 의존성 / 환경 변수
+## Memory 구조
 
-| 시스템 | 사용처 | 환경 변수 |
-|---|---|---|
-| **PostgreSQL** | `context_loader` (사용자 정책), `memory/*` (판단 저장/조회) | `DATABASE_URL` |
-| **Redis** | `position_index_repository` (보유 종목 인덱스) | `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`, `REDIS_PASSWORD` |
-| **Kafka** | 입력/출력 토픽 | `KAFKA_BOOTSTRAP_SERVERS` |
-| **OpenAI (SSAFY GMS gateway)** | 모든 LLM 노드 | `GMS_KEY`, `OPENAI_MODEL` (선택) |
-| **LangSmith** (선택) | 그래프 trace + metadata | `LANGCHAIN_TRACING_V2`, `LANGCHAIN_API_KEY`, `LANGCHAIN_PROJECT` |
+실시간 판단 파이프라인은 판단 결과를 직접 DB에 저장하지 않습니다. 판단 저장은 `ai.decision.generated`를 받은 백엔드가 수행합니다.
 
-`.env` 는 `ai_agent/.env` 위치에서 로드된다 (`python-dotenv`).
-모듈 import 시점에는 외부 시스템 연결을 강제하지 않으므로, Redis/Kafka 가 꺼져 있어도 import 자체는 실패하지 않는다.
+AI Agent의 memory layer는 주로 다음 역할을 합니다.
 
----
+- 과거 `ai_judgments` 및 `post_mortem_reports` 조회
+- 최근 유사 판단과 손실 판단 요약
+- postmortem lessons를 다음 판단 프롬프트에 주입
+- feedback 파이프라인에서 postmortem report 저장
 
-## 7. 셋업 & 실행
+`memory_context`는 원본 목록을 그대로 LLM에 넘기지 않고 다음 4개 핵심 필드로 압축해 Agent 프롬프트에 전달합니다.
 
-```bash
-cd ai_agent
-python -m venv .venv
-.\.venv\Scripts\activate          # macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt
-# ai_agent/.env 작성 (위 환경 변수 채우기)
-python -m app.triggers.pipeline   # 단일 호출 (학습용)
-# 또는
-python -m app.consumer             # 운영 모드 (Kafka 필요)
-```
-
-운영 모드 진입 전에는 Redis 에 종목 보유 인덱스가 채워져 있어야 사용자 매칭이 동작한다. 예시:
-
-```
-SADD position:index:stock:005930 1 2
-```
+- `lessons_aggregate`
+- `loss_pattern_brief`
+- `similar_decisions_table`
+- `recent_post_mortems`
 
 ---
 
-## 8. 테스트
+## Output Schema
 
-```bash
-pytest
-```
+[app/state/schemas.py](./app/state/schemas.py)
 
-현재 작성된 테스트:
+### ResearchVerdict
 
-- `tests/triggers/test_user_trigger_matcher.py`
-- `tests/triggers/test_pipeline.py`
-- `tests/repositories/test_position_index_repository.py`
+`decision_manager`의 구조화 출력입니다.
 
-LLM 노드(bull/bear/strategy_manager/decision_manager) 단위 테스트는 아직 빈 스텁이다. 추가 작업 영역.
+주요 필드:
+
+- `winning_side`: `bull`, `bear`, `balanced`
+- `asset`
+- `recommended_side`: `buy`, `sell`, `hold`
+- `rationale`
+- `key_bull_points`
+- `key_bear_points`
+- `confidence`
+- `order_amount`
+- `target_price`
+- `stop_loss_price`
+
+`recommended_side="hold"`일 때는 `order_amount=0`, `target_price=None`, `stop_loss_price=None`이어야 합니다.
+
+### FinalDecision
+
+`strategy_manager`의 구조화 출력입니다.
+
+주요 필드:
+
+- `action`: `trade`, `hold`
+- `asset`
+- `side`: `buy`, `sell`
+- `order_amount`
+- `target_price`
+- `stop_loss_price`
+- `reason_summary`
+- `risk_summary`
+- `expected_scenario`
+- `confidence`
+- `risk_level`: `low`, `medium`, `high`
+- `user_message`
+
+`action="trade"`인데 주문 필수 필드가 누락되면 `strategy_manager`가 hold로 강등합니다.
 
 ---
 
-## 9. 신입 가이드: 어디부터 봐야 하나
+## Risk Gate
 
-이 순서대로 읽으면 30분~1시간 안에 시스템 전체가 잡힌다:
+[app/agents/decision/risk_gate.py](./app/agents/decision/risk_gate.py)
 
-1. `app/state/investment_state.py` — 시스템의 척추. 이걸 모르면 노드 코드를 못 읽는다.
-   특히 `investment_debate_state` 의 `history` 시간순 통합 필드 (§3.4 TradingAgents 패턴).
-2. `app/state/schemas.py` — `ResearchVerdict`, `StrategyDraft`, `FinalDecision` 계약.
-3. `app/graph/builder.py` — 그래프 골격 (이 README 의 그림과 1:1 대응). `_DEBATE_ROUNDS` dict + conditional edge.
-4. `app/agents/strategy/*` 한 세트 → `app/agents/decision/*` 한 세트.
-   bull/bear 가 `debate_history` 를 input 으로 받는 부분 (자기 이전 발언 인지).
-5. `app/config/prompts/*.txt` — 각 LLM 노드의 system/human 프롬프트.
-   특히 `[메모리 — *]` 4섹션 구조 (§3.5) 와 bull/bear 의 *직접 인용·반박* 지침 (§3.4).
-   `strategy_manager_solo.txt` 는 `debate_0` 전용으로 분기 (§3.4).
-6. `app/context/memory_context.py` — `load_memory_context()`와 정제 함수 4종
-   (`_aggregate_lessons` / `_summarize_loss_pattern` / `_brief_table` / `_recent_post_mortems`)
-   + `_dedupe_past_decisions` (중복 제거). Reflection 루프의 핵심.
-7. `app/agents/feedback/post_mortem_agent.py` + `app/feedback/consumer.py` — 회고 생성·영속화.
-8. `app/triggers/state_factory.py` + `app/consumer.py` — 운영 진입 흐름.
-9. (선택) `app/memory/*` — `DecisionRetrieval` SQL 회상 로직.
-10. (선택) `backtest/examples/dummy_debate_trace.py` — LangSmith trace 로 토론 흐름 시각 확인.
-    DB 의존 없이 1 trigger 실 LLM 호출 (`debate_2`).
+`risk_gate`는 LLM을 호출하지 않습니다. AI 판단의 1차 hard rule 검증 레이어입니다.
 
-### 작업 시 주의
+검증 항목:
 
-- **`risk_gate` 우회 엣지 추가**, **`risk_gate` 에 LLM 도입**, **ai_agent에 주문 실행 노드 재도입**, **AES 키 정책 변경** 은
-  PR 전 반드시 팀 합의가 필요하다. 안전 가정을 깨는 변경이다.
-- **`risk_gate` 의 책임 경계를 깨지 말 것.** AI 측 형식·정책 검증만 담당하고,
-  포지션 비중·현금 잔고·종목 상태·시장 상태 같은 **실시간 검증은 백엔드 영역**이다.
-  `risk_gate` 안에서 broker API 를 호출하는 코드를 도입하면 안 된다.
-- **사용자 승인 흐름은 백엔드 책임**이다. AI agent 코드에 `approval_required` 같은
-  `flow_status` 값이나 사용자 승인 분기 노드를 다시 도입하지 말 것.
-  AI 는 `FinalDecision.risk_level` (low/medium/high) 만 백엔드에 노출한다.
-- 프롬프트 변경은 토큰 비용/응답 형식 영향이 크다. `format_instructions` 가 깨지면
-  `strategy_manager`/`decision_manager` 가 즉시 hold 로 강등된다.
-- `InvestmentAgentState` 에 필드를 추가할 때는 모든 영향 노드의 read 부분도 함께 점검할 것.
+- `final_decision` 존재 여부
+- `action`, `asset`, `side`, `order_amount` 기본값
+- 자동매매 허용 여부: `policy_context.allow_auto_trade`
+- BUY 손절 정합성: 사용자 손절률 대비 AI 손절가
+- SELL 익절 정합성: 평단가와 사용자 익절률 대비 AI 목표가
+- 단일 주문 AI 운용 한도: 값이 없으면 backward compatibility를 위해 skip
+
+통과 시:
+
+```text
+risk_cleared = true
+flow_status = completed
+```
+
+실패 시:
+
+```text
+flow_status = hold 또는 blocked
+risk_check_result.checks에 상세 사유 기록
+```
+
+백엔드는 이후 실시간 데이터 기준으로 2차 hard rule을 수행합니다.
+
+---
+
+## Backend Payload
+
+[app/graph/runner.py](./app/graph/runner.py)
+
+LangGraph 결과는 `ai.decision.generated` payload로 변환됩니다.
+
+주요 필드:
+
+- `user_id`
+- `source_event_id`
+- `stock_code`
+- `created_at`
+- `final_decision`
+- `debate.bull_claim`
+- `debate.bear_claim`
+- `debate.winner`
+- `debate.key_signals`
+- `indicators_snapshot`
+- `flow_status`
+- `is_holder`
+- `stock_tier`
+- `matched_risk_grade`
+
+`final_decision`에서는 백엔드 매핑이 합의되지 않은 `asset`, `risk_summary`, `expected_scenario`, `user_message`를 제외하고 발행합니다. 종목 코드는 top-level `stock_code`를 사용합니다.
+
+---
+
+## Agent Message
+
+[app/utils/agent_message.py](./app/utils/agent_message.py)
+
+각 Agent 노드는 사용자 화면의 “AI 에이전트 회의실”을 위해 `ai.agent.message`를 발행합니다.
+
+발행 Agent:
+
+- `BULL`
+- `BEAR`
+- `DECIDE`
+- `STRATEGY`
+
+발행 실패는 판단 파이프라인을 중단시키지 않습니다. `DISABLE_AGENT_MESSAGE=1`이면 메시지 발행을 생략합니다. 백테스트처럼 Kafka가 없는 환경에서 불필요한 지연을 줄이기 위한 옵션입니다.
+
+---
+
+## Feedback / Postmortem
+
+[app/feedback/pipeline.py](./app/feedback/pipeline.py)
+
+백엔드는 매수→매도 거래가 청산되고 PnL이 확정되면 `trade.settled` 이벤트를 발행합니다.
+
+`TradeSettledEvent` 주요 필드:
+
+- `user_id`
+- `ai_judgment_id`
+- `trade_pnl_record_id`
+- `raw_return`
+- `alpha_return`
+- `holding_days`
+
+회고 파이프라인은 다음 순서로 동작합니다.
+
+1. `ai_judgments`에서 당시 판단 사유, Bull/Bear 주장, winning side, risk grade, key signals 조회
+2. `post_mortem_agent`에 판단 내용과 수익률 정보 전달
+3. `PostMortemReflection` 생성
+4. `post_mortem_reports`에 저장
+
+회고 실패는 실시간 판단/주문 흐름에 영향을 주지 않도록 `None` 반환으로 흡수합니다.
+
+---
+
+## LLM 설정
+
+[app/config/llm.py](./app/config/llm.py)
+
+모델 이름 prefix로 provider를 선택합니다.
+
+| Prefix | Provider | Key |
+| --- | --- | --- |
+| `claude*` | Anthropic | `CLAUDE_API_KEY` |
+| `grok*` | xAI | `GROK_API_KEY` |
+| 그 외 | OpenAI compatible SSAFY GMS proxy | `GMS_KEY` |
+
+기본 모델은 `gpt-4o-mini`입니다.
+
+환경변수:
+
+- `DEBATE_MODEL`
+- `STRATEGY_MODEL`
+- `DECISION_MODEL`
+- `STRUCTURED_MODEL`
+- `DEBATE_TEMPERATURE`
+- `DECISION_TEMPERATURE`
+- `LLM_REQUEST_TIMEOUT`
+- `LLM_MAX_RETRIES`
+
+---
+
+## 실패 정책
+
+| 위치 | 실패 처리 |
+| --- | --- |
+| `bull_researcher` | fallback 발언을 남기고 다음 노드 진행 |
+| `bear_researcher` | fallback 발언을 남기고 다음 노드 진행 |
+| `decision_manager` | LLM/파싱 실패 시 hold verdict로 강등 |
+| `strategy_manager` | LLM/파싱 실패 또는 주문 필드 누락 시 hold로 강등 |
+| `risk_gate` | hard rule 위반 시 hold 또는 blocked |
+| `run_and_publish` | 비보유자 SELL/HOLD 판단은 발행 생략 |
+| `agent_message` | 발행 실패를 로깅하고 판단은 계속 진행 |
+| `feedback consumer` | 잘못된 payload는 commit 후 skip, transient error는 retry |
+| `post_mortem pipeline` | 결정 없음/LLM 실패/DB 실패 시 `None` 반환 |
+
+---
+
+## 지켜야 할 책임 경계
+
+1. **AI Agent는 주문을 실행하지 않는다.**
+   주문 생성과 KIS API 호출은 백엔드 책임입니다.
+
+2. **`risk_gate`와 `context_loader`는 LLM을 호출하지 않는다.**
+   안전 검증과 데이터 수집은 결정론적이어야 합니다.
+
+3. **비보유자 추천 정책을 유지한다.**
+   비보유자에게는 BUY 판단만 발행합니다.
+
+4. **백엔드 payload 계약을 임의로 넓히지 않는다.**
+   `ai.decision.generated` 필드는 백엔드 DTO와 저장 컬럼에 맞춰 유지해야 합니다.
+
+5. **Agent 발화 실패가 판단 실패가 되면 안 된다.**
+   `ai.agent.message`는 사용자 시각화용 부가 스트림입니다.
+
+---
+
+## 관련 문서
+
+- [backtest/README.md](./backtest/README.md): 백테스트 실행 및 실험 모드
+- [dashboards/README.md](./dashboards/README.md): 백테스트 결과 viewer
+- [../README.md](../README.md): 전체 MODU 서비스 소개

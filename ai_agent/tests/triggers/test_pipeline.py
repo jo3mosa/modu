@@ -82,9 +82,9 @@ def _mock_bear_researcher(state):
     }
 
 
-def _mock_strategy_manager(state):
+def _mock_decision_manager(state):
     """
-    Manager는 StrategyDraft를 후속 critic/supervisor에 전달해야 한다.
+    Decision Manager는 StrategyDraft를 후속 Strategy Manager에 전달해야 한다.
     실제 노드와 동일하게 research_verdict와 strategy_draft를 함께 반환한다.
     """
     return {
@@ -112,16 +112,16 @@ def _mock_strategy_manager(state):
     }
 
 
-def _mock_decision_manager_hold(state):
-    """Decision Manager가 보류 결정 → risk_gate/executor 미실행"""
+def _mock_strategy_manager_hold(state):
+    """Strategy Manager가 보류 결정 → risk_gate 미실행"""
     return {
         "flow_status": "hold",
         "final_decision": FinalDecision(action="hold"),
     }
 
 
-def _mock_decision_manager_trade(state):
-    """Decision Manager가 매수 결정 → risk_gate로 전달"""
+def _mock_strategy_manager_trade(state):
+    """Strategy Manager가 매수 결정 → risk_gate로 전달"""
     return {
         "flow_status": "running",
         "final_decision": FinalDecision(
@@ -241,7 +241,7 @@ _BASE_PATCHES = {
     "app.graph.builder.context_loader": _mock_context_loader,
     "app.graph.builder.bull_researcher": _mock_bull_researcher,
     "app.graph.builder.bear_researcher": _mock_bear_researcher,
-    "app.graph.builder.strategy_manager": _mock_strategy_manager,
+    "app.graph.builder.decision_manager": _mock_decision_manager,
 }
 
 
@@ -258,18 +258,18 @@ class TestLangGraphFlow:
 
     def test_hold_path(self):
         """
-        [경로 A] decision_manager hold → END
+        [경로 A] strategy_manager hold → END
         risk_gate는 실행되지 않는다.
         """
-        result = self._invoke({"app.graph.builder.decision_manager": _mock_decision_manager_hold})
+        result = self._invoke({"app.graph.builder.strategy_manager": _mock_strategy_manager_hold})
         assert result["flow_status"] == "hold"
 
     def test_trade_risk_blocked_path(self):
         """
-        [경로 B] decision_manager trade → risk_gate block → END
+        [경로 B] strategy_manager trade → risk_gate block → END
         """
         result = self._invoke({
-            "app.graph.builder.decision_manager": _mock_decision_manager_trade,
+            "app.graph.builder.strategy_manager": _mock_strategy_manager_trade,
             "app.graph.builder.risk_gate": _mock_risk_gate_block,
         })
         assert result["risk_cleared"] is False
@@ -277,11 +277,11 @@ class TestLangGraphFlow:
 
     def test_trade_risk_passed_path(self):
         """
-        [경로 C] decision_manager trade → risk_gate pass → completed
+        [경로 C] strategy_manager trade → risk_gate pass → completed
         백엔드가 ai.decision.generated를 수신해 실제 주문을 실행한다.
         """
         result = self._invoke({
-            "app.graph.builder.decision_manager": _mock_decision_manager_trade,
+            "app.graph.builder.strategy_manager": _mock_strategy_manager_trade,
             "app.graph.builder.risk_gate": _mock_risk_gate_pass,
         })
         assert result["risk_cleared"] is True

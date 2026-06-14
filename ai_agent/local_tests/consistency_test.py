@@ -339,10 +339,10 @@ def _print_debug(node_outputs: dict[str, Any], final_state: dict[str, Any]) -> N
     print(SSEP)
     print(bear_text)
 
-    # ── Strategy Manager ─────────────────────────────────────────────────
-    strategy_out = node_outputs.get("strategy_manager", {})
-    verdict = strategy_out.get("research_verdict")
-    print(f"\n[3] Strategy Manager -> ResearchVerdict")
+    # ── Decision Manager ─────────────────────────────────────────────────
+    decision_out = node_outputs.get("decision_manager", {})
+    verdict = decision_out.get("research_verdict")
+    print(f"\n[3] Decision Manager -> ResearchVerdict")
     print(SSEP)
     if verdict is not None:
         v = verdict if isinstance(verdict, dict) else verdict.model_dump()
@@ -358,13 +358,13 @@ def _print_debug(node_outputs: dict[str, Any], final_state: dict[str, Any]) -> N
             print(f"    {line}")
     else:
         print("  (research_verdict 없음 - hold 강등)")
-    if strategy_out.get("error_context"):
-        print(f"  error_context : {strategy_out['error_context']}")
+    if decision_out.get("error_context"):
+        print(f"  error_context : {decision_out['error_context']}")
 
-    # ── Decision Manager ─────────────────────────────────────────────────
-    decision_out = node_outputs.get("decision_manager", {})
-    decision = decision_out.get("final_decision")
-    print(f"\n[4] Decision Manager -> FinalDecision")
+    # ── Strategy Manager ─────────────────────────────────────────────────
+    strategy_out = node_outputs.get("strategy_manager", {})
+    decision = strategy_out.get("final_decision")
+    print(f"\n[4] Strategy Manager -> FinalDecision")
     print(SSEP)
     if decision is not None:
         d = decision if isinstance(decision, dict) else decision.model_dump()

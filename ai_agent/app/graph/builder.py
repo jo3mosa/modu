@@ -20,9 +20,9 @@ _DEBATE_ROUNDS: dict[str, int] = {
 }
 
 
-def route_after_decision_manager(state: InvestmentAgentState) -> str:
+def route_after_strategy_manager(state: InvestmentAgentState) -> str:
     """
-    Decision Manager 이후 다음 노드를 결정한다.
+    Strategy Manager 이후 다음 노드를 결정한다.
 
     - flow_status가 hold이면 그래프 종료
     - 그 외에는 Risk Gate로 이동
@@ -38,18 +38,18 @@ def build_investment_graph(mode: GraphMode = "debate_1"):
     투자 의사결정 LangGraph를 생성하고 compile한다.
 
     mode (Bull/Bear 토론 라운드 수에 따른 변형):
-        "debate_0": context_loader → strategy_manager 직결 (토론 0회, ablation).
-            strategy_manager는 빈 debate history를 자연스럽게 fallback 처리한다.
-        "debate_1" (기본, 실시간 = MVP): Bull → Bear 1라운드 → strategy_manager.
+        "debate_0": context_loader → decision_manager 직결 (토론 0회, ablation).
+            decision_manager는 빈 debate history를 자연스럽게 fallback 처리한다.
+        "debate_1" (기본, 실시간 = MVP): Bull → Bear 1라운드 → decision_manager.
         "debate_2": Bull ↔ Bear 2라운드 (round 2의 Bull은 직전 Bear 주장을 보고 반박)
-            → strategy_manager.
+            → decision_manager.
 
     전체 흐름 (debate_N, N ≥ 1):
-    context_loader → bull → bear → (round_count<N: bull로 루프 | else: strategy_manager)
-      → decision_manager → (hold면 END) → risk_gate → END
+    context_loader → bull → bear → (round_count<N: bull로 루프 | else: decision_manager)
+      → strategy_manager → (hold면 END) → risk_gate → END
 
     전체 흐름 (debate_0):
-    context_loader → strategy_manager → decision_manager
+    context_loader → decision_manager → strategy_manager
       → (hold면 END) → risk_gate → END
     """
 
@@ -75,24 +75,24 @@ def build_investment_graph(mode: GraphMode = "debate_1"):
             round_count = (state.investment_debate_state or {}).get("round_count", 0)
             if round_count < target_rounds:
                 return "bull_researcher"
-            return "strategy_manager"
+            return "decision_manager"
 
         graph.add_conditional_edges(
             "bear_researcher",
             route_after_bear,
             {
                 "bull_researcher": "bull_researcher",
-                "strategy_manager": "strategy_manager",
+                "decision_manager": "decision_manager",
             },
         )
     else:
-        graph.add_edge("context_loader", "strategy_manager")
+        graph.add_edge("context_loader", "decision_manager")
 
-    graph.add_edge("strategy_manager", "decision_manager")
+    graph.add_edge("decision_manager", "strategy_manager")
 
     graph.add_conditional_edges(
-        "decision_manager",
-        route_after_decision_manager,
+        "strategy_manager",
+        route_after_strategy_manager,
         {
             "risk_gate": "risk_gate",
             "end": END,

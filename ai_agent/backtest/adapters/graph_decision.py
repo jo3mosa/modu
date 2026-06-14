@@ -60,8 +60,8 @@ def make_graph_decision_fn(
     """DA framework가 받는 decision_fn 형태로 LangGraph를 래핑한다.
 
     mode:
-        A — Bull/Bear 토론 → Strategy Manager (MVP)
-        B — context_loader → Strategy Manager 직결 (ablation)
+        A — Bull/Bear 토론 → Decision Manager → Strategy Manager (MVP)
+        B — context_loader → Decision Manager 직결 (ablation)
     numeric_user_id:
         graph가 요구하는 int user_id. DA framework의 user_id(str) 와 분리.
         memory retrieval 시점 동일 user_id 누적용.
