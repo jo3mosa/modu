@@ -257,7 +257,7 @@ AI 판단은 `ai_judgments`에 저장되며, 사용자는 판단 이력을 페�
 
 ## 프로젝트 팀원
 
-| **Frontend** | **Backend** | **WebRTC** | **AI** | **AI/Infra** | **PM/Infra** |
+| **Frontend** | **Backend** | **Data Analysis** | **AI** | **AI/Infra** | **PM/Infra** |
 |:---:|:---:|:---:|:---:|:---:|:---:|
 | ![석정운_profile](https://github.com/jeongunun.png?width=120&height=120) | ![김민정_profile](https://github.com/minjeongkimm.png??width=120&height=120) | ![한가의_profile](https://github.com/gahuily.png??width=120&height=120) | ![김소원_profile](https://github.com/Dae12-Han.png??width=120&height=120) | ![박사랑_profile](https://github.com/sweetpotatolove.png??width=120&height=120) | ![소재헌_profile](https://github.com/sojaeheon.png??width=120&height=120) |
 | [석정운](https://github.com/jeongunun) | [김민정](https://github.com/minjeongkimm) | [한가희](https://github.com/gahuily) | [김소원](https://github.com/Dae12-Han) | [박사랑](https://github.com/sweetpotatolove) | [소재헌](https://github.com/sojaeheon) |
