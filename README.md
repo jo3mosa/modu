@@ -1,5 +1,8 @@
 # MODU
 
+
+
+
 > 모두를 위한 AI 주식 트레이딩 파트너
 
 MODU는 개인 투자자가 시장 데이터를 해석하고, 자신의 투자 성향에 맞는 판단을 내릴 수 있도록 돕는 **AI Agent 기반 주식 트레이딩 의사결정 지원 서비스**입니다.
@@ -16,6 +19,13 @@ MODU의 핵심 흐름은 코드 기준으로 다음과 같이 구성되어 있�
 
 ![홈 화면](./assets/service_flow.png)
 
+## System Architecture
+
+![MODU System Architecture](./docs/dev_docs/systemDiagram.drawio.png)
+
+### Kafka Flow
+
+![MODU Kafka Flow](./docs/dev_docs/kafka-flow-diagram.png)
 
 
 ---
